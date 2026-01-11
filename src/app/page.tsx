@@ -1,32 +1,12 @@
 "use client";
 import React, { useState, ChangeEvent, useEffect } from "react";
 import * as XLSX from 'xlsx';
-import { Upload, FileSpreadsheet, CheckCircle, XCircle, Clock, Lock, Mail, LogOut } from 'lucide-react';
-
-interface AttendanceRecord {
-  id: string | number;
-  name: string;
-  date: string;
-  inTime: string;
-  outTime: string;
-  status: 'Present' | 'Absent';
-}
-
-interface AttendanceSummaryView {
-  id: string;
-  userId: string;
-  userName: string;
-  monthYear: string;
-  summary: {
-    totalHour: number;
-    totalLateArrival: number;
-    excessHour: number;
-    totalHalfDay: number;
-    totalPresent: number;
-    totalAbsent: number;
-    totalLeave: number;
-  };
-}
+import { AttendanceRecord, AttendanceSummaryView } from '@/types/ui';
+import { LoginView } from '@/components/LoginView';
+import { Sidebar } from '@/components/Sidebar';
+import { UploadSection } from '@/components/UploadSection';
+import { SummarySection } from '@/components/SummarySection';
+import { EmployeeMonthView } from '@/components/EmployeeMonthView';
 
 export default function AttendanceUpload() {
   // Auth state
@@ -476,484 +456,80 @@ export default function AttendanceUpload() {
     }
   };
 
-  const selectedEmployee = summaries.find((s) => s.userId === selectedEmployeeId) || null;
-
-  const calendarData = (() => {
-    if (!selectedEmployeeMonth || employeeDays.length === 0) return null;
-
-    const [yearStr, monthStr] = selectedEmployeeMonth.split('-');
-    const year = Number(yearStr);
-    const month = Number(monthStr);
-
-    if (!year || !month) return null;
-
-    const firstDay = new Date(year, month - 1, 1);
-    const startWeekday = firstDay.getDay(); // 0 (Sun) - 6 (Sat)
-    const daysInMonth = new Date(year, month, 0).getDate();
-
-    const dayRecordMap = new Map<number, AttendanceRecord>();
-    for (const rec of employeeDays) {
-      const d = new Date(rec.date);
-      if (!Number.isNaN(d.getTime()) && d.getFullYear() === year && d.getMonth() + 1 === month) {
-        dayRecordMap.set(d.getDate(), rec);
-      }
-    }
-
-    return { daysInMonth, startWeekday, dayRecordMap };
-  })();
-
   // Login UI (when not authenticated)
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center p-6">
-        <div className="w-full max-w-md">
-          <div className="bg-slate-900/60 border border-slate-800 rounded-xl shadow-lg p-8">
-            <div className="flex items-center justify-center gap-3 mb-6">
-              <FileSpreadsheet className="w-10 h-10 text-emerald-400" />
-              <div>
-                <h1 className="text-xl font-semibold text-slate-100">Attendance Console</h1>
-                <p className="text-xs text-slate-400">HR Login</p>
-              </div>
-            </div>
-
-            {loginStep === 'password' ? (
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-2">
-                    <Lock className="w-3 h-3 inline mr-1" />
-                    Password
-                  </label>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handlePasswordSubmit()}
-                    placeholder="Enter HR password"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-md px-4 py-3 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
-                  />
-                </div>
-
-                {loginError && (
-                  <div className="bg-rose-950/40 border border-rose-700/60 text-rose-100 px-4 py-3 rounded-md text-xs">
-                    {loginError}
-                  </div>
-                )}
-
-                <button
-                  onClick={handlePasswordSubmit}
-                  disabled={loginLoading || !password}
-                  className="w-full px-4 py-3 bg-emerald-500 text-slate-950 text-sm font-medium rounded-md hover:bg-emerald-400 disabled:bg-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors"
-                >
-                  {loginLoading ? 'Verifying...' : 'Continue'}
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="bg-emerald-950/30 border border-emerald-700/40 text-emerald-100 px-4 py-3 rounded-md text-xs">
-                  <Mail className="w-3 h-3 inline mr-1" />
-                  OTP sent to admin email. Please check your inbox.
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-2">
-                    Enter OTP
-                  </label>
-                  <input
-                    type="text"
-                    value={otp}
-                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    onKeyDown={(e) => e.key === 'Enter' && handleOTPSubmit()}
-                    placeholder="6-digit code"
-                    maxLength={6}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-md px-4 py-3 text-slate-100 text-center text-xl tracking-widest placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
-                  />
-                </div>
-
-                {loginError && (
-                  <div className="bg-rose-950/40 border border-rose-700/60 text-rose-100 px-4 py-3 rounded-md text-xs">
-                    {loginError}
-                  </div>
-                )}
-
-                <button
-                  onClick={handleOTPSubmit}
-                  disabled={loginLoading || otp.length !== 6}
-                  className="w-full px-4 py-3 bg-emerald-500 text-slate-950 text-sm font-medium rounded-md hover:bg-emerald-400 disabled:bg-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors"
-                >
-                  {loginLoading ? 'Verifying...' : 'Verify OTP'}
-                </button>
-
-                <button
-                  onClick={() => {
-                    setLoginStep('password');
-                    setOtp('');
-                    setSessionId(null);
-                    setLoginError(null);
-                  }}
-                  className="w-full px-4 py-2 text-slate-400 text-xs hover:text-slate-200 transition-colors"
-                >
-                  ← Back to password
-                </button>
-              </div>
-            )}
-
-            <p className="text-center text-slate-500 text-[11px] mt-6">
-              OTP will be sent to the admin email for verification
-            </p>
-          </div>
-        </div>
-      </div>
+      <LoginView
+        loginStep={loginStep}
+        password={password}
+        onPasswordChange={setPassword}
+        onPasswordSubmit={handlePasswordSubmit}
+        otp={otp}
+        onOtpChange={(val) => setOtp(val.replace(/\D/g, '').slice(0, 6))}
+        onOtpSubmit={handleOTPSubmit}
+        onBackToPassword={() => {
+          setLoginStep('password');
+          setOtp('');
+          setSessionId(null);
+          setLoginError(null);
+        }}
+        isLoading={loginLoading}
+        error={loginError}
+      />
     );
   }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50">
       <div className="flex h-screen max-h-screen">
-        {/* Sidebar */}
-        <aside className="w-64 border-r border-slate-800 bg-slate-900/60 flex flex-col">
-          <div className="px-6 py-4 border-b border-slate-800 flex items-center gap-2">
-            <FileSpreadsheet className="w-6 h-6 text-emerald-400" />
-            <div>
-              <div className="text-sm font-semibold tracking-wide text-slate-100">Attendance Console</div>
-              <div className="text-xs text-slate-400">Excel import & analytics</div>
-            </div>
-          </div>
-
-          <nav className="flex-1 px-3 py-4 space-y-1 text-sm">
-            <button
-              type="button"
-              onClick={() => setActiveSection('upload')}
-              className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
-                activeSection === 'upload'
-                  ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
-                  : 'text-slate-300 hover:bg-slate-800/60'
-              }`}
-            >
-              <Upload className="w-4 h-4" />
-              <span>Attendance Upload</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveSection('summary')}
-              className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
-                activeSection === 'summary'
-                  ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
-                  : 'text-slate-300 hover:bg-slate-800/60'
-              }`}
-            >
-              <CheckCircle className="w-4 h-4" />
-              <span>Attendance Summary</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveSection('employee')}
-              className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
-                activeSection === 'employee'
-                  ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
-                  : 'text-slate-300 hover:bg-slate-800/60'
-              }`}
-            >
-              <Clock className="w-4 h-4" />
-              <span>Employee Month View</span>
-            </button>
-          </nav>
-
-          {uploadTotal > 0 && (
-            <div className="px-4 py-3 border-t border-slate-800 text-xs text-slate-400">
-              <div className="flex justify-between mb-1">
-                <span>Last upload</span>
-                <span>
-                  {uploadSaved}/{uploadTotal} saved
-                  {uploadFailed > 0 && `, ${uploadFailed} failed`}
-                </span>
-              </div>
-              {currentMonthYear && <div className="text-slate-500">Month: {currentMonthYear}</div>}
-            </div>
-          )}
-
-          {/* Logout button */}
-          <div className="px-3 py-3 border-t border-slate-800">
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-left text-sm text-slate-400 hover:bg-slate-800/60 hover:text-rose-300 transition-colors"
-            >
-              <LogOut className="w-4 h-4" />
-              <span>Logout</span>
-            </button>
-          </div>
-        </aside>
+        <Sidebar
+          activeSection={activeSection}
+          setActiveSection={setActiveSection}
+          uploadTotal={uploadTotal}
+          uploadSaved={uploadSaved}
+          uploadFailed={uploadFailed}
+          currentMonthYear={currentMonthYear}
+          onLogout={handleLogout}
+        />
 
         {/* Main content */}
         <main className="flex-1 bg-slate-950/80 overflow-y-auto">
           <div className="max-w-6xl mx-auto px-8 py-6 space-y-6">
             {/* Upload Section */}
             {activeSection === 'upload' && (
-              <section className="bg-slate-900/60 border border-slate-800 rounded-xl shadow-sm p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h1 className="text-xl font-semibold text-slate-50">Upload Attendance Excel</h1>
-                    <p className="text-xs text-slate-400 mt-1">
-                      Upload a single-day or full-month Excel export. Records will be mapped, users created if
-                      missing, and monthly summaries updated.
-                    </p>
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    Accepted: <span className="text-slate-300">.xlsx, .xls</span>
-                  </div>
-                </div>
-
-                <div className="mb-5">
-                  <label className="block text-xs font-medium text-slate-300 mb-2">Excel file</label>
-                  <div className="flex items-center gap-3">
-                    <label className="flex-1 flex items-center justify-between px-4 py-3 border border-dashed border-slate-700 rounded-lg cursor-pointer bg-slate-900/80 hover:border-emerald-500 hover:bg-slate-900 transition-colors">
-                      <div className="flex items-center gap-2">
-                        <Upload className="w-4 h-4 text-slate-400" />
-                        <span className="text-xs text-slate-400 truncate">
-                          {file ? file.name : 'Click to choose an Excel file'}
-                        </span>
-                      </div>
-                      <span className="text-[11px] text-slate-500">Browse</span>
-                      <input
-                        type="file"
-                        accept=".xlsx,.xls"
-                        onChange={handleFileChange}
-                        className="hidden"
-                      />
-                    </label>
-                    <button
-                      onClick={processExcelFile}
-                      disabled={!file || processing}
-                      className="px-4 py-2 bg-emerald-500 text-slate-950 text-xs font-medium rounded-md hover:bg-emerald-400 disabled:bg-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors"
-                    >
-                      {processing ? 'Processing…' : 'Upload & Process'}
-                    </button>
-                  </div>
-                </div>
-
-                {error && (
-                  <div className="mt-3 bg-rose-950/40 border border-rose-700/60 text-rose-100 px-4 py-3 rounded-md text-xs">
-                    {error}
-                  </div>
-                )}
-
-                {saveMessage && (
-                  <div className="mt-3 bg-emerald-950/40 border border-emerald-700/60 text-emerald-100 px-4 py-3 rounded-md text-xs">
-                    {saveMessage}
-                  </div>
-                )}
-              </section>
+              <UploadSection
+                file={file}
+                onFileChange={handleFileChange}
+                onProcessFile={processExcelFile}
+                processing={processing}
+                error={error}
+                saveMessage={saveMessage}
+              />
             )}
 
             {/* Summary Section */}
             {activeSection === 'summary' && (
-              <section className="bg-slate-900/60 border border-slate-800 rounded-xl shadow-sm p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h2 className="text-lg font-semibold text-slate-50">Attendance Summary</h2>
-                    <p className="text-xs text-slate-400 mt-1">
-                      One row per employee per month with calculated totals.
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end gap-1 text-[11px] text-slate-400">
-                    <span>Users: {summaries.length}</span>
-                    {uploadTotal > 0 && (
-                      <span>
-                        Last upload: {uploadSaved}/{uploadTotal} saved
-                        {uploadFailed > 0 && `, ${uploadFailed} failed`}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {summaries.length === 0 ? (
-                  <div className="text-xs text-slate-500">No attendance data found yet. Upload an Excel file to begin.</div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="bg-slate-900 border-b border-slate-800">
-                          <th className="px-3 py-2 text-left font-semibold text-slate-300">User</th>
-                          <th className="px-3 py-2 text-left font-semibold text-slate-300">Month</th>
-                          <th className="px-3 py-2 text-right font-semibold text-slate-300">Total Hours</th>
-                          <th className="px-3 py-2 text-right font-semibold text-slate-300">Late Arrivals</th>
-                          <th className="px-3 py-2 text-right font-semibold text-slate-300">Excess Hours</th>
-                          <th className="px-3 py-2 text-right font-semibold text-slate-300">Half Days</th>
-                          <th className="px-3 py-2 text-right font-semibold text-slate-300">Present</th>
-                          <th className="px-3 py-2 text-right font-semibold text-slate-300">Absent</th>
-                          <th className="px-3 py-2 text-right font-semibold text-slate-300">Leave</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {summaries.map((item) => (
-                          <tr
-                            key={item.id}
-                            className="border-b border-slate-800/80 hover:bg-slate-900/80 transition-colors"
-                          >
-                            <td className="px-3 py-2 text-slate-50 font-medium">{item.userName}</td>
-                            <td className="px-3 py-2 text-slate-300">{item.monthYear}</td>
-                            <td className="px-3 py-2 text-right text-slate-200">{item.summary.totalHour}</td>
-                            <td className="px-3 py-2 text-right text-amber-300">{item.summary.totalLateArrival}</td>
-                            <td className="px-3 py-2 text-right text-emerald-200">{item.summary.excessHour}</td>
-                            <td className="px-3 py-2 text-right text-slate-200">{item.summary.totalHalfDay}</td>
-                            <td className="px-3 py-2 text-right text-emerald-300">{item.summary.totalPresent}</td>
-                            <td className="px-3 py-2 text-right text-rose-300">{item.summary.totalAbsent}</td>
-                            <td className="px-3 py-2 text-right text-sky-300">{item.summary.totalLeave}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </section>
+              <SummarySection
+                summaries={summaries}
+                uploadTotal={uploadTotal}
+                uploadSaved={uploadSaved}
+                uploadFailed={uploadFailed}
+              />
             )}
 
             {/* Employee month-wise Section */}
             {activeSection === 'employee' && (
-              <section className="bg-slate-900/60 border border-slate-800 rounded-xl shadow-sm p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-lg font-semibold text-slate-50">Employee month-wise attendance</h2>
-                    <p className="text-xs text-slate-400 mt-1">
-                      Select an employee and month to inspect their daily check-in/out.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-end gap-4 text-xs">
-                  <div className="flex flex-col gap-1">
-                    <label className="text-slate-300">Employee</label>
-                    <select
-                      className="bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-slate-100 min-w-[220px]"
-                      value={selectedEmployeeId ?? ''}
-                      onChange={(e) => setSelectedEmployeeId(e.target.value || null)}
-                    >
-                      <option value="">Select employee</option>
-                      {summaries
-                        .reduce<{ id: string; name: string }[]>((acc, s) => {
-                          if (!acc.find((x) => x.id === s.userId)) {
-                            acc.push({ id: s.userId, name: s.userName });
-                          }
-                          return acc;
-                        }, [])
-                        .map((u) => (
-                          <option key={u.id} value={u.id}>
-                            {u.name}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-
-                  <div className="flex flex-col gap-1">
-                    <label className="text-slate-300">Month</label>
-                    <input
-                      type="month"
-                      placeholder="2026-01"
-                      value={selectedEmployeeMonth}
-                      onChange={(e) => setSelectedEmployeeMonth(e.target.value)}
-                      className="bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-slate-100 w-32"
-                    />
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (selectedEmployeeId && selectedEmployeeMonth) {
-                        fetchEmployeeMonthly(selectedEmployeeId, selectedEmployeeMonth);
-                      }
-                    }}
-                    disabled={!selectedEmployeeId || !selectedEmployeeMonth || employeeLoading}
-                    className="px-4 py-2 bg-emerald-500 text-slate-950 font-medium rounded-md hover:bg-emerald-400 disabled:bg-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {employeeLoading ? 'Loading…' : 'Load attendance'}
-                  </button>
-                </div>
-
-                {employeeError && (
-                  <div className="bg-rose-950/40 border border-rose-700/60 text-rose-100 px-4 py-3 rounded-md text-xs">
-                    {employeeError}
-                  </div>
-                )}
-
-                {selectedEmployee && selectedEmployeeMonth && (
-                  <div className="text-xs text-slate-400">
-                    Showing records for <span className="text-slate-200">{selectedEmployee.userName}</span> in
-                    month <span className="text-slate-200">{selectedEmployeeMonth}</span>.
-                  </div>
-                )}
-
-                <div className="border border-slate-800 rounded-lg p-4">
-                  {!calendarData ? (
-                    <div className="text-xs text-slate-500">
-                      No records loaded. Select employee and month, then click "Load attendance".
-                    </div>
-                  ) : (
-                    <>
-                      <div className="grid grid-cols-7 gap-2 mb-2 text-[11px] text-slate-400">
-                        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-                          <div key={d} className="text-center font-medium">
-                            {d}
-                          </div>
-                        ))}
-                      </div>
-                      <div className="grid grid-cols-7 gap-2 text-xs">
-                        {Array.from({ length: calendarData.startWeekday }).map((_, idx) => (
-                          <div key={`blank-${idx}`} />
-                        ))}
-                        {Array.from({ length: calendarData.daysInMonth }).map((_, idx) => {
-                          const day = idx + 1;
-                          const rec = calendarData.dayRecordMap.get(day) || null;
-                          const isPresent = rec?.status === 'Present';
-                          const isAbsent = rec?.status === 'Absent';
-
-                          return (
-                            <div
-                              key={day}
-                              className={`h-20 rounded-md border px-2 py-1 flex flex-col gap-1 text-[11px] ${
-                                isPresent
-                                  ? 'border-emerald-500/50 bg-emerald-500/5'
-                                  : isAbsent
-                                  ? 'border-rose-500/50 bg-rose-500/5'
-                                  : 'border-slate-700 bg-slate-950/40'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between text-slate-300">
-                                <span className="font-semibold">{day}</span>
-                                {rec && (
-                                  <span
-                                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium border ${
-                                      isPresent
-                                        ? 'border-emerald-500/60 bg-emerald-500/15 text-emerald-100'
-                                        : 'border-rose-500/60 bg-rose-500/15 text-rose-100'
-                                    }`}
-                                  >
-                                    {isPresent ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                                    {rec.status}
-                                  </span>
-                                )}
-                              </div>
-                              {rec && (
-                                <div className="mt-1 space-y-0.5 text-slate-300">
-                                  <div className="flex items-center gap-1">
-                                    <Clock className="w-3 h-3 text-slate-500" />
-                                    <span>In: {rec.inTime || '-'}</span>
-                                  </div>
-                                  <div className="flex items-center gap-1">
-                                    <Clock className="w-3 h-3 text-slate-500" />
-                                    <span>Out: {rec.outTime || '-'}</span>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </>
-                  )}
-                </div>
-              </section>
+              <EmployeeMonthView
+                summaries={summaries}
+                selectedEmployeeId={selectedEmployeeId}
+                setSelectedEmployeeId={setSelectedEmployeeId}
+                selectedMonthYear={selectedEmployeeMonth}
+                onMonthYearChange={setSelectedEmployeeMonth}
+                employeeDays={employeeDays}
+                isLoading={employeeLoading}
+                error={employeeError}
+                onLoadAttendance={fetchEmployeeMonthly}
+              />
             )}
           </div>
         </main>
