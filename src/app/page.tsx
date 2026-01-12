@@ -7,6 +7,7 @@ import { Sidebar } from '@/components/Sidebar';
 import { UploadSection } from '@/components/UploadSection';
 import { SummarySection } from '@/components/SummarySection';
 import { EmployeeMonthView } from '@/components/EmployeeMonthView';
+import { EmployeeManagementSection } from '@/components/EmployeeManagementSection';
 
 export default function AttendanceUpload() {
   // Auth state
@@ -31,12 +32,13 @@ export default function AttendanceUpload() {
   const [uploadTotal, setUploadTotal] = useState<number>(0);
   const [uploadSaved, setUploadSaved] = useState<number>(0);
   const [uploadFailed, setUploadFailed] = useState<number>(0);
-  const [activeSection, setActiveSection] = useState<'upload' | 'summary' | 'employee'>('summary');
+  const [activeSection, setActiveSection] = useState<'upload' | 'summary' | 'employee' | 'employees'>('summary');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [selectedEmployeeMonth, setSelectedEmployeeMonth] = useState<string>('');
   const [employeeDays, setEmployeeDays] = useState<AttendanceRecord[]>([]);
   const [employeeLoading, setEmployeeLoading] = useState<boolean>(false);
   const [employeeError, setEmployeeError] = useState<string | null>(null);
+  const [loadingSummaries, setLoadingSummaries] = useState<boolean>(false);
 
   // Check for existing auth token on mount
   useEffect(() => {
@@ -365,6 +367,7 @@ export default function AttendanceUpload() {
   };
 
   const fetchSummaries = async (monthYear?: string): Promise<void> => {
+    setLoadingSummaries(true);
     try {
       const url = monthYear
         ? `/api/attendance?monthYear=${encodeURIComponent(monthYear)}`
@@ -397,15 +400,10 @@ export default function AttendanceUpload() {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error occurred';
       setError(`Error fetching summaries: ${message}`);
+    } finally {
+      setLoadingSummaries(false);
     }
   };
-
-  useEffect(() => {
-    // On initial load, show existing attendance summaries from backend (all months)
-    fetchSummaries().catch(() => {
-      // errors are already handled inside fetchSummaries
-    });
-  }, []);
 
   const fetchEmployeeMonthly = async (userId: string, monthYear: string): Promise<void> => {
     if (!userId || !monthYear) return;
@@ -514,8 +512,11 @@ export default function AttendanceUpload() {
                 uploadTotal={uploadTotal}
                 uploadSaved={uploadSaved}
                 uploadFailed={uploadFailed}
+                isLoading={loadingSummaries}
+                onFilterChange={fetchSummaries}
               />
             )}
+                
 
             {/* Employee month-wise Section */}
             {activeSection === 'employee' && (
@@ -530,6 +531,11 @@ export default function AttendanceUpload() {
                 error={employeeError}
                 onLoadAttendance={fetchEmployeeMonthly}
               />
+            )}
+
+            {/* Employee Management Section */}
+            {activeSection === 'employees' && (
+              <EmployeeManagementSection />
             )}
           </div>
         </main>

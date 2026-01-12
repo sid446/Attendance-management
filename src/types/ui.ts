@@ -22,3 +22,22 @@ export interface AttendanceSummaryView {
     totalLeave: number;
   };
 }
+
+export interface ScheduleTime {
+  inTime: string;
+  outTime: string;
+}
+
+export interface User {
+  _id: string;
+  odId: string;
+  name: string;
+  email: string;
+  designation?: string;
+  team?: string;
+  joiningDate: string; // ISO string for frontend
+  scheduleInOutTime: ScheduleTime;
+  scheduleInOutTimeSat: ScheduleTime;
+  scheduleInOutTimeMonth: ScheduleTime;
+  isActive: boolean;
+}

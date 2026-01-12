@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Attendance from '@/models/Attendance';
-import User from '@/models/User';
+import User, { IUser } from '@/models/User';
 
 // GET - Fetch attendance records
 export async function GET(request: NextRequest) {
@@ -123,7 +123,8 @@ export async function POST(request: NextRequest) {
             remarks: '',
           });
 
-          attendance.summary = calculateSummary(attendance.records as any);
+          // Recalculate summary with user-specific schedule
+          attendance.summary = calculateSummary(attendance.records as any, user);
           await attendance.save();
 
           processed.push({
@@ -224,9 +225,12 @@ export async function POST(request: NextRequest) {
         remarks: dailyRecord.remarks || '',
       });
 
-      // Recalculate summary
-      attendance.summary = calculateSummary(attendance.records);
-
+      // Recalculate summary with user-specific logic
+      const user = await User.findById(userId);
+      if (user) {
+        attendance.summary = calculateSummary(attendance.records, user);
+      }
+      
       await attendance.save();
     }
 
@@ -252,15 +256,18 @@ export async function POST(request: NextRequest) {
 }
 
 // Helper function to calculate summary from records
-function calculateSummary(records: Map<string, {
-  checkin: string;
-  checkout: string;
-  totalHour: number;
-  excessHour: number;
-  typeOfPresence: string;
-  halfDay: boolean;
-  remarks?: string;
-}>) {
+function calculateSummary(
+  records: Map<string, {
+    checkin: string;
+    checkout: string;
+    totalHour: number;
+    excessHour: number;
+    typeOfPresence: string;
+    halfDay: boolean;
+    remarks?: string;
+  }>,
+  user?: IUser | null
+) {
   let totalHour = 0;
   let totalLateArrival = 0;
   let excessHour = 0;
@@ -269,9 +276,7 @@ function calculateSummary(records: Map<string, {
   let totalAbsent = 0;
   let totalLeave = 0;
 
-  const STANDARD_CHECKIN = '10:00'; // 10 AM standard check-in time
-
-  records.forEach((record) => {
+  records.forEach((record, dateStr) => {
     totalHour += record.totalHour || 0;
     excessHour += record.excessHour || 0;
 
@@ -279,7 +284,29 @@ function calculateSummary(records: Map<string, {
       totalHalfDay++;
     }
 
-    if (record.checkin && record.checkin > STANDARD_CHECKIN) {
+    // Determine scheduled in-time for this specific date
+    let scheduledIn = '10:00'; // Default fallback
+    
+    if (user) {
+      const dateDate = new Date(dateStr);
+      // JS getDay(): 0=Sun, 1=Mon, ..., 6=Sat
+      const dayOfWeek = dateDate.getDay(); 
+      const month = dateDate.getMonth() + 1; // 1-12
+
+      // "Sch-Out (Dec- Jan)" logic: Special schedule for Dec (12) and Jan (1)
+      if (month === 12 || month === 1) {
+         scheduledIn = user.scheduleInOutTimeMonth?.inTime || '09:00';
+      } else if (dayOfWeek === 6) { // Saturday
+         scheduledIn = user.scheduleInOutTimeSat?.inTime || '09:00';
+      } else if (dayOfWeek !== 0) { // Regular (Mon-Fri)
+         scheduledIn = user.scheduleInOutTime?.inTime || '09:00';
+      }
+      // Sunday (0) usually doesn't have late arrival, but if record exists, use regular or ignore?
+      // Assuming no late arrival calc for Sunday usually, but let's stick to Regular if present
+      if (dayOfWeek === 0) scheduledIn = user.scheduleInOutTime?.inTime || '09:00';
+    }
+
+    if (record.checkin && record.checkin > scheduledIn) {
       totalLateArrival++;
     }
 

@@ -10,6 +10,8 @@ export interface IUser extends Document {
   odId: string;
   name: string;
   email: string;
+  designation?: string;
+  team?: string;
   joiningDate: Date;
   scheduleInOutTime: IScheduleTime;      // Regular weekday schedule
   scheduleInOutTimeSat: IScheduleTime;   // Saturday schedule
@@ -52,6 +54,14 @@ const UserSchema: Schema = new Schema(
       unique: true,
       trim: true,
       lowercase: true,
+    },
+    designation: {
+      type: String,
+      trim: true,
+    },
+    team: {
+      type: String,
+      trim: true,
     },
     joiningDate: {
       type: Date,
