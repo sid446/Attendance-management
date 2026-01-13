@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, ChangeEvent, useEffect } from "react";
 import * as XLSX from 'xlsx';
-import { AttendanceRecord, AttendanceSummaryView } from '@/types/ui';
+import { AttendanceRecord, AttendanceSummaryView, User } from '@/types/ui';
 import { LoginView } from '@/components/LoginView';
 import { Sidebar } from '@/components/Sidebar';
 import { UploadSection } from '@/components/UploadSection';
@@ -25,9 +25,11 @@ export default function AttendanceUpload() {
   const [attendanceData, setAttendanceData] = useState<AttendanceRecord[]>([]);
   const [processing, setProcessing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadErrors, setUploadErrors] = useState<{ odId: string; reason: string }[]>([]);
   const [saving, setSaving] = useState<boolean>(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [summaries, setSummaries] = useState<AttendanceSummaryView[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]); // All users for dropdowns
   const [currentMonthYear, setCurrentMonthYear] = useState<string | null>(null);
   const [uploadTotal, setUploadTotal] = useState<number>(0);
   const [uploadSaved, setUploadSaved] = useState<number>(0);
@@ -48,6 +50,13 @@ export default function AttendanceUpload() {
       setIsAuthenticated(true);
     }
   }, []);
+
+  // Fetch users when authenticated (so dropdowns are populated)
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchUsers();
+    }
+  }, [isAuthenticated]);
 
   // Handle password submission
   const handlePasswordSubmit = async () => {
@@ -136,6 +145,7 @@ export default function AttendanceUpload() {
       setFile(selectedFile);
       setError(null);
       setSaveMessage(null);
+      setUploadErrors([]);
       setAttendanceData([]);
       setSummaries([]);
       setCurrentMonthYear(null);
@@ -314,6 +324,7 @@ export default function AttendanceUpload() {
     setSaving(true);
     setSaveMessage(null);
     setError(null);
+    setUploadErrors([]);
 
     if (data && data.length > 0) {
       setUploadTotal(data.length);
@@ -336,21 +347,19 @@ export default function AttendanceUpload() {
 
       const processedCount = result.data?.processed?.length ?? 0;
       const errorCount = result.data?.errors?.length ?? 0;
+      const errorsList = result.data?.errors ?? [];
 
       setUploadSaved(processedCount);
       setUploadFailed(errorCount);
+      setUploadErrors(errorsList);
 
       const baseMessage = `Saved ${processedCount} attendance record${processedCount === 1 ? '' : 's'} to the server.`;
 
       let errorMessage = '';
       if (errorCount > 0) {
-        const firstError = result.data?.errors?.[0];
-        const example = firstError
-          ? ` Example failure (ID ${firstError.odId}): ${firstError.reason}`
-          : '';
-        errorMessage = ` ${errorCount} record${errorCount === 1 ? '' : 's'} failed to save.${example}`;
+        errorMessage = ` ${errorCount} record${errorCount === 1 ? '' : 's'} failed to save. See details below.`;
       }
-
+      
       setSaveMessage(baseMessage + errorMessage);
 
       const monthYearToFetch =
@@ -363,6 +372,18 @@ export default function AttendanceUpload() {
       setError(`Error saving to server: ${message}`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const fetchUsers = async () => {
+    try {
+      const response = await fetch('/api/users');
+      const result = await response.json();
+      if (result.success && Array.isArray(result.data)) {
+        setAllUsers(result.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch users:', err);
     }
   };
 
@@ -502,6 +523,7 @@ export default function AttendanceUpload() {
                 processing={processing}
                 error={error}
                 saveMessage={saveMessage}
+                uploadErrors={uploadErrors}
               />
             )}
 
@@ -522,6 +544,7 @@ export default function AttendanceUpload() {
             {activeSection === 'employee' && (
               <EmployeeMonthView
                 summaries={summaries}
+                users={allUsers}
                 selectedEmployeeId={selectedEmployeeId}
                 setSelectedEmployeeId={setSelectedEmployeeId}
                 selectedMonthYear={selectedEmployeeMonth}

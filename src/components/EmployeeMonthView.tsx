@@ -1,9 +1,10 @@
 import React from 'react';
 import { Clock, CheckCircle, XCircle } from 'lucide-react';
-import { AttendanceSummaryView, AttendanceRecord } from '@/types/ui';
+import { AttendanceSummaryView, AttendanceRecord, User } from '@/types/ui';
 
 interface EmployeeMonthViewProps {
   summaries: AttendanceSummaryView[];
+  users: User[]; // All available users for dropdown
   selectedEmployeeId: string | null;
   setSelectedEmployeeId: (id: string | null) => void;
   selectedMonthYear: string;
@@ -16,6 +17,7 @@ interface EmployeeMonthViewProps {
 
 export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
   summaries,
+  users,
   selectedEmployeeId,
   setSelectedEmployeeId,
   selectedMonthYear,
@@ -25,7 +27,11 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
   error,
   onLoadAttendance
 }) => {
-  const selectedEmployee = summaries.find((s) => s.userId === selectedEmployeeId) || null;
+  // Try to find user details from the 'users' list first, otherwise fallback to summaries
+  const userFromList = users.find(u => u._id === selectedEmployeeId);
+  const summaryFromList = summaries.find((s) => s.userId === selectedEmployeeId);
+  
+  const displayUserName = userFromList?.name || summaryFromList?.userName || 'Unknown Employee';
 
   // Derive year and month from selectedMonthYear string
   // Default to current date if empty
@@ -112,18 +118,24 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
             onChange={(e) => setSelectedEmployeeId(e.target.value || null)}
           >
             <option value="">Select employee</option>
-            {summaries
-              .reduce<{ id: string; name: string }[]>((acc, s) => {
-                if (!acc.find((x) => x.id === s.userId)) {
-                  acc.push({ id: s.userId, name: s.userName });
-                }
-                return acc;
-              }, [])
-              .map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
+            {users.length > 0 
+              ? users.map((u) => (
+                  <option key={u._id} value={u._id}>
+                    {u.name} {u.odId ? `(${u.odId})` : ''}
+                  </option>
+                ))
+              : summaries
+                  .reduce<{ id: string; name: string }[]>((acc, s) => {
+                    if (!acc.find((x) => x.id === s.userId)) {
+                      acc.push({ id: s.userId, name: s.userName });
+                    }
+                    return acc;
+                  }, [])
+                  .map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
           </select>
         </div>
 
@@ -177,9 +189,9 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
         </div>
       )}
 
-      {selectedEmployee && selectedMonthYear && (
+      {selectedEmployeeId && selectedMonthYear && (
         <div className="text-xs text-slate-400">
-          Showing records for <span className="text-slate-200">{selectedEmployee.userName}</span> in
+          Showing records for <span className="text-slate-200">{displayUserName}</span> in
           month <span className="text-slate-200">{selectedMonthYear}</span>.
         </div>
       )}

@@ -1,5 +1,5 @@
 import React, { ChangeEvent } from 'react';
-import { Upload } from 'lucide-react';
+import { Upload, AlertCircle } from 'lucide-react';
 
 interface UploadSectionProps {
   file: File | null;
@@ -8,6 +8,7 @@ interface UploadSectionProps {
   processing: boolean;
   error: string | null;
   saveMessage: string | null;
+  uploadErrors?: { odId: string; reason: string }[];
 }
 
 export const UploadSection: React.FC<UploadSectionProps> = ({
@@ -16,7 +17,8 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   onProcessFile,
   processing,
   error,
-  saveMessage
+  saveMessage,
+  uploadErrors = []
 }) => {
   return (
     <section className="bg-slate-900/60 border border-slate-800 rounded-xl shadow-sm p-6">
@@ -70,6 +72,33 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       {saveMessage && (
         <div className="mt-3 bg-emerald-950/40 border border-emerald-700/60 text-emerald-100 px-4 py-3 rounded-md text-xs">
           {saveMessage}
+        </div>
+      )}
+
+      {uploadErrors.length > 0 && (
+        <div className="mt-4 border border-rose-800/50 rounded-lg overflow-hidden">
+          <div className="bg-rose-950/50 px-4 py-2 border-b border-rose-800/50 flex items-center gap-2">
+             <AlertCircle className="w-4 h-4 text-rose-400" />
+             <span className="text-xs font-semibold text-rose-200">Failed Records details ({uploadErrors.length})</span>
+          </div>
+          <div className="max-h-48 overflow-y-auto bg-slate-900/50 p-2">
+            <table className="w-full text-left text-[11px]">
+              <thead className="text-rose-300 font-medium">
+                <tr>
+                   <th className="px-2 py-1">ID</th>
+                   <th className="px-2 py-1">Reason</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-rose-900/30 text-rose-100/80">
+                {uploadErrors.map((err, i) => (
+                  <tr key={i} className="hover:bg-rose-900/10">
+                    <td className="px-2 py-1 font-mono">{err.odId}</td>
+                    <td className="px-2 py-1">{err.reason}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </section>

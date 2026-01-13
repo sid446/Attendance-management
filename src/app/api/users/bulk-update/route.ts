@@ -64,35 +64,64 @@ export async function POST(request: NextRequest) {
           matchedUser = userMap.get(dotName);
         }
 
-        const updateData = {
+        const updateData: any = {
+            registrationNo: emp.registrationNo,
+            employeeCode: emp.employeeCode,
+            paidFrom: emp.paidFrom,
             designation: emp.designation,
+            category: emp.category,
+            tallyName: emp.tallyName,
+            gender: emp.gender,
+            parentName: emp.parentName,
+            parentOccupation: emp.parentOccupation,
+            mobileNumber: emp.mobileNumber,
+            alternateMobileNumber: emp.alternateMobileNumber,
+            alternateEmail: emp.alternateEmail,
+            address1: emp.address1,
+            address2: emp.address2,
+            articleshipStartDate: emp.articleshipStartDate,
+            transferCase: emp.transferCase,
+            firstYearArticleship: emp.firstYearArticleship,
+            secondYearArticleship: emp.secondYearArticleship,
+            thirdYearArticleship: emp.thirdYearArticleship,
+            filledScholarship: emp.filledScholarship,
+            qualificationLevel: emp.qualificationLevel,
+            nextAttemptDueDate: emp.nextAttemptDueDate,
+            registeredUnderPartner: emp.registeredUnderPartner,
+            workingUnderPartner: emp.workingUnderPartner,
+            workingTiming: emp.workingTiming,
+            
             scheduleInOutTime: {
                 inTime: emp.schIn ?? '09:00',
                 outTime: emp.schOut ?? '18:00'
             },
             scheduleInOutTimeSat: {
-                inTime: emp.schIn ?? '09:00', // Assuming Sat starts same as regular
-                outTime: emp.schOutSat ?? '13:00'
+                inTime: emp.schIn ?? '09:00', // Defaulting to same start
+                outTime: '13:00' // Default Sat end, unless "10:00-19:00" logic overrides it which we should handle if needed, but for now defaulting
             },
             scheduleInOutTimeMonth: {
-                inTime: emp.schIn ?? '09:00', // Assuming Month special starts same as regular
-                outTime: emp.schOutMonth ?? '18:00'
+                inTime: emp.schIn ?? '09:00',
+                outTime: emp.schOut ?? '18:00'
             }
         };
 
         if (matchedUser) {
             // Update existing
-            matchedUser.designation = updateData.designation || matchedUser.designation;
+            Object.assign(matchedUser, updateData);
             
+            // Should valid date checks be here? the model handles type casting usually, but explicit Date object is better if coming as string
+            if (updateData.articleshipStartDate) matchedUser.articleshipStartDate = new Date(updateData.articleshipStartDate);
+            if (updateData.nextAttemptDueDate) matchedUser.nextAttemptDueDate = new Date(updateData.nextAttemptDueDate);
+            
+            // Careful with schedule overwrites - only if provided
             if (emp.schIn && emp.schOut) {
-                matchedUser.scheduleInOutTime = updateData.scheduleInOutTime;
+                 matchedUser.scheduleInOutTime = updateData.scheduleInOutTime;
+                 // Also update others if we rely on single Work Timing
+                 matchedUser.scheduleInOutTimeMonth = updateData.scheduleInOutTimeMonth;
+                 // Keep Sat default or derive? Let's leave Sat as default 13:00 out unless logic changes
+                 matchedUser.scheduleInOutTimeSat = { inTime: emp.schIn, outTime: '13:00' };
             }
-             if (emp.schIn && emp.schOutSat) {
-                matchedUser.scheduleInOutTimeSat = updateData.scheduleInOutTimeSat;
-            }
-            if (emp.schIn && emp.schOutMonth) {
-                matchedUser.scheduleInOutTimeMonth = updateData.scheduleInOutTimeMonth;
-            }
+
             // Update timestamp
             matchedUser.updatedAt = new Date();
             
@@ -100,26 +129,17 @@ export async function POST(request: NextRequest) {
             stats.updated++;
         } else {
             // Create new
-            // We need mandatory fields: odId, email, joiningDate
-            // Generate them if missing
             const generatedOdId = `OD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-            // Format name with dots for consistency if preferred, or keep as is? 
-            // User DB has dots, so let's convert spaces to dots for the Name field to maintain consistency?
-            // User said "it wont be having . in between that it had in my database".
-            // So DB Convention seems to be Dot-Separated.
             const dbName = excelName.trim().replace(/\s+/g, '.');
-            const generatedEmail = `${dbName.toLowerCase()}@example.com`; // Placeholder
+            const email = emp.email || `${dbName.toLowerCase().replace(/[^a-z0-9.]/g, '')}@asija.com`;
             
             await User.create({
                 odId: generatedOdId,
-                name: dbName, // Store as "First.Last"
-                email: generatedEmail, // Placeholder
-                joiningDate: new Date(), // Default to today
-                designation: updateData.designation,
-                scheduleInOutTime: updateData.scheduleInOutTime,
-                scheduleInOutTimeSat: updateData.scheduleInOutTimeSat,
-                scheduleInOutTimeMonth: updateData.scheduleInOutTimeMonth,
-                isActive: true
+                name: dbName, // Store as "First.Last" or "First Last"? User DB seemed "First.Last"
+                email: email, 
+                joiningDate: emp.joiningDate ? new Date(emp.joiningDate) : new Date(),
+                isActive: true,
+                ...updateData
             });
             stats.created++;
         }

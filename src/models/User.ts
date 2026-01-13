@@ -13,6 +13,33 @@ export interface IUser extends Document {
   designation?: string;
   team?: string;
   joiningDate: Date;
+  
+  // Extended fields
+  registrationNo?: string;
+  employeeCode?: string;
+  paidFrom?: string;
+  category?: string;
+  tallyName?: string;
+  gender?: string;
+  parentName?: string;
+  parentOccupation?: string;
+  mobileNumber?: string;
+  alternateMobileNumber?: string;
+  alternateEmail?: string;
+  address1?: string;
+  address2?: string;
+  articleshipStartDate?: Date;
+  transferCase?: string;
+  firstYearArticleship?: string;
+  secondYearArticleship?: string;
+  thirdYearArticleship?: string;
+  filledScholarship?: string;
+  qualificationLevel?: string;
+  nextAttemptDueDate?: Date;
+  registeredUnderPartner?: string;
+  workingUnderPartner?: string;
+  workingTiming?: string;
+
   scheduleInOutTime: IScheduleTime;      // Regular weekday schedule
   scheduleInOutTimeSat: IScheduleTime;   // Saturday schedule
   scheduleInOutTimeMonth: IScheduleTime; // Monthly/alternate schedule
@@ -39,18 +66,18 @@ const UserSchema: Schema = new Schema(
   {
     odId: {
       type: String,
-      required: [true, 'Please provide user ID'],
+     
       unique: true,
       trim: true,
     },
     name: {
       type: String,
-      required: [true, 'Please provide name'],
+     
       trim: true,
     },
     email: {
       type: String,
-      required: [true, 'Please provide email'],
+     
       unique: true,
       trim: true,
       lowercase: true,
@@ -63,9 +90,104 @@ const UserSchema: Schema = new Schema(
       type: String,
       trim: true,
     },
+    registrationNo: {
+      type: String,
+      trim: true,
+    },
+    employeeCode: {
+      type: String,
+      trim: true,
+    },
+    paidFrom: {
+      type: String,
+      trim: true,
+    },
+    category: {
+      type: String,
+      trim: true,
+    },
+    tallyName: {
+      type: String,
+      trim: true,
+    },
+    gender: {
+      type: String,
+      trim: true,
+    },
+    parentName: {
+      type: String,
+      trim: true,
+    },
+    parentOccupation: {
+      type: String,
+      trim: true,
+    },
+    mobileNumber: {
+      type: String,
+      trim: true,
+    },
+    alternateMobileNumber: {
+      type: String,
+      trim: true,
+    },
+    alternateEmail: {
+      type: String,
+      trim: true,
+      lowercase: true,
+    },
+    address1: {
+      type: String,
+      trim: true,
+    },
+    address2: {
+      type: String,
+      trim: true,
+    },
+    articleshipStartDate: {
+      type: Date,
+    },
+    transferCase: {
+      type: String,
+      trim: true,
+    },
+    firstYearArticleship: {
+      type: String,
+      trim: true,
+    },
+    secondYearArticleship: {
+      type: String,
+      trim: true,
+    },
+    thirdYearArticleship: {
+      type: String,
+      trim: true,
+    },
+    filledScholarship: {
+      type: String,
+      trim: true,
+    },
+    qualificationLevel: {
+      type: String,
+      trim: true,
+    },
+    nextAttemptDueDate: {
+      type: Date,
+    },
+    registeredUnderPartner: {
+      type: String,
+      trim: true,
+    },
+    workingUnderPartner: {
+      type: String,
+      trim: true,
+    },
+    workingTiming: {
+      type: String,
+      trim: true,
+    },
     joiningDate: {
       type: Date,
-      required: [true, 'Please provide joining date'],
+      
     },
     scheduleInOutTime: {
       type: ScheduleTimeSchema,

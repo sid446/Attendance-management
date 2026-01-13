@@ -52,36 +52,44 @@ export async function POST(request: NextRequest) {
       const processed: Array<{ odId: string; userId: string; monthYear: string; date: string; createdUser: boolean }> = [];
       const errors: Array<{ odId: string; reason: string }> = [];
 
+      // Pre-fetch all users for efficient in-memory matching
+      const allUsers = await User.find({}).select('name _id odId');
+      
+      // Helper to strip non-alphanumeric characters for fuzzy matching
+      const normalizeForMatch = (s: string) => s.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+
       for (const rec of records) {
         try {
           const odId = String(rec.id);
+          const recName = rec.name ? String(rec.name).trim() : '';
 
-          // Try to find existing user by OD ID; if not found, create one from Excel row
-          let user = await User.findOne({ odId });
-          let createdUser = false;
+          // 1. Match ONLY by Name (User request)
+          let user = null;
 
-          if (!user) {
-            const { isoDate } = normalizeExcelDate(rec.date);
-            const joiningDate = new Date(isoDate);
+          if (recName) {
+            // A. Try exact match
+            user = allUsers.find(u => u.name === recName);
+            
+            // B. Case-insensitive
+            if (!user) {
+              user = allUsers.find(u => u.name.toLowerCase() === recName.toLowerCase());
+            }
 
-            const rawName = (rec.name ?? `Employee ${odId}`).toString();
-            const safeName = rawName.trim() || `Employee ${odId}`;
-
-            // Generate a simple placeholder email to satisfy required/unique constraint
-            const emailLocalPart = safeName
-              .toLowerCase()
-              .replace(/\s+/g, '.')
-              .replace(/[^a-z0-9.]/g, '') || `user${odId}`;
-            const email = `${emailLocalPart}.${odId}@auto.local`;
-
-            user = await User.create({
-              odId,
-              name: safeName,
-              email,
-              joiningDate,
-            });
-            createdUser = true;
+            // C. Stripped Match (ignores all spaces, dots, special chars)
+            // e.g. "Padmaja Vikas.Sunkad" -> "padmajavikassunkad" match "Padmaja.Vikas.Sunkad" -> "padmajavikassunkad"
+            if (!user) {
+              const target = normalizeForMatch(recName);
+              user = allUsers.find(u => normalizeForMatch(u.name) === target);
+            }
           }
+
+          // 2. If still not found, skip this record (DO NOT create new user)
+          if (!user) {
+             errors.push({ odId, reason: `User not found by Name "${recName}"` });
+             continue;
+          }
+
+          let createdUser = false; // logic changed: we never create user here now
 
           const { isoDate, isoMonthYear } = normalizeExcelDate(rec.date);
 

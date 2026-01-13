@@ -36,6 +36,32 @@ export interface User {
   designation?: string;
   team?: string;
   joiningDate: string; // ISO string for frontend
+
+  registrationNo?: string;
+  employeeCode?: string;
+  paidFrom?: string;
+  category?: string;
+  tallyName?: string;
+  gender?: string;
+  parentName?: string;
+  parentOccupation?: string;
+  mobileNumber?: string;
+  alternateMobileNumber?: string;
+  alternateEmail?: string;
+  address1?: string;
+  address2?: string;
+  articleshipStartDate?: string;
+  transferCase?: string;
+  firstYearArticleship?: string;
+  secondYearArticleship?: string;
+  thirdYearArticleship?: string;
+  filledScholarship?: string;
+  qualificationLevel?: string;
+  nextAttemptDueDate?: string;
+  registeredUnderPartner?: string;
+  workingUnderPartner?: string;
+  workingTiming?: string;
+
   scheduleInOutTime: ScheduleTime;
   scheduleInOutTimeSat: ScheduleTime;
   scheduleInOutTimeMonth: ScheduleTime;

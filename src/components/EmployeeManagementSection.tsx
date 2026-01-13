@@ -1,7 +1,7 @@
 import React, { useState, useEffect, ChangeEvent } from 'react';
 import * as XLSX from 'xlsx';
 import { User, ScheduleTime } from '@/types/ui';
-import { Edit2, Save, X, Plus, Upload, FileUp, Filter } from 'lucide-react';
+import { Edit2, Save, X, Plus, Upload, FileUp, Filter, Trash2 } from 'lucide-react';
 
 const DESIGNATION_OPTIONS = [
   'Partner',
@@ -30,7 +30,7 @@ export const EmployeeManagementSection: React.FC = () => {
 
   // Bulk Upload State
   const [isUploading, setIsUploading] = useState<boolean>(false);
-  const [uploadStats, setUploadStats] = useState<{created: number, updated: number, failed: number} | null>(null);
+  const [uploadStats, setUploadStats] = useState<{created: number, updated: number, failed: number, errors: string[]} | null>(null);
 
   // Fetch users
   const fetchUsers = async () => {
@@ -47,6 +47,32 @@ export const EmployeeManagementSection: React.FC = () => {
       setError(err instanceof Error ? err.message : 'Failed to fetch users');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async (user: User) => {
+    if (!window.confirm(`Are you sure you want to delete employee "${user.name}"? This will deactivate their account.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/users/${user._id}`, {
+        method: 'DELETE',
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to delete user');
+      }
+
+      // Remove from list or mark inactive
+      // Since API does soft delete (isActive: false), we might want to filter them out or show them as inactive
+      // Current fetchUsers() returns all users, so we can just update local state
+      setUsers(prev => prev.filter(u => u._id !== user._id));
+      
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete user');
     }
   };
 
@@ -135,6 +161,32 @@ export const EmployeeManagementSection: React.FC = () => {
       return '00:00';
   };
 
+  const formatExcelDate = (val: any) => {
+    if (!val) return undefined;
+    
+    // Handle string values carefully
+    if (typeof val === 'string') {
+        const trimmed = val.trim();
+        if (['-', 'NA', 'N/A', '', 'na', 'n/a'].includes(trimmed.toLowerCase())) return undefined;
+        if (trimmed === '.') return undefined;
+        
+        // Try parsing string date
+        const d = new Date(trimmed);
+        return !isNaN(d.getTime()) ? d.toISOString() : undefined;
+    }
+
+    if (val instanceof Date) return !isNaN(val.getTime()) ? val.toISOString() : undefined;
+    
+    if (typeof val === 'number') {
+        // Convert Excel serial date to JS Date
+        // 25569 is the offset for 1970-01-01
+        const date = new Date(Math.round((val - 25569) * 86400 * 1000));
+        return !isNaN(date.getTime()) ? date.toISOString() : undefined;
+    }
+    
+    return undefined;
+  };
+
   const handleBulkUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -146,40 +198,172 @@ export const EmployeeManagementSection: React.FC = () => {
     try {
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data, { cellDates: false });
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      
+      // Select sheet: Prioritize "Master", then any non-"Summary", then first sheet
+      let targetSheetName = workbook.SheetNames.find(name => name.toLowerCase().includes('master'));
+      if (!targetSheetName) {
+         // Fallback: try to find one that isn't "Summary"
+         targetSheetName = workbook.SheetNames.find(name => !name.toLowerCase().includes('summary'));
+      }
+      // Ultimate fallback
+      if (!targetSheetName) {
+         targetSheetName = workbook.SheetNames[0];
+      }
+      
+      const worksheet = workbook.Sheets[targetSheetName];
       const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
       if (jsonData.length < 2) {
-        throw new Error('File appears to be empty or missing headers');
+        throw new Error(`Sheet "${targetSheetName}" appears to be empty or missing headers`);
       }
+
+      // Heuristic scan for header row using scoring
+      let headerRowIndex = 0;
+      let maxScore = 0;
+
+      const scoreKeywords = [
+        'designation', 'code', 'paid from', 'category', 
+        'gender', 'registration', 'membership', 'tally', 'mail', 
+        'parent', 'guardian', 'address', 'articleship', 'joining'
+      ];
+
+      for (let i = 0; i < Math.min(jsonData.length, 120); i++) {
+        const row = jsonData[i] as any[];
+        if (!row || !Array.isArray(row) || row.length === 0) continue;
+
+        const rowStr = row.map(c => String(c || '').toLowerCase().trim());
+        
+        let score = 0;
+        
+        // Critical: Must have a Name-like column
+        // Higher weight for exact matches
+        if (rowStr.some(c => c === 'name' || c === 'employee name' || c === 'staff name' || c === 'student name')) {
+            score += 10;
+        } else if (rowStr.some(c => c.includes('name'))) {
+            score += 5;
+        }
+
+        // Add points for other keywords
+        const matches = scoreKeywords.filter(kw => rowStr.some(cell => cell.includes(kw))).length;
+        score += matches;
+
+        if (score > maxScore) {
+            maxScore = score;
+            headerRowIndex = i;
+        }
+      }
+      
+      // If maxScore is 0, it means we didn't finding ANYTHING resembling a header with Name.
+      // We will fallback to 0 but it will likely fail.
 
       // Find headers
-      const headers = jsonData[0] as string[];
-      // Expected columns based on user request:
-      // "Name as per Master Sheet", "Designation", "Sch-In", "Sch-Out", "Sch-Out (For Sat)", "Sch-Out (Dec- Jan)"
+      // Find headers
+      const headers = jsonData[headerRowIndex] as string[];
+      if (!headers || headers.length === 0) {
+          throw new Error('Could not find header row or header row is empty');
+      }
       
-      const nameIdx = headers.findIndex(h => h && h.includes('Name'));
-      const desigIdx = headers.findIndex(h => h && h.includes('Designation'));
-      const schInIdx = headers.findIndex(h => h && h.includes('Sch-In'));
-      const schOutIdx = headers.findIndex(h => h === 'Sch-Out');
-      const schOutSatIdx = headers.findIndex(h => h && h.includes('Sch-Out') && h.includes('Sat'));
-      const schOutMonthIdx = headers.findIndex(h => h && h.includes('Sch-Out') && (h.includes('Dec') || h.includes('Jan')));
+      // Use lowercase comparison for better matching
+      const findCol = (searches: string[]) => {
+          return headers.findIndex(h => {
+              if (!h) return false;
+              const val = String(h).trim().toLowerCase();
+              // check for exact match first
+              if (searches.some(s => s.toLowerCase() === val)) return true;
+              // check for partial match if exact fails? 
+              // Let's stick to strict-ish matching but allow variations
+              return searches.some(s => val.includes(s.toLowerCase()));
+          });
+      };
 
-      if (nameIdx === -1) {
-        throw new Error('Could not find "Name" column');
+      const idx = {
+        name: findCol(['Name', 'Employee Name']),
+        regNo: findCol(['Registration / Membership No.', 'Registration No', 'Membership No']),
+        empCode: findCol(['Employee Code', 'Emp Code']),
+        paidFrom: findCol(['Paid From', 'Paid by']),
+        designation: findCol(['Designation']),
+        category: findCol(['Category']),
+        tallyName: findCol(['Tally Name']),
+        gender: findCol(['Gender']),
+        email: findCol(['Asija Mail ID', 'Email', 'Mail ID']),
+        parentName: findCol(['Parents/Guardians Names', 'Parent / Guardian Name', 'Father Name', 'Parent Name']),
+        parentOcc: findCol(['Parents/Guardians Occupation', 'Parent / Guardian Occupation', 'Father Occupation']),
+        mobile: findCol(['Cell No.', 'Mobile', 'Phone']),
+        altMobile: findCol(['Alternate No.', 'Alternate Mobile']),
+        altEmail: findCol(['Alternate Mail Id', 'Alt Email']),
+        addr1: findCol(['Address 1', 'Address Line 1', 'Current Address']),
+        addr2: findCol(['Address 2', 'Address Line 2', 'Permanent Address']),
+        joinDate: findCol(['Date of Joining -in Asija', 'Date of Joining', 'Joining Date']),
+        articleStart: findCol(['Articleship Start Date', 'Article Start']),
+        transfer: findCol(['Transfer Case']),
+        yr1: findCol(['1st Yr of Articleship', '1st Year']),
+        yr2: findCol(['2nd Yr of Articleship', '2nd Year']),
+        yr3: findCol(['3rd Yr of Articleship', '3rd Year']),
+        scholarship: findCol(['Filled Scholarship', 'Scholarship']),
+        qual: findCol(['Qualification Level', 'Qualification']),
+        nextAttempt: findCol(['Next Attempt Due Date', 'Next Attempt']),
+        regPartner: findCol(['Registered Under Partner', 'Reg Partner']),
+        workPartner: findCol(['Working Under Partner', 'Work Partner']),
+        timing: findCol(['Work Timings', 'Timings', 'Schedule'])
+      };
+
+      if (idx.name === -1) {
+        throw new Error(`Could not find "Name" column in headers on row ${headerRowIndex + 1}. Found headers: ${headers.map(h => String(h)).join(', ')}`);
       }
 
-      const employees = jsonData.slice(1).map(row => {
-        const name = row[nameIdx];
-        if (!name) return null;
+      const employees = jsonData.slice(headerRowIndex + 1).map(row => {
+        const name = row[idx.name];
+        // Ensure name is a non-empty string
+        if (!name || String(name).trim() === '') return null;
+
+        // Helper to get val
+        const getVal = (i: number) => i !== -1 ? row[i] : undefined;
+        
+        // Parse Work Timings "10:00-19:00"
+        let schIn = '09:00';
+        let schOut = '18:00';
+        const timingRaw = getVal(idx.timing);
+        if (timingRaw && typeof timingRaw === 'string') {
+            const parts = timingRaw.split('-');
+            if (parts.length >= 2) {
+                schIn = parts[0].trim();
+                schOut = parts[1].trim();
+            }
+        }
 
         return {
           name: String(name),
-          designation: desigIdx !== -1 ? row[desigIdx] : undefined,
-          schIn: formatTime(row[schInIdx]),
-          schOut: formatTime(row[schOutIdx]),
-          schOutSat: formatTime(row[schOutSatIdx]),
-          schOutMonth: formatTime(row[schOutMonthIdx]),
+          registrationNo: getVal(idx.regNo),
+          employeeCode: getVal(idx.empCode),
+          paidFrom: getVal(idx.paidFrom),
+          designation: getVal(idx.designation),
+          category: getVal(idx.category),
+          tallyName: getVal(idx.tallyName),
+          gender: getVal(idx.gender),
+            // Use Asija Mail ID as email logic or fallback
+          email: getVal(idx.email), 
+          parentName: getVal(idx.parentName),
+          parentOccupation: getVal(idx.parentOcc),
+          mobileNumber: getVal(idx.mobile),
+          alternateMobileNumber: getVal(idx.altMobile),
+          alternateEmail: getVal(idx.altEmail),
+          address1: getVal(idx.addr1),
+          address2: getVal(idx.addr2),
+          joiningDate: formatExcelDate(row[idx.joinDate]), 
+          articleshipStartDate: formatExcelDate(row[idx.articleStart]),
+          transferCase: getVal(idx.transfer),
+          firstYearArticleship: getVal(idx.yr1),
+          secondYearArticleship: getVal(idx.yr2),
+          thirdYearArticleship: getVal(idx.yr3),
+          filledScholarship: getVal(idx.scholarship),
+          qualificationLevel: getVal(idx.qual),
+          nextAttemptDueDate: formatExcelDate(row[idx.nextAttempt]),
+          registeredUnderPartner: getVal(idx.regPartner),
+          workingUnderPartner: getVal(idx.workPartner),
+          workingTiming: timingRaw,
+          
+          schIn,
+          schOut
         };
       }).filter(Boolean);
 
@@ -389,6 +573,103 @@ export const EmployeeManagementSection: React.FC = () => {
           </div>
         </div>
 
+        {/* Extended Details */}
+        <div className="mt-6 pt-6 border-t border-slate-800">
+          <h3 className="text-sm font-medium text-slate-300 mb-4">Extended Details</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            
+            {/* Identity & Contact */}
+            {[
+              { label: 'Registration No.', key: 'registrationNo' },
+              { label: 'Employee Code', key: 'employeeCode' },
+              { label: 'Paid From', key: 'paidFrom' },
+              { label: 'Tally Name', key: 'tallyName' },
+              { label: 'Category', key: 'category' },
+              { label: 'Gender', key: 'gender' },
+              { label: 'Mobile No.', key: 'mobileNumber' },
+              { label: 'Alt Mobile', key: 'alternateMobileNumber' },
+              { label: 'Alt Email', key: 'alternateEmail' },
+              { label: 'Parent Name', key: 'parentName' },
+              { label: 'Parent Occ.', key: 'parentOccupation' },
+            ].map((field) => (
+              <div key={field.key}>
+                <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                <input
+                  type="text"
+                  value={(formData as any)[field.key] || ''}
+                  onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                />
+              </div>
+            ))}
+
+            <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                 <div>
+                    <label className="block text-xs text-slate-400 mb-1">Address Line 1</label>
+                    <input
+                      type="text"
+                      value={formData.address1 || ''}
+                      onChange={(e) => handleInputChange('address1', e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Address Line 2</label>
+                    <input
+                      type="text"
+                      value={formData.address2 || ''}
+                      onChange={(e) => handleInputChange('address2', e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    />
+                  </div>
+            </div>
+
+            {/* Articleship & Professional */}
+            {[
+              { label: 'Transfer Case', key: 'transferCase' },
+              { label: '1st Year Art.', key: 'firstYearArticleship' },
+              { label: '2nd Year Art.', key: 'secondYearArticleship' },
+              { label: '3rd Year Art.', key: 'thirdYearArticleship' },
+              { label: 'Filled Scholarship', key: 'filledScholarship' },
+              { label: 'Qualification', key: 'qualificationLevel' },
+              { label: 'Reg. Partner', key: 'registeredUnderPartner' },
+              { label: 'Work. Partner', key: 'workingUnderPartner' },
+              { label: 'Work Timing (Text)', key: 'workingTiming' },
+            ].map((field) => (
+              <div key={field.key}>
+                 <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                <input
+                  type="text"
+                  value={(formData as any)[field.key] || ''}
+                  onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                />
+              </div>
+            ))}
+
+            {/* Dates */}
+             <div>
+              <label className="block text-xs text-slate-400 mb-1">Articleship Start</label>
+              <input
+                type="date"
+                value={formData.articleshipStartDate ? new Date(formData.articleshipStartDate).toISOString().split('T')[0] : ''}
+                onChange={(e) => handleInputChange('articleshipStartDate', e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+              />
+            </div>
+             <div>
+              <label className="block text-xs text-slate-400 mb-1">Next Attempt Due</label>
+              <input
+                type="date"
+                value={formData.nextAttemptDueDate ? new Date(formData.nextAttemptDueDate).toISOString().split('T')[0] : ''}
+                onChange={(e) => handleInputChange('nextAttemptDueDate', e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+              />
+            </div>
+
+          </div>
+        </div>
+
         <div className="mt-8 flex justify-end gap-3 pt-4 border-t border-slate-800">
           <button
             onClick={handleCancelEdit}
@@ -464,8 +745,20 @@ export const EmployeeManagementSection: React.FC = () => {
       )}
 
       {uploadStats && (
-        <div className="m-4 bg-emerald-500/10 text-emerald-300 px-4 py-3 rounded-md border border-emerald-500/20 text-sm">
-          <strong>Upload Complete:</strong> Updated {uploadStats.updated}, Created {uploadStats.created}, Failed {uploadStats.failed}.
+        <div className="m-4">
+          <div className="bg-emerald-500/10 text-emerald-300 px-4 py-3 rounded-md border border-emerald-500/20 text-sm">
+            <strong>Upload Complete:</strong> Updated {uploadStats.updated}, Created {uploadStats.created}, Failed {uploadStats.failed}.
+          </div>
+          {uploadStats.errors && uploadStats.errors.length > 0 && (
+            <div className="mt-2 bg-rose-950/20 border border-rose-900/30 rounded-md p-3 max-h-40 overflow-y-auto">
+                <p className="text-xs font-semibold text-rose-300 mb-2">Error Details:</p>
+                <ul className="text-xs text-rose-400/80 space-y-1">
+                    {uploadStats.errors.map((err, idx) => (
+                        <li key={idx}>{err}</li>
+                    ))}
+                </ul>
+            </div>
+          )}
         </div>
       )}
 
@@ -500,6 +793,13 @@ export const EmployeeManagementSection: React.FC = () => {
                     title="Edit User"
                   >
                     <Edit2 className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteUser(user)}
+                    className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors ml-1"
+                    title="Delete User"
+                  >
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </td>
               </tr>
