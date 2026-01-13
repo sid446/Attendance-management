@@ -13,6 +13,7 @@ interface EmployeeMonthViewProps {
   isLoading: boolean;
   error: string | null;
   onLoadAttendance: (employeeId: string, monthYear: string) => void;
+  onDayClick?: (date: string, currentStatus: string) => void; // Added for interactivity
 }
 
 export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
@@ -25,7 +26,8 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
   employeeDays,
   isLoading,
   error,
-  onLoadAttendance
+  onLoadAttendance,
+  onDayClick
 }) => {
   // Try to find user details from the 'users' list first, otherwise fallback to summaries
   const userFromList = users.find(u => u._id === selectedEmployeeId);
@@ -298,7 +300,13 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                 return (
                   <div
                     key={day}
-                    className={`h-24 rounded-md border px-2 py-1 flex flex-col gap-1 text-[11px] ${borderClass} ${bgClass}`}
+                    onClick={() => {
+                        if (onDayClick && status === 'Absent') {
+                            const dateStr = `${selectedYear}-${String(selectedMonth).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                            onDayClick(dateStr, status);
+                        }
+                    }}
+                    className={`h-24 rounded-md border px-2 py-1 flex flex-col gap-1 text-[11px] ${borderClass} ${bgClass} ${onDayClick && status === 'Absent' ? 'cursor-pointer hover:ring-2 hover:ring-emerald-500/50 transition-shadow' : ''}`}
                   >
                     <div className="flex items-center justify-between text-slate-300">
                       <span className="font-semibold">{day}</span>
