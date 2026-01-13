@@ -198,12 +198,19 @@ function calculateSummary(records: Map<string, {
       case 'ThumbMachine':
       case 'Manual':
       case 'Remote':
+      case 'Official Holiday Duty (OHD)':
+      case 'Weekly Off - Present (WO-Present)':
+      case 'Half Day (HD)':
+      case 'Work From Home (WFH)':
+      case 'Weekly Off - Work From Home (WO-WFH)':
+      case 'Onsite Presence (OS-P)':
         totalPresent++;
         break;
       case 'Leave':
         totalLeave++;
         break;
       case 'Holiday':
+      case 'Week Off':
         break;
       default:
         totalAbsent++;

@@ -4,14 +4,22 @@ export interface AttendanceRecord {
   date: string;
   inTime: string;
   outTime: string;
-  status: 'Present' | 'Absent';
+  status: 'Present' | 'Absent' | 'Leave' | 'Holiday' | 'HalfDay';
+  typeOfPresence?: string;
 }
 
 export interface AttendanceSummaryView {
   id: string;
   userId: string;
   userName: string;
+  odId?: string;
+  team?: string; // Added optional team field
   monthYear: string;
+  schedules?: {
+    regular?: ScheduleTime;
+    saturday?: ScheduleTime;
+    monthly?: ScheduleTime;
+  };
   summary: {
     totalHour: number;
     totalLateArrival: number;
@@ -21,6 +29,14 @@ export interface AttendanceSummaryView {
     totalAbsent: number;
     totalLeave: number;
   };
+  calcLate?: number; // Calculated on frontend
+  recordDetails?: Record<string, { // Map of date -> details
+      checkin: string;
+      checkout: string;
+      totalHour: number;
+      typeOfPresence: string;
+      halfDay: boolean;
+  }>;
 }
 
 export interface ScheduleTime {

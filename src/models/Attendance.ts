@@ -6,7 +6,7 @@ export interface IDailyRecord {
   checkout: string;       // Format: "HH:mm" e.g., "18:30"
   totalHour: number;      // Total hours worked
   excessHour: number;     // Extra hours beyond standard
-  typeOfPresence: 'ThumbMachine' | 'Manual' | 'Remote' | 'Leave' | 'Holiday';
+  typeOfPresence: 'ThumbMachine' | 'Manual' | 'Remote' | 'Leave' | 'Holiday' | 'Absent';
   halfDay: boolean;
   remarks?: string;
 }
@@ -51,7 +51,21 @@ const DailyRecordSchema: Schema = new Schema(
     },
     typeOfPresence: {
       type: String,
-      enum: ['ThumbMachine', 'Manual', 'Remote', 'Leave', 'Holiday'],
+      enum: [
+        'ThumbMachine', 
+        'Manual', 
+        'Remote', 
+        'Leave', 
+        'Holiday', 
+        'Absent',
+        'Official Holiday Duty (OHD)',
+        'Weekly Off - Present (WO-Present)',
+        'Half Day (HD)',
+        'Work From Home (WFH)',
+        'Weekly Off - Work From Home (WO-WFH)',
+        'Onsite Presence (OS-P)',
+        'Week Off'
+      ],
       default: 'ThumbMachine',
     },
     halfDay: {

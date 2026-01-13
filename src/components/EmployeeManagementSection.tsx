@@ -1,19 +1,7 @@
-import React, { useState, useEffect, ChangeEvent } from 'react';
+import React, { useState, useEffect, ChangeEvent, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { User, ScheduleTime } from '@/types/ui';
-import { Edit2, Save, X, Plus, Upload, FileUp, Filter, Trash2 } from 'lucide-react';
-
-const DESIGNATION_OPTIONS = [
-  'Partner',
-  'Staff',
-  'Director',
-  'Article',
-  'HR Intern',
-  'Asso. Director',
-  'AFS Manager',
-  'Accounts Executive',
-  'Intern'
-];
+import { Edit2, Save, X, Plus, Upload, FileUp, Filter, Trash2, Search } from 'lucide-react';
 
 export const EmployeeManagementSection: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
@@ -27,10 +15,17 @@ export const EmployeeManagementSection: React.FC = () => {
 
   // Filter State
   const [filterDesignation, setFilterDesignation] = useState<string>('');
+  const [searchTerm, setSearchTerm] = useState<string>('');
 
-  // Bulk Upload State
+  // Upload State
   const [isUploading, setIsUploading] = useState<boolean>(false);
-  const [uploadStats, setUploadStats] = useState<{created: number, updated: number, failed: number, errors: string[]} | null>(null);
+  const [uploadStats, setUploadStats] = useState<any>(null);
+
+  // Unique Designations
+  const uniqueDesignations = useMemo(() => {
+    const list = users.map(u => u.designation).filter(Boolean);
+    return Array.from(new Set(list)).sort() as string[];
+  }, [users]);
 
   // Fetch users
   const fetchUsers = async () => {
@@ -389,9 +384,119 @@ export const EmployeeManagementSection: React.FC = () => {
     }
   };
 
-  const filteredUsers = filterDesignation 
-    ? users.filter(user => user.designation === filterDesignation)
-    : users;
+  const handleScheduleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setLoading(true);
+    setUploadStats(null);
+    setError(null);
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { cellDates: false });
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]]; // Assume first sheet or user ensures correct sheet
+      const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+      // Find header row with "Name as per Master Sheet"
+      let headerRowIndex = -1;
+      for (let i = 0; i < jsonData.length; i++) {
+        const row = jsonData[i] as any[];
+        if (row && row.some(cell => String(cell).trim().includes('Name as per Master Sheet'))) {
+             headerRowIndex = i;
+             break;
+        }
+      }
+
+      if (headerRowIndex === -1) {
+          throw new Error('Could not find header row with "Name as per Master Sheet"');
+      }
+
+      const headers = jsonData[headerRowIndex].map(h => String(h).trim());
+      
+      const colDetails = {
+          name: headers.findIndex(h => h.includes('Name as per Master Sheet')),
+          inTime: headers.findIndex(h => h.includes('Sch-In')),
+          outTime: headers.findIndex(h => h === 'Sch-Out'), // Exact match or partial? Use exact to differentiate from other Sch-Outs
+          outTimeSat: headers.findIndex(h => h.includes('Sch-Out (For Sat)')),
+          outTimeMonth: headers.findIndex(h => h.includes('Sch-Out (Dec- Jan)'))
+      };
+
+      if (colDetails.name === -1) throw new Error('Column "Name as per Master Sheet" not found');
+
+      // Helper to format time
+      const fmtTime = (val: any) => {
+          if (!val) return undefined;
+          let s = String(val).trim();
+          if (typeof val === 'number') {
+              const totalSeconds = Math.round(val * 86400);
+              const h = Math.floor(totalSeconds / 3600);
+              const m = Math.floor((totalSeconds % 3600) / 60);
+              s = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+          }
+          // Validate HH:mm
+          if (/^\d{1,2}:\d{2}$/.test(s)) {
+             const parts = s.split(':');
+             return `${parts[0].padStart(2, '0')}:${parts[1]}`;
+          }
+          return s; 
+      };
+
+      const schedules = [];
+      for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
+          const row = jsonData[i] as any[];
+          if (!row || !row[colDetails.name]) continue;
+
+          schedules.push({
+              name: row[colDetails.name],
+              inTime: colDetails.inTime !== -1 ? fmtTime(row[colDetails.inTime]) : undefined,
+              outTime: colDetails.outTime !== -1 ? fmtTime(row[colDetails.outTime]) : undefined,
+              outTimeSat: colDetails.outTimeSat !== -1 ? fmtTime(row[colDetails.outTimeSat]) : undefined,
+              outTimeMonth: colDetails.outTimeMonth !== -1 ? fmtTime(row[colDetails.outTimeMonth]) : undefined
+          });
+      }
+
+      const response = await fetch('/api/users/bulk-schedule-update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ schedules })
+      });
+
+      const result = await response.json();
+      if (result.success) {
+          setUploadStats(result.stats);
+          fetchUsers();
+      } else {
+          throw new Error(result.error);
+      }
+
+    } catch (err) {
+       setError(err instanceof Error ? err.message : 'Schedule upload failed');
+    } finally {
+       setLoading(false);
+       e.target.value = '';
+    }
+  };
+
+  const filteredUsers = users.filter((user) => {
+    // Designation filter
+    if (filterDesignation && user.designation !== filterDesignation) {
+      return false;
+    }
+
+    // Search term filter
+    if (searchTerm) {
+      const lowerTerm = searchTerm.toLowerCase();
+      const matchName = user.name?.toLowerCase().includes(lowerTerm);
+      const matchEmail = user.email?.toLowerCase().includes(lowerTerm);
+      const matchOdId = user.odId?.toLowerCase().includes(lowerTerm);
+      const matchEmpCode = user.employeeCode?.toLowerCase().includes(lowerTerm);
+      
+      return matchName || matchEmail || matchOdId || matchEmpCode;
+    }
+
+    return true;
+  });
 
   if (loading && !users.length) {
     return <div className="text-slate-400 p-4">Loading employees...</div>;
@@ -706,6 +811,18 @@ export const EmployeeManagementSection: React.FC = () => {
         
         <div className="flex items-center gap-3">
           
+          {/* Search Input */}
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="bg-slate-950 border border-slate-700 text-slate-300 text-sm rounded pl-8 pr-3 py-1.5 focus:outline-none focus:border-emerald-500/50 hover:bg-slate-900 transition-colors w-40 sm:w-64"
+            />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+          </div>
+
           {/* Designation Filter */}
           <div className="relative">
             <select
@@ -714,11 +831,26 @@ export const EmployeeManagementSection: React.FC = () => {
               className="appearance-none bg-slate-950 border border-slate-700 text-slate-300 text-sm rounded pl-8 pr-8 py-1.5 focus:outline-none focus:border-emerald-500/50 hover:bg-slate-900 transition-colors cursor-pointer"
             >
               <option value="">All Designations</option>
-              {DESIGNATION_OPTIONS.map((opt) => (
+              {uniqueDesignations.map((opt) => (
                 <option key={opt} value={opt}>{opt}</option>
               ))}
             </select>
             <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+          </div>
+
+          {/* Schedule Upload Button */}
+          <div className="relative">
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={handleScheduleUpload}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              disabled={isUploading}
+            />
+            <button className={`flex items-center gap-2 px-3 py-1.5 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded text-sm hover:bg-blue-600/30 transition-colors ${isUploading ? 'opacity-50' : ''}`}>
+               <Upload className={`w-4 h-4 ${isUploading ? "animate-bounce" : ""}`} />
+               {isUploading ? 'Uploading...' : 'Update Schedules'}
+            </button>
           </div>
 
           {/* Upload Button */}
@@ -753,7 +885,7 @@ export const EmployeeManagementSection: React.FC = () => {
             <div className="mt-2 bg-rose-950/20 border border-rose-900/30 rounded-md p-3 max-h-40 overflow-y-auto">
                 <p className="text-xs font-semibold text-rose-300 mb-2">Error Details:</p>
                 <ul className="text-xs text-rose-400/80 space-y-1">
-                    {uploadStats.errors.map((err, idx) => (
+                    {uploadStats.errors.map((err: string | number | bigint | boolean | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | React.ReactPortal | Promise<string | number | bigint | boolean | React.ReactPortal | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | null | undefined> | null | undefined, idx: React.Key | null | undefined) => (
                         <li key={idx}>{err}</li>
                     ))}
                 </ul>
@@ -817,3 +949,7 @@ export const EmployeeManagementSection: React.FC = () => {
     </div>
   );
 };
+function setUploadStats(arg0: null) {
+  throw new Error('Function not implemented.');
+}
+

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, CheckCircle, XCircle } from 'lucide-react';
+import { Clock, CheckCircle, XCircle, AlertTriangle, CalendarOff, Briefcase } from 'lucide-react';
 import { AttendanceSummaryView, AttendanceRecord, User } from '@/types/ui';
 
 interface EmployeeMonthViewProps {
@@ -98,6 +98,33 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
     return { daysInMonth, startWeekday, dayRecordMap };
   })();
 
+  // Determine lateness helper
+  const isLateArrival = (date: Date, inTimeStr?: string) => {
+      if (!inTimeStr || !summaryFromList?.schedules) return false;
+      
+      const parseMinutes = (t: string) => {
+          const [h, m] = t.split(':').map(Number);
+          return h * 60 + m;
+      };
+
+      const actualMins = parseMinutes(inTimeStr);
+      const dow = date.getDay();
+      
+      let scheduledStr = summaryFromList.schedules.regular?.inTime; // Default regular
+      
+      if (dow === 6 && summaryFromList.schedules.saturday?.inTime) {
+          scheduledStr = summaryFromList.schedules.saturday.inTime;
+      }
+      
+      if (dow === 0) return false; // Sunday or holiday logic handled separately
+
+      if (!scheduledStr) return false;
+      const scheduledMins = parseMinutes(scheduledStr);
+
+      // 15 mins grace period? Or strict? Let's Assume strict > scheduled
+      return actualMins > scheduledMins; 
+  };
+
   return (
     <section className="bg-slate-900/60 border border-slate-800 rounded-xl shadow-sm p-6 space-y-4">
       <div className="flex items-center justify-between">
@@ -118,13 +145,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
             onChange={(e) => setSelectedEmployeeId(e.target.value || null)}
           >
             <option value="">Select employee</option>
-            {users.length > 0 
-              ? users.map((u) => (
-                  <option key={u._id} value={u._id}>
-                    {u.name} {u.odId ? `(${u.odId})` : ''}
-                  </option>
-                ))
-              : summaries
+            {summaries
                   .reduce<{ id: string; name: string }[]>((acc, s) => {
                     if (!acc.find((x) => x.id === s.userId)) {
                       acc.push({ id: s.userId, name: s.userName });
@@ -217,45 +238,104 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
               {Array.from({ length: calendarData.daysInMonth }).map((_, idx) => {
                 const day = idx + 1;
                 const rec = calendarData.dayRecordMap.get(day) || null;
-                const isPresent = rec?.status === 'Present';
-                const isAbsent = rec?.status === 'Absent';
+                let status: any = rec?.status;
+                const type = rec?.typeOfPresence;
+                
+                // Override status if 00:00 - 00:00 (Absent)
+                if (rec && rec.inTime === '00:00' && rec.outTime === '00:00') {
+                    // Check if there is a specific type like Leave, Holiday, etc.
+                    if (type && type !== 'ThumbMachine' && type !== 'Manual' && type !== 'Remote') {
+                        status = type; // Use the specific type (e.g. Leave, OHD, WFH)
+                    } else {
+                        status = 'Absent';
+                    }
+                }
+                
+                // Check lateness
+                const dateObj = new Date(selectedYear, selectedMonth - 1, day);
+                const isLate = rec ? isLateArrival(dateObj, rec.inTime) : false;
+
+                let borderClass = 'border-slate-700';
+                let bgClass = 'bg-slate-950/40';
+                let badgeClass = 'border-slate-700 bg-slate-800 text-slate-400';
+                let Icon = XCircle;
+
+                if (status === 'Present') {
+                    borderClass = isLate ? 'border-amber-500/50' : 'border-emerald-500/50'; // Amber border if late
+                    bgClass = isLate ? 'bg-amber-500/5' : 'bg-emerald-500/5';
+                    badgeClass = 'border-emerald-500/60 bg-emerald-500/15 text-emerald-100';
+                    Icon = CheckCircle;
+                } else if (status === 'Absent') {
+                    borderClass = 'border-rose-500/50';
+                    bgClass = 'bg-rose-500/5';
+                    badgeClass = 'border-rose-500/60 bg-rose-500/15 text-rose-100';
+                    Icon = XCircle;
+                } else if (status === 'Leave') {
+                    borderClass = 'border-sky-500/50';
+                    bgClass = 'bg-sky-500/5';
+                    badgeClass = 'border-sky-500/60 bg-sky-500/15 text-sky-100';
+                    Icon = CalendarOff;
+                } else if (status === 'Holiday' || status === 'Week Off') {
+                    borderClass = 'border-amber-500/50';
+                    bgClass = 'bg-amber-500/5';
+                    badgeClass = 'border-amber-500/60 bg-amber-500/15 text-amber-100';
+                    Icon = Briefcase;
+                } else if (status === 'HalfDay' || status === 'Half Day (HD)') {
+                    borderClass = 'border-orange-500/50';
+                    bgClass = 'bg-orange-500/5';
+                    badgeClass = 'border-orange-500/60 bg-orange-500/15 text-orange-100';
+                    Icon = AlertTriangle;
+                } else if (typeof status === 'string') {
+                    // Fallback for new types (OHD, WFH, OS-P, etc.)
+                    // Treat them generally as "Provisional/Special" - Blue/Purple?
+                    // Let's use a Generic Present-like style but maybe different color
+                    borderClass = 'border-indigo-500/50';
+                    bgClass = 'bg-indigo-500/5';
+                    badgeClass = 'border-indigo-500/60 bg-indigo-500/15 text-indigo-100';
+                    Icon = Briefcase;
+                }
 
                 return (
                   <div
                     key={day}
-                    className={`h-20 rounded-md border px-2 py-1 flex flex-col gap-1 text-[11px] ${
-                      isPresent
-                        ? 'border-emerald-500/50 bg-emerald-500/5'
-                        : isAbsent
-                        ? 'border-rose-500/50 bg-rose-500/5'
-                        : 'border-slate-700 bg-slate-950/40'
-                    }`}
+                    className={`h-24 rounded-md border px-2 py-1 flex flex-col gap-1 text-[11px] ${borderClass} ${bgClass}`}
                   >
                     <div className="flex items-center justify-between text-slate-300">
                       <span className="font-semibold">{day}</span>
                       {rec && (
-                        <span
-                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium border ${
-                            isPresent
-                              ? 'border-emerald-500/60 bg-emerald-500/15 text-emerald-100'
-                              : 'border-rose-500/60 bg-rose-500/15 text-rose-100'
-                          }`}
-                        >
-                          {isPresent ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                          {rec.status}
-                        </span>
+                        <div className="flex gap-1">
+                            {isLate && (
+                                <span className="inline-flex items-center px-1 rounded bg-amber-500/20 text-amber-400 text-[9px] font-bold border border-amber-500/30">
+                                    LATE
+                                </span>
+                            )}
+                            <span
+                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium border ${badgeClass}`}
+                            >
+                            <Icon className="w-3 h-3" />
+                            {status}
+                            </span>
+                        </div>
                       )}
                     </div>
                     {rec && (
                       <div className="mt-1 space-y-0.5 text-slate-300">
-                        <div className="flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-slate-500" />
-                          <span>In: {rec.inTime || '-'}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-slate-500" />
-                          <span>Out: {rec.outTime || '-'}</span>
-                        </div>
+                        {status !== 'Leave' && status !== 'Holiday' && (
+                          <>
+                            <div className="flex items-center gap-1">
+                              <Clock className={`w-3 h-3 ${isLate ? 'text-amber-500' : 'text-slate-500'}`} />
+                              <span className={isLate ? 'text-amber-200' : ''}>In: {rec.inTime || '-'}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-slate-500" />
+                              <span>Out: {rec.outTime || '-'}</span>
+                            </div>
+                          </>
+                        )}
+                        {/* Show type or simplified status if special */}
+                        {(status === 'Leave' || status === 'Holiday' || status !== rec.typeOfPresence) && (
+                            <div className="text-[10px] italic text-slate-400 mt-1 truncate" title={type}>{type || status}</div>
+                        )}
                       </div>
                     )}
                   </div>

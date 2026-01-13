@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, ChangeEvent, useEffect } from "react";
 import * as XLSX from 'xlsx';
+import { X } from 'lucide-react';
 import { AttendanceRecord, AttendanceSummaryView, User } from '@/types/ui';
 import { LoginView } from '@/components/LoginView';
 import { Sidebar } from '@/components/Sidebar';
@@ -41,6 +42,9 @@ export default function AttendanceUpload() {
   const [employeeLoading, setEmployeeLoading] = useState<boolean>(false);
   const [employeeError, setEmployeeError] = useState<string | null>(null);
   const [loadingSummaries, setLoadingSummaries] = useState<boolean>(false);
+  
+  // New State for "Affected" Modal
+  const [showAffectedModal, setShowAffectedModal] = useState<boolean>(false);
 
   // Check for existing auth token on mount
   useEffect(() => {
@@ -329,35 +333,50 @@ export default function AttendanceUpload() {
     if (data && data.length > 0) {
       setUploadTotal(data.length);
     }
+    
+    // Chunking Logic
+    const CHUNK_SIZE = 50;
+    let localSaved = 0;
+    let localFailed = 0;
+    const localErrors: { odId: string; reason: string }[] = [];
 
     try {
-      const response = await fetch('/api/attendance', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ records: data }),
-      });
+      for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+         const chunk = data.slice(i, i + CHUNK_SIZE);
+         
+         const response = await fetch('/api/attendance', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ records: chunk }),
+         });
 
-      const result = await response.json();
+         const result = await response.json();
 
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || 'Failed to save attendance');
+         if (!response.ok || !result.success) {
+            throw new Error(result.error || 'Failed to save attendance chunk');
+         }
+
+         const processedCount = result.data?.processed?.length ?? 0;
+         const errorCount = result.data?.errors?.length ?? 0;
+         const errorsList = result.data?.errors ?? [];
+
+         localSaved += processedCount;
+         localFailed += errorCount;
+         localErrors.push(...errorsList);
+
+         // Update state progressively
+         setUploadSaved(localSaved);
+         setUploadFailed(localFailed);
+         setUploadErrors(prev => [...prev, ...errorsList]);
       }
 
-      const processedCount = result.data?.processed?.length ?? 0;
-      const errorCount = result.data?.errors?.length ?? 0;
-      const errorsList = result.data?.errors ?? [];
-
-      setUploadSaved(processedCount);
-      setUploadFailed(errorCount);
-      setUploadErrors(errorsList);
-
-      const baseMessage = `Saved ${processedCount} attendance record${processedCount === 1 ? '' : 's'} to the server.`;
+      const baseMessage = `Saved ${localSaved} attendance record${localSaved === 1 ? '' : 's'} to the server.`;
 
       let errorMessage = '';
-      if (errorCount > 0) {
-        errorMessage = ` ${errorCount} record${errorCount === 1 ? '' : 's'} failed to save. See details below.`;
+      if (localFailed > 0) {
+        errorMessage = ` ${localFailed} record${localFailed === 1 ? '' : 's'} failed to save. See details below.`;
       }
       
       setSaveMessage(baseMessage + errorMessage);
@@ -405,7 +424,14 @@ export default function AttendanceUpload() {
         id: String(item._id),
         userId: item.userId?._id ? String(item.userId._id) : '',
         userName: item.userId?.name ?? 'Unknown',
+        odId: item.userId?.odId ?? '', // Map odId for UI
+        team: item.userId?.workingUnderPartner || item.userId?.team || '', // Map workingUnderPartner to team field for export
         monthYear: item.monthYear,
+        schedules: {
+            regular: item.userId?.scheduleInOutTime,
+            saturday: item.userId?.scheduleInOutTimeSat,
+            monthly: item.userId?.scheduleInOutTimeMonth
+        },
         summary: {
           totalHour: item.summary?.totalHour ?? 0,
           totalLateArrival: item.summary?.totalLateArrival ?? 0,
@@ -415,6 +441,7 @@ export default function AttendanceUpload() {
           totalAbsent: item.summary?.totalAbsent ?? 0,
           totalLeave: item.summary?.totalLeave ?? 0,
         },
+        recordDetails: item.records || {}
       }));
 
       setSummaries(mapped);
@@ -451,14 +478,26 @@ export default function AttendanceUpload() {
       const doc = docs[0];
       const recordsObj = doc.records || {};
 
-      const days: AttendanceRecord[] = Object.entries(recordsObj).map(([dateKey, value]: [string, any]) => ({
-        id: doc.userId?._id ? String(doc.userId._id) : '',
-        name: doc.userId?.name ?? 'Unknown',
-        date: dateKey,
-        inTime: value.checkin ?? '',
-        outTime: value.checkout ?? '',
-        status: value.typeOfPresence === 'Leave' ? 'Absent' : 'Present',
-      }));
+      const days: AttendanceRecord[] = Object.entries(recordsObj).map(([dateKey, value]: [string, any]) => {
+        let status: any = 'Present';
+        if (value.typeOfPresence === 'Leave') status = 'Leave';
+        else if (value.typeOfPresence === 'Holiday') status = 'Holiday';
+        else if (value.halfDay) status = 'HalfDay';
+        else if (!value.checkin && !value.checkout && value.typeOfPresence !== 'Leave' && value.typeOfPresence !== 'Holiday') status = 'Absent';
+        
+        // Fallback for explicit absent if type isn't set but no time
+         if (status === 'Present' && !value.checkin && !value.checkout) status = 'Absent';
+
+        return {
+          id: doc.userId?._id ? String(doc.userId._id) : '',
+          name: doc.userId?.name ?? 'Unknown',
+          date: dateKey,
+          inTime: value.checkin ?? '',
+          outTime: value.checkout ?? '',
+          status: status,
+          typeOfPresence: value.typeOfPresence
+        };
+      });
 
       days.sort((a, b) => {
         const aTime = new Date(a.date).getTime();
@@ -531,16 +570,149 @@ export default function AttendanceUpload() {
             {activeSection === 'summary' && (
               <SummarySection
                 summaries={summaries}
+                allUsers={allUsers}
                 uploadTotal={uploadTotal}
                 uploadSaved={uploadSaved}
                 uploadFailed={uploadFailed}
                 isLoading={loadingSummaries}
                 onFilterChange={fetchSummaries}
+                onEmployeeClick={(userId, monthYear) => {
+                  setSelectedEmployeeId(userId);
+                  setSelectedEmployeeMonth(monthYear);
+                  setShowAffectedModal(true);  // Show simple affected Modal
+                  fetchEmployeeMonthly(userId, monthYear);
+                }}
               />
             )}
                 
+            {/* Modal for "Affected Info" Only */}
+            {selectedEmployeeId && showAffectedModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+                <div className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-xl shadow-2xl overflow-hidden">
+                  <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-950/50">
+                    <h3 className="text-lg font-semibold text-white">
+                        Exceptions & Attendance Issues
+                        <span className="ml-2 text-sm font-normal text-slate-400">
+                           {allUsers.find(u => u._id === selectedEmployeeId)?.name || selectedEmployeeId}
+                        </span>
+                    </h3>
+                    <button
+                        onClick={() => {
+                            setShowAffectedModal(false);
+                            setSelectedEmployeeId(null);
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors"
+                    >
+                        <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  
+                  <div className="p-0 max-h-[60vh] overflow-y-auto">
+                    {employeeLoading ? (
+                        <div className="p-8 text-center text-slate-500">Loading details...</div>
+                    ) : (
+                        <table className="w-full text-sm text-left">
+                            <thead className="bg-slate-950 text-slate-400 font-medium">
+                                <tr>
+                                    <th className="px-4 py-3">Date</th>
+                                    <th className="px-4 py-3">Status</th>
+                                    <th className="px-4 py-3">Times</th>
+                                    <th className="px-4 py-3">Note</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-800">
+                                {(() => {
+                                    // 1. Get filtered list of issues
+                                    const summary = summaries.find(s => s.userId === selectedEmployeeId);
+                                    
+                                    const issues = employeeDays.filter(rec => {
+                                        const status = rec.status;
+                                        // A. Status is NOT standard 'Present'
+                                        if (['Absent', 'Leave', 'Holiday', 'HalfDay'].includes(status)) return true;
+                                        
+                                        // B. Check Late
+                                        if (status === 'Present' && summary?.schedules && rec.inTime) {
+                                            const parseMin = (t: string) => {
+                                                const [h, m] = t.split(':').map(Number);
+                                                return h * 60 + m;
+                                            };
+                                            const actual = parseMin(rec.inTime);
+                                            const d = new Date(rec.date);
+                                            const dow = d.getDay();
+                                            let schedStr = summary.schedules.regular?.inTime;
+                                            if (dow === 6 && summary.schedules.saturday?.inTime) schedStr = summary.schedules.saturday.inTime;
+                                            
+                                            // Sunday/Holiday skipped
+                                            if (dow === 0) return false;
 
-            {/* Employee month-wise Section */}
+                                            if (schedStr) {
+                                                const sched = parseMin(schedStr);
+                                                if (actual > sched) return true; // Late
+                                            }
+                                        }
+                                        return false;
+                                    });
+
+                                    if (issues.length === 0) {
+                                        return (
+                                            <tr>
+                                                <td colSpan={4} className="px-4 py-8 text-center text-slate-500 italic">
+                                                    No attendance issues or exceptions found for this month. Good job!
+                                                </td>
+                                            </tr>
+                                        );
+                                    }
+
+                                    return issues.map(rec => {
+                                        const d = new Date(rec.date);
+                                        const dateLabel = d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', weekday: 'short' });
+                                        
+                                        // Re-check Late for display
+                                        let isLate = false;
+                                        if (rec.status === 'Present' && summary?.schedules) {
+                                             // (Simplification of logic above for display flag)
+                                              const parseMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h*60+m; };
+                                              const actual = rec.inTime ? parseMin(rec.inTime) : 0;
+                                              const dow = d.getDay();
+                                              let schedStr = summary.schedules.regular?.inTime;
+                                              if (dow === 6 && summary.schedules.saturday?.inTime) schedStr = summary.schedules.saturday.inTime;
+                                              if (dow !== 0 && schedStr && actual > parseMin(schedStr)) isLate = true;
+                                        }
+
+                                        let statusColor = 'text-slate-300';
+                                        if (rec.status === 'Absent') statusColor = 'text-rose-400 bg-rose-400/10';
+                                        if (isLate) statusColor = 'text-amber-400 bg-amber-400/10';
+                                        if (rec.status === 'Leave') statusColor = 'text-sky-400 bg-sky-400/10';
+                                        if (rec.status === 'Holiday') statusColor = 'text-amber-200 bg-amber-500/10';
+                                        if (rec.status === 'HalfDay') statusColor = 'text-orange-400 bg-orange-400/10';
+
+                                        return (
+                                            <tr key={rec.date} className="hover:bg-slate-800/30">
+                                                <td className="px-4 py-3 font-mono text-slate-300">{dateLabel}</td>
+                                                <td className="px-4 py-3">
+                                                    <span className={`px-2 py-0.5 rounded textxs font-medium ${statusColor}`}>
+                                                        {isLate ? 'Late Arrival' : rec.status}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 font-mono text-slate-400">
+                                                    {rec.inTime || '--:--'} - {rec.outTime || '--:--'}
+                                                </td>
+                                                <td className="px-4 py-3 text-slate-500 italic text-xs">
+                                                    {rec.typeOfPresence || (isLate ? 'Checked in late' : '-')}
+                                                </td>
+                                            </tr>
+                                        );
+                                    });
+                                })()}
+                            </tbody>
+                        </table>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Employee month-wise Section - Standard View (via Sidebar) */}
             {activeSection === 'employee' && (
               <EmployeeMonthView
                 summaries={summaries}

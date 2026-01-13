@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     }
 
     const attendanceRecords = await Attendance.find(query)
-      .populate('userId', 'name employeeId email department')
+      .populate('userId', 'name employeeId odId email department team workingUnderPartner scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth')
       .sort({ monthYear: -1 });
 
     return NextResponse.json({
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
       const errors: Array<{ odId: string; reason: string }> = [];
 
       // Pre-fetch all users for efficient in-memory matching
-      const allUsers = await User.find({}).select('name _id odId');
+      const allUsers = await User.find({}).select('name _id odId scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth');
       
       // Helper to strip non-alphanumeric characters for fuzzy matching
       const normalizeForMatch = (s: string) => s.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
@@ -118,8 +118,10 @@ export async function POST(request: NextRequest) {
 
           const totalHour = calculateTotalHours(checkin, checkout);
 
-          // Map page status to typeOfPresence; "Absent" is treated as "Leave" for now
-          const typeOfPresence = rec.status === 'Present' ? 'ThumbMachine' : 'Leave';
+          // Map page status to typeOfPresence;
+          // User Requirement: typeOfPresence should always be 'ThumbMachine' for Excel uploads indicating source.
+          // Absent status will be determined by 0 totalHour in summary calculation.
+          const typeOfPresence = 'ThumbMachine';
 
           attendance.records.set(isoDate, {
             checkin,
@@ -322,12 +324,24 @@ function calculateSummary(
       case 'ThumbMachine':
       case 'Manual':
       case 'Remote':
-        totalPresent++;
+      case 'Official Holiday Duty (OHD)':
+      case 'Weekly Off - Present (WO-Present)':
+      case 'Half Day (HD)':
+      case 'Work From Home (WFH)':
+      case 'Weekly Off - Work From Home (WO-WFH)':
+      case 'Onsite Presence (OS-P)':
+        // If hours are > 0, they are present. If 0, they are Absent (but source was Machine/Manual)
+        if (record.totalHour > 0) {
+           totalPresent++;
+        } else {
+           totalAbsent++;
+        }
         break;
       case 'Leave':
         totalLeave++;
         break;
       case 'Holiday':
+      case 'Week Off':
         // Holidays don't count as present/absent
         break;
       default:
