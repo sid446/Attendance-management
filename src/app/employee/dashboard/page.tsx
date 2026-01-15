@@ -131,6 +131,17 @@ export default function EmployeeDashboard() {
               })
           });
           const json = await res.json();
+
+          if (!res.ok) {
+              // Specific handling for duplicate request on same date
+              if (res.status === 400 && typeof json.error === 'string' && json.error.includes('already have a correction request for this date')) {
+                  alert('You have already sent a correction request for this date. Please wait until it is approved or rejected before sending another.');
+              } else {
+                  alert(json.error || 'Failed to send request');
+              }
+              return;
+          }
+
           if (json.success) {
               alert(`Request sent successfully to ${json.sentTo}!`);
               setSelectedDate(null);

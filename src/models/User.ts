@@ -40,6 +40,12 @@ export interface IUser extends Document {
   workingUnderPartner?: string;
   workingTiming?: string;
 
+  // Flexible additional info (e.g. PAN, Aadhaar, etc.)
+  extraInfo?: {
+    label: string;
+    value: string;
+  }[];
+
   scheduleInOutTime: IScheduleTime;      // Regular weekday schedule
   scheduleInOutTimeSat: IScheduleTime;   // Saturday schedule
   scheduleInOutTimeMonth: IScheduleTime; // Monthly/alternate schedule
@@ -185,6 +191,13 @@ const UserSchema: Schema = new Schema(
       type: String,
       trim: true,
     },
+    extraInfo: [
+      {
+        label: { type: String, trim: true },
+        value: { type: String, trim: true },
+        _id: false,
+      },
+    ],
     joiningDate: {
       type: Date,
       

@@ -204,7 +204,13 @@ function calculateSummary(records: Map<string, {
       case 'Work From Home (WFH)':
       case 'Weekly Off - Work From Home (WO-WFH)':
       case 'Onsite Presence (OS-P)':
-        totalPresent++;
+        // Same rule as main attendance summary: only count as Present
+        // when totalHour > 0; 0 hours should be treated as Absent.
+        if (record.totalHour > 0) {
+          totalPresent++;
+        } else {
+          totalAbsent++;
+        }
         break;
       case 'Leave':
         totalLeave++;

@@ -32,12 +32,24 @@ function calculateSummary(
         case 'ThumbMachine':
         case 'Manual':
         case 'Remote':
-          totalPresent++;
+        case 'Official Holiday Duty (OHD)':
+        case 'Weekly Off - Present (WO-Present)':
+        case 'Half Day (HD)':
+        case 'Work From Home (WFH)':
+        case 'Weekly Off - Work From Home (WO-WFH)':
+        case 'Onsite Presence (OS-P)':
+          // Match main summary: only present if totalHour > 0
+          if (record.totalHour > 0) {
+            totalPresent++;
+          } else {
+            totalAbsent++;
+          }
           break;
         case 'Leave':
           totalLeave++;
           break;
         case 'Holiday':
+        case 'Week Off':
           break;
         case 'Absent':
           totalAbsent++;
@@ -155,7 +167,7 @@ export async function POST(request: NextRequest) {
 
                            if (r.checkin && r.checkin > scheduledIn) tLate++;
 
-                           // Status
+                           // Status (align with global summary logic)
                             switch (r.typeOfPresence) {
                                 case 'ThumbMachine':
                                 case 'Manual':
@@ -166,19 +178,23 @@ export async function POST(request: NextRequest) {
                                 case 'Work From Home (WFH)':
                                 case 'Weekly Off - Work From Home (WO-WFH)':
                                 case 'Onsite Presence (OS-P)':
-                                tPres++;
-                                break;
+                                  if (r.totalHour > 0) {
+                                    tPres++;
+                                  } else {
+                                    tAbs++;
+                                  }
+                                  break;
                                 case 'Leave':
-                                tLea++;
-                                break;
+                                  tLea++;
+                                  break;
                                 case 'Holiday':
                                 case 'Week Off':
-                                break;
+                                  break;
                                 case 'Absent':
-                                tAbs++;
-                                break;
+                                  tAbs++;
+                                  break;
                                 default:
-                                tAbs++;
+                                  tAbs++;
                             }
                         });
 

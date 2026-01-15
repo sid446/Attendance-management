@@ -45,23 +45,25 @@ function calculateSummary(
       
       if (record.checkin && record.checkin > scheduledIn) totalLateArrival++;
   
-      switch (record.typeOfPresence) {
-          case 'ThumbMachine':
-          case 'Manual':
-          case 'Remote':
-          case 'Official Holiday Duty (OHD)':
-          case 'Weekly Off - Present (WO-Present)':
-          case 'Half Day (HD)':
-          case 'Work From Home (WFH)':
-          case 'Weekly Off - Work From Home (WO-WFH)':
-          case 'Onsite Presence (OS-P)':
-            // Present if hours > 0 or explicitly these types that imply presence
-            // The logic in main route says "if record.totalHour > 0" for generic types.
-            // But for manual override to specific types like OHD, we should count as present usually.
-            // Or assume 0 hours but present?
-            // Let's stick to simple: increment present.
-             totalPresent++;
-             break;
+        switch (record.typeOfPresence) {
+             case 'ThumbMachine':
+             case 'Manual':
+             case 'Remote':
+             case 'Official Holiday Duty (OHD)':
+             case 'Weekly Off - Present (WO-Present)':
+             case 'Half Day (HD)':
+             case 'Work From Home (WFH)':
+             case 'Weekly Off - Work From Home (WO-WFH)':
+             case 'Onsite Presence (OS-P)':
+                // Align with main attendance summary logic:
+                // these types count as Present only if totalHour > 0,
+                // otherwise they are treated as Absent.
+                if (record.totalHour > 0) {
+                    totalPresent++;
+                } else {
+                    totalAbsent++;
+                }
+                break;
           case 'Leave':
              totalLeave++;
              break;

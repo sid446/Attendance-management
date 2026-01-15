@@ -26,12 +26,21 @@ const DetailModal: React.FC<DetailModalProps> = ({ isOpen, onClose, title, data 
             ) : (
                 <div className="flex flex-col gap-1">
                     {data.map((d, i) => (
-                        <div key={i} className="flex items-center justify-between p-2 hover:bg-slate-800/50 rounded-lg text-sm transition-colors border border-transparent hover:border-slate-800">
-                             <div className="flex items-center gap-3">
-                                <div className="font-mono text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded text-xs">{d.date}</div>
-                                {d.subInfo && <span className="text-amber-400/70 text-[10px] bg-amber-400/5 px-1.5 py-0.5 rounded border border-amber-400/10">{d.subInfo}</span>}
+                        <div
+                          key={i}
+                          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-2 hover:bg-slate-800/50 rounded-lg text-sm transition-colors border border-transparent hover:border-slate-800"
+                        >
+                             <div className="flex items-center gap-3 flex-shrink-0">
+                                <div className="font-mono text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded text-xs whitespace-nowrap">{d.date}</div>
+                                {d.subInfo && (
+                                  <span className="text-amber-400/70 text-[10px] bg-amber-400/5 px-1.5 py-0.5 rounded border border-amber-400/10 whitespace-nowrap">
+                                    {d.subInfo}
+                                  </span>
+                                )}
                              </div>
-                             <div className="font-mono font-medium text-slate-300">{d.info}</div>
+                             <div className="font-mono font-medium text-slate-300 flex-1 text-left break-words leading-relaxed">
+                               {d.info}
+                             </div>
                         </div>
                     ))}
                 </div>

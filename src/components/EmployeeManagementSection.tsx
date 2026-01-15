@@ -1,7 +1,7 @@
 import React, { useState, useEffect, ChangeEvent, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { User, ScheduleTime } from '@/types/ui';
-import { Edit2, Save, X, Plus, Upload, FileUp, Filter, Trash2, Search } from 'lucide-react';
+import { Edit2, Save, X, Plus, Upload, FileUp, Filter, Trash2, Search, Download } from 'lucide-react';
 
 export const EmployeeManagementSection: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
@@ -20,6 +20,10 @@ export const EmployeeManagementSection: React.FC = () => {
   // Upload State
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadStats, setUploadStats] = useState<any>(null);
+
+  // Global extra info field management
+  const [newExtraLabel, setNewExtraLabel] = useState<string>('');
+  const [isSavingExtraLabel, setIsSavingExtraLabel] = useState<boolean>(false);
 
   // Unique Designations
   const uniqueDesignations = useMemo(() => {
@@ -108,6 +112,75 @@ export const EmployeeManagementSection: React.FC = () => {
         [field]: value
       }
     }));
+  };
+
+  const handleExtraInfoChange = (index: number, field: 'label' | 'value', value: string) => {
+    setFormData(prev => {
+      const current = Array.isArray(prev.extraInfo) ? [...prev.extraInfo] : [];
+      if (!current[index]) current[index] = { label: '', value: '' };
+      current[index] = { ...current[index], [field]: value };
+      return { ...prev, extraInfo: current };
+    });
+  };
+
+  const handleAddExtraInfo = () => {
+    setFormData(prev => ({
+      ...prev,
+      extraInfo: [...(prev.extraInfo || []), { label: '', value: '' }],
+    }));
+  };
+
+  const handleRemoveExtraInfo = (index: number) => {
+    setFormData(prev => {
+      const current = Array.isArray(prev.extraInfo) ? [...prev.extraInfo] : [];
+      current.splice(index, 1);
+      return { ...prev, extraInfo: current };
+    });
+  };
+
+  const allExtraLabels = useMemo(() => {
+    const labels = new Set<string>();
+    for (const u of users) {
+      if (Array.isArray(u.extraInfo)) {
+        for (const item of u.extraInfo) {
+          const label = (item.label || '').trim();
+          if (label) labels.add(label);
+        }
+      }
+    }
+    return Array.from(labels).sort((a, b) => a.localeCompare(b));
+  }, [users]);
+
+  const handleAddGlobalExtraLabel = async () => {
+    const label = newExtraLabel.trim();
+    if (!label) {
+      alert('Please enter a label name');
+      return;
+    }
+    if (allExtraLabels.some((l) => l.toLowerCase() === label.toLowerCase())) {
+      alert('This field already exists');
+      return;
+    }
+
+    setIsSavingExtraLabel(true);
+    try {
+      const res = await fetch('/api/users/extra-info', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Failed to add field');
+      }
+      setNewExtraLabel('');
+      // Refresh users so new field appears everywhere
+      fetchUsers();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to add field');
+    } finally {
+      setIsSavingExtraLabel(false);
+    }
   };
 
   const handleSave = async () => {
@@ -498,6 +571,110 @@ export const EmployeeManagementSection: React.FC = () => {
     return true;
   });
 
+  const handleExportToExcel = () => {
+    if (!users.length) {
+      alert('No employees to export');
+      return;
+    }
+
+    const headerRow = [
+      'Name',
+      'Registration / Membership No.',
+      'Employee Code',
+      'Paid From',
+      'Designation',
+      'Category',
+      'Tally Name',
+      'Gender',
+      'Asija Mail ID',
+      'Parents/Guardians Names',
+      'Parents/Guardians Occupation',
+      'Cell No.',
+      'Alternate No.',
+      'Alternate Mail Id',
+      'Address 1',
+      'Address 2',
+      'Date of Joining -in Asija',
+      'Articleship Start Date',
+      'Transfer Case',
+      '1st Yr of Articleship',
+      '2nd Yr of Articleship',
+      '3rd Yr of Articleship',
+      'Filled Scholarship',
+      'Qualification Level',
+      'Next Attempt Due Date',
+      'Registered Under Partner',
+      'Working Under Partner',
+      'Work Timings',
+    ];
+
+    const toDateString = (value?: string) => {
+      if (!value) return '';
+      const d = new Date(value);
+      if (isNaN(d.getTime())) return '';
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${dd}-${mm}-${yyyy}`;
+    };
+
+    const rows = users.map((u) => {
+      const regularIn = u.scheduleInOutTime?.inTime || '';
+      const regularOut = u.scheduleInOutTime?.outTime || '';
+      const workTimingText =
+        u.workingTiming && u.workingTiming.trim().length > 0
+          ? u.workingTiming
+          : regularIn && regularOut
+          ? `${regularIn}-${regularOut}`
+          : '';
+
+      return [
+        u.name || '',
+        u.registrationNo || '',
+        u.employeeCode || '',
+        u.paidFrom || '',
+        u.designation || '',
+        u.category || '',
+        u.tallyName || '',
+        u.gender || '',
+        u.email || '',
+        u.parentName || '',
+        u.parentOccupation || '',
+        u.mobileNumber || '',
+        u.alternateMobileNumber || '',
+        u.alternateEmail || '',
+        u.address1 || '',
+        u.address2 || '',
+        toDateString(u.joiningDate),
+        toDateString(u.articleshipStartDate),
+        u.transferCase || '',
+        u.firstYearArticleship || '',
+        u.secondYearArticleship || '',
+        u.thirdYearArticleship || '',
+        u.filledScholarship || '',
+        u.qualificationLevel || '',
+        toDateString(u.nextAttemptDueDate),
+        u.registeredUnderPartner || '',
+        u.workingUnderPartner || '',
+        workTimingText,
+      ];
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet([headerRow, ...rows]);
+
+    // Set column widths so header text is fully visible
+    const colWidths = headerRow.map((header) => {
+      const base = header.length + 2;
+      // Limit max width to keep sheet readable
+      const wch = Math.max(12, Math.min(base, 40));
+      return { wch };
+    });
+    (ws as any)['!cols'] = colWidths;
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Master');
+    XLSX.writeFile(wb, 'employee_master.xlsx');
+  };
+
   if (loading && !users.length) {
     return <div className="text-slate-400 p-4">Loading employees...</div>;
   }
@@ -773,6 +950,36 @@ export const EmployeeManagementSection: React.FC = () => {
             </div>
 
           </div>
+
+          {/* Flexible Additional Info */}
+          <div className="mt-6 md:col-span-3">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Additional Info (PAN, Aadhaar, etc.)</h4>
+              <p className="text-[11px] text-slate-500">Fields are managed from the main page.</p>
+            </div>
+            <div className="space-y-2">
+              {(formData.extraInfo || []).map((item, idx) => (
+                <div key={idx} className="grid grid-cols-12 gap-2 items-center">
+                  <input
+                    type="text"
+                    value={item.label}
+                    disabled
+                    className="col-span-4 bg-slate-950 border border-slate-800 rounded px-3 py-2 text-xs text-slate-500 cursor-not-allowed"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Value"
+                    value={item.value}
+                    onChange={(e) => handleExtraInfoChange(idx, 'value', e.target.value)}
+                    className="col-span-8 bg-slate-950 border border-slate-800 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+              ))}
+              {(formData.extraInfo || []).length === 0 && (
+                <p className="text-[11px] text-slate-500">No additional info fields defined yet.</p>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="mt-8 flex justify-end gap-3 pt-4 border-t border-slate-800">
@@ -867,6 +1074,77 @@ export const EmployeeManagementSection: React.FC = () => {
               {isUploading ? 'Uploading...' : 'Bulk Update'}
             </button>
           </div>
+
+          {/* Export Button */}
+          <button
+            type="button"
+            onClick={handleExportToExcel}
+            className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/40 text-slate-200 border border-slate-700 rounded text-sm hover:bg-slate-800/70 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            Export Master
+          </button>
+        </div>
+      </div>
+
+      {/* Global Additional Info Fields */}
+      <div className="px-4 py-3 border-b border-slate-800 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div className="space-y-1">
+          <div className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Additional Info Fields</div>
+          {allExtraLabels.length > 0 ? (
+            <div className="flex flex-wrap gap-1">
+              {allExtraLabels.map((label) => (
+                <span
+                  key={label}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800 text-[11px] text-slate-200 border border-slate-700"
+                >
+                  <span>{label}</span>
+                  <button
+                    type="button"
+                    className="text-slate-500 hover:text-rose-400"
+                    onClick={async () => {
+                      if (!window.confirm(`Remove field "${label}" from all employees?`)) return;
+                      try {
+                        const res = await fetch('/api/users/extra-info', {
+                          method: 'DELETE',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ label }),
+                        });
+                        const json = await res.json();
+                        if (!res.ok || !json.success) {
+                          throw new Error(json.error || 'Failed to remove field');
+                        }
+                        fetchUsers();
+                      } catch (err) {
+                        alert(err instanceof Error ? err.message : 'Failed to remove field');
+                      }
+                    }}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[11px] text-slate-500">No additional fields yet.</p>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="Add field (e.g. PAN)"
+            value={newExtraLabel}
+            onChange={(e) => setNewExtraLabel(e.target.value)}
+            className="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded px-2 py-1 focus:outline-none focus:border-emerald-500/50 min-w-[160px]"
+          />
+          <button
+            type="button"
+            onClick={handleAddGlobalExtraLabel}
+            disabled={isSavingExtraLabel}
+            className="px-3 py-1 rounded text-xs bg-emerald-600 text-white border border-emerald-500/70 hover:bg-emerald-500 disabled:opacity-50"
+          >
+            {isSavingExtraLabel ? 'Adding...' : 'Add Field'}
+          </button>
         </div>
       </div>
       

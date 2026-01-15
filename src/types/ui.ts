@@ -78,6 +78,12 @@ export interface User {
   workingUnderPartner?: string;
   workingTiming?: string;
 
+  // Flexible additional info fields (e.g. PAN, Aadhaar, etc.)
+  extraInfo?: {
+    label: string;
+    value: string;
+  }[];
+
   scheduleInOutTime: ScheduleTime;
   scheduleInOutTimeSat: ScheduleTime;
   scheduleInOutTimeMonth: ScheduleTime;
