@@ -79,6 +79,21 @@ export async function POST(request: NextRequest) {
             alternateEmail: emp.alternateEmail,
             address1: emp.address1,
             address2: emp.address2,
+          emergencyContactNo: emp.emergencyContactNo,
+          emergencyContactRelation: emp.emergencyContactRelation,
+          anniversaryDate: emp.anniversaryDate,
+          bankName: emp.bankName,
+          branchName: emp.branchName,
+          accountNumber: emp.accountNumber,
+          ifscCode: emp.ifscCode,
+          accountType: emp.accountType,
+          accountHolderName: emp.accountHolderName,
+          aadhaarNumber: emp.aadhaarNumber,
+          panNumber: emp.panNumber,
+          basicSalary: emp.basicSalary,
+          laptopAllowance: emp.laptopAllowance,
+          totalSalaryPerMonth: emp.totalSalaryPerMonth,
+          totalSalaryPerAnnum: emp.totalSalaryPerAnnum,
             articleshipStartDate: emp.articleshipStartDate,
             transferCase: emp.transferCase,
             firstYearArticleship: emp.firstYearArticleship,
@@ -112,6 +127,7 @@ export async function POST(request: NextRequest) {
             // Should valid date checks be here? the model handles type casting usually, but explicit Date object is better if coming as string
             if (updateData.articleshipStartDate) matchedUser.articleshipStartDate = new Date(updateData.articleshipStartDate);
             if (updateData.nextAttemptDueDate) matchedUser.nextAttemptDueDate = new Date(updateData.nextAttemptDueDate);
+            if (updateData.anniversaryDate) matchedUser.anniversaryDate = new Date(updateData.anniversaryDate);
             
             // Careful with schedule overwrites - only if provided
             if (emp.schIn && emp.schOut) {

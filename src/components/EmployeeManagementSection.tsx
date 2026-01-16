@@ -361,6 +361,21 @@ export const EmployeeManagementSection: React.FC = () => {
         altEmail: findCol(['Alternate Mail Id', 'Alt Email']),
         addr1: findCol(['Address 1', 'Address Line 1', 'Current Address']),
         addr2: findCol(['Address 2', 'Address Line 2', 'Permanent Address']),
+        emergencyContactNo: findCol(['Emergency Contact No.', 'Emergency Contact']),
+        emergencyContactRelation: findCol(['Relation', 'Emergency Contact Relation']),
+        anniversaryDate: findCol(['Anniversary Date']),
+        bankName: findCol(['Bank Name']),
+        branchName: findCol(['Branch Name']),
+        accountNumber: findCol(['Account No.', 'Account Number']),
+        ifscCode: findCol(['IFSC', 'IFSC Code']),
+        accountType: findCol(['Type of Account', 'Account Type']),
+        accountHolderName: findCol(['Name of Account Holder', 'Account Holder Name']),
+        aadhaarNumber: findCol(['Aadhar No.', 'Aadhaar Number']),
+        panNumber: findCol(['PAN', 'PAN Number']),
+        basicSalary: findCol(['Basis Salary/Stipend/Fees', 'Basic Salary']),
+        laptopAllowance: findCol(['Laptop Allowance']),
+        totalSalaryPerMonth: findCol(['Total Salary (P/M)', 'Total Salary Per Month']),
+        totalSalaryPerAnnum: findCol(['Per Annum', 'Total Salary Per Annum']),
         joinDate: findCol(['Date of Joining -in Asija', 'Date of Joining', 'Joining Date']),
         articleStart: findCol(['Articleship Start Date', 'Article Start']),
         transfer: findCol(['Transfer Case']),
@@ -417,6 +432,21 @@ export const EmployeeManagementSection: React.FC = () => {
           alternateEmail: getVal(idx.altEmail),
           address1: getVal(idx.addr1),
           address2: getVal(idx.addr2),
+          emergencyContactNo: getVal(idx.emergencyContactNo),
+          emergencyContactRelation: getVal(idx.emergencyContactRelation),
+          anniversaryDate: formatExcelDate(row[idx.anniversaryDate]),
+          bankName: getVal(idx.bankName),
+          branchName: getVal(idx.branchName),
+          accountNumber: getVal(idx.accountNumber),
+          ifscCode: getVal(idx.ifscCode),
+          accountType: getVal(idx.accountType),
+          accountHolderName: getVal(idx.accountHolderName),
+          aadhaarNumber: getVal(idx.aadhaarNumber),
+          panNumber: getVal(idx.panNumber),
+          basicSalary: getVal(idx.basicSalary),
+          laptopAllowance: getVal(idx.laptopAllowance),
+          totalSalaryPerMonth: getVal(idx.totalSalaryPerMonth),
+          totalSalaryPerAnnum: getVal(idx.totalSalaryPerAnnum),
           joiningDate: formatExcelDate(row[idx.joinDate]), 
           articleshipStartDate: formatExcelDate(row[idx.articleStart]),
           transferCase: getVal(idx.transfer),
@@ -431,7 +461,12 @@ export const EmployeeManagementSection: React.FC = () => {
           workingTiming: timingRaw,
           
           schIn,
-          schOut
+          schOut,
+          extraInfo: allExtraLabels.map(label => {
+            const colIndex = headers.findIndex(h => String(h).trim().toLowerCase() === label.toLowerCase());
+            const value = colIndex !== -1 ? getVal(colIndex) : '';
+            return { label, value: value || '' };
+          }),
         };
       }).filter(Boolean);
 
@@ -594,6 +629,21 @@ export const EmployeeManagementSection: React.FC = () => {
       'Alternate Mail Id',
       'Address 1',
       'Address 2',
+      'Emergency Contact No.',
+      'Relation',
+      'Anniversary Date',
+      'Bank Name',
+      'Branch Name',
+      'Account No.',
+      'IFSC',
+      'Type of Account',
+      'Name of Account Holder',
+      'Aadhar No.',
+      'PAN',
+      'Basis Salary/Stipend/Fees',
+      'Laptop Allowance',
+      'Total Salary (P/M)',
+      'Per Annum',
       'Date of Joining -in Asija',
       'Articleship Start Date',
       'Transfer Case',
@@ -606,6 +656,7 @@ export const EmployeeManagementSection: React.FC = () => {
       'Registered Under Partner',
       'Working Under Partner',
       'Work Timings',
+      ...allExtraLabels,
     ];
 
     const toDateString = (value?: string) => {
@@ -645,6 +696,21 @@ export const EmployeeManagementSection: React.FC = () => {
         u.alternateEmail || '',
         u.address1 || '',
         u.address2 || '',
+        u.emergencyContactNo || '',
+        u.emergencyContactRelation || '',
+        toDateString(u.anniversaryDate),
+        u.bankName || '',
+        u.branchName || '',
+        u.accountNumber || '',
+        u.ifscCode || '',
+        u.accountType || '',
+        u.accountHolderName || '',
+        u.aadhaarNumber || '',
+        u.panNumber || '',
+        u.basicSalary || '',
+        u.laptopAllowance || '',
+        u.totalSalaryPerMonth || '',
+        u.totalSalaryPerAnnum || '',
         toDateString(u.joiningDate),
         toDateString(u.articleshipStartDate),
         u.transferCase || '',
@@ -657,6 +723,10 @@ export const EmployeeManagementSection: React.FC = () => {
         u.registeredUnderPartner || '',
         u.workingUnderPartner || '',
         workTimingText,
+        ...allExtraLabels.map(label => {
+          const item = u.extraInfo?.find(e => e.label === label);
+          return item?.value || '';
+        }),
       ];
     });
 
@@ -904,6 +974,149 @@ export const EmployeeManagementSection: React.FC = () => {
                       className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
                     />
                   </div>
+            </div>
+
+            {/* Emergency Contact & Banking */}
+            <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Emergency Contact No.</label>
+                <input
+                  type="text"
+                  value={(formData as any).emergencyContactNo || ''}
+                  onChange={(e) => handleInputChange('emergencyContactNo' as keyof User, e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Relation</label>
+                <input
+                  type="text"
+                  value={(formData as any).emergencyContactRelation || ''}
+                  onChange={(e) => handleInputChange('emergencyContactRelation' as keyof User, e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Anniversary Date</label>
+                <input
+                  type="date"
+                  value={(formData as any).anniversaryDate ? new Date((formData as any).anniversaryDate).toISOString().split('T')[0] : ''}
+                  onChange={(e) => handleInputChange('anniversaryDate' as keyof User, e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Bank Name</label>
+                <input
+                  type="text"
+                  value={(formData as any).bankName || ''}
+                  onChange={(e) => handleInputChange('bankName' as keyof User, e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Branch Name</label>
+                <input
+                  type="text"
+                  value={(formData as any).branchName || ''}
+                  onChange={(e) => handleInputChange('branchName' as keyof User, e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Account No.</label>
+                <input
+                  type="text"
+                  value={(formData as any).accountNumber || ''}
+                  onChange={(e) => handleInputChange('accountNumber' as keyof User, e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">IFSC</label>
+                <input
+                  type="text"
+                  value={(formData as any).ifscCode || ''}
+                  onChange={(e) => handleInputChange('ifscCode' as keyof User, e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Type of Account</label>
+                <input
+                  type="text"
+                  value={(formData as any).accountType || ''}
+                  onChange={(e) => handleInputChange('accountType' as keyof User, e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Name of Account Holder</label>
+                <input
+                  type="text"
+                  value={(formData as any).accountHolderName || ''}
+                  onChange={(e) => handleInputChange('accountHolderName' as keyof User, e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Aadhar No.</label>
+                <input
+                  type="text"
+                  value={(formData as any).aadhaarNumber || ''}
+                  onChange={(e) => handleInputChange('aadhaarNumber' as keyof User, e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">PAN</label>
+                <input
+                  type="text"
+                  value={(formData as any).panNumber || ''}
+                  onChange={(e) => handleInputChange('panNumber' as keyof User, e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                />
+              </div>
+            </div>
+
+            {/* Salary Information */}
+            <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Basis Salary/Stipend/Fees</label>
+                <input
+                  type="text"
+                  value={(formData as any).basicSalary || ''}
+                  onChange={(e) => handleInputChange('basicSalary' as keyof User, e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Laptop Allowance</label>
+                <input
+                  type="text"
+                  value={(formData as any).laptopAllowance || ''}
+                  onChange={(e) => handleInputChange('laptopAllowance' as keyof User, e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Total Salary (P/M)</label>
+                <input
+                  type="text"
+                  value={(formData as any).totalSalaryPerMonth || ''}
+                  onChange={(e) => handleInputChange('totalSalaryPerMonth' as keyof User, e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Per Annum</label>
+                <input
+                  type="text"
+                  value={(formData as any).totalSalaryPerAnnum || ''}
+                  onChange={(e) => handleInputChange('totalSalaryPerAnnum' as keyof User, e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                />
+              </div>
             </div>
 
             {/* Articleship & Professional */}

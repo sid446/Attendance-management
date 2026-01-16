@@ -28,6 +28,22 @@ export interface IUser extends Document {
   alternateEmail?: string;
   address1?: string;
   address2?: string;
+  // New HR / personal & banking fields
+  emergencyContactNo?: string;
+  emergencyContactRelation?: string;
+  anniversaryDate?: Date;
+  bankName?: string;
+  branchName?: string;
+  accountNumber?: string;
+  ifscCode?: string;
+  accountType?: string;
+  accountHolderName?: string;
+  aadhaarNumber?: string;
+  panNumber?: string;
+  basicSalary?: string; // Basis Salary/Stipend/Fees
+  laptopAllowance?: string;
+  totalSalaryPerMonth?: string;
+  totalSalaryPerAnnum?: string;
   articleshipStartDate?: Date;
   transferCase?: string;
   firstYearArticleship?: string;
@@ -146,6 +162,65 @@ const UserSchema: Schema = new Schema(
       trim: true,
     },
     address2: {
+      type: String,
+      trim: true,
+    },
+    emergencyContactNo: {
+      type: String,
+      trim: true,
+    },
+    emergencyContactRelation: {
+      type: String,
+      trim: true,
+    },
+    anniversaryDate: {
+      type: Date,
+    },
+    bankName: {
+      type: String,
+      trim: true,
+    },
+    branchName: {
+      type: String,
+      trim: true,
+    },
+    accountNumber: {
+      type: String,
+      trim: true,
+    },
+    ifscCode: {
+      type: String,
+      trim: true,
+    },
+    accountType: {
+      type: String,
+      trim: true,
+    },
+    accountHolderName: {
+      type: String,
+      trim: true,
+    },
+    aadhaarNumber: {
+      type: String,
+      trim: true,
+    },
+    panNumber: {
+      type: String,
+      trim: true,
+    },
+    basicSalary: {
+      type: String,
+      trim: true,
+    },
+    laptopAllowance: {
+      type: String,
+      trim: true,
+    },
+    totalSalaryPerMonth: {
+      type: String,
+      trim: true,
+    },
+    totalSalaryPerAnnum: {
       type: String,
       trim: true,
     },

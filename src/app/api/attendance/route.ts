@@ -290,7 +290,28 @@ function calculateSummary(
     totalHour += record.totalHour || 0;
     excessHour += record.excessHour || 0;
 
-    if (record.halfDay) {
+    // Determine if this is an articleship employee
+    const isArticleship = user && user.designation && user.designation.toLowerCase() === 'article';
+
+    // Determine half-day based on user type and check-in time
+    let isHalfDay = false;
+    if (record.checkin) {
+      const checkinTime = record.checkin;
+      const isAfter1PM = checkinTime >= '13:00';
+      
+      if (isArticleship) {
+        // For articleship: half-day if arrive after 1 PM
+        isHalfDay = isAfter1PM;
+      } else {
+        // For others: half-day if arrive after 1 PM AND less than 6 hours worked
+        isHalfDay = isAfter1PM && (record.totalHour < 6);
+      }
+    }
+
+    // Update the record's halfDay flag
+    record.halfDay = isHalfDay;
+
+    if (isHalfDay) {
       totalHalfDay++;
     }
 

@@ -66,6 +66,22 @@ export interface User {
   alternateEmail?: string;
   address1?: string;
   address2?: string;
+  // New HR / personal & banking fields (frontend as strings/ISO dates)
+  emergencyContactNo?: string;
+  emergencyContactRelation?: string;
+  anniversaryDate?: string;
+  bankName?: string;
+  branchName?: string;
+  accountNumber?: string;
+  ifscCode?: string;
+  accountType?: string;
+  accountHolderName?: string;
+  aadhaarNumber?: string;
+  panNumber?: string;
+  basicSalary?: string; // Basis Salary/Stipend/Fees
+  laptopAllowance?: string;
+  totalSalaryPerMonth?: string;
+  totalSalaryPerAnnum?: string;
   articleshipStartDate?: string;
   transferCase?: string;
   firstYearArticleship?: string;

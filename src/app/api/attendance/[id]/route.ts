@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Attendance from '@/models/Attendance';
+import User from '@/models/User';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -82,7 +83,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       });
 
       // Recalculate summary
-      attendance.summary = calculateSummary(attendance.records);
+      const user = await User.findById(attendance.userId);
+      attendance.summary = calculateSummary(attendance.records, user);
     }
 
     // Directly update summary if provided (for manual adjustments)
@@ -136,7 +138,8 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       }
 
       attendance.records.delete(date);
-      attendance.summary = calculateSummary(attendance.records);
+      const user = await User.findById(attendance.userId);
+      attendance.summary = calculateSummary(attendance.records, user);
       await attendance.save();
 
       return NextResponse.json({
@@ -171,7 +174,7 @@ function calculateSummary(records: Map<string, {
   typeOfPresence: string;
   halfDay: boolean;
   remarks?: string;
-}>) {
+}>, user?: any) {
   let totalHour = 0;
   let totalLateArrival = 0;
   let excessHour = 0;
@@ -180,17 +183,61 @@ function calculateSummary(records: Map<string, {
   let totalAbsent = 0;
   let totalLeave = 0;
 
-  const STANDARD_CHECKIN = '09:00';
+  records.forEach((record, dateStr) => {
+    // Determine if user is an article (articleship)
+    const isArticle = user && user.designation && user.designation.toLowerCase() === 'article';
 
-  records.forEach((record) => {
+    // Calculate halfDay based on user type
+    let halfDay = false;
+    if (record.checkin) {
+      const checkinTime = record.checkin;
+      const checkinMinutes = timeToMinutes(checkinTime);
+      const onePMMinutes = timeToMinutes('13:00');
+      
+      if (checkinMinutes > onePMMinutes) {
+        if (isArticle) {
+          // For articles: half day if arrive after 1 PM
+          halfDay = true;
+        } else {
+          // For others: half day if arrive after 1 PM AND work less than 6 hours
+          halfDay = record.totalHour < 6;
+        }
+      }
+    }
+
+    // Update the record's halfDay flag
+    record.halfDay = halfDay;
+
     totalHour += record.totalHour || 0;
     excessHour += record.excessHour || 0;
 
-    if (record.halfDay) {
+    if (halfDay) {
       totalHalfDay++;
     }
 
-    if (record.checkin && record.checkin > STANDARD_CHECKIN) {
+    // Determine scheduled in-time for this specific date
+    let scheduledIn = '10:00'; // Default fallback
+    
+    if (user) {
+      const dateDate = new Date(dateStr);
+      // JS getDay(): 0=Sun, 1=Mon, ..., 6=Sat
+      const dayOfWeek = dateDate.getDay(); 
+      const month = dateDate.getMonth() + 1; // 1-12
+
+      // "Sch-Out (Dec- Jan)" logic: Special schedule for Dec (12) and Jan (1)
+      if (month === 12 || month === 1) {
+         scheduledIn = user.scheduleInOutTimeMonth?.inTime || '09:00';
+      } else if (dayOfWeek === 6) { // Saturday
+         scheduledIn = user.scheduleInOutTimeSat?.inTime || '09:00';
+      } else if (dayOfWeek !== 0) { // Regular (Mon-Fri)
+         scheduledIn = user.scheduleInOutTime?.inTime || '09:00';
+      }
+      // Sunday (0) usually doesn't have late arrival, but if record exists, use regular or ignore?
+      // Assuming no late arrival calc for Sunday usually, but let's stick to Regular if present
+      if (dayOfWeek === 0) scheduledIn = user.scheduleInOutTime?.inTime || '09:00';
+    }
+
+    if (record.checkin && record.checkin > scheduledIn) {
       totalLateArrival++;
     }
 
@@ -232,4 +279,11 @@ function calculateSummary(records: Map<string, {
     totalAbsent,
     totalLeave,
   };
+}
+
+// Convert "HH:mm" to total minutes since midnight
+function timeToMinutes(time: string): number {
+  if (!time) return 0;
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours * 60 + minutes;
 }
