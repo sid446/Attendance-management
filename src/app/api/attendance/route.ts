@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     }
 
     const attendanceRecords = await Attendance.find(query)
-      .populate('userId', 'name employeeId odId email department team workingUnderPartner scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth')
+      .populate('userId', 'name employeeId odId employeeCode email department team designation workingUnderPartner scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth')
       .sort({ monthYear: -1 });
 
     return NextResponse.json({

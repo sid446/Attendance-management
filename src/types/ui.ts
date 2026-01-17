@@ -13,7 +13,9 @@ export interface AttendanceSummaryView {
   userId: string;
   userName: string;
   odId?: string;
+  employeeCode?: string;
   team?: string; // Added optional team field
+  designation?: string; // Added optional designation field
   monthYear: string;
   schedules?: {
     regular?: ScheduleTime;

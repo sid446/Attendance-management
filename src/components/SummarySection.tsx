@@ -82,6 +82,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [useSpecialMonthSchedule, setUseSpecialMonthSchedule] = useState<boolean>(false);
   const [isBulkManagerOpen, setIsBulkManagerOpen] = useState(false);
+  const [selectedEmployees, setSelectedEmployees] = useState<Set<string>>(new Set());
   
   // Detail Modal State
   const [detailModal, setDetailModal] = useState<{isOpen: boolean; title: string; data: {date: string; info: string; subInfo?: string}[]}>({
@@ -345,7 +346,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     
     // Create header row with styling markers
     const headers = [
-      "Sr. No.", "Employee Name", "Team", "Scheduled Hours", "Actual Hours", 
+      "Sr. No.", "Employee Name", "Team", "Designation", "Scheduled Hours", "Actual Hours", 
       "Excess/Deficit", "Rank", "Late Arrivals", "Half Days", "Present Days", 
       "Absent Days", "Leaves Taken"
     ];
@@ -355,6 +356,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       index + 1,
       item.userName,
       item.team || 'N/A',
+      item.designation || 'N/A',
       item.calcScheduled?.toFixed(1) || '0.0',
       item.summary.totalHour.toFixed(1),
       item.calcExcessDeficit !== undefined ? item.calcExcessDeficit.toFixed(1) : '0.0',
@@ -372,9 +374,9 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     
     // Set column widths
     ws['!cols'] = [
-      { wch: 8 },  { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 13 }, 
-      { wch: 15 }, { wch: 8 },  { wch: 14 }, { wch: 11 }, { wch: 14 }, 
-      { wch: 13 }, { wch: 14 }
+      { wch: 8 },  { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, 
+      { wch: 13 }, { wch: 15 }, { wch: 8 },  { wch: 14 }, { wch: 11 }, 
+      { wch: 14 }, { wch: 13 }, { wch: 14 }
     ];
     
     // Apply cell styles using the `s` property
@@ -443,6 +445,86 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     
     const fileName = `Attendance_Summary_${selectedYear}_${String(selectedMonth).padStart(2, '0')}.xlsx`;
     XLSX.writeFile(wb, fileName, { cellStyles: true });
+  };
+
+  const handleDayWiseExport = async () => {
+    if (selectedEmployees.size === 0) {
+      alert('Please select at least one employee to export.');
+      return;
+    }
+
+    try {
+      const monthYear = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
+      const userIds = Array.from(selectedEmployees);
+
+      const response = await fetch('/api/attendance/range-export', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userIds,
+          monthYear,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to fetch attendance data');
+      }
+
+      // Create workbook and worksheet
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(result.data);
+
+      // Set column widths
+      ws['!cols'] = [
+        { wch: 20 }, // Employee Name
+        { wch: 15 }, // Employee ID
+        { wch: 15 }, // Team
+        { wch: 15 }, // Department
+        { wch: 12 }, // Date
+        { wch: 12 }, // Day
+        { wch: 12 }, // Status
+        { wch: 10 }, // In Time
+        { wch: 10 }, // Out Time
+        { wch: 12 }, // Total Hours
+        { wch: 20 }, // Type of Presence
+        { wch: 12 }, // Late Arrival
+        { wch: 10 }, // Half Day
+        { wch: 20 }, // Remarks
+        { wch: 15 }, // Scheduled Hours
+        { wch: 18 }, // Excess/Deficit Hours
+      ];
+
+      XLSX.utils.book_append_sheet(wb, ws, "Day-wise Attendance");
+
+      const fileName = `Daywise_Attendance_${selectedYear}_${String(selectedMonth).padStart(2, '0')}.xlsx`;
+      XLSX.writeFile(wb, fileName, { cellStyles: true });
+
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert('Failed to export attendance data. Please try again.');
+    }
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedEmployees(new Set(filteredSummaries.map(item => item.userId)));
+    } else {
+      setSelectedEmployees(new Set());
+    }
+  };
+
+  const handleSelectEmployee = (userId: string, checked: boolean) => {
+    const newSelected = new Set(selectedEmployees);
+    if (checked) {
+      newSelected.add(userId);
+    } else {
+      newSelected.delete(userId);
+    }
+    setSelectedEmployees(newSelected);
   };
   const currentPeriodLabel = new Date(selectedYear, selectedMonth - 1).toLocaleString('default', { month: 'long', year: 'numeric' });
 
@@ -518,10 +600,20 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           <button 
             onClick={handleExport}
             className="flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded-full md:rounded-md transition-colors shadow-sm"
-            title="Export to Excel"
+            title="Export Summary to Excel"
           >
              <Download className="w-4 h-4" />
-             <span className="hidden md:inline">Export</span>
+             <span className="hidden md:inline">Summary Export</span>
+          </button>
+
+          <button 
+            onClick={handleDayWiseExport}
+            disabled={selectedEmployees.size === 0}
+            className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-400 text-white text-xs font-medium rounded-full md:rounded-md transition-colors shadow-sm"
+            title="Export Day-wise Attendance for Selected Employees"
+          >
+             <Download className="w-4 h-4" />
+             <span className="hidden md:inline">Day-wise Export ({selectedEmployees.size})</span>
           </button>
           
           <button 
@@ -596,8 +688,18 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
             <table className="w-full text-xs">
               <thead className="bg-slate-950 border-b border-slate-800">
                 <tr>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-400">
+                    <input
+                      type="checkbox"
+                      checked={selectedEmployees.size === filteredSummaries.length && filteredSummaries.length > 0}
+                      onChange={(e) => handleSelectAll(e.target.checked)}
+                      className="rounded border-slate-600 text-emerald-600 focus:ring-emerald-500"
+                    />
+                  </th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-400">Rank</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-300">Employee</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-400">Team</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-400">Designation</th>
                   <th className="px-4 py-3 text-right font-semibold text-slate-400">Scheduled</th>
                   <th className="px-4 py-3 text-right font-semibold text-slate-300">Work Hours</th>
                   <th className="px-4 py-3 text-right font-semibold text-emerald-300/90">Excess</th>
@@ -615,11 +717,21 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                     className="hover:bg-slate-800/40 transition-colors group cursor-pointer"
                     onClick={() => onEmployeeClick(item.userId, item.monthYear)}
                   >
+                    <td className="px-4 py-3 text-left" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedEmployees.has(item.userId)}
+                        onChange={(e) => handleSelectEmployee(item.userId, e.target.checked)}
+                        className="rounded border-slate-600 text-emerald-600 focus:ring-emerald-500"
+                      />
+                    </td>
                     <td className="px-4 py-3 text-left font-mono text-slate-500 font-bold">{item.rank}</td>
                     <td className="px-4 py-3">
                       <div className="font-medium text-slate-200 group-hover:text-white">{item.userName}</div>
-                      <div className="text-[10px] text-slate-500 font-mono hidden md:block">{item.userId}</div>
+                      <div className="text-[10px] text-slate-500 font-mono hidden md:block">{item.employeeCode || item.odId || item.userId}</div>
                     </td>
+                    <td className="px-4 py-3 text-left text-slate-400">{item.team || '-'}</td>
+                    <td className="px-4 py-3 text-left text-slate-400">{item.designation || '-'}</td>
                     <td className="px-4 py-3 text-right font-mono text-slate-400">{item.calcScheduled?.toFixed(1) ?? '-'}</td>
                     <td className="px-4 py-3 text-right font-mono text-slate-300">{item.summary.totalHour?.toFixed(1)}</td>
                     <td className="px-4 py-3 text-right font-mono">

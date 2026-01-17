@@ -425,7 +425,9 @@ export default function AttendanceUpload() {
         userId: item.userId?._id ? String(item.userId._id) : '',
         userName: item.userId?.name ?? 'Unknown',
         odId: item.userId?.odId ?? '', // Map odId for UI
+        employeeCode: item.userId?.employeeCode ?? '', // Map employeeCode for UI
         team: item.userId?.workingUnderPartner || item.userId?.team || '', // Map workingUnderPartner to team field for export
+        designation: item.userId?.designation || '', // Map designation for UI
         monthYear: item.monthYear,
         schedules: {
             regular: item.userId?.scheduleInOutTime,
