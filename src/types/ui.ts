@@ -39,6 +39,7 @@ export interface AttendanceSummaryView {
       typeOfPresence: string;
       halfDay: boolean;
   }>;
+  calcScheduled?: number; // Total scheduled hours for the period
 }
 
 export interface ScheduleTime {

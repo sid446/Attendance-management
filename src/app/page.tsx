@@ -406,45 +406,258 @@ export default function AttendanceUpload() {
     }
   };
 
-  const fetchSummaries = async (monthYear?: string): Promise<void> => {
-    setLoadingSummaries(true);
-    try {
-      const url = monthYear
-        ? `/api/attendance?monthYear=${encodeURIComponent(monthYear)}`
-        : '/api/attendance';
-      const response = await fetch(url);
-      const result = await response.json();
+  const calculateTotalScheduledHours = (year: number, month: number, schedules: any): number => {
+    // 1. Get days in month
+    const daysInMonth = new Date(year, month, 0).getDate();
+    
+    let total = 0;
+    
+    if (!schedules) return 0;
 
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || 'Failed to fetch attendance summaries');
+    // Helper for diff
+    const timeToHours = (t?: string) => {
+      if (!t) return 0;
+      const [h, m] = t.split(':').map(Number);
+      return h + (m / 60);
+    };
+    
+    // Calculate daily hours for each schedule type
+    // Regular
+    const startReg = timeToHours(schedules.regular?.inTime);
+    const endReg = timeToHours(schedules.regular?.outTime);
+    const hoursReg = (startReg && endReg && endReg > startReg) ? (endReg - startReg) : 9;
+
+    // Saturday
+    const startSat = timeToHours(schedules.saturday?.inTime) || startReg;
+    const endSat = timeToHours(schedules.saturday?.outTime);
+    const hoursSat = (startSat && endSat && endSat > startSat) ? (endSat - startSat) : 4;
+
+    // Monthly Special - for range, assume regular
+    const hoursMonth = hoursReg;
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(year, month - 1, day);
+      const dow = date.getDay(); // 0=Sun, 6=Sat
+
+      if (dow === 0) {
+          continue;
+      } 
+      
+      if (dow === 6) {
+         total += hoursSat;
+         continue;
       }
 
-      const items: any[] = Array.isArray(result.data) ? result.data : [];
-      const mapped: AttendanceSummaryView[] = items.map((item) => ({
-        id: String(item._id),
-        userId: item.userId?._id ? String(item.userId._id) : '',
-        userName: item.userId?.name ?? 'Unknown',
-        odId: item.userId?.odId ?? '', // Map odId for UI
-        employeeCode: item.userId?.employeeCode ?? '', // Map employeeCode for UI
-        team: item.userId?.workingUnderPartner || item.userId?.team || '', // Map workingUnderPartner to team field for export
-        designation: item.userId?.designation || '', // Map designation for UI
-        monthYear: item.monthYear,
-        schedules: {
-            regular: item.userId?.scheduleInOutTime,
-            saturday: item.userId?.scheduleInOutTimeSat,
-            monthly: item.userId?.scheduleInOutTimeMonth
-        },
-        summary: {
-          totalHour: item.summary?.totalHour ?? 0,
-          totalLateArrival: item.summary?.totalLateArrival ?? 0,
-          excessHour: item.summary?.excessHour ?? 0,
-          totalHalfDay: item.summary?.totalHalfDay ?? 0,
-          totalPresent: item.summary?.totalPresent ?? 0,
-          totalAbsent: item.summary?.totalAbsent ?? 0,
-          totalLeave: item.summary?.totalLeave ?? 0,
-        },
-        recordDetails: item.records || {}
-      }));
+      // Weekday
+      total += hoursReg;
+    }
+    return total;
+  };
+
+  const calculateScheduledHoursForDate = (date: Date, schedules: any): number => {
+    if (!schedules) return 0;
+
+    const timeToHours = (t?: string) => {
+      if (!t) return 0;
+      const [h, m] = t.split(':').map(Number);
+      return h + (m / 60);
+    };
+
+    const dow = date.getDay();
+    if (dow === 0) return 0; // Sunday off
+
+    let inTime, outTime;
+    if (dow === 6) {
+      inTime = schedules.saturday?.inTime || schedules.regular?.inTime;
+      outTime = schedules.saturday?.outTime || schedules.regular?.outTime;
+    } else {
+      const month = date.getMonth() + 1;
+      if (month === 1 || month === 12) {
+        inTime = schedules.monthly?.inTime || schedules.regular?.inTime;
+        outTime = schedules.monthly?.outTime || schedules.regular?.outTime;
+      } else {
+        inTime = schedules.regular?.inTime;
+        outTime = schedules.regular?.outTime;
+      }
+    }
+
+    const start = timeToHours(inTime);
+    const end = timeToHours(outTime);
+    return (start && end && end > start) ? (end - start) : 9; // Default 9 hours
+  };
+
+  const fetchSummaries = async (filter: string | {start: string, end: string} | {startDate: string, endDate: string}): Promise<void> => {
+    setLoadingSummaries(true);
+    try {
+      let monthYears: string[] = [];
+      let startDate: Date | null = null;
+      let endDate: Date | null = null;
+      if (typeof filter === 'string') {
+        monthYears = [filter];
+      } else if ('startDate' in filter) {
+        // Date range
+        startDate = new Date(filter.startDate);
+        endDate = new Date(filter.endDate);
+        // Generate monthYears from startDate to endDate
+        const months = [];
+        let current = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+        const endMonth = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
+        while (current <= endMonth) {
+          const yyyy = current.getFullYear();
+          const mm = String(current.getMonth() + 1).padStart(2, '0');
+          months.push(`${yyyy}-${mm}`);
+          current.setMonth(current.getMonth() + 1);
+        }
+        monthYears = months;
+      } else {
+        // Month range
+        const start = new Date(filter.start + '-01');
+        const end = new Date(filter.end + '-01');
+        const months = [];
+        let current = new Date(start);
+        while (current <= end) {
+          const yyyy = current.getFullYear();
+          const mm = String(current.getMonth() + 1).padStart(2, '0');
+          months.push(`${yyyy}-${mm}`);
+          current.setMonth(current.getMonth() + 1);
+        }
+        monthYears = months;
+      }
+
+      // Fetch all months
+      const allItems: any[] = [];
+      for (const monthYear of monthYears) {
+        const url = `/api/attendance?monthYear=${encodeURIComponent(monthYear)}`;
+        const response = await fetch(url);
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || 'Failed to fetch attendance summaries');
+        }
+
+        const items: any[] = Array.isArray(result.data) ? result.data : [];
+        allItems.push(...items);
+      }
+
+      // Aggregate by userId
+      const userMap = new Map<string, any>();
+      for (const item of allItems) {
+        const userId = item.userId?._id ? String(item.userId._id) : '';
+        if (!userMap.has(userId)) {
+          userMap.set(userId, {
+            ...item,
+            recordDetails: {}
+          });
+        }
+        const existing = userMap.get(userId);
+        // Merge recordDetails
+        Object.assign(existing.recordDetails, item.records || {});
+      }
+
+      // If date range, filter records and calculate summary
+      if (startDate && endDate) {
+        for (const user of userMap.values()) {
+          const filteredRecords: any = {};
+          for (const [date, rec] of Object.entries(user.recordDetails)) {
+            const d = new Date(date);
+            if (d >= startDate && d <= endDate) {
+              filteredRecords[date] = rec;
+            }
+          }
+          // Calculate summary from filtered records
+          const summary = {
+            totalHour: 0,
+            totalLateArrival: 0,
+            excessHour: 0,
+            totalHalfDay: 0,
+            totalPresent: 0,
+            totalAbsent: 0,
+            totalLeave: 0,
+          };
+          for (const rec of Object.values(filteredRecords) as any[]) {
+            if (rec.typeOfPresence !== 'Holiday') {
+              summary.totalHour += rec.totalHour || 0;
+            }
+            if (rec.typeOfPresence === 'Leave') {
+              summary.totalLeave += 1;
+            } else if (rec.typeOfPresence !== 'Holiday' && rec.halfDay) {
+              summary.totalHalfDay += 1;
+              summary.totalPresent += 1;
+            } else if (rec.typeOfPresence !== 'Holiday' && rec.checkin && rec.checkin !== "00:00") {
+              summary.totalPresent += 1;
+              // Check late
+              // Need schedule to check late, but for simplicity, assume totalLateArrival is not calculated here
+            } else if (rec.typeOfPresence !== 'Holiday') {
+              summary.totalAbsent += 1;
+            }
+          }
+          user.summary = summary;
+          user.recordDetails = filteredRecords;
+        }
+      } else {
+        // For month ranges, sum the monthly summaries
+        for (const item of allItems) {
+          const userId = item.userId?._id ? String(item.userId._id) : '';
+          const user = userMap.get(userId);
+          if (user) {
+            user.summary.totalHour += item.summary?.totalHour ?? 0;
+            user.summary.totalLateArrival += item.summary?.totalLateArrival ?? 0;
+            user.summary.excessHour += item.summary?.excessHour ?? 0;
+            user.summary.totalHalfDay += item.summary?.totalHalfDay ?? 0;
+            user.summary.totalPresent += item.summary?.totalPresent ?? 0;
+            user.summary.totalAbsent += item.summary?.totalAbsent ?? 0;
+            user.summary.totalLeave += item.summary?.totalLeave ?? 0;
+          }
+        }
+      }
+
+      const mapped: AttendanceSummaryView[] = Array.from(userMap.values()).map((item) => {
+        let totalScheduled = 0;
+        // Calculate scheduled hours for each day that has attendance data
+        for (const date of Object.keys(item.recordDetails)) {
+          const d = new Date(date);
+          const rec = item.recordDetails[date];
+          // Only add scheduled hours if it's not a holiday
+          if (rec.typeOfPresence !== 'Holiday') {
+            totalScheduled += calculateScheduledHoursForDate(d, {
+              regular: item.userId?.scheduleInOutTime,
+              saturday: item.userId?.scheduleInOutTimeSat,
+              monthly: item.userId?.scheduleInOutTimeMonth
+            });
+          }
+        }
+
+        return {
+          id: String(item._id),
+          userId: item.userId?._id ? String(item.userId._id) : '',
+          userName: item.userId?.name ?? 'Unknown',
+          odId: item.userId?.odId ?? '',
+          employeeCode: item.userId?.employeeCode ?? '',
+          team: item.userId?.workingUnderPartner || item.userId?.team || '',
+          designation: item.userId?.designation || '',
+          monthYear: typeof filter === 'string' ? filter : ('end' in filter ? filter.end : filter.endDate),
+          schedules: {
+              regular: item.userId?.scheduleInOutTime,
+              saturday: item.userId?.scheduleInOutTimeSat,
+              monthly: item.userId?.scheduleInOutTimeMonth
+          },
+          summary: {
+            totalHour: Object.values(item.recordDetails).reduce((sum: number, rec: any) => 
+              rec.typeOfPresence !== 'Holiday' ? sum + (rec.totalHour || 0) : sum, 0),
+            totalLateArrival: item.summary?.totalLateArrival ?? 0,
+            excessHour: item.summary?.excessHour ?? 0,
+            totalHalfDay: Object.values(item.recordDetails).filter((rec: any) => 
+              rec.typeOfPresence !== 'Holiday' && rec.halfDay).length,
+            totalPresent: Object.values(item.recordDetails).filter((rec: any) => 
+              rec.typeOfPresence !== 'Holiday' && ((rec.checkin && rec.checkin !== "00:00") || rec.halfDay)).length,
+            totalAbsent: Object.values(item.recordDetails).filter((rec: any) => 
+              rec.totalHour === 0 && rec.typeOfPresence !== 'Leave' && rec.typeOfPresence !== 'Holiday').length,
+            totalLeave: item.summary?.totalLeave ?? 0,
+          },
+          recordDetails: item.recordDetails || {},
+          calcScheduled: totalScheduled
+        };
+      });
 
       setSummaries(mapped);
     } catch (err) {
@@ -580,9 +793,7 @@ export default function AttendanceUpload() {
                 onFilterChange={fetchSummaries}
                 onEmployeeClick={(userId, monthYear) => {
                   setSelectedEmployeeId(userId);
-                  setSelectedEmployeeMonth(monthYear);
-                  setShowAffectedModal(true);  // Show simple affected Modal
-                  fetchEmployeeMonthly(userId, monthYear);
+                  setActiveSection('employees');
                 }}
               />
             )}
@@ -732,7 +943,7 @@ export default function AttendanceUpload() {
 
             {/* Employee Management Section */}
             {activeSection === 'employees' && (
-              <EmployeeManagementSection />
+              <EmployeeManagementSection selectedUserId={selectedEmployeeId} />
             )}
           </div>
         </main>

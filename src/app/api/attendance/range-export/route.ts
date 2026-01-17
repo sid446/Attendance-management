@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
     await dbConnect();
 
     const body = await request.json();
-    const { userIds, monthYear } = body;
+    const { userIds, monthYear, startDate, endDate } = body;
 
     if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
       return NextResponse.json(
@@ -17,36 +17,65 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!monthYear) {
+    if (!monthYear && (!startDate || !endDate)) {
       return NextResponse.json(
-        { success: false, error: 'monthYear is required' },
+        { success: false, error: 'Either monthYear or startDate and endDate are required' },
         { status: 400 }
       );
     }
 
-    // Fetch attendance records for all selected users for the month
+    let start: Date, end: Date, monthYears: string[];
+    if (monthYear) {
+      const [year, month] = monthYear.split('-').map(Number);
+      start = new Date(year, month - 1, 1);
+      end = new Date(year, month, 0);
+      monthYears = [monthYear];
+    } else {
+      start = new Date(startDate);
+      end = new Date(endDate);
+      // Calculate monthYears in the range
+      monthYears = [];
+      const startMonth = new Date(start.getFullYear(), start.getMonth(), 1);
+      const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+      for (let d = new Date(startMonth); d <= endMonth; d.setMonth(d.getMonth() + 1)) {
+        monthYears.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+      }
+    }
+
+    // Fetch attendance records for all selected users for the months
     const attendanceRecords = await Attendance.find({
       userId: { $in: userIds },
-      monthYear: monthYear
+      monthYear: { $in: monthYears }
     })
     .populate('userId', 'name employeeId odId employeeCode email department team designation workingUnderPartner scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth')
     .sort({ 'userId.name': 1 });
 
+    // Group records by user and date
+    const userRecordsMap = new Map();
+    for (const record of attendanceRecords) {
+      const userId = record.userId._id.toString();
+      if (!userRecordsMap.has(userId)) {
+        userRecordsMap.set(userId, { user: record.userId, records: new Map() });
+      }
+      // Add all records from this month that are in the date range
+      for (const [dateStr, dayRecord] of record.records) {
+        const recordDate = new Date(dateStr);
+        if (recordDate >= start && recordDate <= end) {
+          userRecordsMap.get(userId).records.set(dateStr, dayRecord);
+        }
+      }
+    }
+
     // Transform the data for export
     const exportData: any[] = [];
 
-    for (const record of attendanceRecords) {
-      const user = record.userId as any;
-      const records = record.records as Map<string, any>;
-
-      // Get all days in the month
-      const [year, month] = monthYear.split('-').map(Number);
-      const daysInMonth = new Date(year, month, 0).getDate();
-
-      // Create entries for each day
-      for (let day = 1; day <= daysInMonth; day++) {
-        const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    for (const { user, records } of userRecordsMap.values()) {
+      // Loop from start to end for all days in the period
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        const dateStr = d.toISOString().split('T')[0];
         const dayRecord = records.get(dateStr);
+
+        if (!dayRecord) continue; // Only export days with attendance records
 
         let status = 'Absent';
         let inTime = '';
@@ -76,7 +105,7 @@ export async function POST(request: NextRequest) {
             status = 'Present';
 
             // Check if late
-            const dateObj = new Date(year, month - 1, day);
+            const dateObj = d;
             const dow = dateObj.getDay();
 
             let scheduledInTime = user.scheduleInOutTime?.inTime; // Default regular
@@ -101,7 +130,7 @@ export async function POST(request: NextRequest) {
           'Team': user.workingUnderPartner || user.team || '',
           'Designation': user.designation || '',
           'Date': dateStr,
-          'Day': new Date(year, month - 1, day).toLocaleDateString('en-US', { weekday: 'long' }),
+          'Day': d.toLocaleDateString('en-US', { weekday: 'long' }),
           'Status': status,
           'In Time': inTime,
           'Out Time': outTime,
@@ -110,8 +139,8 @@ export async function POST(request: NextRequest) {
           'Late Arrival': isLate ? 'Yes' : 'No',
           'Half Day': isHalfDay ? 'Yes' : 'No',
           'Remarks': remarks,
-          'Scheduled Hours': calculateScheduledHours(user, new Date(year, month - 1, day)),
-          'Excess/Deficit Hours': status === 'Present' ? (totalHours - calculateScheduledHours(user, new Date(year, month - 1, day))).toFixed(2) : '0.00'
+          'Scheduled Hours': calculateScheduledHours(user, d),
+          'Excess/Deficit Hours': status === 'Present' ? (totalHours - calculateScheduledHours(user, d)).toFixed(2) : '0.00'
         });
       }
     }
@@ -141,6 +170,11 @@ function calculateScheduledHours(user: any, date: Date): number {
 
   if (dow === 6 && user.scheduleInOutTimeSat) {
     schedule = user.scheduleInOutTimeSat;
+  }
+
+  // Prefer monthly if available
+  if (user.scheduleInOutTimeMonth) {
+    schedule = user.scheduleInOutTimeMonth;
   }
 
   if (dow === 0) return 0; // Sunday

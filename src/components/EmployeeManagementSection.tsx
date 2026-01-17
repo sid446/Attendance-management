@@ -1,9 +1,9 @@
 import React, { useState, useEffect, ChangeEvent, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { User, ScheduleTime } from '@/types/ui';
-import { Edit2, Save, X, Plus, Upload, FileUp, Filter, Trash2, Search, Download } from 'lucide-react';
+import { Edit2, Save, X, Plus, Upload, FileUp, Filter, Trash2, Search, Download, ChevronDown, ChevronUp } from 'lucide-react';
 
-export const EmployeeManagementSection: React.FC = () => {
+export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | null }> = ({ selectedUserId }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -12,6 +12,7 @@ export const EmployeeManagementSection: React.FC = () => {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [formData, setFormData] = useState<Partial<User>>({});
   const [saveLoading, setSaveLoading] = useState<boolean>(false);
+  const [isAddingNew, setIsAddingNew] = useState<boolean>(false);
 
   // Filter State
   const [filterDesignation, setFilterDesignation] = useState<string>('');
@@ -21,7 +22,11 @@ export const EmployeeManagementSection: React.FC = () => {
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadStats, setUploadStats] = useState<any>(null);
 
-  // Global extra info field management
+  // UI State
+  const [showAdditionalFields, setShowAdditionalFields] = useState<boolean>(false);
+  const [activeTab, setActiveTab] = useState<'basic' | 'schedule' | 'extended'>('basic');
+
+  // Extra Info State
   const [newExtraLabel, setNewExtraLabel] = useState<string>('');
   const [isSavingExtraLabel, setIsSavingExtraLabel] = useState<boolean>(false);
 
@@ -48,6 +53,17 @@ export const EmployeeManagementSection: React.FC = () => {
       setLoading(false);
     }
   };
+
+  // Set editing user when selectedUserId changes
+  useEffect(() => {
+    if (selectedUserId && users.length > 0) {
+      const user = users.find(u => u._id === selectedUserId);
+      if (user) {
+        setEditingUser(user);
+        setFormData(user);
+      }
+    }
+  }, [selectedUserId, users]);
 
   const handleDeleteUser = async (user: User) => {
     if (!window.confirm(`Are you sure you want to delete employee "${user.name}"? This will deactivate their account.`)) {
@@ -210,6 +226,41 @@ export const EmployeeManagementSection: React.FC = () => {
       setFormData({});
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save changes');
+    } finally {
+      setSaveLoading(false);
+    }
+  };
+
+  const handleCreateNew = async () => {
+    if (!formData.name || !formData.email || !formData.odId || !formData.joiningDate) {
+      setError('OD ID, Name, Email, and Joining Date are required');
+      return;
+    }
+
+    setSaveLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to create user');
+      }
+
+      // Add to local state
+      setUsers(prev => [...prev, result.data]);
+      setIsAddingNew(false);
+      setFormData({});
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create employee');
     } finally {
       setSaveLoading(false);
     }
@@ -767,432 +818,481 @@ export const EmployeeManagementSection: React.FC = () => {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Basic Info */}
-          <div className="space-y-4">
-            <h3 className="text-sm font-medium text-slate-300 border-b border-slate-800 pb-2">Basic Information</h3>
-            
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">OD ID</label>
-              <input
-                type="text"
-                value={formData.odId || ''}
-                onChange={(e) => handleInputChange('odId', e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Name</label>
-              <input
-                type="text"
-                value={formData.name || ''}
-                onChange={(e) => handleInputChange('name', e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Email</label>
-              <input
-                type="email"
-                value={formData.email || ''}
-                onChange={(e) => handleInputChange('email', e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Designation</label>
-              <input
-                type="text"
-                value={formData.designation || ''}
-                onChange={(e) => handleInputChange('designation', e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Team</label>
-              <input
-                type="text"
-                value={formData.team || ''}
-                onChange={(e) => handleInputChange('team', e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Joining Date</label>
-              <input
-                type="date"
-                value={formData.joiningDate as string || ''}
-                onChange={(e) => handleInputChange('joiningDate', e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-              />
-            </div>
-            
-             <div className="flex items-center gap-2 mt-4">
-              <input
-                type="checkbox"
-                id="isActive"
-                checked={formData.isActive || false}
-                onChange={(e) => handleInputChange('isActive', e.target.checked)}
-                className="w-4 h-4 bg-slate-950 border-slate-800 rounded text-emerald-500 focus:ring-0"
-              />
-              <label htmlFor="isActive" className="text-sm text-slate-300">Active Employee</label>
+          {/* Tab Navigation */}
+          <div className="md:col-span-2 mb-4">
+            <div className="flex space-x-1 bg-slate-950/50 p-1 rounded-lg border border-slate-800">
+              <button
+                onClick={() => setActiveTab('basic')}
+                className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'basic'
+                    ? 'bg-emerald-600 text-white'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                }`}
+              >
+                Basic Info
+              </button>
+              <button
+                onClick={() => setActiveTab('schedule')}
+                className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'schedule'
+                    ? 'bg-emerald-600 text-white'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                }`}
+              >
+                Schedule
+              </button>
+              <button
+                onClick={() => setActiveTab('extended')}
+                className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'extended'
+                    ? 'bg-emerald-600 text-white'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                }`}
+              >
+                Extended
+              </button>
             </div>
           </div>
 
-          {/* Schedule Info */}
-          <div className="space-y-6">
-            <h3 className="text-sm font-medium text-slate-300 border-b border-slate-800 pb-2">Work Schedule</h3>
-
-            {/* Regular Schedule */}
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-emerald-500/80">Regular (Mon-Fri)</label>
-              <div className="grid grid-cols-2 gap-2">
+          {/* Basic Info Tab */}
+          {activeTab === 'basic' && (
+            <>
+              <div className="space-y-4">
+                <h3 className="text-sm font-medium text-slate-300 border-b border-slate-800 pb-2">Basic Information</h3>
+                
                 <div>
-                  <label className="text-xs text-slate-500">In Time</label>
+                  <label className="block text-xs text-slate-400 mb-1">OD ID</label>
                   <input
-                    type="time"
-                    value={formData.scheduleInOutTime?.inTime || ''}
-                    onChange={(e) => handleScheduleChange('scheduleInOutTime', 'inTime', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                    type="text"
+                    value={formData.odId || ''}
+                    onChange={(e) => handleInputChange('odId', e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
                   />
                 </div>
+
                 <div>
-                  <label className="text-xs text-slate-500">Out Time</label>
+                  <label className="block text-xs text-slate-400 mb-1">Name</label>
                   <input
-                    type="time"
-                    value={formData.scheduleInOutTime?.outTime || ''}
-                    onChange={(e) => handleScheduleChange('scheduleInOutTime', 'outTime', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                    type="text"
+                    value={formData.name || ''}
+                    onChange={(e) => handleInputChange('name', e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={formData.email || ''}
+                    onChange={(e) => handleInputChange('email', e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Designation</label>
+                  <input
+                    type="text"
+                    value={formData.designation || ''}
+                    onChange={(e) => handleInputChange('designation', e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Team</label>
+                  <input
+                    type="text"
+                    value={formData.team || ''}
+                    onChange={(e) => handleInputChange('team', e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Joining Date</label>
+                  <input
+                    type="date"
+                    value={formData.joiningDate as string || ''}
+                    onChange={(e) => handleInputChange('joiningDate', e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+                
+                 <div className="flex items-center gap-2 mt-4">
+                  <input
+                    type="checkbox"
+                    id="isActive"
+                    checked={formData.isActive || false}
+                    onChange={(e) => handleInputChange('isActive', e.target.checked)}
+                    className="w-4 h-4 bg-slate-950 border-slate-800 rounded text-emerald-500 focus:ring-0"
+                  />
+                  <label htmlFor="isActive" className="text-sm text-slate-300">Active Employee</label>
+                </div>
+              </div>
+
+              {/* Placeholder for second column */}
+              <div className="hidden md:block"></div>
+            </>
+          )}
+
+          {/* Schedule Tab */}
+          {activeTab === 'schedule' && (
+            <div className="md:col-span-2 space-y-6">
+              <h3 className="text-sm font-medium text-slate-300 border-b border-slate-800 pb-2">Work Schedule</h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Regular Schedule */}
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-emerald-500/80">Regular (Mon-Fri)</label>
+                  <div className="space-y-2">
+                    <div>
+                      <label className="text-xs text-slate-500">In Time</label>
+                      <input
+                        type="time"
+                        value={formData.scheduleInOutTime?.inTime || ''}
+                        onChange={(e) => handleScheduleChange('scheduleInOutTime', 'inTime', e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500">Out Time</label>
+                      <input
+                        type="time"
+                        value={formData.scheduleInOutTime?.outTime || ''}
+                        onChange={(e) => handleScheduleChange('scheduleInOutTime', 'outTime', e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Saturday Schedule */}
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-emerald-500/80">Saturday</label>
+                  <div className="space-y-2">
+                     <div>
+                      <label className="text-xs text-slate-500">In Time</label>
+                      <input
+                        type="time"
+                        value={formData.scheduleInOutTimeSat?.inTime || ''}
+                        onChange={(e) => handleScheduleChange('scheduleInOutTimeSat', 'inTime', e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500">Out Time</label>
+                      <input
+                        type="time"
+                        value={formData.scheduleInOutTimeSat?.outTime || ''}
+                        onChange={(e) => handleScheduleChange('scheduleInOutTimeSat', 'outTime', e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                 {/* Monthly Schedule */}
+                 <div className="space-y-2">
+                  <label className="text-xs font-semibold text-emerald-500/80">Monthly Special</label>
+                  <div className="space-y-2">
+                     <div>
+                      <label className="text-xs text-slate-500">In Time</label>
+                      <input
+                        type="time"
+                        value={formData.scheduleInOutTimeMonth?.inTime || ''}
+                        onChange={(e) => handleScheduleChange('scheduleInOutTimeMonth', 'inTime', e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500">Out Time</label>
+                      <input
+                        type="time"
+                        value={formData.scheduleInOutTimeMonth?.outTime || ''}
+                        onChange={(e) => handleScheduleChange('scheduleInOutTimeMonth', 'outTime', e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
+          )}
 
-            {/* Saturday Schedule */}
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-emerald-500/80">Saturday</label>
-              <div className="grid grid-cols-2 gap-2">
-                 <div>
-                  <label className="text-xs text-slate-500">In Time</label>
-                  <input
-                    type="time"
-                    value={formData.scheduleInOutTimeSat?.inTime || ''}
-                    onChange={(e) => handleScheduleChange('scheduleInOutTimeSat', 'inTime', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-slate-500">Out Time</label>
-                  <input
-                    type="time"
-                    value={formData.scheduleInOutTimeSat?.outTime || ''}
-                    onChange={(e) => handleScheduleChange('scheduleInOutTimeSat', 'outTime', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
-                  />
-                </div>
-              </div>
-            </div>
-
-             {/* Monthly Schedule */}
-             <div className="space-y-2">
-              <label className="text-xs font-semibold text-emerald-500/80">Monthly Special</label>
-              <div className="grid grid-cols-2 gap-2">
-                 <div>
-                  <label className="text-xs text-slate-500">In Time</label>
-                  <input
-                    type="time"
-                    value={formData.scheduleInOutTimeMonth?.inTime || ''}
-                    onChange={(e) => handleScheduleChange('scheduleInOutTimeMonth', 'inTime', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-slate-500">Out Time</label>
-                  <input
-                    type="time"
-                    value={formData.scheduleInOutTimeMonth?.outTime || ''}
-                    onChange={(e) => handleScheduleChange('scheduleInOutTimeMonth', 'outTime', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
-                  />
-                </div>
-              </div>
-            </div>
-
-          </div>
-        </div>
-
-        {/* Extended Details */}
-        <div className="mt-6 pt-6 border-t border-slate-800">
-          <h3 className="text-sm font-medium text-slate-300 mb-4">Extended Details</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            
-            {/* Identity & Contact */}
-            {[
-              { label: 'Registration No.', key: 'registrationNo' },
-              { label: 'Employee Code', key: 'employeeCode' },
-              { label: 'Paid From', key: 'paidFrom' },
-              { label: 'Tally Name', key: 'tallyName' },
-              { label: 'Category', key: 'category' },
-              { label: 'Gender', key: 'gender' },
-              { label: 'Mobile No.', key: 'mobileNumber' },
-              { label: 'Alt Mobile', key: 'alternateMobileNumber' },
-              { label: 'Alt Email', key: 'alternateEmail' },
-              { label: 'Parent Name', key: 'parentName' },
-              { label: 'Parent Occ.', key: 'parentOccupation' },
-            ].map((field) => (
-              <div key={field.key}>
-                <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
-                <input
-                  type="text"
-                  value={(formData as any)[field.key] || ''}
-                  onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                />
-              </div>
-            ))}
-
-            <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
-                 <div>
-                    <label className="block text-xs text-slate-400 mb-1">Address Line 1</label>
+          {/* Extended Tab */}
+          {activeTab === 'extended' && (
+            <div className="md:col-span-2">
+              <h3 className="text-sm font-medium text-slate-300 border-b border-slate-800 pb-2 mb-4">Extended Details</h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                
+                {/* Identity & Contact */}
+                {[
+                  { label: 'Registration No.', key: 'registrationNo' },
+                  { label: 'Employee Code', key: 'employeeCode' },
+                  { label: 'Paid From', key: 'paidFrom' },
+                  { label: 'Tally Name', key: 'tallyName' },
+                  { label: 'Category', key: 'category' },
+                  { label: 'Gender', key: 'gender' },
+                  { label: 'Mobile No.', key: 'mobileNumber' },
+                  { label: 'Alt Mobile', key: 'alternateMobileNumber' },
+                  { label: 'Alt Email', key: 'alternateEmail' },
+                  { label: 'Parent Name', key: 'parentName' },
+                  { label: 'Parent Occ.', key: 'parentOccupation' },
+                ].map((field) => (
+                  <div key={field.key}>
+                    <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
                     <input
                       type="text"
-                      value={formData.address1 || ''}
-                      onChange={(e) => handleInputChange('address1', e.target.value)}
+                      value={(formData as any)[field.key] || ''}
+                      onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    />
+                  </div>
+                ))}
+
+                <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                     <div>
+                        <label className="block text-xs text-slate-400 mb-1">Address Line 1</label>
+                        <input
+                          type="text"
+                          value={formData.address1 || ''}
+                          onChange={(e) => handleInputChange('address1', e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-400 mb-1">Address Line 2</label>
+                        <input
+                          type="text"
+                          value={formData.address2 || ''}
+                          onChange={(e) => handleInputChange('address2', e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                        />
+                      </div>
+                </div>
+
+                {/* Emergency Contact & Banking */}
+                <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Emergency Contact No.</label>
+                    <input
+                      type="text"
+                      value={(formData as any).emergencyContactNo || ''}
+                      onChange={(e) => handleInputChange('emergencyContactNo' as keyof User, e.target.value)}
                       className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Address Line 2</label>
+                    <label className="block text-xs text-slate-400 mb-1">Relation</label>
                     <input
                       type="text"
-                      value={formData.address2 || ''}
-                      onChange={(e) => handleInputChange('address2', e.target.value)}
+                      value={(formData as any).emergencyContactRelation || ''}
+                      onChange={(e) => handleInputChange('emergencyContactRelation' as keyof User, e.target.value)}
                       className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
                     />
                   </div>
-            </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Anniversary Date</label>
+                    <input
+                      type="date"
+                      value={(formData as any).anniversaryDate ? new Date((formData as any).anniversaryDate).toISOString().split('T')[0] : ''}
+                      onChange={(e) => handleInputChange('anniversaryDate' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Bank Name</label>
+                    <input
+                      type="text"
+                      value={(formData as any).bankName || ''}
+                      onChange={(e) => handleInputChange('bankName' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Branch Name</label>
+                    <input
+                      type="text"
+                      value={(formData as any).branchName || ''}
+                      onChange={(e) => handleInputChange('branchName' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Account No.</label>
+                    <input
+                      type="text"
+                      value={(formData as any).accountNumber || ''}
+                      onChange={(e) => handleInputChange('accountNumber' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">IFSC</label>
+                    <input
+                      type="text"
+                      value={(formData as any).ifscCode || ''}
+                      onChange={(e) => handleInputChange('ifscCode' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Type of Account</label>
+                    <input
+                      type="text"
+                      value={(formData as any).accountType || ''}
+                      onChange={(e) => handleInputChange('accountType' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Name of Account Holder</label>
+                    <input
+                      type="text"
+                      value={(formData as any).accountHolderName || ''}
+                      onChange={(e) => handleInputChange('accountHolderName' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Aadhar No.</label>
+                    <input
+                      type="text"
+                      value={(formData as any).aadhaarNumber || ''}
+                      onChange={(e) => handleInputChange('aadhaarNumber' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">PAN</label>
+                    <input
+                      type="text"
+                      value={(formData as any).panNumber || ''}
+                      onChange={(e) => handleInputChange('panNumber' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    />
+                  </div>
+                </div>
 
-            {/* Emergency Contact & Banking */}
-            <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Emergency Contact No.</label>
-                <input
-                  type="text"
-                  value={(formData as any).emergencyContactNo || ''}
-                  onChange={(e) => handleInputChange('emergencyContactNo' as keyof User, e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Relation</label>
-                <input
-                  type="text"
-                  value={(formData as any).emergencyContactRelation || ''}
-                  onChange={(e) => handleInputChange('emergencyContactRelation' as keyof User, e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Anniversary Date</label>
-                <input
-                  type="date"
-                  value={(formData as any).anniversaryDate ? new Date((formData as any).anniversaryDate).toISOString().split('T')[0] : ''}
-                  onChange={(e) => handleInputChange('anniversaryDate' as keyof User, e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Bank Name</label>
-                <input
-                  type="text"
-                  value={(formData as any).bankName || ''}
-                  onChange={(e) => handleInputChange('bankName' as keyof User, e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Branch Name</label>
-                <input
-                  type="text"
-                  value={(formData as any).branchName || ''}
-                  onChange={(e) => handleInputChange('branchName' as keyof User, e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Account No.</label>
-                <input
-                  type="text"
-                  value={(formData as any).accountNumber || ''}
-                  onChange={(e) => handleInputChange('accountNumber' as keyof User, e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">IFSC</label>
-                <input
-                  type="text"
-                  value={(formData as any).ifscCode || ''}
-                  onChange={(e) => handleInputChange('ifscCode' as keyof User, e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Type of Account</label>
-                <input
-                  type="text"
-                  value={(formData as any).accountType || ''}
-                  onChange={(e) => handleInputChange('accountType' as keyof User, e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Name of Account Holder</label>
-                <input
-                  type="text"
-                  value={(formData as any).accountHolderName || ''}
-                  onChange={(e) => handleInputChange('accountHolderName' as keyof User, e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Aadhar No.</label>
-                <input
-                  type="text"
-                  value={(formData as any).aadhaarNumber || ''}
-                  onChange={(e) => handleInputChange('aadhaarNumber' as keyof User, e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">PAN</label>
-                <input
-                  type="text"
-                  value={(formData as any).panNumber || ''}
-                  onChange={(e) => handleInputChange('panNumber' as keyof User, e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                />
-              </div>
-            </div>
+                {/* Salary Information */}
+                <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Basis Salary/Stipend/Fees</label>
+                    <input
+                      type="text"
+                      value={(formData as any).basicSalary || ''}
+                      onChange={(e) => handleInputChange('basicSalary' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Laptop Allowance</label>
+                    <input
+                      type="text"
+                      value={(formData as any).laptopAllowance || ''}
+                      onChange={(e) => handleInputChange('laptopAllowance' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Total Salary (P/M)</label>
+                    <input
+                      type="text"
+                      value={(formData as any).totalSalaryPerMonth || ''}
+                      onChange={(e) => handleInputChange('totalSalaryPerMonth' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Per Annum</label>
+                    <input
+                      type="text"
+                      value={(formData as any).totalSalaryPerAnnum || ''}
+                      onChange={(e) => handleInputChange('totalSalaryPerAnnum' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    />
+                  </div>
+                </div>
 
-            {/* Salary Information */}
-            <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Basis Salary/Stipend/Fees</label>
-                <input
-                  type="text"
-                  value={(formData as any).basicSalary || ''}
-                  onChange={(e) => handleInputChange('basicSalary' as keyof User, e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Laptop Allowance</label>
-                <input
-                  type="text"
-                  value={(formData as any).laptopAllowance || ''}
-                  onChange={(e) => handleInputChange('laptopAllowance' as keyof User, e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Total Salary (P/M)</label>
-                <input
-                  type="text"
-                  value={(formData as any).totalSalaryPerMonth || ''}
-                  onChange={(e) => handleInputChange('totalSalaryPerMonth' as keyof User, e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Per Annum</label>
-                <input
-                  type="text"
-                  value={(formData as any).totalSalaryPerAnnum || ''}
-                  onChange={(e) => handleInputChange('totalSalaryPerAnnum' as keyof User, e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                />
-              </div>
-            </div>
+                {/* Articleship & Professional */}
+                {[
+                  { label: 'Transfer Case', key: 'transferCase' },
+                  { label: '1st Year Art.', key: 'firstYearArticleship' },
+                  { label: '2nd Year Art.', key: 'secondYearArticleship' },
+                  { label: '3rd Year Art.', key: 'thirdYearArticleship' },
+                  { label: 'Filled Scholarship', key: 'filledScholarship' },
+                  { label: 'Qualification', key: 'qualificationLevel' },
+                  { label: 'Reg. Partner', key: 'registeredUnderPartner' },
+                  { label: 'Work. Partner', key: 'workingUnderPartner' },
+                  { label: 'Work Timing (Text)', key: 'workingTiming' },
+                ].map((field) => (
+                  <div key={field.key}>
+                     <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                    <input
+                      type="text"
+                      value={(formData as any)[field.key] || ''}
+                      onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    />
+                  </div>
+                ))}
 
-            {/* Articleship & Professional */}
-            {[
-              { label: 'Transfer Case', key: 'transferCase' },
-              { label: '1st Year Art.', key: 'firstYearArticleship' },
-              { label: '2nd Year Art.', key: 'secondYearArticleship' },
-              { label: '3rd Year Art.', key: 'thirdYearArticleship' },
-              { label: 'Filled Scholarship', key: 'filledScholarship' },
-              { label: 'Qualification', key: 'qualificationLevel' },
-              { label: 'Reg. Partner', key: 'registeredUnderPartner' },
-              { label: 'Work. Partner', key: 'workingUnderPartner' },
-              { label: 'Work Timing (Text)', key: 'workingTiming' },
-            ].map((field) => (
-              <div key={field.key}>
-                 <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
-                <input
-                  type="text"
-                  value={(formData as any)[field.key] || ''}
-                  onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                />
-              </div>
-            ))}
-
-            {/* Dates */}
-             <div>
-              <label className="block text-xs text-slate-400 mb-1">Articleship Start</label>
-              <input
-                type="date"
-                value={formData.articleshipStartDate ? new Date(formData.articleshipStartDate).toISOString().split('T')[0] : ''}
-                onChange={(e) => handleInputChange('articleshipStartDate', e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-              />
-            </div>
-             <div>
-              <label className="block text-xs text-slate-400 mb-1">Next Attempt Due</label>
-              <input
-                type="date"
-                value={formData.nextAttemptDueDate ? new Date(formData.nextAttemptDueDate).toISOString().split('T')[0] : ''}
-                onChange={(e) => handleInputChange('nextAttemptDueDate', e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-              />
-            </div>
-
-          </div>
-
-          {/* Flexible Additional Info */}
-          <div className="mt-6 md:col-span-3">
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Additional Info (PAN, Aadhaar, etc.)</h4>
-              <p className="text-[11px] text-slate-500">Fields are managed from the main page.</p>
-            </div>
-            <div className="space-y-2">
-              {(formData.extraInfo || []).map((item, idx) => (
-                <div key={idx} className="grid grid-cols-12 gap-2 items-center">
+                {/* Dates */}
+                 <div>
+                  <label className="block text-xs text-slate-400 mb-1">Articleship Start</label>
                   <input
-                    type="text"
-                    value={item.label}
-                    disabled
-                    className="col-span-4 bg-slate-950 border border-slate-800 rounded px-3 py-2 text-xs text-slate-500 cursor-not-allowed"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Value"
-                    value={item.value}
-                    onChange={(e) => handleExtraInfoChange(idx, 'value', e.target.value)}
-                    className="col-span-8 bg-slate-950 border border-slate-800 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    type="date"
+                    value={formData.articleshipStartDate ? new Date(formData.articleshipStartDate).toISOString().split('T')[0] : ''}
+                    onChange={(e) => handleInputChange('articleshipStartDate', e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
                   />
                 </div>
-              ))}
-              {(formData.extraInfo || []).length === 0 && (
-                <p className="text-[11px] text-slate-500">No additional info fields defined yet.</p>
-              )}
+                 <div>
+                  <label className="block text-xs text-slate-400 mb-1">Next Attempt Due</label>
+                  <input
+                    type="date"
+                    value={formData.nextAttemptDueDate ? new Date(formData.nextAttemptDueDate).toISOString().split('T')[0] : ''}
+                    onChange={(e) => handleInputChange('nextAttemptDueDate', e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+
+              </div>
+
+              {/* Flexible Additional Info */}
+              <div className="mt-6 md:col-span-3">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Additional Info (PAN, Aadhaar, etc.)</h4>
+                  <p className="text-[11px] text-slate-500">Fields are managed from the main page.</p>
+                </div>
+                <div className="space-y-2">
+                  {(formData.extraInfo || []).map((item, idx) => (
+                    <div key={idx} className="grid grid-cols-12 gap-2 items-center">
+                      <input
+                        type="text"
+                        value={item.label}
+                        disabled
+                        className="col-span-4 bg-slate-950 border border-slate-800 rounded px-3 py-2 text-xs text-slate-500 cursor-not-allowed"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Value"
+                        value={item.value}
+                        onChange={(e) => handleExtraInfoChange(idx, 'value', e.target.value)}
+                        className="col-span-8 bg-slate-950 border border-slate-800 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                      />
+                    </div>
+                  ))}
+                  {(formData.extraInfo || []).length === 0 && (
+                    <p className="text-[11px] text-slate-500">No additional info fields defined yet.</p>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         <div className="mt-8 flex justify-end gap-3 pt-4 border-t border-slate-800">
@@ -1215,150 +1315,663 @@ export const EmployeeManagementSection: React.FC = () => {
     );
   }
 
-  // ============== LIST VIEW =================
-  return (
-    <div className="bg-slate-900/50 rounded-lg border border-slate-800">
-      <div className="p-4 border-b border-slate-800 flex flex-col md:flex-row justify-between items-center gap-4">
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold text-slate-200">User Management</h2>
-          {!loading && (
-            <span className="px-2.5 py-0.5 rounded-full bg-slate-800 text-xs font-medium text-slate-400 border border-slate-700">
-              {filteredUsers.length}
-              {filterDesignation && <span className="text-slate-500 ml-1">(Filtered)</span>}
-            </span>
+  // ============== ADD NEW EMPLOYEE FORM VIEW =================
+  if (isAddingNew) {
+    return (
+      <div className="bg-slate-900/50 rounded-lg border border-slate-800 p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-semibold text-purple-400">Add New Employee</h2>
+          <button onClick={() => setIsAddingNew(false)} className="text-slate-400 hover:text-slate-200">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {error && (
+          <div className="bg-rose-500/10 text-rose-300 px-4 py-3 rounded-md mb-6 border border-rose-500/20">
+            {error}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Tab Navigation */}
+          <div className="md:col-span-2 mb-4">
+            <div className="flex space-x-1 bg-slate-950/50 p-1 rounded-lg border border-slate-800">
+              <button
+                onClick={() => setActiveTab('basic')}
+                className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'basic'
+                    ? 'bg-purple-600 text-white'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                }`}
+              >
+                Basic Info
+              </button>
+              <button
+                onClick={() => setActiveTab('schedule')}
+                className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'schedule'
+                    ? 'bg-purple-600 text-white'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                }`}
+              >
+                Schedule
+              </button>
+              <button
+                onClick={() => setActiveTab('extended')}
+                className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'extended'
+                    ? 'bg-purple-600 text-white'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                }`}
+              >
+                Extended
+              </button>
+            </div>
+          </div>
+
+          {/* Basic Info Tab */}
+          {activeTab === 'basic' && (
+            <>
+              <div className="space-y-4">
+                <h3 className="text-sm font-medium text-slate-300 border-b border-slate-800 pb-2">Basic Information</h3>
+                
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">OD ID *</label>
+                  <input
+                    type="text"
+                    value={formData.odId || ''}
+                    onChange={(e) => handleInputChange('odId', e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Name *</label>
+                  <input
+                    type="text"
+                    value={formData.name || ''}
+                    onChange={(e) => handleInputChange('name', e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Email *</label>
+                  <input
+                    type="email"
+                    value={formData.email || ''}
+                    onChange={(e) => handleInputChange('email', e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Designation</label>
+                  <input
+                    type="text"
+                    value={formData.designation || ''}
+                    onChange={(e) => handleInputChange('designation', e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Team</label>
+                  <input
+                    type="text"
+                    value={formData.team || ''}
+                    onChange={(e) => handleInputChange('team', e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Joining Date *</label>
+                  <input
+                    type="date"
+                    value={formData.joiningDate as string || ''}
+                    onChange={(e) => handleInputChange('joiningDate', e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    required
+                  />
+                </div>
+                
+                 <div className="flex items-center gap-2 mt-4">
+                  <input
+                    type="checkbox"
+                    id="isActiveNew"
+                    checked={formData.isActive !== false} // Default to true for new employees
+                    onChange={(e) => handleInputChange('isActive', e.target.checked)}
+                    className="w-4 h-4 bg-slate-950 border-slate-800 rounded text-purple-500 focus:ring-0"
+                  />
+                  <label htmlFor="isActiveNew" className="text-sm text-slate-300">Active Employee</label>
+                </div>
+              </div>
+
+              {/* Placeholder for second column */}
+              <div className="hidden md:block"></div>
+            </>
+          )}
+
+          {/* Schedule Tab */}
+          {activeTab === 'schedule' && (
+            <div className="md:col-span-2 space-y-6">
+              <h3 className="text-sm font-medium text-slate-300 border-b border-slate-800 pb-2">Work Schedule</h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Regular Schedule */}
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-purple-500/80">Regular (Mon-Fri)</label>
+                  <div className="space-y-2">
+                    <div>
+                      <label className="text-xs text-slate-500">In Time</label>
+                      <input
+                        type="time"
+                        value={formData.scheduleInOutTime?.inTime || ''}
+                        onChange={(e) => handleScheduleChange('scheduleInOutTime', 'inTime', e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500">Out Time</label>
+                      <input
+                        type="time"
+                        value={formData.scheduleInOutTime?.outTime || ''}
+                        onChange={(e) => handleScheduleChange('scheduleInOutTime', 'outTime', e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Saturday Schedule */}
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-purple-500/80">Saturday</label>
+                  <div className="space-y-2">
+                     <div>
+                      <label className="text-xs text-slate-500">In Time</label>
+                      <input
+                        type="time"
+                        value={formData.scheduleInOutTimeSat?.inTime || ''}
+                        onChange={(e) => handleScheduleChange('scheduleInOutTimeSat', 'inTime', e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500">Out Time</label>
+                      <input
+                        type="time"
+                        value={formData.scheduleInOutTimeSat?.outTime || ''}
+                        onChange={(e) => handleScheduleChange('scheduleInOutTimeSat', 'outTime', e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                 {/* Monthly Schedule */}
+                 <div className="space-y-2">
+                  <label className="text-xs font-semibold text-purple-500/80">Monthly Special</label>
+                  <div className="space-y-2">
+                     <div>
+                      <label className="text-xs text-slate-500">In Time</label>
+                      <input
+                        type="time"
+                        value={formData.scheduleInOutTimeMonth?.inTime || ''}
+                        onChange={(e) => handleScheduleChange('scheduleInOutTimeMonth', 'inTime', e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500">Out Time</label>
+                      <input
+                        type="time"
+                        value={formData.scheduleInOutTimeMonth?.outTime || ''}
+                        onChange={(e) => handleScheduleChange('scheduleInOutTimeMonth', 'outTime', e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Extended Tab */}
+          {activeTab === 'extended' && (
+            <div className="md:col-span-2">
+              <h3 className="text-sm font-medium text-slate-300 border-b border-slate-800 pb-2 mb-4">Extended Details (Optional)</h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                
+                {/* Identity & Contact */}
+                {[
+                  { label: 'Registration No.', key: 'registrationNo' },
+                  { label: 'Employee Code', key: 'employeeCode' },
+                  { label: 'Paid From', key: 'paidFrom' },
+                  { label: 'Tally Name', key: 'tallyName' },
+                  { label: 'Category', key: 'category' },
+                  { label: 'Gender', key: 'gender' },
+                  { label: 'Mobile No.', key: 'mobileNumber' },
+                  { label: 'Alt Mobile', key: 'alternateMobileNumber' },
+                  { label: 'Alt Email', key: 'alternateEmail' },
+                  { label: 'Parent Name', key: 'parentName' },
+                  { label: 'Parent Occ.', key: 'parentOccupation' },
+                ].map((field) => (
+                  <div key={field.key}>
+                    <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                    <input
+                      type="text"
+                      value={(formData as any)[field.key] || ''}
+                      onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                ))}
+
+                <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                     <div>
+                        <label className="block text-xs text-slate-400 mb-1">Address Line 1</label>
+                        <input
+                          type="text"
+                          value={formData.address1 || ''}
+                          onChange={(e) => handleInputChange('address1', e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-400 mb-1">Address Line 2</label>
+                        <input
+                          type="text"
+                          value={formData.address2 || ''}
+                          onChange={(e) => handleInputChange('address2', e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                        />
+                      </div>
+                </div>
+
+                {/* Emergency Contact & Banking */}
+                <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Emergency Contact No.</label>
+                    <input
+                      type="text"
+                      value={(formData as any).emergencyContactNo || ''}
+                      onChange={(e) => handleInputChange('emergencyContactNo' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Relation</label>
+                    <input
+                      type="text"
+                      value={(formData as any).emergencyContactRelation || ''}
+                      onChange={(e) => handleInputChange('emergencyContactRelation' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Anniversary Date</label>
+                    <input
+                      type="date"
+                      value={(formData as any).anniversaryDate ? new Date((formData as any).anniversaryDate).toISOString().split('T')[0] : ''}
+                      onChange={(e) => handleInputChange('anniversaryDate' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Bank Name</label>
+                    <input
+                      type="text"
+                      value={(formData as any).bankName || ''}
+                      onChange={(e) => handleInputChange('bankName' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Branch Name</label>
+                    <input
+                      type="text"
+                      value={(formData as any).branchName || ''}
+                      onChange={(e) => handleInputChange('branchName' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Account No.</label>
+                    <input
+                      type="text"
+                      value={(formData as any).accountNumber || ''}
+                      onChange={(e) => handleInputChange('accountNumber' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">IFSC</label>
+                    <input
+                      type="text"
+                      value={(formData as any).ifscCode || ''}
+                      onChange={(e) => handleInputChange('ifscCode' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Type of Account</label>
+                    <input
+                      type="text"
+                      value={(formData as any).accountType || ''}
+                      onChange={(e) => handleInputChange('accountType' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Name of Account Holder</label>
+                    <input
+                      type="text"
+                      value={(formData as any).accountHolderName || ''}
+                      onChange={(e) => handleInputChange('accountHolderName' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Aadhar No.</label>
+                    <input
+                      type="text"
+                      value={(formData as any).aadhaarNumber || ''}
+                      onChange={(e) => handleInputChange('aadhaarNumber' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">PAN</label>
+                    <input
+                      type="text"
+                      value={(formData as any).panNumber || ''}
+                      onChange={(e) => handleInputChange('panNumber' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                </div>
+
+                {/* Salary Information */}
+                <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Basis Salary/Stipend/Fees</label>
+                    <input
+                      type="text"
+                      value={(formData as any).basicSalary || ''}
+                      onChange={(e) => handleInputChange('basicSalary' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Laptop Allowance</label>
+                    <input
+                      type="text"
+                      value={(formData as any).laptopAllowance || ''}
+                      onChange={(e) => handleInputChange('laptopAllowance' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Total Salary (P/M)</label>
+                    <input
+                      type="text"
+                      value={(formData as any).totalSalaryPerMonth || ''}
+                      onChange={(e) => handleInputChange('totalSalaryPerMonth' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Per Annum</label>
+                    <input
+                      type="text"
+                      value={(formData as any).totalSalaryPerAnnum || ''}
+                      onChange={(e) => handleInputChange('totalSalaryPerAnnum' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                </div>
+
+                {/* Articleship & Professional */}
+                {[
+                  { label: 'Transfer Case', key: 'transferCase' },
+                  { label: '1st Year Art.', key: 'firstYearArticleship' },
+                  { label: '2nd Year Art.', key: 'secondYearArticleship' },
+                  { label: '3rd Year Art.', key: 'thirdYearArticleship' },
+                  { label: 'Filled Scholarship', key: 'filledScholarship' },
+                  { label: 'Qualification', key: 'qualificationLevel' },
+                  { label: 'Reg. Partner', key: 'registeredUnderPartner' },
+                  { label: 'Work. Partner', key: 'workingUnderPartner' },
+                  { label: 'Work Timing (Text)', key: 'workingTiming' },
+                ].map((field) => (
+                  <div key={field.key}>
+                     <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                    <input
+                      type="text"
+                      value={(formData as any)[field.key] || ''}
+                      onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                ))}
+
+                {/* Dates */}
+                 <div>
+                  <label className="block text-xs text-slate-400 mb-1">Articleship Start</label>
+                  <input
+                    type="date"
+                    value={formData.articleshipStartDate ? new Date(formData.articleshipStartDate).toISOString().split('T')[0] : ''}
+                    onChange={(e) => handleInputChange('articleshipStartDate', e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                  />
+                </div>
+                 <div>
+                  <label className="block text-xs text-slate-400 mb-1">Next Attempt Due</label>
+                  <input
+                    type="date"
+                    value={formData.nextAttemptDueDate ? new Date(formData.nextAttemptDueDate).toISOString().split('T')[0] : ''}
+                    onChange={(e) => handleInputChange('nextAttemptDueDate', e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                  />
+                </div>
+
+              </div>
+            </div>
           )}
         </div>
-        
-        <div className="flex items-center gap-3">
-          
-          {/* Search Input */}
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Search..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="bg-slate-950 border border-slate-700 text-slate-300 text-sm rounded pl-8 pr-3 py-1.5 focus:outline-none focus:border-emerald-500/50 hover:bg-slate-900 transition-colors w-40 sm:w-64"
-            />
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
-          </div>
 
-          {/* Designation Filter */}
-          <div className="relative">
-            <select
-              value={filterDesignation}
-              onChange={(e) => setFilterDesignation(e.target.value)}
-              className="appearance-none bg-slate-950 border border-slate-700 text-slate-300 text-sm rounded pl-8 pr-8 py-1.5 focus:outline-none focus:border-emerald-500/50 hover:bg-slate-900 transition-colors cursor-pointer"
-            >
-              <option value="">All Designations</option>
-              {uniqueDesignations.map((opt) => (
-                <option key={opt} value={opt}>{opt}</option>
-              ))}
-            </select>
-            <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
-          </div>
-
-          {/* Schedule Upload Button */}
-          <div className="relative">
-            <input
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={handleScheduleUpload}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              disabled={isUploading}
-            />
-            <button className={`flex items-center gap-2 px-3 py-1.5 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded text-sm hover:bg-blue-600/30 transition-colors ${isUploading ? 'opacity-50' : ''}`}>
-               <Upload className={`w-4 h-4 ${isUploading ? "animate-bounce" : ""}`} />
-               {isUploading ? 'Uploading...' : 'Update Schedules'}
-            </button>
-          </div>
-
-          {/* Upload Button */}
-          <div className="relative">
-            <input
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={handleBulkUpload}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              disabled={isUploading}
-            />
-            <button className={`flex items-center gap-2 px-3 py-1.5 bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 rounded text-sm hover:bg-emerald-600/30 transition-colors ${isUploading ? 'opacity-50' : ''}`}>
-              {isUploading ? <Upload className="w-4 h-4 animate-bounce" /> : <FileUp className="w-4 h-4" />}
-              {isUploading ? 'Uploading...' : 'Bulk Update'}
-            </button>
-          </div>
-
-          {/* Export Button */}
+        <div className="mt-8 flex justify-end gap-3 pt-4 border-t border-slate-800">
           <button
-            type="button"
-            onClick={handleExportToExcel}
-            className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/40 text-slate-200 border border-slate-700 rounded text-sm hover:bg-slate-800/70 transition-colors"
+            onClick={() => setIsAddingNew(false)}
+            className="px-4 py-2 rounded text-sm text-slate-300 hover:text-white transition-colors"
           >
-            <Download className="w-4 h-4" />
-            Export Master
+            Cancel
+          </button>
+          <button
+            onClick={handleCreateNew}
+            disabled={saveLoading || !formData.name || !formData.email || !formData.odId || !formData.joiningDate}
+            className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded text-sm transition-colors disabled:opacity-50"
+          >
+            <Plus className="w-4 h-4" />
+            {saveLoading ? 'Creating...' : 'Create Employee'}
           </button>
         </div>
       </div>
+    );
+  }
 
-      {/* Global Additional Info Fields */}
-      <div className="px-4 py-3 border-b border-slate-800 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <div className="space-y-1">
-          <div className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Additional Info Fields</div>
-          {allExtraLabels.length > 0 ? (
-            <div className="flex flex-wrap gap-1">
-              {allExtraLabels.map((label) => (
-                <span
-                  key={label}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800 text-[11px] text-slate-200 border border-slate-700"
+  // ============== LIST VIEW =================
+  return (
+    <div className="bg-slate-900/50 rounded-lg border border-slate-800">
+      {/* Header */}
+      <div className="p-4 border-b border-slate-800">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold text-slate-200">Employee Management</h2>
+            {!loading && (
+              <span className="px-2.5 py-0.5 rounded-full bg-slate-800 text-xs font-medium text-slate-400 border border-slate-700">
+                {filteredUsers.length} employees
+                {filterDesignation && <span className="text-slate-500 ml-1">({filterDesignation})</span>}
+              </span>
+            )}
+          </div>
+          
+          {/* Search and Filter Row */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
+            <div className="flex items-center gap-3">
+              {/* Search Input */}
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search employees..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="bg-slate-950 border border-slate-700 text-slate-300 text-sm rounded-lg pl-8 pr-3 py-2 focus:outline-none focus:border-emerald-500/50 hover:bg-slate-900 transition-colors w-48 lg:w-64"
+                />
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+              </div>
+
+              {/* Designation Filter */}
+              <div className="relative">
+                <select
+                  value={filterDesignation}
+                  onChange={(e) => setFilterDesignation(e.target.value)}
+                  className="appearance-none bg-slate-950 border border-slate-700 text-slate-300 text-sm rounded-lg pl-8 pr-8 py-2 focus:outline-none focus:border-emerald-500/50 hover:bg-slate-900 transition-colors cursor-pointer min-w-[140px]"
                 >
-                  <span>{label}</span>
-                  <button
-                    type="button"
-                    className="text-slate-500 hover:text-rose-400"
-                    onClick={async () => {
-                      if (!window.confirm(`Remove field "${label}" from all employees?`)) return;
-                      try {
-                        const res = await fetch('/api/users/extra-info', {
-                          method: 'DELETE',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ label }),
-                        });
-                        const json = await res.json();
-                        if (!res.ok || !json.success) {
-                          throw new Error(json.error || 'Failed to remove field');
-                        }
-                        fetchUsers();
-                      } catch (err) {
-                        alert(err instanceof Error ? err.message : 'Failed to remove field');
-                      }
-                    }}
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
+                  <option value="">All Designations</option>
+                  {uniqueDesignations.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+                <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+              </div>
             </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Primary Actions */}
+              <button
+                type="button"
+                onClick={() => {
+                  setFormData({ isActive: true });
+                  setIsAddingNew(true);
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-600/20 text-purple-400 border border-purple-500/30 rounded-lg text-sm hover:bg-purple-600/30 transition-colors font-medium"
+              >
+                <Plus className="w-4 h-4" />
+                Add Employee
+              </button>
+
+              {/* Bulk Actions Dropdown */}
+              <div className="relative">
+                <button
+                  type="button"
+                  className="flex items-center gap-2 px-3 py-2 bg-slate-800/40 text-slate-200 border border-slate-700 rounded-lg text-sm hover:bg-slate-800/70 transition-colors"
+                  onClick={() => {/* TODO: Add dropdown logic */}}
+                >
+                  <FileUp className="w-4 h-4" />
+                  Bulk Actions
+                </button>
+                {/* TODO: Add dropdown menu with bulk update and schedule upload */}
+              </div>
+
+              {/* Export Button */}
+              <button
+                type="button"
+                onClick={handleExportToExcel}
+                className="flex items-center gap-2 px-3 py-2 bg-slate-800/40 text-slate-200 border border-slate-700 rounded-lg text-sm hover:bg-slate-800/70 transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                Export
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Global Additional Info Fields - Collapsible */}
+      <div className="border-b border-slate-800">
+        <button
+          onClick={() => setShowAdditionalFields(!showAdditionalFields)}
+          className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-slate-800/30 transition-colors"
+        >
+          <div className="space-y-1">
+            <div className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Additional Info Fields</div>
+            <div className="text-[11px] text-slate-500">
+              {allExtraLabels.length} custom fields • Click to {showAdditionalFields ? 'hide' : 'show'} management
+            </div>
+          </div>
+          {showAdditionalFields ? (
+            <ChevronUp className="w-4 h-4 text-slate-400" />
           ) : (
-            <p className="text-[11px] text-slate-500">No additional fields yet.</p>
+            <ChevronDown className="w-4 h-4 text-slate-400" />
           )}
-        </div>
-        <div className="flex items-center gap-2">
-          <input
-            type="text"
-            placeholder="Add field (e.g. PAN)"
-            value={newExtraLabel}
-            onChange={(e) => setNewExtraLabel(e.target.value)}
-            className="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded px-2 py-1 focus:outline-none focus:border-emerald-500/50 min-w-[160px]"
-          />
-          <button
-            type="button"
-            onClick={handleAddGlobalExtraLabel}
-            disabled={isSavingExtraLabel}
-            className="px-3 py-1 rounded text-xs bg-emerald-600 text-white border border-emerald-500/70 hover:bg-emerald-500 disabled:opacity-50"
-          >
-            {isSavingExtraLabel ? 'Adding...' : 'Add Field'}
-          </button>
-        </div>
+        </button>
+        
+        {showAdditionalFields && (
+          <div className="px-4 pb-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3 border-t border-slate-800/50">
+            <div className="space-y-1">
+              {allExtraLabels.length > 0 ? (
+                <div className="flex flex-wrap gap-1">
+                  {allExtraLabels.map((label) => (
+                    <span
+                      key={label}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800 text-[11px] text-slate-200 border border-slate-700"
+                    >
+                      <span>{label}</span>
+                      <button
+                        type="button"
+                        className="text-slate-500 hover:text-rose-400"
+                        onClick={async () => {
+                          if (!window.confirm(`Remove field "${label}" from all employees?`)) return;
+                          try {
+                            const res = await fetch('/api/users/extra-info', {
+                              method: 'DELETE',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ label }),
+                            });
+                            const json = await res.json();
+                            if (!res.ok || !json.success) {
+                              throw new Error(json.error || 'Failed to remove field');
+                            }
+                            fetchUsers();
+                          } catch (err) {
+                            alert(err instanceof Error ? err.message : 'Failed to remove field');
+                          }
+                        }}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-500">No additional fields yet.</p>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Add field (e.g. PAN)"
+                value={newExtraLabel}
+                onChange={(e) => setNewExtraLabel(e.target.value)}
+                className="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded px-2 py-1 focus:outline-none focus:border-emerald-500/50 min-w-[160px]"
+              />
+              <button
+                type="button"
+                onClick={handleAddGlobalExtraLabel}
+                disabled={isSavingExtraLabel}
+                className="px-3 py-1 rounded text-xs bg-emerald-600 text-white border border-emerald-500/70 hover:bg-emerald-500 disabled:opacity-50"
+              >
+                {isSavingExtraLabel ? 'Adding...' : 'Add Field'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       
       {error && (

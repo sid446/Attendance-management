@@ -3,6 +3,8 @@ import * as XLSX from 'xlsx';
 import { AttendanceSummaryView, User } from '@/types/ui';
 import { Search, Calendar, ChevronLeft, ChevronRight, BarChart3, Users, Clock, AlertCircle, TrendingUp, UserX, UserCheck, Download, ListChecks, X } from 'lucide-react';
 import { BulkLeaveManager } from './BulkLeaveManager';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
 
 interface DetailModalProps {
   isOpen: boolean;
@@ -58,7 +60,7 @@ interface SummarySectionProps {
   summaries: AttendanceSummaryView[];
   allUsers?: User[]; // Optional prop for fuller search context
   isLoading?: boolean;
-  onFilterChange: (monthYear: string) => void;
+  onFilterChange: (filter: string | {start: string, end: string} | {startDate: string, endDate: string}) => void;
   onEmployeeClick: (userId: string, monthYear: string) => void;
   // Upload stats kept for context if needed, but made optional/less prominent
   uploadTotal?: number;
@@ -80,14 +82,20 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
   const [selectedYear, setSelectedYear] = useState<number>(currentDate.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState<number>(currentDate.getMonth() + 1);
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [useSpecialMonthSchedule, setUseSpecialMonthSchedule] = useState<boolean>(false);
-  const [isBulkManagerOpen, setIsBulkManagerOpen] = useState(false);
   const [selectedEmployees, setSelectedEmployees] = useState<Set<string>>(new Set());
+  
+  const [filterType, setFilterType] = useState<'month' | 'range' | 'week'>('month');
+  const [rangeStart, setRangeStart] = useState<string>('');
+  const [rangeEnd, setRangeEnd] = useState<string>('');
+  const [rangeModalOpen, setRangeModalOpen] = useState(false);
+  const [currentWeekStart, setCurrentWeekStart] = useState<string>('');
   
   // Detail Modal State
   const [detailModal, setDetailModal] = useState<{isOpen: boolean; title: string; data: {date: string; info: string; subInfo?: string}[]}>({
       isOpen: false, title: '', data: []
   });
+
+  const [isBulkManagerOpen, setIsBulkManagerOpen] = useState(false);
 
   const getLateDetails = (item: AttendanceSummaryView) => {
       const records = item.recordDetails || {};
@@ -108,7 +116,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
              scheduledIn = item.schedules?.saturday?.inTime || '09:00';
           } else {
              // Weekdays
-             if (useSpecialMonthSchedule) {
+             if (selectedMonth === 1 || selectedMonth === 12) {
                 scheduledIn = item.schedules?.monthly?.inTime || '09:00'; 
              } else {
                 scheduledIn = item.schedules?.regular?.inTime || '09:00';
@@ -149,12 +157,118 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       return dates.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   };
 
-  const openDetail = (e: React.MouseEvent, type: 'Late' | 'Absent' | 'Leave', item: AttendanceSummaryView) => {
+  const getPresentDetails = (item: AttendanceSummaryView) => {
+      const records = item.recordDetails || {};
+      const dates: { date: string; info: string; subInfo?: string }[] = [];
+      Object.entries(records).forEach(([date, rec]) => {
+          // Present logic: has valid checkin or halfDay
+          if ((rec.checkin && rec.checkin !== "00:00") || rec.halfDay) {
+               const info = rec.halfDay ? 'Half Day' : `Present (${rec.checkin})`;
+               dates.push({ date, info, subInfo: rec.halfDay ? 'Half Day' : undefined });
+          }
+      });
+      return dates.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  };
+
+  const getHalfDayDetails = (item: AttendanceSummaryView) => {
+      const records = item.recordDetails || {};
+      const dates: { date: string; info: string; subInfo?: string }[] = [];
+      Object.entries(records).forEach(([date, rec]) => {
+          if (rec.halfDay && rec.typeOfPresence !== 'Holiday') {
+               dates.push({ date, info: 'Half Day', subInfo: rec.checkin ? `In: ${rec.checkin}` : undefined });
+          }
+      });
+      return dates.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  };
+
+  const getWorkHoursDetails = (item: AttendanceSummaryView) => {
+      const records = item.recordDetails || {};
+      const dates: { date: string; info: string; subInfo?: string }[] = [];
+      Object.entries(records).forEach(([date, rec]) => {
+          if (rec.totalHour > 0 && rec.typeOfPresence !== 'Holiday') {
+               dates.push({ date, info: `${rec.totalHour.toFixed(1)} hours`, subInfo: rec.checkin ? `In: ${rec.checkin}` : undefined });
+          }
+      });
+      return dates.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  };
+
+  const getScheduledHoursDetails = (item: AttendanceSummaryView) => {
+      const records = item.recordDetails || {};
+      const dates: { date: string; info: string; subInfo?: string }[] = [];
+      
+      const { schedules } = item;
+      if (!schedules) return dates;
+
+      // Helper for diff
+      const timeToHours = (t?: string) => {
+          if (!t) return 0;
+          const [h, m] = t.split(':').map(Number);
+          return h + (m / 60);
+      };
+      
+      // Calculate daily hours for each schedule type
+      const startReg = timeToHours(schedules.regular?.inTime);
+      const endReg = timeToHours(schedules.regular?.outTime);
+      const hoursReg = (startReg && endReg && endReg > startReg) ? (endReg - startReg) : 9;
+
+      const startSat = timeToHours(schedules.saturday?.inTime) || startReg;
+      const endSat = timeToHours(schedules.saturday?.outTime);
+      const hoursSat = (startSat && endSat && endSat > startSat) ? (endSat - startSat) : 4;
+
+      const startMonth = timeToHours(schedules.monthly?.inTime) || startReg;
+      const endMonth = timeToHours(schedules.monthly?.outTime);
+      const hoursMonth = (startMonth && endMonth && endMonth > startMonth) ? (endMonth - startMonth) : hoursReg;
+
+      // Get the period
+      let start: Date, end: Date;
+      if (filterType === 'month') {
+          start = new Date(selectedYear, selectedMonth - 1, 1);
+          end = new Date(selectedYear, selectedMonth, 0);
+      } else if (filterType === 'week') {
+          start = new Date(currentWeekStart);
+          end = new Date(currentWeekStart);
+          end.setDate(end.getDate() + 6);
+      } else {
+          start = new Date(rangeStart);
+          end = new Date(rangeEnd);
+      }
+
+      Object.entries(records).forEach(([date, rec]) => {
+          if (rec.typeOfPresence === 'Holiday') return;
+          
+          const d = new Date(date);
+          const dow = d.getDay();
+          if (dow === 0) return; // Sunday off
+
+          let hours = 0;
+          if (dow === 6) {
+              hours = hoursSat;
+          } else {
+              const month = d.getMonth() + 1;
+              hours = (month === 1 || month === 12) ? hoursMonth : hoursReg;
+          }
+
+          if (hours > 0) {
+              dates.push({ 
+                  date, 
+                  info: `${hours.toFixed(2)} hours`,
+                  subInfo: dow === 6 ? 'Saturday' : ((d.getMonth() + 1 === 1 || d.getMonth() + 1 === 12) ? 'Seasonal' : 'Regular')
+              });
+          }
+      });
+      return dates.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  };
+
+  const openDetail = (e: React.MouseEvent, type: 'Late' | 'Absent' | 'Leave' | 'Present' | 'WorkHours' | 'ScheduledHours' | 'HalfDay', item: AttendanceSummaryView) => {
       e.stopPropagation();
       let data: any[] = [];
       if (type === 'Late') data = getLateDetails(item);
       if (type === 'Absent') data = getAbsentDetails(item);
       if (type === 'Leave') data = getLeaveDetails(item);
+      if (type === 'Present') data = getPresentDetails(item);
+      if (type === 'WorkHours') data = getWorkHoursDetails(item);
+      if (type === 'ScheduledHours') data = getScheduledHoursDetails(item);
+      if (type === 'HalfDay') data = getHalfDayDetails(item);
 
       setDetailModal({
           isOpen: true,
@@ -163,7 +277,12 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       });
   };
 
-  const currentMonthYear = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
+  const currentMonthYear = filterType === 'month' ? `${selectedYear}-${String(selectedMonth).padStart(2, '0')}` : 
+    filterType === 'week' ? (() => {
+      const end = new Date(currentWeekStart);
+      end.setDate(end.getDate() + 6);
+      return end.toISOString().split('T')[0];
+    })() : rangeEnd;
 
   const usersForBulk = useMemo(() => {
     if (allUsers && allUsers.length > 0) return allUsers;
@@ -177,12 +296,27 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     } as User));
   }, [summaries, allUsers]);
   
+  // Initialize current week start
+  useEffect(() => {
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // Adjust to Monday
+    const monday = new Date(now.setDate(diff));
+    setCurrentWeekStart(monday.toISOString().split('T')[0]);
+  }, []);
+
   // Trigger fetch on selection change
   useEffect(() => {
-    const monthStr = String(selectedMonth).padStart(2, '0');
-    const monthYear = `${selectedYear}-${monthStr}`;
-    onFilterChange(monthYear);
-  }, [selectedYear, selectedMonth]); // Missing onFilterChange dependency is intentional to avoid loop if passed inline
+    if (filterType === 'month') {
+      const monthStr = String(selectedMonth).padStart(2, '0');
+      const monthYear = `${selectedYear}-${monthStr}`;
+      onFilterChange(monthYear);
+    } else if (filterType === 'week' && currentWeekStart) {
+      const weekEnd = new Date(currentWeekStart);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      onFilterChange({startDate: currentWeekStart, endDate: weekEnd.toISOString().split('T')[0]});
+    }
+  }, [selectedYear, selectedMonth, filterType, currentWeekStart]); // Missing onFilterChange dependency is intentional to avoid loop if passed inline
 
   const handlePrevMonth = () => {
     if (selectedMonth === 1) {
@@ -200,6 +334,18 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     } else {
       setSelectedMonth(prev => prev + 1);
     }
+  };
+
+  const handlePrevWeek = () => {
+    const current = new Date(currentWeekStart);
+    current.setDate(current.getDate() - 7);
+    setCurrentWeekStart(current.toISOString().split('T')[0]);
+  };
+
+  const handleNextWeek = () => {
+    const current = new Date(currentWeekStart);
+    current.setDate(current.getDate() + 7);
+    setCurrentWeekStart(current.toISOString().split('T')[0]);
   };
 
   // --- Calculation Helper ---
@@ -251,7 +397,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         }
 
         // Weekday
-        if (useSpecialMonthSchedule) {
+        if (selectedMonth === 1 || selectedMonth === 12) {
             total += hoursMonth;
         } else {
             total += hoursReg;
@@ -276,7 +422,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
              scheduledIn = item.schedules?.saturday?.inTime || '09:00';
           } else {
              // Weekdays
-             if (useSpecialMonthSchedule) {
+             if (selectedMonth === 1 || selectedMonth === 12) {
                 scheduledIn = item.schedules?.monthly?.inTime || '09:00'; 
              } else {
                 scheduledIn = item.schedules?.regular?.inTime || '09:00';
@@ -297,7 +443,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     }
     // Enrich with calculations
     const enriched = list.map(item => {
-        const sched = calculateTotalScheduledHours(item);
+        const sched = item.calcScheduled !== undefined ? item.calcScheduled : calculateTotalScheduledHours(item);
         const actual = item.summary.totalHour;
         const diff = actual - sched;
         // Calculate Late on frontend based on toggle
@@ -319,7 +465,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       ...item,
       rank: index + 1
     }));
-  }, [summaries, searchTerm, selectedYear, selectedMonth, useSpecialMonthSchedule]);
+  }, [summaries, searchTerm, selectedYear, selectedMonth]);
 
   // Calculate Aggregates for the Dashboard
   const stats = useMemo(() => {
@@ -336,7 +482,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       totalAbsents: 0,
       totalLeaves: 0
     });
-  }, [filteredSummaries]); // filteredSummaries depends on useSpecialMonthSchedule
+  }, [filteredSummaries]);
 
  const handleExport = () => {
     if (filteredSummaries.length === 0) return;
@@ -443,7 +589,9 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     
     XLSX.utils.book_append_sheet(wb, ws, "Attendance Summary");
     
-    const fileName = `Attendance_Summary_${selectedYear}_${String(selectedMonth).padStart(2, '0')}.xlsx`;
+    const fileName = filterType === 'month' ? `Attendance_Summary_${selectedYear}_${String(selectedMonth).padStart(2, '0')}.xlsx` : 
+      filterType === 'week' ? `Attendance_Summary_Week_${currentWeekStart}.xlsx` : 
+      `Attendance_Summary_${rangeStart}_to_${rangeEnd}.xlsx`;
     XLSX.writeFile(wb, fileName, { cellStyles: true });
   };
 
@@ -454,18 +602,23 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     }
 
     try {
-      const monthYear = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
       const userIds = Array.from(selectedEmployees);
+      const requestBody = filterType === 'month' 
+        ? { userIds, monthYear: `${selectedYear}-${String(selectedMonth).padStart(2, '0')}` }
+        : filterType === 'week'
+        ? (() => {
+            const end = new Date(currentWeekStart);
+            end.setDate(end.getDate() + 6);
+            return { userIds, startDate: currentWeekStart, endDate: end.toISOString().split('T')[0] };
+          })()
+        : { userIds, startDate: rangeStart, endDate: rangeEnd };
 
       const response = await fetch('/api/attendance/range-export', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          userIds,
-          monthYear,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       const result = await response.json();
@@ -500,7 +653,9 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
 
       XLSX.utils.book_append_sheet(wb, ws, "Day-wise Attendance");
 
-      const fileName = `Daywise_Attendance_${selectedYear}_${String(selectedMonth).padStart(2, '0')}.xlsx`;
+      const fileName = filterType === 'month' ? `Daywise_Attendance_${selectedYear}_${String(selectedMonth).padStart(2, '0')}.xlsx` : 
+        filterType === 'week' ? `Daywise_Attendance_Week_${currentWeekStart}.xlsx` : 
+        `Daywise_Attendance_${rangeStart}_to_${rangeEnd}.xlsx`;
       XLSX.writeFile(wb, fileName, { cellStyles: true });
 
     } catch (error) {
@@ -526,7 +681,132 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     }
     setSelectedEmployees(newSelected);
   };
-  const currentPeriodLabel = new Date(selectedYear, selectedMonth - 1).toLocaleString('default', { month: 'long', year: 'numeric' });
+
+  const applyRange = (start: string, end: string) => {
+    setFilterType('range');
+    setRangeStart(start);
+    setRangeEnd(end);
+    onFilterChange({start, end});
+    setRangeModalOpen(false);
+  };
+
+  const setLast6Months = () => {
+    const now = new Date();
+    const endYear = now.getFullYear();
+    const endMonth = now.getMonth() + 1;
+    const startDate = new Date(endYear, endMonth - 7, 1);
+    const startYear = startDate.getFullYear();
+    const startMonth = startDate.getMonth() + 1;
+    const start = `${startYear}-${String(startMonth).padStart(2, '0')}`;
+    const end = `${endYear}-${String(endMonth).padStart(2, '0')}`;
+    applyRange(start, end);
+  };
+
+  const setLast3Months = () => {
+    const now = new Date();
+    const end = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const startDate = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+    const start = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}`;
+    applyRange(start, end);
+  };
+
+  const setLast12Months = () => {
+    const now = new Date();
+    const end = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const startDate = new Date(now.getFullYear() - 1, now.getMonth() + 1, 1);
+    const start = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}`;
+    applyRange(start, end);
+  };
+
+  const setCurrentMonth = () => {
+    const now = new Date();
+    const monthYear = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    onFilterChange(monthYear);
+    setRangeModalOpen(false);
+    setFilterType('month');
+  };
+
+  const setLastMonth = () => {
+    const now = new Date();
+    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const monthYear = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}`;
+    onFilterChange(monthYear);
+    setRangeModalOpen(false);
+    setFilterType('month');
+  };
+
+  const switchToMonth = () => {
+    setFilterType('month');
+    onFilterChange(currentMonthYear);
+  };
+
+  const currentPeriodLabel = filterType === 'month' ? new Date(selectedYear, selectedMonth - 1).toLocaleString('default', { month: 'long', year: 'numeric' }) : 
+    filterType === 'week' ? (() => {
+      const start = new Date(currentWeekStart);
+      const end = new Date(currentWeekStart);
+      end.setDate(end.getDate() + 6);
+      return `Week of ${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
+    })() : 
+    `From ${rangeStart.length > 7 ? new Date(rangeStart).toLocaleDateString() : new Date(rangeStart + '-01').toLocaleString('default', { month: 'long', year: 'numeric' })} to ${rangeEnd.length > 7 ? new Date(rangeEnd).toLocaleDateString() : new Date(rangeEnd + '-01').toLocaleString('default', { month: 'long', year: 'numeric' })}`;
+
+  const RangeModal: React.FC<{isOpen: boolean; onClose: () => void}> = ({isOpen, onClose}) => {
+    const [customStartDate, setCustomStartDate] = useState(currentDate.toISOString().split('T')[0]);
+    const [customEndDate, setCustomEndDate] = useState(currentDate.toISOString().split('T')[0]);
+
+    const applyCustom = () => {
+      setRangeStart(customStartDate);
+      setRangeEnd(customEndDate);
+      onFilterChange({startDate: customStartDate, endDate: customEndDate});
+      setRangeModalOpen(false);
+      setFilterType('range');
+    };
+
+    if (!isOpen) return null;
+
+    return (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+        <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
+          <div className="bg-slate-950 px-4 py-3 border-b border-slate-800 flex justify-between items-center shrink-0">
+              <h3 className="font-semibold text-slate-100">Select Date Range</h3>
+              <button onClick={onClose} className="text-slate-500 hover:text-white"><X className="w-5 h-5"/></button>
+          </div>
+          <div className="p-4 flex-1">
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              <button onClick={setLast3Months} className="px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-md">Last 3 Months</button>
+              <button onClick={setLast6Months} className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm rounded-md">Last 6 Months</button>
+              <button onClick={setLast12Months} className="px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded-md">Last 12 Months</button>
+              <button onClick={setLastMonth} className="px-3 py-2 bg-orange-600 hover:bg-orange-500 text-white text-sm rounded-md">Last Month</button>
+              <button onClick={setCurrentMonth} className="px-3 py-2 bg-green-600 hover:bg-green-500 text-white text-sm rounded-md col-span-2">Current Month</button>
+            </div>
+            <div className="mb-4">
+              <h4 className="text-slate-300 mb-2">Custom Range</h4>
+              <div className="flex gap-2 mb-2">
+                <DatePicker
+                  selected={new Date(customStartDate)}
+                  onChange={(date: Date | null) => date && setCustomStartDate(date.toISOString().split('T')[0])}
+                  className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-md px-3 py-2 w-full"
+                  dateFormat="yyyy-MM-dd"
+                />
+              </div>
+              <div className="text-center text-slate-500 mb-2">to</div>
+              <div className="flex gap-2">
+                <DatePicker
+                  selected={new Date(customEndDate)}
+                  onChange={(date: Date | null) => date && setCustomEndDate(date.toISOString().split('T')[0])}
+                  className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-md px-3 py-2 w-full"
+                  dateFormat="yyyy-MM-dd"
+                />
+              </div>
+              <button onClick={applyCustom} className="w-full mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-md">Apply Custom Range</button>
+            </div>
+          </div>
+          <div className="bg-slate-950 px-4 py-2 border-t border-slate-800 text-right shrink-0">
+              <button onClick={onClose} className="text-xs text-slate-400 hover:text-white px-3 py-1.5 rounded-md hover:bg-slate-800 transition-colors">Close</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -535,7 +815,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         <div className="flex items-center gap-4">
            {/* Date Navigation */}
            <div className="flex items-center bg-slate-950 rounded-lg border border-slate-800 p-1">
-              <button onClick={handlePrevMonth} className="p-2 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white transition-colors">
+              <button onClick={filterType === 'week' ? handlePrevWeek : handlePrevMonth} className="p-2 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white transition-colors">
                 <ChevronLeft className="w-4 h-4" />
               </button>
               
@@ -544,45 +824,81 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                 <span>{currentPeriodLabel}</span>
               </div>
 
-              <button onClick={handleNextMonth} className="p-2 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white transition-colors">
+              <button onClick={filterType === 'week' ? handleNextWeek : handleNextMonth} className="p-2 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white transition-colors">
                 <ChevronRight className="w-4 h-4" />
               </button>
            </div>
            
-           {/* Year/Month Manual Selectors (Hidden on small screens if space limited, or visible) */}
-           <div className="flex gap-2">
-             <select 
-               value={selectedYear} 
-               onChange={(e) => setSelectedYear(Number(e.target.value))}
-               className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-md px-3 py-2 outline-none focus:border-emerald-500"
-             >
-               {Array.from({ length: 5 }, (_, i) => currentDate.getFullYear() - 2 + i).map(y => (
-                 <option key={y} value={y}>{y}</option>
-               ))}
-             </select>
-             <select 
-                value={selectedMonth} 
-                onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-md px-3 py-2 outline-none focus:border-emerald-500"
-             >
-               {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
-                 <option key={m} value={m}>{new Date(2000, m-1, 1).toLocaleString('default', { month: 'short' })}</option>
-               ))}
-             </select>
-           </div>
+           {/* Year/Month Manual Selectors (Hidden in week mode) */}
+           {filterType !== 'week' && (
+             <div className="flex gap-2">
+               <select 
+                 value={selectedYear} 
+                 onChange={(e) => setSelectedYear(Number(e.target.value))}
+                 className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-md px-3 py-2 outline-none focus:border-emerald-500"
+               >
+                 {Array.from({ length: 5 }, (_, i) => currentDate.getFullYear() - 2 + i).map(y => (
+                   <option key={y} value={y}>{y}</option>
+                 ))}
+               </select>
+               <select 
+                  value={selectedMonth} 
+                  onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                  className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-md px-3 py-2 outline-none focus:border-emerald-500"
+               >
+                 {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                   <option key={m} value={m}>{new Date(2000, m-1, 1).toLocaleString('default', { month: 'short' })}</option>
+                 ))}
+               </select>
+             </div>
+           )}
 
-            {/* Special Month/Seasonal Schedule Toggle */}
-            <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 px-3 py-2 rounded-md">
-                <label className="text-xs text-slate-400 font-medium whitespace-nowrap cursor-pointer select-none" htmlFor="specialMonthToggle">
-                    Seasonal Schedule
-                </label>
-                <div 
-                    className={`relative w-9 h-5 rounded-full cursor-pointer transition-colors ${useSpecialMonthSchedule ? 'bg-emerald-600' : 'bg-slate-700'}`}
-                    onClick={() => setUseSpecialMonthSchedule(!useSpecialMonthSchedule)}
-                >
-                    <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${useSpecialMonthSchedule ? 'translate-x-4' : ''}`}></div>
+            {filterType === 'month' ? (
+              <div className="flex gap-2">
+                <div className="flex flex-col items-center gap-1">
+                  <button onClick={() => setFilterType('week')} className="p-2 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white transition-colors" title="Switch to Week View">
+                    <Calendar className="w-4 h-4" />
+                  </button>
+                  <span className="text-xs text-slate-400">Week</span>
                 </div>
-            </div>
+                <div className="flex flex-col items-center gap-1">
+                  <button onClick={() => setRangeModalOpen(true)} className="p-2 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white transition-colors" title="Switch to Range View">
+                    <Calendar className="w-4 h-4" />
+                  </button>
+                  <span className="text-xs text-slate-400">Range</span>
+                </div>
+              </div>
+            ) : filterType === 'week' ? (
+              <div className="flex gap-2">
+                <div className="flex flex-col items-center gap-1">
+                  <button onClick={switchToMonth} className="p-2 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white transition-colors" title="Switch to Month View">
+                    <Calendar className="w-4 h-4" />
+                  </button>
+                  <span className="text-xs text-slate-400">Month</span>
+                </div>
+                <div className="flex flex-col items-center gap-1">
+                  <button onClick={() => setRangeModalOpen(true)} className="p-2 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white transition-colors" title="Switch to Range View">
+                    <Calendar className="w-4 h-4" />
+                  </button>
+                  <span className="text-xs text-slate-400">Range</span>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <div className="flex flex-col items-center gap-1">
+                  <button onClick={switchToMonth} className="p-2 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white transition-colors" title="Switch to Month View">
+                    <Calendar className="w-4 h-4" />
+                  </button>
+                  <span className="text-xs text-slate-400">Month</span>
+                </div>
+                <div className="flex flex-col items-center gap-1">
+                  <button onClick={() => setFilterType('week')} className="p-2 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white transition-colors" title="Switch to Week View">
+                    <Calendar className="w-4 h-4" />
+                  </button>
+                  <span className="text-xs text-slate-400">Week</span>
+                </div>
+              </div>
+            )}
         </div>
 
         {/* Search & Export */}
@@ -597,33 +913,39 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
               className="w-full bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-full pl-10 pr-4 py-2 outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 placeholder:text-slate-600"
             />
           </div>
-          <button 
-            onClick={handleExport}
-            className="flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded-full md:rounded-md transition-colors shadow-sm"
-            title="Export Summary to Excel"
-          >
-             <Download className="w-4 h-4" />
-             <span className="hidden md:inline">Summary Export</span>
-          </button>
+          <div className="flex flex-col items-center gap-1">
+            <button 
+              onClick={handleExport}
+              className="p-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-full transition-colors shadow-sm"
+              title="Export Summary to Excel"
+            >
+              <Download className="w-4 h-4" />
+            </button>
+            <span className="text-xs text-slate-400">Summary</span>
+          </div>
 
-          <button 
-            onClick={handleDayWiseExport}
-            disabled={selectedEmployees.size === 0}
-            className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-400 text-white text-xs font-medium rounded-full md:rounded-md transition-colors shadow-sm"
-            title="Export Day-wise Attendance for Selected Employees"
-          >
-             <Download className="w-4 h-4" />
-             <span className="hidden md:inline">Day-wise Export ({selectedEmployees.size})</span>
-          </button>
+          <div className="flex flex-col items-center gap-1">
+            <button 
+              onClick={handleDayWiseExport}
+              disabled={selectedEmployees.size === 0}
+              className="p-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-400 text-white rounded-full transition-colors shadow-sm"
+              title="Export Day-wise Attendance for Selected Employees"
+            >
+              <Download className="w-4 h-4" />
+            </button>
+            <span className="text-xs text-slate-400">Day-wise</span>
+          </div>
           
-          <button 
-            onClick={() => setIsBulkManagerOpen(true)}
-            className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-medium rounded-full md:rounded-md transition-colors border border-slate-700"
-            title="Bulk Manage Absent/Leave"
-          >
-             <ListChecks className="w-4 h-4" />
-             <span className="hidden md:inline">Status Manager</span>
-          </button>
+          <div className="flex flex-col items-center gap-1">
+            <button 
+              onClick={() => setIsBulkManagerOpen(true)}
+              className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-full transition-colors border border-slate-700"
+              title="Bulk Manage Absent/Leave"
+            >
+              <ListChecks className="w-4 h-4" />
+            </button>
+            <span className="text-xs text-slate-400">Status</span>
+          </div>
         </div>
       </div>
 
@@ -714,8 +1036,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                 {(filteredSummaries as any[]).map((item) => (
                   <tr
                     key={item.id}
-                    className="hover:bg-slate-800/40 transition-colors group cursor-pointer"
-                    onClick={() => onEmployeeClick(item.userId, item.monthYear)}
+                    className="hover:bg-slate-800/40 transition-colors group"
                   >
                     <td className="px-4 py-3 text-left" onClick={(e) => e.stopPropagation()}>
                       <input
@@ -727,13 +1048,21 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                     </td>
                     <td className="px-4 py-3 text-left font-mono text-slate-500 font-bold">{item.rank}</td>
                     <td className="px-4 py-3">
-                      <div className="font-medium text-slate-200 group-hover:text-white">{item.userName}</div>
+                      <div className="font-medium text-slate-200 group-hover:text-white cursor-pointer" onClick={() => onEmployeeClick(item.userId, item.monthYear)}>{item.userName}</div>
                       <div className="text-[10px] text-slate-500 font-mono hidden md:block">{item.employeeCode || item.odId || item.userId}</div>
                     </td>
                     <td className="px-4 py-3 text-left text-slate-400">{item.team || '-'}</td>
                     <td className="px-4 py-3 text-left text-slate-400">{item.designation || '-'}</td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-400">{item.calcScheduled?.toFixed(1) ?? '-'}</td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-300">{item.summary.totalHour?.toFixed(1)}</td>
+                    <td className="px-4 py-3 text-right font-mono text-slate-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => item.calcScheduled > 0 && openDetail(e, 'ScheduledHours', item)}>
+                        {item.calcScheduled > 0 ? (
+                           <span className="hover:underline" title="Click to view daily breakdown">{item.calcScheduled?.toFixed(1) ?? '-'}</span>
+                        ) : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-slate-300 cursor-pointer hover:bg-slate-800/60" onClick={(e) => item.summary.totalHour > 0 && openDetail(e, 'WorkHours', item)}>
+                        {item.summary.totalHour > 0 ? (
+                           <span className="hover:underline" title="Click to view daily breakdown">{item.summary.totalHour.toFixed(1)}</span>
+                        ) : '0.0'}
+                    </td>
                     <td className="px-4 py-3 text-right font-mono">
                          {item.calcExcessDeficit !== undefined ? (
                              <span className={item.calcExcessDeficit >= 0 ? "text-emerald-400" : "text-rose-400"}>
@@ -748,8 +1077,16 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                         <span className="text-slate-600">-</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-400">{item.summary.totalHalfDay > 0 ? item.summary.totalHalfDay : '-'}</td>
-                    <td className="px-4 py-3 text-right font-mono text-emerald-400">{item.summary.totalPresent}</td>
+                    <td className="px-4 py-3 text-right font-mono text-slate-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => item.summary.totalHalfDay > 0 && openDetail(e, 'HalfDay', item)}>
+                        {item.summary.totalHalfDay > 0 ? (
+                           <span className="hover:underline" title="Click to view details">{item.summary.totalHalfDay}</span>
+                        ) : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-emerald-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => item.summary.totalPresent > 0 && openDetail(e, 'Present', item)}>
+                        {item.summary.totalPresent > 0 ? (
+                           <span className="hover:underline" title="Click to view details">{item.summary.totalPresent}</span>
+                        ) : '-'}
+                    </td>
                     <td className="px-4 py-3 text-right font-mono text-rose-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => item.summary.totalAbsent > 0 && openDetail(e, 'Absent', item)}>
                         {item.summary.totalAbsent > 0 ? (
                            <span className="hover:underline" title="Click to view details">{item.summary.totalAbsent}</span>
@@ -782,6 +1119,8 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         title={detailModal.title}
         data={detailModal.data}
       />
+
+      <RangeModal isOpen={rangeModalOpen} onClose={() => setRangeModalOpen(false)} />
     </div>
   );
 };

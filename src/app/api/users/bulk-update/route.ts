@@ -26,42 +26,47 @@ export async function POST(request: NextRequest) {
     // Fetch all existing users to minimize DB queries inside loop
     const existingUsers = await User.find({});
     
-    // Create a lookup map. 
-    // Key: Normalized name (lowercase, dots removed or spaces replaced to match unified format)
-    // The user stated DB has "First.Last" and Excel has "First Last".
-    // Strategy: Normalize everything to "firstlast" (lowercase, no spaces, no dots) for aggressive matching
-    // OR "first.last" vs "first last" -> transform "first last" to "first.last"
-    
-    const userMap = new Map<string, IUser>();
+    // Create a lookup map by employee code (primary) and name (fallback)
+    const userMapByCode = new Map<string, IUser>();
+    const userMapByName = new Map<string, IUser>();
     existingUsers.forEach(u => {
+      if (u.employeeCode) {
+        userMapByCode.set(String(u.employeeCode).toLowerCase().trim(), u);
+      }
       if (u.name) {
-        // key strategy: lowercase, replace spaces with dots to match DB format 'name.surname'
-        // But DB currently has 'Saumya.Srivastava'.
-        // If we key by the exact DB name lowercased:
-        userMap.set(u.name.toLowerCase().trim(), u);
+        // Keep name matching as fallback for backward compatibility
+        userMapByName.set(u.name.toLowerCase().trim(), u);
       }
     });
 
     for (const emp of employees) {
       try {
         const excelName = emp.name;
+        const employeeCode = emp.employeeCode;
+        
         if (!excelName) {
             stats.failed++;
+            stats.errors.push(`Missing name for employee`);
             continue;
         }
 
-        // Logic to match DB name
-        // Excel: "Ashish Kapoor" -> Try matching "Ashish.Kapoor" (DB style) OR "Ashish Kapoor" matching?
-        // User scenario: DB has "Saumya.Srivastava", Excel has "Ashish Kapoor" (unrelated) OR "Saumya Srivastava" (related).
-        // If Excel has "Saumya Srivastava", we want to match "Saumya.Srivastava".
+        // Primary matching by employee code
+        let matchedUser: IUser | undefined;
         
-        // Try exact match first
-        let matchedUser = userMap.get(excelName.toLowerCase().trim());
-
-        // If not found, try replacing spaces with dots
+        if (employeeCode) {
+          matchedUser = userMapByCode.get(String(employeeCode).toLowerCase().trim());
+        }
+        
+        // Fallback to name matching if no employee code match found
         if (!matchedUser) {
-          const dotName = excelName.trim().replace(/\s+/g, '.').toLowerCase();
-          matchedUser = userMap.get(dotName);
+          // Try exact match first
+          matchedUser = userMapByName.get(excelName.toLowerCase().trim());
+
+          // If not found, try replacing spaces with dots
+          if (!matchedUser) {
+            const dotName = excelName.trim().replace(/\s+/g, '.').toLowerCase();
+            matchedUser = userMapByName.get(dotName);
+          }
         }
 
         const updateData: any = {
@@ -144,13 +149,20 @@ export async function POST(request: NextRequest) {
             await matchedUser.save();
             stats.updated++;
         } else {
-            // Create new
-            const generatedOdId = `OD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+            // Create new - but check if employee code already exists
+            if (employeeCode && userMapByCode.has(String(employeeCode).toLowerCase().trim())) {
+              stats.failed++;
+              stats.errors.push(`Employee code "${employeeCode}" already exists for another user`);
+              continue;
+            }
+            
+            // Use employee code as OD-ID if available, otherwise generate one
+            const odId = employeeCode ? String(employeeCode) : `OD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
             const dbName = excelName.trim().replace(/\s+/g, '.');
             const email = emp.email || `${dbName.toLowerCase().replace(/[^a-z0-9.]/g, '')}@asija.com`;
             
             await User.create({
-                odId: generatedOdId,
+                odId: odId,
                 name: dbName, // Store as "First.Last" or "First Last"? User DB seemed "First.Last"
                 email: email, 
                 joiningDate: emp.joiningDate ? new Date(emp.joiningDate) : new Date(),
@@ -161,9 +173,9 @@ export async function POST(request: NextRequest) {
         }
 
       } catch (err) {
-        console.error(`Error processing employee ${emp.name}:`, err);
+        console.error(`Error processing employee ${emp.name} (${emp.employeeCode || 'no code'}):`, err);
         stats.failed++;
-        stats.errors.push(`Failed ${emp.name}: ${(err as Error).message}`);
+        stats.errors.push(`Failed ${emp.name} (${emp.employeeCode || 'no code'}): ${(err as Error).message}`);
       }
     }
 
