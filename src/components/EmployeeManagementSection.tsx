@@ -1,7 +1,7 @@
 import React, { useState, useEffect, ChangeEvent, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { User, ScheduleTime } from '@/types/ui';
-import { Edit2, Save, X, Plus, Upload, FileUp, Filter, Trash2, Search, Download, ChevronDown, ChevronUp } from 'lucide-react';
+import { Edit2, Save, X, Plus, Upload, FileUp, Filter, Trash2, Search, Download, ChevronDown, ChevronUp, FileSpreadsheet } from 'lucide-react';
 
 export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | null }> = ({ selectedUserId }) => {
   const [users, setUsers] = useState<User[]>([]);
@@ -25,6 +25,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   // UI State
   const [showAdditionalFields, setShowAdditionalFields] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'basic' | 'schedule' | 'extended'>('basic');
+  const [showBulkUploadFormat, setShowBulkUploadFormat] = useState<boolean>(false);
 
   // Extra Info State
   const [newExtraLabel, setNewExtraLabel] = useState<string>('');
@@ -1973,7 +1974,102 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           </div>
         )}
       </div>
-      
+
+      {/* Bulk Upload Format Preview */}
+      <div className="border-b border-slate-800">
+        <button
+          onClick={() => setShowBulkUploadFormat(!showBulkUploadFormat)}
+          className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-slate-800/30 transition-colors"
+        >
+          <div className="space-y-1">
+            <div className="text-xs font-semibold text-slate-300 uppercase tracking-wide flex items-center gap-2">
+              <FileSpreadsheet className="w-4 h-4" />
+              Bulk Upload Excel Format
+            </div>
+            <div className="text-[11px] text-slate-500">
+              View expected column headers for bulk employee upload • Click to {showBulkUploadFormat ? 'hide' : 'show'}
+            </div>
+          </div>
+          {showBulkUploadFormat ? (
+            <ChevronUp className="w-4 h-4 text-slate-400" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-slate-400" />
+          )}
+        </button>
+
+        {showBulkUploadFormat && (
+          <div className="px-4 pb-4 border-t border-slate-800/50">
+            <div className="bg-slate-800/20 rounded-lg p-4 mb-3">
+              <h4 className="text-sm font-medium text-slate-200 mb-2">Expected Column Headers</h4>
+              <p className="text-xs text-slate-400 mb-3">
+                Your Excel file should have these columns in the first row. All columns are optional except "Name".
+                Custom fields can be added as additional columns after "Work Timings".
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                {[
+                  'Name',
+                  'Registration / Membership No.',
+                  'Employee Code',
+                  'Paid From',
+                  'Designation',
+                  'Category',
+                  'Tally Name',
+                  'Gender',
+                  'Asija Mail ID',
+                  'Parents/Guardians Names',
+                  'Parents/Guardians Occupation',
+                  'Cell No.',
+                  'Alternate No.',
+                  'Alternate Mail Id',
+                  'Address 1',
+                  'Address 2',
+                  'Emergency Contact No.',
+                  'Relation',
+                  'Anniversary Date',
+                  'Bank Name',
+                  'Branch Name',
+                  'Account No.',
+                  'IFSC',
+                  'Type of Account',
+                  'Name of Account Holder',
+                  'Aadhar No.',
+                  'PAN',
+                  'Basis Salary/Stipend/Fees',
+                  'Laptop Allowance',
+                  'Total Salary (P/M)',
+                  'Per Annum',
+                  'Date of Joining -in Asija',
+                  'Articleship Start Date',
+                  'Transfer Case',
+                  '1st Yr of Articleship',
+                  '2nd Yr of Articleship',
+                  '3rd Yr of Articleship',
+                  'Filled Scholarship',
+                  'Qualification Level',
+                  'Next Attempt Due Date',
+                  'Registered Under Partner',
+                  'Working Under Partner',
+                  'Work Timings'
+                ].map((column, index) => (
+                  <div
+                    key={index}
+                    className="text-xs text-slate-300 bg-slate-800/40 px-3 py-2 rounded border border-slate-700/50"
+                  >
+                    {column}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="bg-slate-800/10 rounded-lg p-3 border border-slate-700/30">
+              <p className="text-xs text-slate-400">
+                <strong>Tip:</strong> Use the "Export" button above to download a template with all current employees,
+                then modify it and use "Bulk Actions" to upload the updated data.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
       {error && (
         <div className="m-4 bg-rose-500/10 text-rose-300 px-4 py-3 rounded-md border border-rose-500/20">
           {error}

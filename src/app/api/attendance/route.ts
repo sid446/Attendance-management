@@ -130,6 +130,7 @@ export async function POST(request: NextRequest) {
             excessHour: 0,
             typeOfPresence,
             halfDay: false,
+            value: totalHour > 0 ? 1 : 0, // Set value based on hours worked
             remarks: '',
           });
 
@@ -232,6 +233,7 @@ export async function POST(request: NextRequest) {
         excessHour: dailyRecord.excessHour || 0,
         typeOfPresence: dailyRecord.typeOfPresence || 'ThumbMachine',
         halfDay: dailyRecord.halfDay || false,
+        value: dailyRecord.value ?? 0,
         remarks: dailyRecord.remarks || '',
       });
 

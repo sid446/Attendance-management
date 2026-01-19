@@ -4,6 +4,44 @@ import AttendanceRequest from '@/models/AttendanceRequest';
 import User from '@/models/User';
 import { transporter, mailOptions } from '@/lib/mailer';
 
+export async function GET(request: NextRequest) {
+  try {
+    await dbConnect();
+
+    const { searchParams } = new URL(request.url);
+    const userId = searchParams.get('userId');
+    const partnerName = searchParams.get('partnerName');
+    const status = searchParams.get('status');
+
+    let query: any = {};
+
+    if (userId) {
+      query.userId = userId;
+    }
+
+    if (partnerName) {
+      query.partnerName = partnerName;
+    }
+
+    if (status) {
+      query.status = status;
+    }
+
+    const requests = await AttendanceRequest.find(query)
+      .sort({ createdAt: -1 })
+      .populate('userId', 'name email designation')
+      .lean();
+
+    return NextResponse.json({
+      success: true,
+      data: requests
+    });
+  } catch (error) {
+    console.error('Fetch Requests Error:', error);
+    return NextResponse.json({ success: false, error: 'Failed to fetch requests' }, { status: 500 });
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     await dbConnect();
@@ -83,8 +121,7 @@ export async function POST(request: NextRequest) {
 
     // Desktop table rows
     const rowsHtml = pendingRequests.map((req: any, index: number) => {
-      const approveLinkRow = `${baseUrl}/api/attendance/request-action?id=${req._id}&action=approve`;
-      const rejectLinkRow = `${baseUrl}/api/attendance/request-action?id=${req._id}&action=reject`;
+      const reviewLinkRow = `${baseUrl}/partner/review?id=${req._id}`;
       const timeRange = req.startTime && req.endTime ? `${req.startTime} - ${req.endTime}` : '-';
       const reasonText = req.reason || '-';
 
@@ -99,8 +136,7 @@ export async function POST(request: NextRequest) {
           <td style="padding: 12px 8px; font-size: 14px; color: #374151; white-space: nowrap;">${timeRange}</td>
           <td style="padding: 12px 8px; font-size: 14px; color: #374151; max-width: 200px; word-wrap: break-word;">${reasonText}</td>
           <td style="padding: 12px 8px; text-align: center;">
-            <a href="${approveLinkRow}" style="display: inline-block; margin: 4px; padding: 8px 16px; background-color: #10b981; color: white; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: 500;">Approve</a>
-            <a href="${rejectLinkRow}" style="display: inline-block; margin: 4px; padding: 8px 16px; background-color: #ef4444; color: white; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: 500;">Reject</a>
+            <a href="${reviewLinkRow}" style="display: inline-block; margin: 4px; padding: 8px 16px; background-color: #10b981; color: white; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: 500;">Review</a>
           </td>
         </tr>
       `;
@@ -108,8 +144,7 @@ export async function POST(request: NextRequest) {
 
     // Mobile card view
     const mobileCardsHtml = pendingRequests.map((req: any, index: number) => {
-      const approveLinkRow = `${baseUrl}/api/attendance/request-action?id=${req._id}&action=approve`;
-      const rejectLinkRow = `${baseUrl}/api/attendance/request-action?id=${req._id}&action=reject`;
+      const reviewLinkRow = `${baseUrl}/partner/review?id=${req._id}`;
       const timeRange = req.startTime && req.endTime ? `${req.startTime} - ${req.endTime}` : '-';
       const reasonText = req.reason || '-';
 
@@ -135,8 +170,7 @@ export async function POST(request: NextRequest) {
             <div style="font-size: 14px; color: #1f2937; line-height: 1.5;">${reasonText}</div>
           </div>
           <div style="display: flex; gap: 8px;">
-            <a href="${approveLinkRow}" style="flex: 1; display: block; padding: 10px; background-color: #10b981; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 500; text-align: center;">Approve</a>
-            <a href="${rejectLinkRow}" style="flex: 1; display: block; padding: 10px; background-color: #ef4444; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 500; text-align: center;">Reject</a>
+            <a href="${reviewLinkRow}" style="flex: 1; display: block; padding: 10px; background-color: #10b981; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 500; text-align: center;">Review</a>
           </div>
         </div>
       `;
@@ -209,7 +243,7 @@ export async function POST(request: NextRequest) {
 
         <!-- Description -->
         <p style="margin: 0 0 20px 0; font-size: 15px; color: #4b5563; line-height: 1.6;">
-          The following pending attendance correction request(s) are waiting for your action. You can approve or reject each one directly from this email.
+          The following pending attendance correction request(s) are waiting for your action. Click "Review" for each request to approve or reject with optional remarks.
         </p>
 
         <!-- Desktop Table -->
@@ -223,7 +257,7 @@ export async function POST(request: NextRequest) {
                 <th style="padding: 12px 8px; text-align: left; font-size: 13px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;">Status</th>
                 <th style="padding: 12px 8px; text-align: left; font-size: 13px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;">Time</th>
                 <th style="padding: 12px 8px; text-align: left; font-size: 13px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;">Reason</th>
-                <th style="padding: 12px 8px; text-align: center; font-size: 13px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;">Action</th>
+                <th style="padding: 12px 8px; text-align: center; font-size: 13px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;">Review</th>
               </tr>
             </thead>
             <tbody>
@@ -240,7 +274,7 @@ export async function POST(request: NextRequest) {
         <!-- Footer Note -->
         <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 16px; margin-top: 24px;">
           <p style="margin: 0; font-size: 14px; color: #1e40af; line-height: 1.5;">
-            <strong>📌 Note:</strong> Once you approve a request, the corresponding attendance record will be updated immediately.
+            <strong>📌 Note:</strong> Click "Review" for each request to approve or reject with optional remarks. Once you submit your decision, the corresponding attendance record will be updated immediately.
           </p>
         </div>
 

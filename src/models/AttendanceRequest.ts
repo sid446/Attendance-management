@@ -12,6 +12,7 @@ export interface IAttendanceRequest extends Document {
   status: 'Pending' | 'Approved' | 'Rejected';
   startTime?: string;
   endTime?: string;
+  partnerRemarks?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -32,7 +33,8 @@ const AttendanceRequestSchema: Schema = new Schema(
         default: 'Pending' 
     },
     startTime: { type: String },
-    endTime: { type: String }
+    endTime: { type: String },
+    partnerRemarks: { type: String }
   },
   {
     timestamps: true,

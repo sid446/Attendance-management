@@ -108,7 +108,7 @@ export default function EmployeeDashboard() {
 
   const handleDayClick = (date: string) => {
       setSelectedDate(date);
-      setRequestStatus('Official Holiday Duty (OHD)');
+      setRequestStatus('Leave');
       setRequestReason('');
       setStartTime('');
       setEndTime('');
@@ -116,6 +116,13 @@ export default function EmployeeDashboard() {
 
   const submitRequest = async () => {
       if (!selectedDate || !user) return;
+      
+      // Validate required fields
+      if (!requestReason.trim()) {
+          alert('Please provide a reason for your attendance correction request.');
+          return;
+      }
+      
       setSendingRequest(true);
       try {
           const res = await fetch('/api/employee/request-correction', {
@@ -163,14 +170,28 @@ export default function EmployeeDashboard() {
   if (loading || !user) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white">Loading...</div>;
 
   const statusOptions = [
+    // Keep original leave and weekoff
     'Leave',
-    'Official Holiday Duty (OHD)',
-    'Weekly Off - Present (WO-Present)',
-    'Half Day (HD)',
-    'Work From Home (WFH)',
-    'Weekly Off - Work From Home (WO-WFH)',
-    'Onsite Presence (OS-P)',
-    'Week Off'
+    'Week Off',
+    
+    // Present categories
+    'Present - in office',
+    'Present - client place',
+    'Present - outstation',
+    'Present - weekoff',
+    
+    // Half Day categories
+    'Half Day - weekdays',
+    'Half Day - weekoff',
+    
+    // WFH categories
+    'WFH - weekdays',
+    'WFH - weekoff',
+    
+    // Other categories
+    'Weekoff - special allowance',
+    'OHD (office holidays eg. Diwali,holi)',
+    'Thumb machine - not working'
   ];
 
   return (
@@ -227,7 +248,7 @@ export default function EmployeeDashboard() {
                            </select>
                        </div>
 
-                       {(requestStatus === 'Work From Home (WFH)' || requestStatus === 'Onsite Presence (OS-P)') && (
+                       {(requestStatus !== 'Leave' && requestStatus !== 'Week Off') && (
                            <div className="grid grid-cols-2 gap-4">
                                <div className="space-y-2">
                                    <label className="text-sm font-medium text-slate-300">Start Time</label>
@@ -251,19 +272,20 @@ export default function EmployeeDashboard() {
                        )}
 
                        <div className="space-y-2">
-                           <label className="text-sm font-medium text-slate-300">Reason (Optional)</label>
+                           <label className="text-sm font-medium text-slate-300">Reason *</label>
                            <textarea 
                              value={requestReason}
                              onChange={(e) => setRequestReason(e.target.value)}
                              placeholder="E.g., Forgot to punch out due to client meeting..."
                              className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-slate-200 outline-none focus:border-emerald-500 min-h-[80px]"
+                             required
                            />
                        </div>
 
                        <button 
                          onClick={submitRequest}
-                         disabled={sendingRequest}
-                         className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2.5 rounded-lg flex items-center justify-center gap-2 mt-4"
+                         disabled={sendingRequest || !requestReason.trim()}
+                         className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg flex items-center justify-center gap-2 mt-4"
                        >
                            {sendingRequest ? <Loader2 className="w-4 h-4 animate-spin"/> : <Send className="w-4 h-4"/>}
                            Send Request to Partner

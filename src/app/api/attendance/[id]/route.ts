@@ -79,8 +79,29 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         excessHour: dailyRecord.excessHour ?? attendance.records.get(date)?.excessHour ?? 0,
         typeOfPresence: dailyRecord.typeOfPresence ?? attendance.records.get(date)?.typeOfPresence ?? 'ThumbMachine',
         halfDay: dailyRecord.halfDay ?? attendance.records.get(date)?.halfDay ?? false,
+        value: dailyRecord.value ?? attendance.records.get(date)?.value ?? 0,
         remarks: dailyRecord.remarks ?? attendance.records.get(date)?.remarks ?? '',
       });
+
+      // Calculate value based on typeOfPresence if not explicitly provided
+      const record = attendance.records.get(date);
+      if (record && dailyRecord.value === undefined) {
+        const typeOfPresence = record.typeOfPresence;
+        if (typeOfPresence.includes('Half Day')) {
+          record.value = 0.75;
+          record.halfDay = true;
+        } else if (typeOfPresence === 'Absent' || typeOfPresence === 'Leave') {
+          record.value = 0;
+        } else if (typeOfPresence === 'Holiday' || typeOfPresence === 'Week Off' || typeOfPresence === 'Weekoff - special allowance') {
+          record.value = 0;
+        } else if (typeOfPresence.includes('outstation')) {
+          // Outstation work gets higher value due to travel/additional effort
+          record.value = 1.2;
+        } else {
+          // All other present types
+          record.value = 1;
+        }
+      }
 
       // Recalculate summary
       const user = await User.findById(attendance.userId);

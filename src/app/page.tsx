@@ -9,6 +9,7 @@ import { UploadSection } from '@/components/UploadSection';
 import { SummarySection } from '@/components/SummarySection';
 import { EmployeeMonthView } from '@/components/EmployeeMonthView';
 import { EmployeeManagementSection } from '@/components/EmployeeManagementSection';
+import { AttendanceRequestsSection } from '@/components/AttendanceRequestsSection';
 
 export default function AttendanceUpload() {
   // Auth state
@@ -35,13 +36,14 @@ export default function AttendanceUpload() {
   const [uploadTotal, setUploadTotal] = useState<number>(0);
   const [uploadSaved, setUploadSaved] = useState<number>(0);
   const [uploadFailed, setUploadFailed] = useState<number>(0);
-  const [activeSection, setActiveSection] = useState<'upload' | 'summary' | 'employee' | 'employees'>('summary');
+  const [activeSection, setActiveSection] = useState<'upload' | 'summary' | 'employee' | 'employees' | 'requests'>('summary');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [selectedEmployeeMonth, setSelectedEmployeeMonth] = useState<string>('');
   const [employeeDays, setEmployeeDays] = useState<AttendanceRecord[]>([]);
   const [employeeLoading, setEmployeeLoading] = useState<boolean>(false);
   const [employeeError, setEmployeeError] = useState<string | null>(null);
   const [loadingSummaries, setLoadingSummaries] = useState<boolean>(false);
+  const [machineFormat, setMachineFormat] = useState<string>('machine2');
   
   // New State for "Affected" Modal
   const [showAffectedModal, setShowAffectedModal] = useState<boolean>(false);
@@ -204,6 +206,84 @@ export default function AttendanceUpload() {
     return String(excelDate);
   };
 
+  const parseMachine1DateTime = (dateTimeStr: any): { date: string; time: string } => {
+    if (!dateTimeStr && dateTimeStr !== 0) return { date: '', time: '00:00:00' };
+    
+    // Handle Date objects that XLSX might return
+    if (dateTimeStr instanceof Date) {
+      const day = String(dateTimeStr.getDate()).padStart(2, '0');
+      const month = String(dateTimeStr.getMonth() + 1).padStart(2, '0');
+      const year = dateTimeStr.getFullYear();
+      const hours = String(dateTimeStr.getHours()).padStart(2, '0');
+      const minutes = String(dateTimeStr.getMinutes()).padStart(2, '0');
+      const seconds = String(dateTimeStr.getSeconds()).padStart(2, '0');
+      
+      return {
+        date: `${day}-${month}-${year}`,
+        time: `${hours}:${minutes}:${seconds}`
+      };
+    }
+    
+    if (typeof dateTimeStr === 'string') {
+      // Handle format like "01-12-2025  10:56:00"
+      const match = dateTimeStr.match(/^(\d{2}-\d{2}-\d{4})\s+(\d{2}:\d{2}(?::\d{2})?)$/);
+      if (match) {
+        return {
+          date: match[1],
+          time: match[2].length === 5 ? `${match[2]}:00` : match[2]
+        };
+      }
+      
+      // If it's just a time string
+      if (dateTimeStr.match(/^\d{2}:\d{2}(?::\d{2})?$/)) {
+        return {
+          date: '',
+          time: dateTimeStr.length === 5 ? `${dateTimeStr}:00` : dateTimeStr
+        };
+      }
+      
+      // If it's a date string like "01-12-2025"
+      if (dateTimeStr.match(/^\d{2}-\d{2}-\d{4}$/)) {
+        return {
+          date: dateTimeStr,
+          time: '00:00:00'
+        };
+      }
+    }
+    
+    // Handle Excel date-time numbers (both date and time combined)
+    if (typeof dateTimeStr === 'number' && dateTimeStr > 0) {
+      // Excel stores dates as days since 1900-01-01
+      // Use XLSX's built-in parser for accuracy
+      try {
+        const dateObj = XLSX.SSF.parse_date_code(dateTimeStr);
+        const day = String(dateObj.d).padStart(2, '0');
+        const month = String(dateObj.m).padStart(2, '0');
+        const year = dateObj.y;
+        const hours = String(dateObj.H || 0).padStart(2, '0');
+        const minutes = String(dateObj.M || 0).padStart(2, '0');
+        const seconds = String(dateObj.S || 0).padStart(2, '0');
+        
+        return {
+          date: `${day}-${month}-${year}`,
+          time: `${hours}:${minutes}:${seconds}`
+        };
+      } catch (e) {
+        // Fallback to basic time parsing if date parsing fails
+        const totalSeconds = Math.round(dateTimeStr * 24 * 60 * 60);
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        return {
+          date: '',
+          time: `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+        };
+      }
+    }
+    
+    return { date: '', time: '00:00:00' };
+  };
+
   const getMonthYearFromDate = (dateStr: string): string | null => {
     // Expecting DD-MM-YYYY, but also handle ISO YYYY-MM-DD
     if (/^\d{2}-\d{2}-\d{4}$/.test(dateStr)) {
@@ -223,7 +303,7 @@ export default function AttendanceUpload() {
     return `${yyyy}-${mm}`;
   };
 
-  const processExcelFile = async (): Promise<void> => {
+  const processMachine2File = async (): Promise<void> => {
     if (!file) {
       setError('Please select a file first');
       return;
@@ -235,9 +315,9 @@ export default function AttendanceUpload() {
 
     try {
       const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, { cellDates: false });
+      const workbook = XLSX.read(data, { cellDates: false, cellNF: false, cellText: false });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true });
+      const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true, defval: '' });
 
       // Find header row (contains 'ID', 'Name', etc.)
       const headerRowIndex = jsonData.findIndex(row => 
@@ -289,6 +369,108 @@ export default function AttendanceUpload() {
         processed.push({
           id: currentId,
           name: currentName,
+          date,
+          inTime,
+          outTime,
+          status: isAbsent ? 'Absent' : 'Present',
+        });
+      }
+
+      setAttendanceData(processed);
+
+      const inferredMonthYear = processed[0] ? getMonthYearFromDate(processed[0].date) : null;
+      setCurrentMonthYear(inferredMonthYear);
+
+      // Automatically upload to API after successful processing
+      if (processed.length > 0) {
+        setUploadTotal(processed.length);
+        setUploadSaved(0);
+        setUploadFailed(0);
+        await uploadToServer(processed, inferredMonthYear || undefined);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+      setError(`Error processing file: ${errorMessage}`);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const processMachine1File = async (): Promise<void> => {
+    if (!file) {
+      setError('Please select a file first');
+      return;
+    }
+
+    setProcessing(true);
+    setError(null);
+    setSaveMessage(null);
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { cellDates: false, cellNF: false, cellText: false });
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true, defval: '' });
+
+      // Find header row (contains 'EMP Code', 'Emp Name', etc.)
+      const headerRowIndex = jsonData.findIndex(row => 
+        row.some(cell => cell === 'EMP Code' || cell === 'Emp Name')
+      );
+
+      if (headerRowIndex === -1) {
+        throw new Error('Could not find header row in Excel file. Expected columns: EMP Code, Emp Name, In Time, Out Time, Date');
+      }
+
+      const headers: any[] = jsonData[headerRowIndex];
+      const dataRows = jsonData.slice(headerRowIndex + 1);
+
+      // Find column indices
+      const empCodeIndex = headers.findIndex(h => h === 'EMP Code');
+      const empNameIndex = headers.findIndex(h => h === 'Emp Name');
+      const inTimeIndex = headers.findIndex(h => h === 'In Time');
+      const outTimeIndex = headers.findIndex(h => h === 'Out Time');
+      const dateIndex = headers.findIndex(h => h === 'Date');
+
+      if (empCodeIndex === -1 || empNameIndex === -1 || inTimeIndex === -1 || outTimeIndex === -1 || dateIndex === -1) {
+        throw new Error('Missing required columns. Expected: EMP Code, Emp Name, In Time, Out Time, Date');
+      }
+
+      const processed: AttendanceRecord[] = [];
+
+      for (const row of dataRows) {
+        const empCode = row[empCodeIndex];
+        const empName = row[empNameIndex];
+        const inTimeRaw = row[inTimeIndex];
+        const outTimeRaw = row[outTimeIndex];
+        const dateRaw = row[dateIndex];
+
+        // Skip rows that don't have essential data
+        if (!empCode || !empName || (!inTimeRaw && !outTimeRaw && !dateRaw)) {
+          continue;
+        }
+
+        // Parse In Time - may contain date-time string
+        const inTimeParsed = parseMachine1DateTime(inTimeRaw);
+        const inTime = inTimeParsed.time;
+        
+        // Parse Out Time - may contain date-time string
+        const outTimeParsed = parseMachine1DateTime(outTimeRaw);
+        const outTime = outTimeParsed.time;
+        
+        // Use date from Date column, or extract from In Time if available
+        let date = formatExcelDate(dateRaw);
+        if (!date && inTimeParsed.date) {
+          date = inTimeParsed.date;
+        }
+        if (!date && outTimeParsed.date) {
+          date = outTimeParsed.date;
+        }
+
+        const isAbsent = inTime === '00:00:00' && outTime === '00:00:00';
+
+        processed.push({
+          id: empCode,
+          name: String(empName),
           date,
           inTime,
           outTime,
@@ -773,11 +955,21 @@ export default function AttendanceUpload() {
               <UploadSection
                 file={file}
                 onFileChange={handleFileChange}
-                onProcessFile={processExcelFile}
+                onProcessFile={() => {
+                  if (machineFormat === 'machine1') {
+                    processMachine1File();
+                  } else if (machineFormat === 'machine2') {
+                    processMachine2File();
+                  } else {
+                    setError('Unknown machine format selected');
+                  }
+                }}
                 processing={processing}
                 error={error}
                 saveMessage={saveMessage}
                 uploadErrors={uploadErrors}
+                machineFormat={machineFormat}
+                onMachineFormatChange={setMachineFormat}
               />
             )}
 
@@ -944,6 +1136,11 @@ export default function AttendanceUpload() {
             {/* Employee Management Section */}
             {activeSection === 'employees' && (
               <EmployeeManagementSection selectedUserId={selectedEmployeeId} />
+            )}
+
+            {/* Attendance Requests Section */}
+            {activeSection === 'requests' && (
+              <AttendanceRequestsSection />
             )}
           </div>
         </main>
