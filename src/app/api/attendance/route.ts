@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Attendance from '@/models/Attendance';
+import AttendanceRequest from '@/models/AttendanceRequest';
 import User, { IUser } from '@/models/User';
 
 // GET - Fetch attendance records
@@ -118,20 +119,89 @@ export async function POST(request: NextRequest) {
 
           const totalHour = calculateTotalHours(checkin, checkout);
 
+          // Check for Approved Requests (Future/Correction) that override Excel data
+          const approvedRequest = await AttendanceRequest.findOne({
+            userId: user._id,
+            date: isoDate,
+            status: 'Approved'
+          });
+
           // Map page status to typeOfPresence;
           // User Requirement: typeOfPresence should always be 'ThumbMachine' for Excel uploads indicating source.
           // Absent status will be determined by 0 totalHour in summary calculation.
-          const typeOfPresence = 'ThumbMachine';
+          let typeOfPresence = 'ThumbMachine';
+          let finalCheckin = checkin;
+          let finalCheckout = checkout;
+          let finalTotalHour = totalHour;
+          let finalValue = totalHour > 0 ? 1 : 0;
+          let finalHalfDay = false;
+          let remarksStr = '';
+
+          // Override if Approved Request Exists
+          if (approvedRequest) {
+             // Calculate Request Duration
+             let requestTotalHour = 0;
+             if (approvedRequest.startTime && approvedRequest.endTime) {
+                 const [h1, m1] = String(approvedRequest.startTime).split(':').map(Number);
+                 const [h2, m2] = String(approvedRequest.endTime).split(':').map(Number);
+                 if (!isNaN(h1) && !isNaN(m1) && !isNaN(h2) && !isNaN(m2)) {
+                    const minutes = (h2 * 60 + m2) - (h1 * 60 + m1);
+                    requestTotalHour = Math.max(0, Math.round((minutes / 60) * 100) / 100);
+                 }
+             }
+
+             // Logic: If Machine Data hours > Request Data hours, Machine Data prevails.
+             // This handles:
+             // 1. Applied for Leave (0 hrs) but worked (e.g. 5 hrs) -> Machine Data (Present)
+             // 2. Applied for Half Day (4 hrs) but worked Full Day (8 hrs) -> Machine Data (Present)
+             // 3. Applied for WFH (9 hrs) and Machine is 0 or less -> Request Data (WFH)
+             
+             if (totalHour > requestTotalHour) {
+                 typeOfPresence = 'Present'; 
+                 remarksStr = `Present (Machine ${totalHour}h > Request ${requestTotalHour}h)`;
+                 // finalCheckin, finalCheckout, finalTotalHour are already set to machine values
+                 finalValue = 1;
+             } else {
+                 // Standard Override: Approved Request takes precedence
+                 typeOfPresence = approvedRequest.requestedStatus;
+                 remarksStr = `Overridden by Approved Request: ${approvedRequest.requestedStatus}`;
+
+                 // If request provides specific times, use them
+                 if (approvedRequest.startTime && approvedRequest.endTime) {
+                     finalCheckin = approvedRequest.startTime;
+                     finalCheckout = approvedRequest.endTime;
+                     finalTotalHour = requestTotalHour;
+                 } else {
+                     // If it's a leave type and no times (or times resulted in 0), ensure cleared
+                     const isLeaveType = ['Leave', 'Week Off', 'Absent'].includes(approvedRequest.requestedStatus);
+                     if (isLeaveType) {
+                         finalCheckin = '';
+                         finalCheckout = '';
+                         finalTotalHour = 0;
+                     }
+                 }
+
+                 // Adjust Value based on Status
+                 if (typeOfPresence === 'Leave' || typeOfPresence === 'Absent' || typeOfPresence === 'Week Off') {
+                     finalValue = 0;
+                 } else if (typeOfPresence && typeOfPresence.includes('Half Day')) {
+                     finalValue = 0.75; 
+                     finalHalfDay = true;
+                 } else {
+                     finalValue = 1;
+                 }
+             }
+          }
 
           attendance.records.set(isoDate, {
-            checkin,
-            checkout,
-            totalHour,
+            checkin: finalCheckin,
+            checkout: finalCheckout,
+            totalHour: finalTotalHour,
             excessHour: 0,
-            typeOfPresence,
-            halfDay: false,
-            value: totalHour > 0 ? 1 : 0, // Set value based on hours worked
-            remarks: '',
+            typeOfPresence: typeOfPresence as any,
+            halfDay: finalHalfDay,
+            value: finalValue, 
+            remarks: remarksStr,
           });
 
           // Recalculate summary with user-specific schedule

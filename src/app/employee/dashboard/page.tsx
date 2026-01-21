@@ -5,6 +5,16 @@ import { EmployeeMonthView } from '@/components/EmployeeMonthView';
 import { AttendanceRecord, AttendanceSummaryView, User } from '@/types/ui';
 import { LogOut, X, Loader2, Send } from 'lucide-react';
 
+const TIMED_CATEGORIES = [
+  'Present - in office',
+  'Present - client place',
+  'Present - outstation',
+  'Present - weekoff',
+  'Half Day - weekdays',
+  'WFH - weekdays',
+  'Thumb machine - not working'
+];
+
 export default function EmployeeDashboard() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
@@ -26,6 +36,16 @@ export default function EmployeeDashboard() {
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [sendingRequest, setSendingRequest] = useState(false);
+
+  // Future Request Modal State
+  const [showFutureModal, setShowFutureModal] = useState(false);
+  const [futureStartDate, setFutureStartDate] = useState('');
+  const [futureEndDate, setFutureEndDate] = useState('');
+  const [futureType, setFutureType] = useState('Leave');
+  const [futureReason, setFutureReason] = useState('');
+  const [futureStartTime, setFutureStartTime] = useState('');
+  const [futureEndTime, setFutureEndTime] = useState('');
+  const [sendingFutureRequest, setSendingFutureRequest] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem('employeeUser');
@@ -162,6 +182,89 @@ export default function EmployeeDashboard() {
       }
   };
 
+  const submitFutureRequest = async () => {
+      if (!user) return;
+      if (!futureStartDate || !futureEndDate) {
+          alert('Please select start and end dates.');
+          return;
+      }
+      
+      const isTimed = TIMED_CATEGORIES.includes(futureType);
+      if (isTimed) {
+         if (futureStartDate !== futureEndDate) {
+             alert('For this category, only singular date selection is allowed (Start Date must equal End Date).');
+             return;
+         }
+         if (!futureStartTime || !futureEndTime) {
+             alert('Please provide Start Time and End Time.');
+             return;
+         }
+      }
+
+      if (!futureReason.trim()) {
+          alert('Please provide a reason.');
+          return;
+      }
+
+      // Determine time values
+      let reqStartTime: string | undefined = undefined;
+      let reqEndTime: string | undefined = undefined;
+      
+      const ZERO_TIME_CATEGORIES = [
+          'Leave',
+          'Week Off',
+          'Weekoff - special allowance',
+          'OHD (office holidays eg. Diwali,holi)'
+      ];
+
+      if (isTimed) {
+          reqStartTime = futureStartTime;
+          reqEndTime = futureEndTime;
+      } else if (ZERO_TIME_CATEGORIES.includes(futureType)) {
+          reqStartTime = '00:00';
+          reqEndTime = '00:00';
+      }
+      
+      setSendingFutureRequest(true);
+      try {
+          const res = await fetch('/api/employee/request-future-leave', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  userId: user._id,
+                  startDate: futureStartDate,
+                  endDate: futureEndDate,
+                  requestType: futureType,
+                  reason: futureReason,
+                  startTime: reqStartTime,
+                  endTime: reqEndTime
+              })
+          });
+          const json = await res.json();
+          
+          if (!res.ok) {
+              alert(json.error || 'Failed to send request');
+              return;
+          }
+
+          if (json.success) {
+              alert(`Future request sent successfully! Created ${json.count} requests.`);
+              setShowFutureModal(false);
+              setFutureStartDate('');
+              setFutureEndDate('');
+              setFutureReason('');
+              setFutureStartTime('');
+              setFutureEndTime('');
+          } else {
+              alert(json.error || 'Failed to send request');
+          }
+      } catch (e) {
+          alert('Error sending request');
+      } finally {
+          setSendingFutureRequest(false);
+      }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem('employeeUser');
     router.push('/employee/login');
@@ -202,9 +305,19 @@ export default function EmployeeDashboard() {
                <h1 className="text-xl font-bold text-white">My Attendance</h1>
                <p className="text-xs text-slate-400">Welcome, {user.name}</p>
            </div>
-           <button onClick={handleLogout} className="flex items-center gap-2 hover:text-rose-400 transition-colors text-sm">
-               <LogOut className="w-4 h-4" /> Sign Out
-           </button>
+           
+           <div className="flex gap-4">
+               <button 
+                  onClick={() => setShowFutureModal(true)}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Apply Future Leave
+               </button>
+
+               <button onClick={handleLogout} className="flex items-center gap-2 hover:text-rose-400 transition-colors text-sm">
+                   <LogOut className="w-4 h-4" /> Sign Out
+               </button>
+           </div>
        </header>
 
        {/* Content */}
@@ -289,6 +402,117 @@ export default function EmployeeDashboard() {
                        >
                            {sendingRequest ? <Loader2 className="w-4 h-4 animate-spin"/> : <Send className="w-4 h-4"/>}
                            Send Request to Partner
+                       </button>
+                   </div>
+               </div>
+           </div>
+       )}
+
+       {showFutureModal && (
+           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+               <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
+                   <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
+                       <h3 className="font-semibold text-white">Future Request</h3>
+                       <button onClick={() => setShowFutureModal(false)} className="text-slate-500 hover:text-white"><X className="w-5 h-5"/></button>
+                   </div>
+                   <div className="p-6 space-y-4">
+                       <div className="p-3 bg-indigo-900/20 border border-indigo-500/30 rounded-lg text-indigo-200 text-sm">
+                           Apply for upcoming leaves or special attendance.
+                       </div>
+
+                       <div className="grid grid-cols-2 gap-4">
+                           <div className={TIMED_CATEGORIES.includes(futureType) ? "col-span-2 space-y-2" : "space-y-2"}>
+                               <label className="text-sm font-medium text-slate-300">
+                                   {TIMED_CATEGORIES.includes(futureType) ? "Date" : "Start Date"}
+                               </label>
+                               <input 
+                                 type="date" 
+                                 value={futureStartDate}
+                                 onChange={(e) => {
+                                     setFutureStartDate(e.target.value);
+                                     if (TIMED_CATEGORIES.includes(futureType)) {
+                                         setFutureEndDate(e.target.value);
+                                     }
+                                 }}
+                                 className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-indigo-500"
+                               />
+                           </div>
+                           {!TIMED_CATEGORIES.includes(futureType) && (
+                               <div className="space-y-2">
+                                   <label className="text-sm font-medium text-slate-300">End Date</label>
+                                   <input 
+                                     type="date" 
+                                     value={futureEndDate}
+                                     onChange={(e) => setFutureEndDate(e.target.value)}
+                                     min={futureStartDate}
+                                     className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-indigo-500"
+                                   />
+                               </div>
+                           )}
+                       </div>
+
+                       <div className="space-y-2">
+                           <label className="text-sm font-medium text-slate-300">Request Type</label>
+                           <select 
+                             value={futureType}
+                             onChange={(e) => {
+                                 const val = e.target.value;
+                                 setFutureType(val);
+                                 if (TIMED_CATEGORIES.includes(val)) {
+                                     if (futureStartDate) setFutureEndDate(futureStartDate);
+                                     setFutureStartTime('');
+                                     setFutureEndTime('');
+                                 }
+                             }}
+                             className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-indigo-500"
+                           >
+                              {statusOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                           </select>
+                       </div>
+
+                       {TIMED_CATEGORIES.includes(futureType) && (
+                           <div className="grid grid-cols-2 gap-4">
+                               <div className="space-y-2">
+                                   <label className="text-sm font-medium text-slate-300">Start Time *</label>
+                                   <input 
+                                     type="time" 
+                                     value={futureStartTime}
+                                     onChange={(e) => setFutureStartTime(e.target.value)}
+                                     required
+                                     className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-indigo-500"
+                                   />
+                               </div>
+                               <div className="space-y-2">
+                                   <label className="text-sm font-medium text-slate-300">End Time *</label>
+                                   <input 
+                                     type="time" 
+                                     value={futureEndTime}
+                                     onChange={(e) => setFutureEndTime(e.target.value)}
+                                     required
+                                     className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-indigo-500"
+                                   />
+                               </div>
+                           </div>
+                       )}
+
+                       <div className="space-y-2">
+                           <label className="text-sm font-medium text-slate-300">Reason *</label>
+                           <textarea 
+                             value={futureReason}
+                             onChange={(e) => setFutureReason(e.target.value)}
+                             placeholder="Reason for future absence..."
+                             className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-slate-200 outline-none focus:border-indigo-500 min-h-[80px]"
+                             required
+                           />
+                       </div>
+
+                       <button 
+                         onClick={submitFutureRequest}
+                         disabled={sendingFutureRequest || !futureReason.trim()}
+                         className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg flex items-center justify-center gap-2 mt-4"
+                       >
+                           {sendingFutureRequest ? <Loader2 className="w-4 h-4 animate-spin"/> : <Send className="w-4 h-4"/>}
+                           Send Request
                        </button>
                    </div>
                </div>
