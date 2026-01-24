@@ -30,13 +30,11 @@ function calculateSummary(records: Map<string, any>, user?: any) {
         if (record.halfDay) totalHalfDay++;
         
         switch (record.typeOfPresence) {
-            case 'Leave': totalLeave++; break;
+            case 'On leave': totalLeave++; break;
             case 'Holiday': break;
-            case 'Week Off': break;
             case 'ThumbMachine':
             case 'Manual':
             case 'Remote':
-            case 'Official Holiday Duty (OHD)':
             case 'Weekly Off - Present (WO-Present)':
             case 'Half Day (HD)':
             case 'Work From Home (WFH)':
@@ -107,7 +105,7 @@ export async function POST(request: NextRequest) {
             }
 
             // Update details
-            rec.typeOfPresence = requestedStatus as any; // Still use the requested status type (e.g. Leave, OHD)
+            rec.typeOfPresence = requestedStatus as any; // Still use the requested status type (e.g. On leave)
             rec.remarks = appliedRemark; // Apply bulk remark to daily record too? Or just keep in request? Let's add it to record for visibility.
             
             if (startTime && endTime) {

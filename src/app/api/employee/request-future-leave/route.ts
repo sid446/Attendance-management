@@ -68,6 +68,9 @@ export async function POST(request: NextRequest) {
     const createdRequests = [];
 
     for (const d of datesToProcess) {
+        // Skip Sundays (getDay() === 0)
+        if (d.getDay() === 0) continue;
+        
         const dateStr = d.toISOString().split('T')[0];
         const monthYear = dateStr.substring(0, 7); // YYYY-MM
         
@@ -75,6 +78,33 @@ export async function POST(request: NextRequest) {
         // We probably should overwrite or fail. For now, let's create dynamic checking or just upsert logic if we want to valid duplicates
         // But schema doesn't enforce unique date per user. 
         // We will create a fresh request.
+        
+        // Calculate times for Present - outstation requests
+        let finalStartTime = startTime;
+        let finalEndTime = endTime;
+        
+        if (requestType === 'Present - outstation') {
+            // Determine scheduled times based on day of week and user schedule
+            const dayOfWeek = d.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+            const month = d.getMonth() + 1; // 1-12
+            
+            let scheduleToUse;
+            if (month === 12 || month === 1) {
+                // December or January - use monthly schedule
+                scheduleToUse = user.scheduleInOutTimeMonth;
+            } else if (dayOfWeek === 6) {
+                // Saturday - use saturday schedule
+                scheduleToUse = user.scheduleInOutTimeSat;
+            } else if (dayOfWeek !== 0) {
+                // Monday to Friday - use regular schedule
+                scheduleToUse = user.scheduleInOutTime;
+            }
+            
+            if (scheduleToUse) {
+                finalStartTime = scheduleToUse.inTime;
+                finalEndTime = scheduleToUse.outTime;
+            }
+        }
         
         const newRequest = new AttendanceRequest({
             userId: user._id,
@@ -86,8 +116,8 @@ export async function POST(request: NextRequest) {
             originalStatus: 'Future Request', // Placeholder
             reason: reason,
             status: 'Pending',
-            startTime: startTime || undefined,
-            endTime: endTime || undefined
+            startTime: finalStartTime || undefined,
+            endTime: finalEndTime || undefined
         });
 
         await newRequest.save();
@@ -100,47 +130,126 @@ export async function POST(request: NextRequest) {
     // Fetch all pending requests assigned to this partner (across all employees)
     const pendingRequests = await AttendanceRequest.find({ partnerName: partnerName, status: 'Pending' }).sort({ createdAt: 1 });
 
-    // Desktop table rows
-    const rowsHtml = pendingRequests.map((req: any, index: number) => {
-      const reviewLinkRow = `${baseUrl}/partner/review?id=${req._id}`;
-      const timeRange = req.startTime && req.endTime ? `${req.startTime} - ${req.endTime}` : '-';
-      const reasonText = req.reason || '-';
+    // Desktop table rows - group by user and request type
+    const userTypeGroups: { [key: string]: any[] } = pendingRequests.reduce((acc: { [key: string]: any[] }, req: any) => {
+      const key = `${req.userName}-${req.requestedStatus}`;
+      if (!acc[key]) {
+        acc[key] = [];
+      }
+      acc[key].push(req);
+      return acc;
+    }, {});
 
+    let rowIndex = 0;
+    const rowsHtml = Object.entries(userTypeGroups).map(([key, requests]) => {
+      const userName = requests[0].userName;
+      const requestedStatus = requests[0].requestedStatus;
+
+      // Sort dates and group into ranges
+      const dates = requests.map((r: any) => r.date).sort();
+      const ranges: string[] = [];
+      let start = dates[0];
+      let prev = dates[0];
+      for (let i = 1; i < dates.length; i++) {
+        const current = dates[i];
+        const prevDate = new Date(prev);
+        const currDate = new Date(current);
+        const diff = (currDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24);
+        if (diff > 1) {
+          // Gap, end previous range
+          if (start === prev) {
+            ranges.push(start);
+          } else {
+            ranges.push(`${start} to ${prev}`);
+          }
+          start = current;
+        }
+        prev = current;
+      }
+      if (start === prev) {
+        ranges.push(start);
+      } else {
+        ranges.push(`${start} to ${prev}`);
+      }
+      const datesDisplay = ranges.join(', ');
+
+      const firstReq = requests[0];
+      const timeRange = firstReq.startTime && firstReq.endTime ? `${firstReq.startTime} - ${firstReq.endTime}` : '-';
+      const reasonText = firstReq.reason || '-';
+
+      rowIndex++;
       return `
         <tr style="border-bottom: 1px solid #e5e7eb;">
-          <td style="padding: 12px 8px; text-align: center; font-size: 14px; color: #6b7280;">${index + 1}</td>
-          <td style="padding: 12px 8px; font-size: 14px; color: #111827; font-weight: 500; white-space: nowrap;">${req.userName}</td>
-          <td style="padding: 12px 8px; font-size: 14px; color: #374151; white-space: nowrap;">${req.date}</td>
+          <td style="padding: 12px 8px; text-align: center; font-size: 14px; color: #6b7280;">${rowIndex}</td>
+          <td style="padding: 12px 8px; font-size: 14px; color: #111827; font-weight: 500; white-space: nowrap;">${userName}</td>
+          <td style="padding: 12px 8px; font-size: 14px; color: #374151;">${datesDisplay}</td>
           <td style="padding: 12px 8px; font-size: 14px; color: #374151;">
-            <span style="display: inline-block; padding: 4px 8px; background-color: #dbeafe; color: #1e40af; border-radius: 4px; font-size: 13px;">${req.requestedStatus}</span>
+            <span style="display: inline-block; padding: 4px 8px; background-color: #dbeafe; color: #1e40af; border-radius: 4px; font-size: 13px;">${requestedStatus}</span>
           </td>
           <td style="padding: 12px 8px; font-size: 14px; color: #374151; white-space: nowrap;">${timeRange}</td>
           <td style="padding: 12px 8px; font-size: 14px; color: #374151; max-width: 200px; word-wrap: break-word;">${reasonText}</td>
-          <td style="padding: 12px 8px; text-align: center;">
-            <a href="${reviewLinkRow}" style="display: inline-block; margin: 4px; padding: 8px 16px; background-color: #10b981; color: white; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: 500;">Review</a>
-          </td>
         </tr>
       `;
     }).join('');
 
-    // Mobile card view
-    const mobileCardsHtml = pendingRequests.map((req: any, index: number) => {
-      const reviewLinkRow = `${baseUrl}/partner/review?id=${req._id}`;
-      const timeRange = req.startTime && req.endTime ? `${req.startTime} - ${req.endTime}` : '-';
-      const reasonText = req.reason || '-';
+    // Mobile card view - group by user and request type
+    const mobileUserTypeGroups: { [key: string]: any[] } = pendingRequests.reduce((acc: { [key: string]: any[] }, req: any) => {
+      const key = `${req.userName}-${req.requestedStatus}`;
+      if (!acc[key]) {
+        acc[key] = [];
+      }
+      acc[key].push(req);
+      return acc;
+    }, {});
+
+    const mobileCardsHtml = Object.entries(mobileUserTypeGroups).map(([key, requests]) => {
+      const userName = requests[0].userName;
+      const requestedStatus = requests[0].requestedStatus;
+
+      // Sort dates and group into ranges
+      const dates = requests.map((r: any) => r.date).sort();
+      const ranges: string[] = [];
+      let start = dates[0];
+      let prev = dates[0];
+      for (let i = 1; i < dates.length; i++) {
+        const current = dates[i];
+        const prevDate = new Date(prev);
+        const currDate = new Date(current);
+        const diff = (currDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24);
+        if (diff > 1) {
+          // Gap, end previous range
+          if (start === prev) {
+            ranges.push(start);
+          } else {
+            ranges.push(`${start} to ${prev}`);
+          }
+          start = current;
+        }
+        prev = current;
+      }
+      if (start === prev) {
+        ranges.push(start);
+      } else {
+        ranges.push(`${start} to ${prev}`);
+      }
+      const datesDisplay = ranges.join(', ');
+
+      const firstReq = requests[0];
+      const timeRange = firstReq.startTime && firstReq.endTime ? `${firstReq.startTime} - ${firstReq.endTime}` : '-';
+      const reasonText = firstReq.reason || '-';
 
       return `
         <div style="background-color: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-bottom: 12px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #f3f4f6;">
             <div>
-              <div style="font-size: 11px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px;">Request #${index + 1}</div>
-              <div style="font-size: 14px; color: #111827; font-weight: 600; margin-top: 2px;">${req.userName}</div>
+              <div style="font-size: 11px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px;">Request</div>
+              <div style="font-size: 14px; color: #111827; font-weight: 600; margin-top: 2px;">${userName}</div>
             </div>
-            <span style="display: inline-block; padding: 4px 10px; background-color: #dbeafe; color: #1e40af; border-radius: 4px; font-size: 12px; font-weight: 500;">${req.requestedStatus}</span>
+            <span style="display: inline-block; padding: 4px 10px; background-color: #dbeafe; color: #1e40af; border-radius: 4px; font-size: 12px; font-weight: 500;">${requestedStatus}</span>
           </div>
           <div style="margin-bottom: 8px;">
-            <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">Date</div>
-            <div style="font-size: 14px; color: #1f2937; font-weight: 500;">${req.date}</div>
+            <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">Dates</div>
+            <div style="font-size: 14px; color: #1f2937; font-weight: 500;">${datesDisplay}</div>
           </div>
           <div style="margin-bottom: 8px;">
             <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">Time Range</div>
@@ -150,16 +259,12 @@ export async function POST(request: NextRequest) {
             <div style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">Reason</div>
             <div style="font-size: 14px; color: #1f2937; line-height: 1.5;">${reasonText}</div>
           </div>
-          <div style="display: flex; gap: 8px;">
-            <a href="${reviewLinkRow}" style="flex: 1; display: block; padding: 10px; background-color: #10b981; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 500; text-align: center;">Review</a>
-          </div>
         </div>
       `;
     }).join('');
 
     // Generate Bulk Approve Link
     const newRequestIds = createdRequests.map(r => r._id).join(',');
-    const bulkApproveLink = `${baseUrl}/partner/approve-bulk?ids=${newRequestIds}`;
 
     try {
         await transporter.sendMail({
@@ -215,6 +320,11 @@ export async function POST(request: NextRequest) {
         <h1 style="margin: 0; color: white; font-size: 24px; font-weight: 600;">Future Leave Requests</h1>
       </div>
 
+      <!-- Review All Button -->
+      <div style="background-color: #f9fafb; padding: 16px; text-align: center; border-bottom: 1px solid #e5e7eb;">
+        <a href="${baseUrl}/partner/review-all?partnerName=${encodeURIComponent(partnerName)}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: white; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">Review All Pending Requests</a>
+      </div>
+
       <!-- Content -->
       <div class="content-wrapper" style="padding: 24px;">
         
@@ -224,9 +334,6 @@ export async function POST(request: NextRequest) {
             <strong style="color: #1f2937;">New requests submitted by:</strong> ${user.name}<br/>
             <span style="font-size: 13px; color:#6b7280;">Dates: ${startDate} to ${endDate}</span>
           </p>
-          <div style="margin-top: 15px;">
-             <a href="${bulkApproveLink}" style="display: inline-block; padding: 10px 20px; background-color: #16a34a; color: white; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 600;">Approve All New Requests</a>
-          </div>
         </div>
 
         <!-- Description -->
@@ -245,7 +352,6 @@ export async function POST(request: NextRequest) {
                 <th style="padding: 12px 8px; text-align: left; font-size: 13px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;">Status</th>
                 <th style="padding: 12px 8px; text-align: left; font-size: 13px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;">Time</th>
                 <th style="padding: 12px 8px; text-align: left; font-size: 13px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;">Reason</th>
-                <th style="padding: 12px 8px; text-align: center; font-size: 13px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;">Review</th>
               </tr>
             </thead>
             <tbody>

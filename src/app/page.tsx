@@ -10,6 +10,7 @@ import { SummarySection } from '@/components/SummarySection';
 import { EmployeeMonthView } from '@/components/EmployeeMonthView';
 import { EmployeeManagementSection } from '@/components/EmployeeManagementSection';
 import { AttendanceRequestsSection } from '@/components/AttendanceRequestsSection';
+import { get } from "http";
 
 export default function AttendanceUpload() {
   // Auth state
@@ -407,37 +408,39 @@ export default function AttendanceUpload() {
     setSaveMessage(null);
 
     try {
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, { cellDates: false, cellNF: false, cellText: false });
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true, defval: '' });
+      const data = await file.arrayBuffer();//takes the data turn into into raw binary format as XLSX OR shetjs accept binary format
+      const workbook = XLSX.read(data, { cellDates: false, cellNF: false, cellText: false });//cellDates: false to prevent automatic conversion of date cells into JS Date objects,cellNF: false to avoid applying number formatting, cellText: false to get raw cell values without text formatting
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];//selects the first sheet in the workbook
+      const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true, defval: '' });//converts the worksheet into a 2D array (array of arrays) where each inner array represents a row in the sheet. header: 1 indicates that the first row should be treated as data, raw: true ensures raw cell values are returned, defval: '' fills empty cells with an empty string instead of undefined
+
 
       // Find header row (contains 'EMP Code', 'Emp Name', etc.)
       const headerRowIndex = jsonData.findIndex(row => 
         row.some(cell => cell === 'EMP Code' || cell === 'Emp Name')
-      );
+      );//seraches the excel for the header row index value as it is saved like this [['EMP Code', 'Emp Name', 'In Time', 'Out Time', 'Date'],[...],[...]]
+
 
       if (headerRowIndex === -1) {
         throw new Error('Could not find header row in Excel file. Expected columns: EMP Code, Emp Name, In Time, Out Time, Date');
       }
 
-      const headers: any[] = jsonData[headerRowIndex];
-      const dataRows = jsonData.slice(headerRowIndex + 1);
+      const headers: any[] = jsonData[headerRowIndex];//extracts the header row based on the found index
+      const dataRows = jsonData.slice(headerRowIndex + 1);//select the data after the header row
 
       // Find column indices
-      const empCodeIndex = headers.findIndex(h => h === 'EMP Code');
-      const empNameIndex = headers.findIndex(h => h === 'Emp Name');
-      const inTimeIndex = headers.findIndex(h => h === 'In Time');
-      const outTimeIndex = headers.findIndex(h => h === 'Out Time');
-      const dateIndex = headers.findIndex(h => h === 'Date');
+      const empCodeIndex = headers.findIndex(h => h === 'EMP Code'); //finds the index of EMP Code example in this {'EMP Code', 'Emp Name', 'In Time', 'Out Time', 'Date'} we get 0
+      const empNameIndex = headers.findIndex(h => h === 'Emp Name');//finds the index of Emp Name example in this {'EMP Code', 'Emp Name', 'In Time', 'Out Time', 'Date'} we get 1
+      const inTimeIndex = headers.findIndex(h => h === 'In Time');//we get 2
+      const outTimeIndex = headers.findIndex(h => h === 'Out Time');//we get 3
+      const dateIndex = headers.findIndex(h => h === 'Date');//we get 4
 
       if (empCodeIndex === -1 || empNameIndex === -1 || inTimeIndex === -1 || outTimeIndex === -1 || dateIndex === -1) {
         throw new Error('Missing required columns. Expected: EMP Code, Emp Name, In Time, Out Time, Date');
       }
 
-      const processed: AttendanceRecord[] = [];
+      const processed: AttendanceRecord[] = [];//created a array of type AttendanceRecord
 
-      for (const row of dataRows) {
+      for (const row of dataRows) {//iterates over each row of data and extracts relevant fields based on previously determined column indices
         const empCode = row[empCodeIndex];
         const empName = row[empNameIndex];
         const inTimeRaw = row[inTimeIndex];
@@ -510,7 +513,8 @@ export default function AttendanceUpload() {
     setSaving(true);
     setSaveMessage(null);
     setError(null);
-    setUploadErrors([]);
+    setUploadErrors([]);//check if the attendance is empty also help user know data saving  and set the error to null
+
 
     if (data && data.length > 0) {
       setUploadTotal(data.length);
@@ -588,54 +592,7 @@ export default function AttendanceUpload() {
     }
   };
 
-  const calculateTotalScheduledHours = (year: number, month: number, schedules: any): number => {
-    // 1. Get days in month
-    const daysInMonth = new Date(year, month, 0).getDate();
-    
-    let total = 0;
-    
-    if (!schedules) return 0;
-
-    // Helper for diff
-    const timeToHours = (t?: string) => {
-      if (!t) return 0;
-      const [h, m] = t.split(':').map(Number);
-      return h + (m / 60);
-    };
-    
-    // Calculate daily hours for each schedule type
-    // Regular
-    const startReg = timeToHours(schedules.regular?.inTime);
-    const endReg = timeToHours(schedules.regular?.outTime);
-    const hoursReg = (startReg && endReg && endReg > startReg) ? (endReg - startReg) : 9;
-
-    // Saturday
-    const startSat = timeToHours(schedules.saturday?.inTime) || startReg;
-    const endSat = timeToHours(schedules.saturday?.outTime);
-    const hoursSat = (startSat && endSat && endSat > startSat) ? (endSat - startSat) : 4;
-
-    // Monthly Special - for range, assume regular
-    const hoursMonth = hoursReg;
-
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(year, month - 1, day);
-      const dow = date.getDay(); // 0=Sun, 6=Sat
-
-      if (dow === 0) {
-          continue;
-      } 
-      
-      if (dow === 6) {
-         total += hoursSat;
-         continue;
-      }
-
-      // Weekday
-      total += hoursReg;
-    }
-    return total;
-  };
-
+ 
   const calculateScheduledHoursForDate = (date: Date, schedules: any): number => {
     if (!schedules) return 0;
 
@@ -760,7 +717,7 @@ export default function AttendanceUpload() {
             if (rec.typeOfPresence !== 'Holiday') {
               summary.totalHour += rec.totalHour || 0;
             }
-            if (rec.typeOfPresence === 'Leave') {
+            if (rec.typeOfPresence === 'Leave' || rec.typeOfPresence === 'On leave') {
               summary.totalLeave += 1;
             } else if (rec.typeOfPresence !== 'Holiday' && rec.halfDay) {
               summary.totalHalfDay += 1;
@@ -877,10 +834,10 @@ export default function AttendanceUpload() {
 
       const days: AttendanceRecord[] = Object.entries(recordsObj).map(([dateKey, value]: [string, any]) => {
         let status: any = 'Present';
-        if (value.typeOfPresence === 'Leave') status = 'Leave';
+        if (value.typeOfPresence === 'Leave' || value.typeOfPresence === 'On leave') status = 'On leave';
         else if (value.typeOfPresence === 'Holiday') status = 'Holiday';
         else if (value.halfDay) status = 'HalfDay';
-        else if (!value.checkin && !value.checkout && value.typeOfPresence !== 'Leave' && value.typeOfPresence !== 'Holiday') status = 'Absent';
+        else if (!value.checkin && !value.checkout && (value.typeOfPresence !== 'Leave' && value.typeOfPresence !== 'On leave') && value.typeOfPresence !== 'Holiday') status = 'Absent';
         
         // Fallback for explicit absent if type isn't set but no time
          if (status === 'Present' && !value.checkin && !value.checkout) status = 'Absent';
@@ -1087,7 +1044,7 @@ export default function AttendanceUpload() {
                                         let statusColor = 'text-slate-300';
                                         if (rec.status === 'Absent') statusColor = 'text-rose-400 bg-rose-400/10';
                                         if (isLate) statusColor = 'text-amber-400 bg-amber-400/10';
-                                        if (rec.status === 'Leave') statusColor = 'text-sky-400 bg-sky-400/10';
+                                        if (rec.status === 'Leave' || rec.status === 'On leave') statusColor = 'text-sky-400 bg-sky-400/10';
                                         if (rec.status === 'Holiday') statusColor = 'text-amber-200 bg-amber-500/10';
                                         if (rec.status === 'HalfDay') statusColor = 'text-orange-400 bg-orange-400/10';
 

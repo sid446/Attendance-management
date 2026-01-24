@@ -230,6 +230,11 @@ export async function POST(request: NextRequest) {
         <h1 style="margin: 0; color: white; font-size: 24px; font-weight: 600;">Attendance Correction Requests</h1>
       </div>
 
+      <!-- Review All Button -->
+      <div style="background-color: #f9fafb; padding: 16px; text-align: center; border-bottom: 1px solid #e5e7eb;">
+        <a href="${baseUrl}/partner/review-all?partnerName=${encodeURIComponent(partnerName)}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: white; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">Review All Pending Requests</a>
+      </div>
+
       <!-- Content -->
       <div class="content-wrapper" style="padding: 24px;">
         

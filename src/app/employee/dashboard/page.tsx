@@ -8,7 +8,6 @@ import { LogOut, X, Loader2, Send } from 'lucide-react';
 const TIMED_CATEGORIES = [
   'Present - in office',
   'Present - client place',
-  'Present - outstation',
   'Present - weekoff',
   'Half Day - weekdays',
   'WFH - weekdays',
@@ -41,7 +40,7 @@ export default function EmployeeDashboard() {
   const [showFutureModal, setShowFutureModal] = useState(false);
   const [futureStartDate, setFutureStartDate] = useState('');
   const [futureEndDate, setFutureEndDate] = useState('');
-  const [futureType, setFutureType] = useState('Leave');
+  const [futureType, setFutureType] = useState('On leave');
   const [futureReason, setFutureReason] = useState('');
   const [futureStartTime, setFutureStartTime] = useState('');
   const [futureEndTime, setFutureEndTime] = useState('');
@@ -90,10 +89,10 @@ export default function EmployeeDashboard() {
              const recordsObj = doc.records || {};
              const days: AttendanceRecord[] = Object.entries(recordsObj).map(([dateKey, value]: [string, any]) => {
                 let status: any = 'Present';
-                if (value.typeOfPresence === 'Leave') status = 'Leave';
+                if (value.typeOfPresence === 'Leave' || value.typeOfPresence === 'On leave') status = 'On leave';
                 else if (value.typeOfPresence === 'Holiday') status = 'Holiday';
                 else if (value.halfDay) status = 'HalfDay';
-                else if (!value.checkin && !value.checkout && value.typeOfPresence !== 'Leave') status = 'Absent';
+                else if (!value.checkin && !value.checkout && value.typeOfPresence !== 'Leave' && value.typeOfPresence !== 'On leave') status = 'Absent';
                 
                 // Fallback
                 if (status === 'Present' && !value.checkin && !value.checkout) status = 'Absent';
@@ -128,7 +127,7 @@ export default function EmployeeDashboard() {
 
   const handleDayClick = (date: string) => {
       setSelectedDate(date);
-      setRequestStatus('Leave');
+      setRequestStatus('On leave');
       setRequestReason('');
       setStartTime('');
       setEndTime('');
@@ -143,6 +142,33 @@ export default function EmployeeDashboard() {
           return;
       }
       
+      let finalStartTime = startTime;
+      let finalEndTime = endTime;
+      
+      // For Present - outstation, use scheduled times automatically
+      if (requestStatus === 'Present - outstation' && summary?.schedules) {
+          const date = new Date(selectedDate);
+          const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+          const month = date.getMonth() + 1; // 1-12
+          
+          let scheduleToUse;
+          if (month === 12 || month === 1) {
+              // December or January - use monthly schedule
+              scheduleToUse = summary.schedules.monthly;
+          } else if (dayOfWeek === 6) {
+              // Saturday - use saturday schedule
+              scheduleToUse = summary.schedules.saturday;
+          } else if (dayOfWeek !== 0) {
+              // Monday to Friday - use regular schedule
+              scheduleToUse = summary.schedules.regular;
+          }
+          
+          if (scheduleToUse) {
+              finalStartTime = scheduleToUse.inTime;
+              finalEndTime = scheduleToUse.outTime;
+          }
+      }
+      
       setSendingRequest(true);
       try {
           const res = await fetch('/api/employee/request-correction', {
@@ -153,8 +179,8 @@ export default function EmployeeDashboard() {
                   date: selectedDate,
                   requestedStatus: requestStatus,
                   reason: requestReason,
-                  startTime: startTime || undefined,
-                  endTime: endTime || undefined
+                  startTime: finalStartTime || undefined,
+                  endTime: finalEndTime || undefined
               })
           });
           const json = await res.json();
@@ -211,10 +237,12 @@ export default function EmployeeDashboard() {
       let reqEndTime: string | undefined = undefined;
       
       const ZERO_TIME_CATEGORIES = [
-          'Leave',
-          'Week Off',
-          'Weekoff - special allowance',
-          'OHD (office holidays eg. Diwali,holi)'
+          'On leave',
+          'Weekoff - special allowance'
+      ];
+
+      const SCHEDULED_TIME_CATEGORIES = [
+          'Present - outstation'
       ];
 
       if (isTimed) {
@@ -223,6 +251,10 @@ export default function EmployeeDashboard() {
       } else if (ZERO_TIME_CATEGORIES.includes(futureType)) {
           reqStartTime = '00:00';
           reqEndTime = '00:00';
+      } else if (SCHEDULED_TIME_CATEGORIES.includes(futureType)) {
+          // For Present - outstation, scheduled times will be calculated by the API
+          reqStartTime = undefined;
+          reqEndTime = undefined;
       }
       
       setSendingFutureRequest(true);
@@ -274,8 +306,7 @@ export default function EmployeeDashboard() {
 
   const statusOptions = [
     // Keep original leave and weekoff
-    'Leave',
-    'Week Off',
+    'On leave',
     
     // Present categories
     'Present - in office',
@@ -293,7 +324,6 @@ export default function EmployeeDashboard() {
     
     // Other categories
     'Weekoff - special allowance',
-    'OHD (office holidays eg. Diwali,holi)',
     'Thumb machine - not working'
   ];
 
@@ -361,7 +391,7 @@ export default function EmployeeDashboard() {
                            </select>
                        </div>
 
-                       {(requestStatus !== 'Leave' && requestStatus !== 'Week Off') && (
+                       {(requestStatus !== 'On leave' && requestStatus !== 'Present - outstation') && (
                            <div className="grid grid-cols-2 gap-4">
                                <div className="space-y-2">
                                    <label className="text-sm font-medium text-slate-300">Start Time</label>
@@ -429,9 +459,15 @@ export default function EmployeeDashboard() {
                                  type="date" 
                                  value={futureStartDate}
                                  onChange={(e) => {
-                                     setFutureStartDate(e.target.value);
+                                     const selectedDate = e.target.value;
+                                     const day = new Date(selectedDate).getDay();
+                                     if (day === 0) {
+                                         alert('Sundays are not allowed for leave applications.');
+                                         return;
+                                     }
+                                     setFutureStartDate(selectedDate);
                                      if (TIMED_CATEGORIES.includes(futureType)) {
-                                         setFutureEndDate(e.target.value);
+                                         setFutureEndDate(selectedDate);
                                      }
                                  }}
                                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-indigo-500"
@@ -443,7 +479,15 @@ export default function EmployeeDashboard() {
                                    <input 
                                      type="date" 
                                      value={futureEndDate}
-                                     onChange={(e) => setFutureEndDate(e.target.value)}
+                                     onChange={(e) => {
+                                         const selectedDate = e.target.value;
+                                         const day = new Date(selectedDate).getDay();
+                                         if (day === 0) {
+                                             alert('Sundays are not allowed for leave applications.');
+                                             return;
+                                         }
+                                         setFutureEndDate(selectedDate);
+                                     }}
                                      min={futureStartDate}
                                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-indigo-500"
                                    />

@@ -90,9 +90,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         if (typeOfPresence.includes('Half Day')) {
           record.value = 0.75;
           record.halfDay = true;
-        } else if (typeOfPresence === 'Absent' || typeOfPresence === 'Leave') {
+        } else if (typeOfPresence === 'Absent' || typeOfPresence === 'On leave') {
           record.value = 0;
-        } else if (typeOfPresence === 'Holiday' || typeOfPresence === 'Week Off' || typeOfPresence === 'Weekoff - special allowance') {
+        } else if (typeOfPresence === 'Holiday' || typeOfPresence === 'Weekoff - special allowance') {
           record.value = 0;
         } else if (typeOfPresence.includes('outstation')) {
           // Outstation work gets higher value due to travel/additional effort
@@ -266,7 +266,6 @@ function calculateSummary(records: Map<string, {
       case 'ThumbMachine':
       case 'Manual':
       case 'Remote':
-      case 'Official Holiday Duty (OHD)':
       case 'Weekly Off - Present (WO-Present)':
       case 'Half Day (HD)':
       case 'Work From Home (WFH)':
@@ -280,11 +279,11 @@ function calculateSummary(records: Map<string, {
           totalAbsent++;
         }
         break;
-      case 'Leave':
+      case 'On leave':
         totalLeave++;
         break;
       case 'Holiday':
-      case 'Week Off':
+      case 'Weekoff - special allowance':
         break;
       default:
         totalAbsent++;

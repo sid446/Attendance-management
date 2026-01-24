@@ -6,7 +6,7 @@ export interface IDailyRecord {
   checkout: string;       // Format: "HH:mm" e.g., "18:30"
   totalHour: number;      // Total hours worked
   excessHour: number;     // Extra hours beyond standard
-  typeOfPresence: 'ThumbMachine' | 'Manual' | 'Remote' | 'Leave' | 'Holiday' | 'Absent' | 'Present - in office' | 'Present - client place' | 'Present - outstation' | 'Present - weekoff' | 'Half Day - weekdays' | 'Half Day - weekoff' | 'WFH - weekdays' | 'WFH - weekoff' | 'Weekoff - special allowance' | 'OHD' | 'Official Holiday Duty (OHD)' | 'Weekly Off - Present (WO-Present)' | 'Half Day (HD)' | 'Work From Home (WFH)' | 'Weekly Off - Work From Home (WO-WFH)' | 'Onsite Presence (OS-P)' | 'Week Off';
+  typeOfPresence: 'ThumbMachine' | 'Manual' | 'Remote' | 'On leave' | 'Holiday' | 'Absent' | 'Present - in office' | 'Present - client place' | 'Present - outstation' | 'Present - weekoff' | 'Half Day - weekdays' | 'Half Day - weekoff' | 'WFH - weekdays' | 'WFH - weekoff' | 'Weekoff - special allowance' | 'Weekly Off - Present (WO-Present)' | 'Half Day (HD)' | 'Work From Home (WFH)' | 'Weekly Off - Work From Home (WO-WFH)' | 'Onsite Presence (OS-P)';
   halfDay: boolean;
   value: number;          // Attendance value: 1 for present, 0 for absent, 0.75 for half day
   remarks?: string;
@@ -56,7 +56,7 @@ const DailyRecordSchema: Schema = new Schema(
         'ThumbMachine',
         'Manual',
         'Remote',
-        'Leave',
+        'On leave',
         'Holiday',
         'Absent',
         'Present - in office',
@@ -68,14 +68,11 @@ const DailyRecordSchema: Schema = new Schema(
         'WFH - weekdays',
         'WFH - weekoff',
         'Weekoff - special allowance',
-        'OHD',
-        'Official Holiday Duty (OHD)',
         'Weekly Off - Present (WO-Present)',
         'Half Day (HD)',
         'Work From Home (WFH)',
         'Weekly Off - Work From Home (WO-WFH)',
-        'Onsite Presence (OS-P)',
-        'Week Off'
+        'Onsite Presence (OS-P)'
       ],
       default: 'ThumbMachine',
     },

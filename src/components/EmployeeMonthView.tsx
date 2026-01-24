@@ -272,7 +272,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                     bgClass = 'bg-rose-500/5';
                     badgeClass = 'border-rose-500/60 bg-rose-500/15 text-rose-100';
                     Icon = XCircle;
-                } else if (status === 'Leave') {
+                } else if (status === 'Leave' || status === 'On leave') {
                     borderClass = 'border-sky-500/50';
                     bgClass = 'bg-sky-500/5';
                     badgeClass = 'border-sky-500/60 bg-sky-500/15 text-sky-100';
@@ -341,7 +341,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                           </>
                         )}
                         {/* Show type or simplified status if special */}
-                        {(status === 'Leave' || status === 'Holiday' || status !== rec.typeOfPresence) && (
+                        {(status === 'Leave' || status === 'On leave' || status === 'Holiday' || status !== rec.typeOfPresence) && (
                             <div className="text-[10px] italic text-slate-400 mt-1 truncate" title={type}>{type || status}</div>
                         )}
                       </div>

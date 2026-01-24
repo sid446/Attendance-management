@@ -41,17 +41,15 @@ export const BulkLeaveManager: React.FC<BulkLeaveManagerProps> = ({
   
   // 3. Action State
   const [updating, setUpdating] = useState(false);
-  const [targetStatus, setTargetStatus] = useState<string>('Leave');
+  const [targetStatus, setTargetStatus] = useState<string>('On leave');
 
   const statusOptions = [
-      'Leave',
-      'Official Holiday Duty (OHD)',
+      'On leave',
       'Weekly Off - Present (WO-Present)',
       'Half Day (HD)',
       'Work From Home (WFH)',
       'Weekly Off - Work From Home (WO-WFH)',
-      'Onsite Presence (OS-P)',
-      'Week Off'
+      'Onsite Presence (OS-P)'
   ];
 
   // Reset on open
@@ -353,7 +351,7 @@ export const BulkLeaveManager: React.FC<BulkLeaveManagerProps> = ({
                         className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-emerald-900/20"
                      >
                         {updating ? <Loader2 className="w-4 h-4 animate-spin"/> : <Save className="w-4 h-4"/>}
-                        Convert {selectedRecordKeys.size} to {targetStatus === 'Leave' ? 'Leave' : 'Selected'}
+                        Convert {selectedRecordKeys.size} to {targetStatus === 'On leave' ? 'On leave' : targetStatus}
                      </button>
                 </div>
             </div>

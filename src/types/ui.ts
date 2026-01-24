@@ -4,7 +4,7 @@ export interface AttendanceRecord {
   date: string;
   inTime: string;
   outTime: string;
-  status: 'Present' | 'Absent' | 'Leave' | 'Holiday' | 'HalfDay';
+  status: 'Present' | 'Absent' | 'On leave' | 'Holiday' | 'HalfDay'|'Leave';
   typeOfPresence?: string;
 }
 

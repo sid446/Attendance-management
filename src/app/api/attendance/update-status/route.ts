@@ -52,7 +52,6 @@ function calculateSummary(
         case 'ThumbMachine':
         case 'Manual':
         case 'Remote':
-        case 'Official Holiday Duty (OHD)':
         case 'Weekly Off - Present (WO-Present)':
         case 'Half Day (HD)':
         case 'Work From Home (WFH)':
@@ -65,11 +64,10 @@ function calculateSummary(
             totalAbsent++;
           }
           break;
-        case 'Leave':
+        case 'On leave':
           totalLeave++;
           break;
         case 'Holiday':
-        case 'Week Off':
           break;
         case 'Absent':
           totalAbsent++;
@@ -192,7 +190,6 @@ export async function POST(request: NextRequest) {
                                 case 'ThumbMachine':
                                 case 'Manual':
                                 case 'Remote':
-                                case 'Official Holiday Duty (OHD)':
                                 case 'Weekly Off - Present (WO-Present)':
                                 case 'Half Day (HD)':
                                 case 'Work From Home (WFH)':
@@ -204,11 +201,10 @@ export async function POST(request: NextRequest) {
                                     tAbs++;
                                   }
                                   break;
-                                case 'Leave':
+                                case 'On leave':
                                   tLea++;
                                   break;
                                 case 'Holiday':
-                                case 'Week Off':
                                   break;
                                 case 'Absent':
                                   tAbs++;

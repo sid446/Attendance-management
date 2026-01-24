@@ -95,9 +95,9 @@ export async function POST(request: NextRequest) {
           isHalfDay = dayRecord.halfDay || false;
 
           // Determine status
-          if (typeOfPresence === 'Leave') {
-            status = 'Leave';
-          } else if (typeOfPresence === 'Holiday' || typeOfPresence === 'Week Off') {
+          if (typeOfPresence === 'On leave') {
+            status = 'On leave';
+          } else if (typeOfPresence === 'Holiday') {
             status = typeOfPresence;
           } else if (isHalfDay || typeOfPresence === 'Half Day (HD)') {
             status = 'Half Day';

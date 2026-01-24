@@ -139,7 +139,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       const dates: { date: string; info: string; subInfo?: string }[] = [];
       Object.entries(records).forEach(([date, rec]) => {
           // Absent logic: 0 hours, not Leave/Holiday
-          if (rec.totalHour === 0 && rec.typeOfPresence !== 'Leave' && rec.typeOfPresence !== 'Holiday') {
+          if (rec.totalHour === 0 && (rec.typeOfPresence !== 'Leave' && rec.typeOfPresence !== 'On leave') && rec.typeOfPresence !== 'Holiday') {
                dates.push({ date, info: 'Absent', subInfo: rec.typeOfPresence === 'ThumbMachine' ? '0 Hours' : rec.typeOfPresence });
           }
       });
@@ -150,8 +150,8 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       const records = item.recordDetails || {};
       const dates: { date: string; info: string; subInfo?: string }[] = [];
       Object.entries(records).forEach(([date, rec]) => {
-          if (rec.typeOfPresence === 'Leave') {
-               dates.push({ date, info: 'Leave' });
+          if (rec.typeOfPresence === 'Leave' || rec.typeOfPresence === 'On leave') {
+               dates.push({ date, info: 'On leave' });
           }
       });
       return dates.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());

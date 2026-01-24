@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
                      finalTotalHour = requestTotalHour;
                  } else {
                      // If it's a leave type and no times (or times resulted in 0), ensure cleared
-                     const isLeaveType = ['Leave', 'Week Off', 'Absent'].includes(approvedRequest.requestedStatus);
+                     const isLeaveType = ['On leave', 'Absent'].includes(approvedRequest.requestedStatus);
                      if (isLeaveType) {
                          finalCheckin = '';
                          finalCheckout = '';
@@ -182,7 +182,7 @@ export async function POST(request: NextRequest) {
                  }
 
                  // Adjust Value based on Status
-                 if (typeOfPresence === 'Leave' || typeOfPresence === 'Absent' || typeOfPresence === 'Week Off') {
+                 if (typeOfPresence === 'On leave' || typeOfPresence === 'Absent') {
                      finalValue = 0;
                  } else if (typeOfPresence && typeOfPresence.includes('Half Day')) {
                      finalValue = 0.75; 
@@ -417,7 +417,6 @@ function calculateSummary(
       case 'ThumbMachine':
       case 'Manual':
       case 'Remote':
-      case 'Official Holiday Duty (OHD)':
       case 'Weekly Off - Present (WO-Present)':
       case 'Half Day (HD)':
       case 'Work From Home (WFH)':
@@ -430,11 +429,10 @@ function calculateSummary(
            totalAbsent++;
         }
         break;
-      case 'Leave':
+      case 'On leave':
         totalLeave++;
         break;
       case 'Holiday':
-      case 'Week Off':
         // Holidays don't count as present/absent
         break;
       default:

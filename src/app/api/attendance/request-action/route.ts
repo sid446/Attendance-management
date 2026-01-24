@@ -70,7 +70,6 @@ function calculateSummary(
              case 'ThumbMachine':
              case 'Manual':
              case 'Remote':
-             case 'Official Holiday Duty (OHD)':
              case 'Weekly Off - Present (WO-Present)':
              case 'Half Day (HD)':
              case 'Work From Home (WFH)':
@@ -82,7 +81,6 @@ function calculateSummary(
              case 'Present - weekoff':
              case 'WFH - weekdays':
              case 'WFH - weekoff':
-             case 'OHD':
                 // Align with main attendance summary logic:
                 // these types count as Present only if totalHour > 0,
                 // otherwise they are treated as Absent.
@@ -97,11 +95,10 @@ function calculateSummary(
              totalHalfDay++;
              totalPresent++;
              break;
-          case 'Leave':
+          case 'On leave':
              totalLeave++;
              break;
           case 'Holiday':
-          case 'Week Off':
           case 'Weekoff - special allowance':
              break;
           default:
@@ -295,10 +292,10 @@ export async function POST(request: NextRequest) {
         if (requestedStatus.includes('Half Day')) {
           rec.value = 0.75;
           rec.halfDay = true;
-        } else if (requestedStatus === 'Absent' || requestedStatus === 'Leave') {
+        } else if (requestedStatus === 'Absent' || requestedStatus === 'On leave') {
           rec.value = 0;
           rec.halfDay = false;
-        } else if (requestedStatus === 'Holiday' || requestedStatus === 'Week Off' || requestedStatus === 'Weekoff - special allowance') {
+        } else if (requestedStatus === 'Holiday' || requestedStatus === 'Weekoff - special allowance') {
           rec.value = 0;
           rec.halfDay = false;
         } else if (requestedStatus.includes('outstation')) {
