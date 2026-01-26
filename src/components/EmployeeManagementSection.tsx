@@ -50,6 +50,10 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   }>({ type: 'team', value: '' });
   const [isSavingPredefinedValue, setIsSavingPredefinedValue] = useState<boolean>(false);
 
+  // Schedule Year Management State
+  const [selectedScheduleYear, setSelectedScheduleYear] = useState<number>(new Date().getFullYear());
+  const [availableScheduleYears, setAvailableScheduleYears] = useState<number[]>([]);
+
   // Extra Info State
   const [newExtraLabel, setNewExtraLabel] = useState<string>('');
   const [isSavingExtraLabel, setIsSavingExtraLabel] = useState<boolean>(false);
@@ -129,6 +133,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       // Ensure team matches workingUnderPartner
       team: user.workingUnderPartner || user.team || '',
     });
+    setAvailableScheduleYears(getAvailableScheduleYears(user));
+    setSelectedScheduleYear(new Date().getFullYear()); // Default to current year
     setError(null);
   };
 
@@ -147,20 +153,6 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       }
       return newData;
     });
-  };
-
-  const handleScheduleChange = (
-    scheduleType: 'scheduleInOutTime' | 'scheduleInOutTimeSat' | 'scheduleInOutTimeMonth',
-    field: keyof ScheduleTime,
-    value: string
-  ) => {
-    setFormData(prev => ({
-      ...prev,
-      [scheduleType]: {
-        ...(prev[scheduleType] || { inTime: '00:00', outTime: '00:00' }),
-        [field]: value
-      }
-    }));
   };
 
   const handleExtraInfoChange = (index: number, field: 'label' | 'value', value: string) => {
@@ -314,6 +306,90 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   useEffect(() => {
     fetchPredefinedValues();
   }, []);
+
+  // Schedule Helper Functions
+  const getScheduleForYear = (user: User, year: number): { regular?: ScheduleTime; saturday?: ScheduleTime; monthly?: ScheduleTime } => {
+    // Check if user has new year-wise schedule structure
+    if (user.schedules && user.schedules[year.toString()]) {
+      return user.schedules[year.toString()];
+    }
+
+    // Fallback to legacy structure for backward compatibility
+    return {
+      regular: user.scheduleInOutTime,
+      saturday: user.scheduleInOutTimeSat,
+      monthly: user.scheduleInOutTimeMonth,
+    };
+  };
+
+  const setScheduleForYear = (user: User, year: number, scheduleType: 'regular' | 'saturday' | 'monthly', scheduleTime: ScheduleTime | undefined): User => {
+    const yearKey = year.toString();
+
+    // Initialize schedules object if it doesn't exist
+    const schedules = user.schedules || {};
+
+    // Initialize year schedule if it doesn't exist
+    if (!schedules[yearKey]) {
+      schedules[yearKey] = {};
+    }
+
+    // Update the specific schedule type
+    schedules[yearKey][scheduleType] = scheduleTime;
+
+    return {
+      ...user,
+      schedules,
+    };
+  };
+
+  const getAvailableScheduleYears = (user: User): number[] => {
+    const years = new Set<number>();
+
+    // Add years from new structure
+    if (user.schedules) {
+      Object.keys(user.schedules).forEach(yearStr => {
+        const year = parseInt(yearStr);
+        if (!isNaN(year)) years.add(year);
+      });
+    }
+
+    // Add current year if no schedules exist yet
+    if (years.size === 0) {
+      years.add(new Date().getFullYear());
+    }
+
+    // Add years from 2025 to 2028 as defaults
+    [2025, 2026, 2027, 2028].forEach(year => years.add(year));
+
+    return Array.from(years).sort((a, b) => b - a); // Most recent first
+  };
+
+  const handleScheduleChange = (scheduleType: 'regular' | 'saturday' | 'monthly', field: 'inTime' | 'outTime', value: string) => {
+    setFormData(prev => {
+      const user = prev as User;
+      const currentSchedule = getScheduleForYear(user, selectedScheduleYear);
+
+      let updatedSchedule: ScheduleTime | undefined;
+      if (scheduleType === 'regular') {
+        updatedSchedule = {
+          ...currentSchedule.regular,
+          [field]: value,
+        } as ScheduleTime;
+      } else if (scheduleType === 'saturday') {
+        updatedSchedule = {
+          ...currentSchedule.saturday,
+          [field]: value,
+        } as ScheduleTime;
+      } else if (scheduleType === 'monthly') {
+        updatedSchedule = {
+          ...currentSchedule.monthly,
+          [field]: value,
+        } as ScheduleTime;
+      }
+
+      return setScheduleForYear(user, selectedScheduleYear, scheduleType, updatedSchedule);
+    });
+  };
 
   const handleSave = async () => {
     if (!editingUser || !editingUser._id) return;
@@ -1078,7 +1154,21 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           {/* Schedule Tab */}
           {activeTab === 'schedule' && (
             <div className="md:col-span-2 space-y-6">
-              <h3 className="text-sm font-medium text-slate-300 border-b border-slate-800 pb-2">Work Schedule</h3>
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <h3 className="text-sm font-medium text-slate-300">Work Schedule</h3>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-slate-500">Year:</label>
+                  <select
+                    value={selectedScheduleYear}
+                    onChange={(e) => setSelectedScheduleYear(Number(e.target.value))}
+                    className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded px-2 py-1"
+                  >
+                    {availableScheduleYears.map(year => (
+                      <option key={year} value={year}>{year}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* Regular Schedule */}
@@ -1089,8 +1179,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       <label className="text-xs text-slate-500">In Time</label>
                       <input
                         type="time"
-                        value={formData.scheduleInOutTime?.inTime || ''}
-                        onChange={(e) => handleScheduleChange('scheduleInOutTime', 'inTime', e.target.value)}
+                        value={getScheduleForYear(formData as User, selectedScheduleYear).regular?.inTime || ''}
+                        onChange={(e) => handleScheduleChange('regular', 'inTime', e.target.value)}
                         className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
                       />
                     </div>
@@ -1098,8 +1188,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       <label className="text-xs text-slate-500">Out Time</label>
                       <input
                         type="time"
-                        value={formData.scheduleInOutTime?.outTime || ''}
-                        onChange={(e) => handleScheduleChange('scheduleInOutTime', 'outTime', e.target.value)}
+                        value={getScheduleForYear(formData as User, selectedScheduleYear).regular?.outTime || ''}
+                        onChange={(e) => handleScheduleChange('regular', 'outTime', e.target.value)}
                         className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
                       />
                     </div>
@@ -1114,8 +1204,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       <label className="text-xs text-slate-500">In Time</label>
                       <input
                         type="time"
-                        value={formData.scheduleInOutTimeSat?.inTime || ''}
-                        onChange={(e) => handleScheduleChange('scheduleInOutTimeSat', 'inTime', e.target.value)}
+                        value={getScheduleForYear(formData as User, selectedScheduleYear).saturday?.inTime || ''}
+                        onChange={(e) => handleScheduleChange('saturday', 'inTime', e.target.value)}
                         className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
                       />
                     </div>
@@ -1123,8 +1213,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       <label className="text-xs text-slate-500">Out Time</label>
                       <input
                         type="time"
-                        value={formData.scheduleInOutTimeSat?.outTime || ''}
-                        onChange={(e) => handleScheduleChange('scheduleInOutTimeSat', 'outTime', e.target.value)}
+                        value={getScheduleForYear(formData as User, selectedScheduleYear).saturday?.outTime || ''}
+                        onChange={(e) => handleScheduleChange('saturday', 'outTime', e.target.value)}
                         className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
                       />
                     </div>
@@ -1139,8 +1229,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       <label className="text-xs text-slate-500">In Time</label>
                       <input
                         type="time"
-                        value={formData.scheduleInOutTimeMonth?.inTime || ''}
-                        onChange={(e) => handleScheduleChange('scheduleInOutTimeMonth', 'inTime', e.target.value)}
+                        value={getScheduleForYear(formData as User, selectedScheduleYear).monthly?.inTime || ''}
+                        onChange={(e) => handleScheduleChange('monthly', 'inTime', e.target.value)}
                         className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
                       />
                     </div>
@@ -1149,7 +1239,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       <input
                         type="time"
                         value={formData.scheduleInOutTimeMonth?.outTime || ''}
-                        onChange={(e) => handleScheduleChange('scheduleInOutTimeMonth', 'outTime', e.target.value)}
+                        onChange={(e) => handleScheduleChange('monthly', 'outTime', e.target.value)}
                         className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
                       />
                     </div>
@@ -1672,7 +1762,21 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           {/* Schedule Tab */}
           {activeTab === 'schedule' && (
             <div className="md:col-span-2 space-y-6">
-              <h3 className="text-sm font-medium text-slate-300 border-b border-slate-800 pb-2">Work Schedule</h3>
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <h3 className="text-sm font-medium text-slate-300">Work Schedule</h3>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-slate-500">Year:</label>
+                  <select
+                    value={selectedScheduleYear}
+                    onChange={(e) => setSelectedScheduleYear(Number(e.target.value))}
+                    className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded px-2 py-1"
+                  >
+                    {availableScheduleYears.map(year => (
+                      <option key={year} value={year}>{year}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* Regular Schedule */}
@@ -1683,8 +1787,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       <label className="text-xs text-slate-500">In Time</label>
                       <input
                         type="time"
-                        value={formData.scheduleInOutTime?.inTime || ''}
-                        onChange={(e) => handleScheduleChange('scheduleInOutTime', 'inTime', e.target.value)}
+                        value={getScheduleForYear(formData as User, selectedScheduleYear).regular?.inTime || ''}
+                        onChange={(e) => handleScheduleChange('regular', 'inTime', e.target.value)}
                         className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
                       />
                     </div>
@@ -1692,8 +1796,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       <label className="text-xs text-slate-500">Out Time</label>
                       <input
                         type="time"
-                        value={formData.scheduleInOutTime?.outTime || ''}
-                        onChange={(e) => handleScheduleChange('scheduleInOutTime', 'outTime', e.target.value)}
+                        value={getScheduleForYear(formData as User, selectedScheduleYear).regular?.outTime || ''}
+                        onChange={(e) => handleScheduleChange('regular', 'outTime', e.target.value)}
                         className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
                       />
                     </div>
@@ -1708,8 +1812,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       <label className="text-xs text-slate-500">In Time</label>
                       <input
                         type="time"
-                        value={formData.scheduleInOutTimeSat?.inTime || ''}
-                        onChange={(e) => handleScheduleChange('scheduleInOutTimeSat', 'inTime', e.target.value)}
+                        value={getScheduleForYear(formData as User, selectedScheduleYear).saturday?.inTime || ''}
+                        onChange={(e) => handleScheduleChange('saturday', 'inTime', e.target.value)}
                         className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
                       />
                     </div>
@@ -1717,8 +1821,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       <label className="text-xs text-slate-500">Out Time</label>
                       <input
                         type="time"
-                        value={formData.scheduleInOutTimeSat?.outTime || ''}
-                        onChange={(e) => handleScheduleChange('scheduleInOutTimeSat', 'outTime', e.target.value)}
+                        value={getScheduleForYear(formData as User, selectedScheduleYear).saturday?.outTime || ''}
+                        onChange={(e) => handleScheduleChange('saturday', 'outTime', e.target.value)}
                         className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
                       />
                     </div>
@@ -1733,8 +1837,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       <label className="text-xs text-slate-500">In Time</label>
                       <input
                         type="time"
-                        value={formData.scheduleInOutTimeMonth?.inTime || ''}
-                        onChange={(e) => handleScheduleChange('scheduleInOutTimeMonth', 'inTime', e.target.value)}
+                        value={getScheduleForYear(formData as User, selectedScheduleYear).monthly?.inTime || ''}
+                        onChange={(e) => handleScheduleChange('monthly', 'inTime', e.target.value)}
                         className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
                       />
                     </div>
@@ -1742,8 +1846,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       <label className="text-xs text-slate-500">Out Time</label>
                       <input
                         type="time"
-                        value={formData.scheduleInOutTimeMonth?.outTime || ''}
-                        onChange={(e) => handleScheduleChange('scheduleInOutTimeMonth', 'outTime', e.target.value)}
+                        value={getScheduleForYear(formData as User, selectedScheduleYear).monthly?.outTime || ''}
+                        onChange={(e) => handleScheduleChange('monthly', 'outTime', e.target.value)}
                         className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
                       />
                     </div>

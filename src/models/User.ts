@@ -6,6 +6,13 @@ export interface IScheduleTime {
   outTime: string;  // Format: "HH:mm" e.g., "18:00"
 }
 
+// Yearly schedule interface
+export interface IYearlySchedule {
+  regular?: IScheduleTime;
+  saturday?: IScheduleTime;
+  monthly?: IScheduleTime;
+}
+
 export interface IUser extends Document {
   odId: string;
   name: string;
@@ -62,9 +69,14 @@ export interface IUser extends Document {
     value: string;
   }[];
 
-  scheduleInOutTime: IScheduleTime;      // Regular weekday schedule
-  scheduleInOutTimeSat: IScheduleTime;   // Saturday schedule
-  scheduleInOutTimeMonth: IScheduleTime; // Monthly/alternate schedule
+  // Year-wise schedules - NEW STRUCTURE
+  schedules?: Record<string, IYearlySchedule>; // Key is year (e.g., "2025", "2026")
+
+  // Legacy fields for backward compatibility
+  scheduleInOutTime?: IScheduleTime;      // Regular weekday schedule
+  scheduleInOutTimeSat?: IScheduleTime;   // Saturday schedule
+  scheduleInOutTimeMonth?: IScheduleTime; // Monthly/alternate schedule
+
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -80,6 +92,16 @@ const ScheduleTimeSchema: Schema = new Schema(
       type: String,
       default: '18:00',
     },
+  },
+  { _id: false }
+);
+
+// Yearly schedule schema
+const YearlyScheduleSchema: Schema = new Schema(
+  {
+    regular: ScheduleTimeSchema,
+    saturday: ScheduleTimeSchema,
+    monthly: ScheduleTimeSchema,
   },
   { _id: false }
 );
@@ -277,6 +299,13 @@ const UserSchema: Schema = new Schema(
       type: Date,
       
     },
+    // Year-wise schedules - NEW STRUCTURE
+    schedules: {
+      type: Map,
+      of: YearlyScheduleSchema,
+      default: {},
+    },
+    // Legacy fields for backward compatibility
     scheduleInOutTime: {
       type: ScheduleTimeSchema,
       default: () => ({ inTime: '09:00', outTime: '18:00' }),

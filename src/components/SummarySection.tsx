@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { AttendanceSummaryView, User } from '@/types/ui';
+import { AttendanceSummaryView, User, YearlySchedule } from '@/types/ui';
 import { Search, Calendar, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, BarChart3, Users, Clock, AlertCircle, TrendingUp, UserX, UserCheck, Download, ListChecks, X } from 'lucide-react';
 import { BulkLeaveManager } from './BulkLeaveManager';
 import DatePicker from 'react-datepicker';
@@ -115,9 +115,18 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
 
   const [isBulkManagerOpen, setIsBulkManagerOpen] = useState(false);
 
+  // Schedule Helper Function
+  const getScheduleForYear = (item: AttendanceSummaryView, year: number): YearlySchedule => {
+    // Return the year-specific schedule for this summary
+    return item.schedules || {};
+  };
+
   const getLateDetails = (item: AttendanceSummaryView) => {
       const records = item.recordDetails || {};
       const dates: { date: string; info: string; subInfo?: string }[] = [];
+      
+      // Get schedule for the selected year
+      const yearSchedule = getScheduleForYear(item, selectedYear);
       
       Object.entries(records).forEach(([date, rec]) => {
           if (!rec.checkin) return;
@@ -129,15 +138,15 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
 
           // Replicate backend logic but respect toggle
           if (day === 0) {
-             scheduledIn = item.schedules?.regular?.inTime || '09:00';
+             scheduledIn = yearSchedule?.regular?.inTime || '09:00';
           } else if (day === 6) {
-             scheduledIn = item.schedules?.saturday?.inTime || '09:00';
+             scheduledIn = yearSchedule?.saturday?.inTime || '09:00';
           } else {
              // Weekdays
              if (selectedMonth === 1 || selectedMonth === 12) {
-                scheduledIn = item.schedules?.monthly?.inTime || '09:00'; 
+                scheduledIn = yearSchedule?.monthly?.inTime || '09:00'; 
              } else {
-                scheduledIn = item.schedules?.regular?.inTime || '09:00';
+                scheduledIn = yearSchedule?.regular?.inTime || '09:00';
              }
           }
           
@@ -204,7 +213,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       const dates: { date: string; info: string; subInfo?: string }[] = [];
       Object.entries(records).forEach(([date, rec]) => {
           if (rec.totalHour > 0 && rec.typeOfPresence !== 'Holiday') {
-               dates.push({ date, info: `${rec.totalHour.toFixed(1)} hours`, subInfo: rec.checkin ? `In: ${rec.checkin}` : undefined });
+               dates.push({ date, info: `${formatHoursMinutes(rec.totalHour)}`, subInfo: rec.checkin ? `In: ${rec.checkin}` : undefined });
           }
       });
       return dates.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -214,8 +223,9 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       const records = item.recordDetails || {};
       const dates: { date: string; info: string; subInfo?: string }[] = [];
       
-      const { schedules } = item;
-      if (!schedules) return dates;
+      // Get schedule for the selected year
+      const yearSchedule = getScheduleForYear(item, selectedYear);
+      if (!yearSchedule) return dates;
 
       // Helper for diff
       const timeToHours = (t?: string) => {
@@ -225,16 +235,16 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       };
       
       // Calculate daily hours for each schedule type
-      const startReg = timeToHours(schedules.regular?.inTime);
-      const endReg = timeToHours(schedules.regular?.outTime);
+      const startReg = timeToHours(yearSchedule.regular?.inTime);
+      const endReg = timeToHours(yearSchedule.regular?.outTime);
       const hoursReg = (startReg && endReg && endReg > startReg) ? (endReg - startReg) : 9;
 
-      const startSat = timeToHours(schedules.saturday?.inTime) || startReg;
-      const endSat = timeToHours(schedules.saturday?.outTime);
+      const startSat = timeToHours(yearSchedule.saturday?.inTime) || startReg;
+      const endSat = timeToHours(yearSchedule.saturday?.outTime);
       const hoursSat = (startSat && endSat && endSat > startSat) ? (endSat - startSat) : 4;
 
-      const startMonth = timeToHours(schedules.monthly?.inTime) || startReg;
-      const endMonth = timeToHours(schedules.monthly?.outTime);
+      const startMonth = timeToHours(yearSchedule.monthly?.inTime) || startReg;
+      const endMonth = timeToHours(yearSchedule.monthly?.outTime);
       const hoursMonth = (startMonth && endMonth && endMonth > startMonth) ? (endMonth - startMonth) : hoursReg;
 
       // Get the period
@@ -269,7 +279,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           if (hours > 0) {
               dates.push({ 
                   date, 
-                  info: `${hours.toFixed(2)} hours`,
+                  info: formatHoursMinutes(hours),
                   subInfo: dow === 6 ? 'Saturday' : ((d.getMonth() + 1 === 1 || d.getMonth() + 1 === 12) ? 'Seasonal' : 'Regular')
               });
           }
@@ -367,14 +377,23 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
   };
 
   // --- Calculation Helper ---
+  const formatHoursMinutes = (hours: number): string => {
+    if (hours === 0) return '0h 0m';
+    const totalMinutes = Math.round(hours * 60);
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    return `${h}h ${m}m`;
+  };
+
   const calculateTotalScheduledHours = (item: AttendanceSummaryView): number => {
       // 1. Get days in month
       const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
       
       let total = 0;
       
-      const { schedules } = item;
-      if (!schedules) return 0; // Or standard default 9?
+      // Get schedule for the selected year
+      const yearSchedule = getScheduleForYear(item, selectedYear);
+      if (!yearSchedule) return 0; // Or standard default 9?
 
       // Helper for diff
       const timeToHours = (t?: string) => {
@@ -385,18 +404,18 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       
       // Calculate daily hours for each schedule type
       // Regular
-      const startReg = timeToHours(schedules.regular?.inTime);
-      const endReg = timeToHours(schedules.regular?.outTime);
+      const startReg = timeToHours(yearSchedule.regular?.inTime);
+      const endReg = timeToHours(yearSchedule.regular?.outTime);
       const hoursReg = (startReg && endReg && endReg > startReg) ? (endReg - startReg) : 9; // Default 9?
 
       // Saturday
-      const startSat = timeToHours(schedules.saturday?.inTime) || startReg;
-      const endSat = timeToHours(schedules.saturday?.outTime);
+      const startSat = timeToHours(yearSchedule.saturday?.inTime) || startReg;
+      const endSat = timeToHours(yearSchedule.saturday?.outTime);
       const hoursSat = (startSat && endSat && endSat > startSat) ? (endSat - startSat) : 4; // Default 4?
 
       // Monthly Special
-      const startMonth = timeToHours(schedules.monthly?.inTime) || startReg;
-      const endMonth = timeToHours(schedules.monthly?.outTime);
+      const startMonth = timeToHours(yearSchedule.monthly?.inTime) || startReg;
+      const endMonth = timeToHours(yearSchedule.monthly?.outTime);
       const hoursMonth = (startMonth && endMonth && endMonth > startMonth) ? (endMonth - startMonth) : hoursReg;
 
       for (let day = 1; day <= daysInMonth; day++) {
@@ -427,6 +446,10 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
   const calculateLateArrivals = (item: AttendanceSummaryView): number => {
       const records = item.recordDetails || {};
       let count = 0;
+      
+      // Get schedule for the selected year
+      const yearSchedule = getScheduleForYear(item, selectedYear);
+      
       Object.entries(records).forEach(([dateStr, rec]) => {
           if (!rec.checkin) return;
           const d = new Date(dateStr);
@@ -435,15 +458,15 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           let scheduledIn = '09:00';
           
           if (day === 0) {
-             scheduledIn = item.schedules?.regular?.inTime || '09:00';
+             scheduledIn = yearSchedule?.regular?.inTime || '09:00';
           } else if (day === 6) {
-             scheduledIn = item.schedules?.saturday?.inTime || '09:00';
+             scheduledIn = yearSchedule?.saturday?.inTime || '09:00';
           } else {
              // Weekdays
              if (selectedMonth === 1 || selectedMonth === 12) {
-                scheduledIn = item.schedules?.monthly?.inTime || '09:00'; 
+                scheduledIn = yearSchedule?.monthly?.inTime || '09:00'; 
              } else {
-                scheduledIn = item.schedules?.regular?.inTime || '09:00';
+                scheduledIn = yearSchedule?.regular?.inTime || '09:00';
              }
           }
           
@@ -680,9 +703,9 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       item.employeeCode || item.odId || 'N/A',
       item.team || 'N/A',
       item.designation || 'N/A',
-      item.calcScheduled?.toFixed(1) || '0.0',
-      item.summary.totalHour.toFixed(1),
-      item.calcExcessDeficit !== undefined ? item.calcExcessDeficit.toFixed(1) : '0.0',
+      formatHoursMinutes(item.calcScheduled || 0),
+      formatHoursMinutes(item.summary.totalHour),
+      formatHoursMinutes(item.calcExcessDeficit || 0),
       item.calcLate || 0,
       item.summary.totalHalfDay || 0,
       item.summary.totalPresent || 0,
@@ -1335,7 +1358,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
              <Clock className="w-6 h-6" />
            </div>
            <div>
-             <div className="text-2xl font-bold text-slate-100">{stats.totalHours.toFixed(1)}</div>
+             <div className="text-2xl font-bold text-slate-100">{formatHoursMinutes(stats.totalHours)}</div>
              <div className="text-xs text-slate-400 uppercase tracking-wider font-medium">Total Man-Hours</div>
            </div>
         </div>
@@ -1535,18 +1558,18 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                     <td className="px-4 py-3 text-left text-slate-400">{item.designation || '-'}</td>
                     <td className="px-4 py-3 text-right font-mono text-slate-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => item.calcScheduled > 0 && openDetail(e, 'ScheduledHours', item)}>
                         {item.calcScheduled > 0 ? (
-                           <span className="hover:underline" title="Click to view daily breakdown">{item.calcScheduled?.toFixed(1) ?? '-'}</span>
+                           <span className="hover:underline" title="Click to view daily breakdown">{formatHoursMinutes(item.calcScheduled)}</span>
                         ) : '-'}
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-slate-300 cursor-pointer hover:bg-slate-800/60" onClick={(e) => item.summary.totalHour > 0 && openDetail(e, 'WorkHours', item)}>
                         {item.summary.totalHour > 0 ? (
-                           <span className="hover:underline" title="Click to view daily breakdown">{item.summary.totalHour.toFixed(1)}</span>
-                        ) : '0.0'}
+                           <span className="hover:underline" title="Click to view daily breakdown">{formatHoursMinutes(item.summary.totalHour)}</span>
+                        ) : '0h 0m'}
                     </td>
                     <td className="px-4 py-3 text-right font-mono">
                          {item.calcExcessDeficit !== undefined ? (
                              <span className={item.calcExcessDeficit >= 0 ? "text-emerald-400" : "text-rose-400"}>
-                                 {item.calcExcessDeficit > 0 ? "+" : ""}{item.calcExcessDeficit.toFixed(1)}
+                                 {item.calcExcessDeficit > 0 ? "+" : ""}{formatHoursMinutes(Math.abs(item.calcExcessDeficit))}
                              </span>
                          ) : '-'}
                     </td>

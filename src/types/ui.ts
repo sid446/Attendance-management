@@ -17,11 +17,7 @@ export interface AttendanceSummaryView {
   team?: string; // Added optional team field
   designation?: string; // Added optional designation field
   monthYear: string;
-  schedules?: {
-    regular?: ScheduleTime;
-    saturday?: ScheduleTime;
-    monthly?: ScheduleTime;
-  };
+  schedules?: YearlySchedule; // Year-specific schedule for this summary's year
   summary: {
     totalHour: number;
     totalLateArrival: number;
@@ -46,6 +42,12 @@ export interface AttendanceSummaryView {
 export interface ScheduleTime {
   inTime: string;
   outTime: string;
+}
+
+export interface YearlySchedule {
+  regular?: ScheduleTime;
+  saturday?: ScheduleTime;
+  monthly?: ScheduleTime;
 }
 
 export interface User {
@@ -104,8 +106,13 @@ export interface User {
     value: string;
   }[];
 
-  scheduleInOutTime: ScheduleTime;
-  scheduleInOutTimeSat: ScheduleTime;
-  scheduleInOutTimeMonth: ScheduleTime;
+  // Year-wise schedules - NEW STRUCTURE
+  schedules?: Record<string, YearlySchedule>; // Key is year (e.g., "2025", "2026")
+
+  // Legacy fields for backward compatibility (will be migrated)
+  scheduleInOutTime?: ScheduleTime;
+  scheduleInOutTimeSat?: ScheduleTime;
+  scheduleInOutTimeMonth?: ScheduleTime;
+
   isActive: boolean;
 }

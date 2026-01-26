@@ -752,6 +752,25 @@ export default function AttendanceUpload() {
       }
 
       const mapped: AttendanceSummaryView[] = Array.from(userMap.values()).map((item) => {
+        // Get the year for schedule lookup
+        const monthYear = typeof filter === 'string' ? filter : ('end' in filter ? filter.end : filter.endDate);
+        const year = monthYear.split('-')[0];
+        
+        // Get schedule for the specific year
+        const getScheduleForYear = (user: any, year: string) => {
+          if (user.schedules && user.schedules[year]) {
+            return user.schedules[year];
+          }
+          // Fallback to legacy structure
+          return {
+            regular: user.scheduleInOutTime,
+            saturday: user.scheduleInOutTimeSat,
+            monthly: user.scheduleInOutTimeMonth,
+          };
+        };
+        
+        const yearSchedule = getScheduleForYear(item.userId, year);
+
         let totalScheduled = 0;
         // Calculate scheduled hours for each day that has attendance data
         for (const date of Object.keys(item.recordDetails)) {
@@ -759,11 +778,7 @@ export default function AttendanceUpload() {
           const rec = item.recordDetails[date];
           // Only add scheduled hours if it's not a holiday
           if (rec.typeOfPresence !== 'Holiday') {
-            totalScheduled += calculateScheduledHoursForDate(d, {
-              regular: item.userId?.scheduleInOutTime,
-              saturday: item.userId?.scheduleInOutTimeSat,
-              monthly: item.userId?.scheduleInOutTimeMonth
-            });
+            totalScheduled += calculateScheduledHoursForDate(d, yearSchedule);
           }
         }
 
@@ -775,12 +790,8 @@ export default function AttendanceUpload() {
           employeeCode: item.userId?.employeeCode ?? '',
           team: item.userId?.workingUnderPartner || item.userId?.team || '',
           designation: item.userId?.designation || '',
-          monthYear: typeof filter === 'string' ? filter : ('end' in filter ? filter.end : filter.endDate),
-          schedules: {
-              regular: item.userId?.scheduleInOutTime,
-              saturday: item.userId?.scheduleInOutTimeSat,
-              monthly: item.userId?.scheduleInOutTimeMonth
-          },
+          monthYear: monthYear,
+          schedules: yearSchedule,
           summary: {
             totalHour: Object.values(item.recordDetails).reduce((sum: number, rec: any) => 
               rec.typeOfPresence !== 'Holiday' ? sum + (rec.totalHour || 0) : sum, 0),

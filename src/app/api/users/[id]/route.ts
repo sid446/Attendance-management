@@ -48,6 +48,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       designation,
       team,
       joiningDate,
+      schedules, // New year-wise schedules
+      // Legacy fields for backward compatibility
       scheduleInOutTime,
       scheduleInOutTimeSat,
       scheduleInOutTimeMonth,
@@ -104,6 +106,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         ...(designation !== undefined && { designation }),
         ...(team !== undefined && { team }),
         ...(joiningDate && { joiningDate: new Date(joiningDate) }),
+        ...(schedules && { schedules }), // New year-wise schedules
+        // Legacy fields for backward compatibility
         ...(scheduleInOutTime && { scheduleInOutTime }),
         ...(scheduleInOutTimeSat && { scheduleInOutTimeSat }),
         ...(scheduleInOutTimeMonth && { scheduleInOutTimeMonth }),
