@@ -203,7 +203,7 @@ function PartnerReviewContent() {
                     value={remarks}
                     onChange={(e) => setRemarks(e.target.value)}
                     placeholder="Add any remarks or comments about this request..."
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-slate-200 placeholder-slate-400 focus:border-emerald-500 focus:outline-none min-h-[100px]"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-black placeholder-slate-400 focus:border-emerald-500 focus:outline-none min-h-[100px]"
                   />
                 </div>
 

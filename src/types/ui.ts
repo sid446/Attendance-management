@@ -40,6 +40,7 @@ export interface AttendanceSummaryView {
       halfDay: boolean;
   }>;
   calcScheduled?: number; // Total scheduled hours for the period
+  calcExcessDeficit?: number; // Calculated excess/deficit hours
 }
 
 export interface ScheduleTime {

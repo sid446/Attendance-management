@@ -3,6 +3,7 @@ import dbConnect from '@/lib/mongodb';
 import Attendance from '@/models/Attendance';
 import AttendanceRequest from '@/models/AttendanceRequest';
 import User, { IUser } from '@/models/User';
+import Holiday from '@/models/Holiday';
 
 // GET - Fetch attendance records
 export async function GET(request: NextRequest) {
@@ -227,6 +228,86 @@ export async function POST(request: NextRequest) {
           }
 
           errors.push({ odId: odIdFallback, reason });
+        }
+      }
+
+      // Process holidays for the uploaded month/year
+      if (processed.length > 0) {
+        const sampleRecord = processed[0];
+        const [yearStr] = sampleRecord.monthYear.split('-');
+        const year = parseInt(yearStr);
+
+        // Fetch active holidays for this year
+        const holidays = await Holiday.find({ year, isActive: true });
+
+        if (holidays.length > 0) {
+          // Get unique users from processed records
+          const uniqueUserIds = [...new Set(processed.map(p => p.userId))];
+
+          for (const userId of uniqueUserIds) {
+            const user = allUsers.find(u => u._id.toString() === userId);
+            if (!user) continue;
+
+            // Find or create attendance record for this user
+            let attendance = await Attendance.findOne({ userId: user._id, monthYear: sampleRecord.monthYear });
+
+            if (!attendance) {
+              attendance = await Attendance.create({
+                userId: user._id,
+                monthYear: sampleRecord.monthYear,
+                records: new Map(),
+                summary: {
+                  totalHour: 0,
+                  totalLateArrival: 0,
+                  excessHour: 0,
+                  totalHalfDay: 0,
+                  totalPresent: 0,
+                  totalAbsent: 0,
+                  totalLeave: 0,
+                },
+              });
+            }
+
+            // Check each holiday for this month
+            for (const holiday of holidays) {
+              const holidayDate = new Date(holiday.date);
+              const holidayMonthYear = `${holidayDate.getFullYear()}-${String(holidayDate.getMonth() + 1).padStart(2, '0')}`;
+
+              // Only process holidays for the current month being uploaded
+              if (holidayMonthYear === sampleRecord.monthYear) {
+                const dateKey = holiday.date;
+
+                // Check if user already has a record for this holiday date
+                const existingRecord = attendance.records.get(dateKey);
+
+                // If no record exists for this holiday date, add a holiday record
+                if (!existingRecord) {
+                  attendance.records.set(dateKey, {
+                    checkin: '00:00',
+                    checkout: '00:00',
+                    totalHour: 0,
+                    excessHour: 0,
+                    typeOfPresence: 'Holiday',
+                    halfDay: false,
+                    value: 0,
+                    remarks: holiday.name,
+                  });
+
+                  processed.push({
+                    odId: user.odId || user._id.toString(),
+                    userId: user._id.toString(),
+                    monthYear: sampleRecord.monthYear,
+                    date: holiday.date,
+                    createdUser: false,
+                  });
+                }
+              }
+            }
+
+            // Recalculate summary after adding holidays
+            attendance.summary = calculateSummary(attendance.records as any, user);
+            await attendance.save();
+          }
         }
       }
 

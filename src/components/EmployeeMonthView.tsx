@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, CheckCircle, XCircle, AlertTriangle, CalendarOff, Briefcase } from 'lucide-react';
+import { Clock, CheckCircle, XCircle, AlertTriangle, CalendarOff, Briefcase, ChevronLeft, ChevronRight, User as UserIcon, Calendar } from 'lucide-react';
 import { AttendanceSummaryView, AttendanceRecord, User } from '@/types/ui';
 
 interface EmployeeMonthViewProps {
@@ -76,8 +76,40 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
     onMonthYearChange(`${selectedYear}-${String(newMonth).padStart(2, '0')}`);
   };
 
+  const handlePrevMonth = () => {
+    let newYear = selectedYear;
+    let newMonth = selectedMonth - 1;
+    
+    if (newMonth < 1) {
+      newMonth = 12;
+      newYear = selectedYear - 1;
+    }
+    
+    onMonthYearChange(`${newYear}-${String(newMonth).padStart(2, '0')}`);
+  };
+
+  const handleNextMonth = () => {
+    let newYear = selectedYear;
+    let newMonth = selectedMonth + 1;
+    
+    if (newMonth > 12) {
+      newMonth = 1;
+      newYear = selectedYear + 1;
+    }
+    
+    onMonthYearChange(`${newYear}-${String(newMonth).padStart(2, '0')}`);
+  };
+
+  const handlePrevYear = () => {
+    onMonthYearChange(`${selectedYear - 1}-${String(selectedMonth).padStart(2, '0')}`);
+  };
+
+  const handleNextYear = () => {
+    onMonthYearChange(`${selectedYear + 1}-${String(selectedMonth).padStart(2, '0')}`);
+  };
+
   const calendarData = (() => {
-    if (!selectedMonthYear || employeeDays.length === 0) return null;
+    if (!selectedMonthYear) return null;
 
     const [yearStr, monthStr] = selectedMonthYear.split('-');
     const year = Number(yearStr);
@@ -131,20 +163,29 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
     <section className="bg-slate-900/60 border border-slate-800 rounded-xl shadow-sm p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-slate-50">Employee month-wise attendance</h2>
+          <h2 className="text-lg font-semibold text-slate-50 flex items-center gap-2">
+            <Calendar className="w-5 h-5" />
+            Employee Month View
+          </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Select an employee and month to inspect their daily check-in/out.
+            View detailed daily attendance for any employee and month.
           </p>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-end gap-4 text-xs">
-        <div className="flex flex-col gap-1">
-          <label className="text-slate-300">Employee</label>
+      {/* Navigation Controls */}
+      <div className="flex flex-wrap items-center gap-4 p-4 bg-slate-800/50 rounded-lg border border-slate-700">
+        {/* Employee Selection */}
+        <div className="flex flex-col gap-1 min-w-[220px]">
+          <label className="text-xs font-medium text-slate-300 flex items-center gap-1">
+            <UserIcon className="w-3 h-3" />
+            Employee
+          </label>
           <select
-            className="bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-slate-100 min-w-[220px]"
+            className="bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-slate-100 text-sm disabled:bg-slate-800 disabled:cursor-not-allowed disabled:text-slate-500"
             value={selectedEmployeeId ?? ''}
             onChange={(e) => setSelectedEmployeeId(e.target.value || null)}
+            disabled={isLoading}
           >
             <option value="">Select employee</option>
             {summaries
@@ -162,48 +203,83 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
           </select>
         </div>
 
+        {/* Year Navigation */}
         <div className="flex flex-col gap-1">
-          <label className="text-slate-300">Year</label>
-          <select
-            value={selectedYear}
-            onChange={handleYearChange}
-            className="bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-slate-100 w-24"
-          >
-            {years.map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
+          <label className="text-xs font-medium text-slate-300">Year</label>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handlePrevYear}
+              disabled={isLoading}
+              className="p-1 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:cursor-not-allowed rounded text-slate-300 hover:text-white disabled:text-slate-500 transition-colors"
+              title="Previous Year"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="px-3 py-2 bg-slate-950 border border-slate-700 rounded-md text-slate-100 text-sm min-w-[80px] text-center">
+              {selectedYear}
+            </span>
+            <button
+              onClick={handleNextYear}
+              disabled={isLoading}
+              className="p-1 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:cursor-not-allowed rounded text-slate-300 hover:text-white disabled:text-slate-500 transition-colors"
+              title="Next Year"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
+        {/* Month Navigation */}
         <div className="flex flex-col gap-1">
-          <label className="text-slate-300">Month</label>
-          <select
-            value={selectedMonth}
-            onChange={handleMonthChange}
-            className="bg-slate-950 border border-slate-700 rounded-md px-3 py-2 text-slate-100 w-32"
-          >
-            {months.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
-            ))}
-          </select>
+          <label className="text-xs font-medium text-slate-300">Month</label>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handlePrevMonth}
+              disabled={isLoading}
+              className="p-1 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:cursor-not-allowed rounded text-slate-300 hover:text-white disabled:text-slate-500 transition-colors"
+              title="Previous Month"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <select
+              value={selectedMonth}
+              onChange={handleMonthChange}
+              disabled={isLoading}
+              className="px-3 py-2 bg-slate-950 border border-slate-700 rounded-md text-slate-100 text-sm min-w-[120px] disabled:bg-slate-800 disabled:cursor-not-allowed disabled:text-slate-500"
+            >
+              {months.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleNextMonth}
+              disabled={isLoading}
+              className="p-1 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:cursor-not-allowed rounded text-slate-300 hover:text-white disabled:text-slate-500 transition-colors"
+              title="Next Month"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            if (selectedEmployeeId && selectedMonthYear) {
-              onLoadAttendance(selectedEmployeeId, selectedMonthYear);
-            }
-          }}
-          disabled={!selectedEmployeeId || !selectedMonthYear || isLoading}
-          className="px-4 py-2 bg-emerald-500 text-slate-950 font-medium rounded-md hover:bg-emerald-400 disabled:bg-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors"
-        >
-          {isLoading ? 'Loading…' : 'Load attendance'}
-        </button>
+        {/* Load Button */}
+        <div className="flex items-end">
+          <button
+            type="button"
+            onClick={() => {
+              if (selectedEmployeeId && selectedMonthYear) {
+                onLoadAttendance(selectedEmployeeId, selectedMonthYear);
+              }
+            }}
+            disabled={!selectedEmployeeId || !selectedMonthYear || isLoading}
+            className="px-4 py-2 bg-emerald-500 text-slate-950 font-medium rounded-md hover:bg-emerald-400 disabled:bg-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+          >
+            <Clock className="w-4 h-4" />
+            {isLoading ? 'Loading…' : 'Load Attendance'}
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -213,19 +289,55 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
       )}
 
       {selectedEmployeeId && selectedMonthYear && (
-        <div className="text-xs text-slate-400">
-          Showing records for <span className="text-slate-200">{displayUserName}</span> in
-          month <span className="text-slate-200">{selectedMonthYear}</span>.
+        <div className="text-xs text-slate-400 mb-4">
+          Showing records for <span className="text-slate-200 font-medium">{displayUserName}</span> in
+          <span className="text-slate-200 font-medium ml-1">
+            {months.find(m => m.value === selectedMonth)?.label} {selectedYear}
+          </span>
+          {!employeeDays.length && !isLoading && (
+            <span className="text-amber-400 ml-2">(No attendance records found for this month)</span>
+          )}
         </div>
       )}
 
       <div className="border border-slate-800 rounded-lg p-4">
         {!calendarData ? (
-          <div className="text-xs text-slate-500">
-            No records loaded. Select employee and month, then click "Load attendance".
+          <div className="text-center py-8">
+            <Calendar className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+            <div className="text-sm text-slate-500">
+              {selectedEmployeeId && selectedMonthYear 
+                ? 'Select an employee and click "Load Attendance" to view their monthly calendar.'
+                : 'Select an employee and month to view their attendance calendar.'
+              }
+            </div>
           </div>
         ) : (
           <>
+            {/* Month Navigation within Calendar */}
+            <div className="flex items-center justify-between mb-4">
+              <button
+                onClick={handlePrevMonth}
+                disabled={isLoading}
+                className="p-2 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-800 disabled:cursor-not-allowed rounded text-slate-300 hover:text-white disabled:text-slate-500 transition-colors"
+                title="Previous Month"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              
+              <h3 className="text-lg font-semibold text-slate-200">
+                {months.find(m => m.value === selectedMonth)?.label} {selectedYear}
+              </h3>
+              
+              <button
+                onClick={handleNextMonth}
+                disabled={isLoading}
+                className="p-2 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-800 disabled:cursor-not-allowed rounded text-slate-300 hover:text-white disabled:text-slate-500 transition-colors"
+                title="Next Month"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
+
             <div className="grid grid-cols-7 gap-2 mb-2 text-[11px] text-slate-400">
               {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
                 <div key={d} className="text-center font-medium">
@@ -352,6 +464,37 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
             </div>
           </>
         )}
+      </div>
+
+      {/* Legend */}
+      <div className="mt-6 p-4 bg-slate-800/50 rounded-lg border border-slate-700">
+        <h3 className="text-sm font-semibold text-slate-200 mb-3">Legend</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded border border-emerald-500/60 bg-emerald-500/15"></div>
+            <span className="text-slate-300">Present</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded border border-red-500/60 bg-red-500/15"></div>
+            <span className="text-slate-300">Absent</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded border border-blue-500/60 bg-blue-500/15"></div>
+            <span className="text-slate-300">Leave</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded border border-indigo-500/60 bg-indigo-500/15"></div>
+            <span className="text-slate-300">Holiday</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded border border-amber-500/60 bg-amber-500/15"></div>
+            <span className="text-slate-300">Late</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded border border-slate-500/60 bg-slate-800/50"></div>
+            <span className="text-slate-300">No Record</span>
+          </div>
+        </div>
       </div>
     </section>
   );

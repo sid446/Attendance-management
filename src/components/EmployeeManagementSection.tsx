@@ -1,7 +1,7 @@
 import React, { useState, useEffect, ChangeEvent, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { User, ScheduleTime } from '@/types/ui';
-import { Edit2, Save, X, Plus, Upload, FileUp, Filter, Trash2, Search, Download, ChevronDown, ChevronUp, FileSpreadsheet } from 'lucide-react';
+import { Edit2, Save, X, Plus, Upload, FileUp, Filter, Trash2, Search, Download, ChevronDown, ChevronUp, FileSpreadsheet, Settings, Users, Briefcase, CreditCard, Tag } from 'lucide-react';
 
 export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | null }> = ({ selectedUserId }) => {
   const [users, setUsers] = useState<User[]>([]);
@@ -26,6 +26,29 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   const [showAdditionalFields, setShowAdditionalFields] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'basic' | 'schedule' | 'extended'>('basic');
   const [showBulkUploadFormat, setShowBulkUploadFormat] = useState<boolean>(false);
+
+  // Predefined Values State
+  const [showPredefinedValues, setShowPredefinedValues] = useState<boolean>(false);
+  const [predefinedModal, setPredefinedModal] = useState<{
+    type: 'team' | 'designation' | 'paidFrom' | 'category' | null;
+    isOpen: boolean;
+  }>({ type: null, isOpen: false });
+  const [predefinedValues, setPredefinedValues] = useState<{
+    teams: string[];
+    designations: string[];
+    paidFrom: string[];
+    categories: string[];
+  }>({
+    teams: [],
+    designations: [],
+    paidFrom: [],
+    categories: []
+  });
+  const [newPredefinedValue, setNewPredefinedValue] = useState<{
+    type: 'team' | 'designation' | 'paidFrom' | 'category';
+    value: string;
+  }>({ type: 'team', value: '' });
+  const [isSavingPredefinedValue, setIsSavingPredefinedValue] = useState<boolean>(false);
 
   // Extra Info State
   const [newExtraLabel, setNewExtraLabel] = useState<string>('');
@@ -98,11 +121,13 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
 
   const handleEditClick = (user: User) => {
     setEditingUser(user);
-    // Deep copy or structured clone to avoid mutation issues, 
+    // Deep copy or structured clone to avoid mutation issues,
     // ensuring dates are strings compatible with inputs if needed
     setFormData({
       ...user,
       joiningDate: user.joiningDate ? new Date(user.joiningDate).toISOString().split('T')[0] : '',
+      // Ensure team matches workingUnderPartner
+      team: user.workingUnderPartner || user.team || '',
     });
     setError(null);
   };
@@ -114,7 +139,14 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   };
 
   const handleInputChange = (field: keyof User, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData(prev => {
+      const newData = { ...prev, [field]: value };
+      // When workingUnderPartner changes, also update team to the same value
+      if (field === 'workingUnderPartner') {
+        newData.team = value;
+      }
+      return newData;
+    });
   };
 
   const handleScheduleChange = (
@@ -199,6 +231,89 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       setIsSavingExtraLabel(false);
     }
   };
+
+  // Predefined Values Functions
+  const fetchPredefinedValues = async () => {
+    try {
+      const res = await fetch('/api/users/predefined-values');
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setPredefinedValues(json.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch predefined values:', err);
+    }
+  };
+
+  const handleAddPredefinedValue = async () => {
+    const { type, value } = newPredefinedValue;
+    const trimmedValue = value.trim();
+    if (!trimmedValue) return;
+
+    // Map singular types to plural keys
+    const typeMapping: Record<string, keyof typeof predefinedValues> = {
+      'team': 'teams',
+      'designation': 'designations',
+      'paidFrom': 'paidFrom',
+      'category': 'categories'
+    };
+
+    const mappedType = typeMapping[type];
+    if (!mappedType) {
+      alert('Invalid type selected');
+      return;
+    }
+
+    // Check if value already exists
+    const existingValues = predefinedValues[mappedType] || [];
+    if (existingValues.some((v: string) => v.toLowerCase() === trimmedValue.toLowerCase())) {
+      alert(`${type} "${trimmedValue}" already exists`);
+      return;
+    }
+
+    setIsSavingPredefinedValue(true);
+    try {
+      const res = await fetch('/api/users/predefined-values', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: mappedType, value: trimmedValue }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Failed to add value');
+      }
+      setNewPredefinedValue({ ...newPredefinedValue, value: '' });
+      fetchPredefinedValues();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to add value');
+    } finally {
+      setIsSavingPredefinedValue(false);
+    }
+  };
+
+  const handleRemovePredefinedValue = async (type: keyof typeof predefinedValues, value: string) => {
+    if (!window.confirm(`Remove "${value}" from ${type}?`)) return;
+    
+    try {
+      const res = await fetch('/api/users/predefined-values', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, value }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Failed to remove value');
+      }
+      fetchPredefinedValues();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to remove value');
+    }
+  };
+
+  // Fetch predefined values when component mounts
+  useEffect(() => {
+    fetchPredefinedValues();
+  }, []);
 
   const handleSave = async () => {
     if (!editingUser || !editingUser._id) return;
@@ -893,21 +1008,43 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
 
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">Designation</label>
-                  <input
-                    type="text"
+                  <select
                     value={formData.designation || ''}
                     onChange={(e) => handleInputChange('designation', e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                  />
+                  >
+                    <option value="">Select designation</option>
+                    {predefinedValues.designations.map((designation) => (
+                      <option key={designation} value={designation}>{designation}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Team</label>
+                  <label className="block text-xs text-slate-400 mb-1">Work Partner</label>
+                  <select
+                    value={formData.workingUnderPartner || ''}
+                    onChange={(e) => {
+                      handleInputChange('workingUnderPartner', e.target.value);
+                      handleInputChange('team', e.target.value); // Auto-fill team from work partner
+                    }}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  >
+                    <option value="">Select work partner</option>
+                    {predefinedValues.teams.map((team) => (
+                      <option key={team} value={team}>{team}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Team <span className="text-slate-500">(auto-filled from Work Partner)</span></label>
                   <input
                     type="text"
                     value={formData.team || ''}
-                    onChange={(e) => handleInputChange('team', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    disabled
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-slate-400 cursor-not-allowed"
+                    title="Team automatically matches Work Partner"
                   />
                 </div>
 
@@ -1042,17 +1179,70 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   { label: 'Alt Email', key: 'alternateEmail' },
                   { label: 'Parent Name', key: 'parentName' },
                   { label: 'Parent Occ.', key: 'parentOccupation' },
-                ].map((field) => (
-                  <div key={field.key}>
-                    <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
-                    <input
-                      type="text"
-                      value={(formData as any)[field.key] || ''}
-                      onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                    />
-                  </div>
-                ))}
+                ].map((field) => {
+                  // Special handling for dropdown fields
+                  if (field.key === 'designation') {
+                    return (
+                      <div key={field.key}>
+                        <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                        <select
+                          value={(formData as any)[field.key] || ''}
+                          onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                        >
+                          <option value="">Select {field.label.toLowerCase()}</option>
+                          {predefinedValues.designations.map((value) => (
+                            <option key={value} value={value}>{value}</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  } else if (field.key === 'paidFrom') {
+                    return (
+                      <div key={field.key}>
+                        <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                        <select
+                          value={(formData as any)[field.key] || ''}
+                          onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                        >
+                          <option value="">Select {field.label.toLowerCase()}</option>
+                          {predefinedValues.paidFrom.map((value) => (
+                            <option key={value} value={value}>{value}</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  } else if (field.key === 'category') {
+                    return (
+                      <div key={field.key}>
+                        <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                        <select
+                          value={(formData as any)[field.key] || ''}
+                          onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                        >
+                          <option value="">Select {field.label.toLowerCase()}</option>
+                          {predefinedValues.categories.map((value) => (
+                            <option key={value} value={value}>{value}</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <div key={field.key}>
+                        <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                        <input
+                          type="text"
+                          value={(formData as any)[field.key] || ''}
+                          onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                        />
+                      </div>
+                    );
+                  }
+                })}
 
                 <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
                      <div>
@@ -1411,21 +1601,43 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
 
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">Designation</label>
-                  <input
-                    type="text"
+                  <select
                     value={formData.designation || ''}
                     onChange={(e) => handleInputChange('designation', e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
-                  />
+                  >
+                    <option value="">Select designation</option>
+                    {predefinedValues.designations.map((designation) => (
+                      <option key={designation} value={designation}>{designation}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Team</label>
+                  <label className="block text-xs text-slate-400 mb-1">Work Partner</label>
+                  <select
+                    value={formData.workingUnderPartner || ''}
+                    onChange={(e) => {
+                      handleInputChange('workingUnderPartner', e.target.value);
+                      handleInputChange('team', e.target.value); // Auto-fill team from work partner
+                    }}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                  >
+                    <option value="">Select work partner</option>
+                    {predefinedValues.teams.map((team) => (
+                      <option key={team} value={team}>{team}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Team <span className="text-slate-500">(auto-filled from Work Partner)</span></label>
                   <input
                     type="text"
                     value={formData.team || ''}
-                    onChange={(e) => handleInputChange('team', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    disabled
+                    className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-slate-400 cursor-not-allowed"
+                    title="Team automatically matches Work Partner"
                   />
                 </div>
 
@@ -1561,17 +1773,54 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   { label: 'Alt Email', key: 'alternateEmail' },
                   { label: 'Parent Name', key: 'parentName' },
                   { label: 'Parent Occ.', key: 'parentOccupation' },
-                ].map((field) => (
-                  <div key={field.key}>
-                    <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
-                    <input
-                      type="text"
-                      value={(formData as any)[field.key] || ''}
-                      onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
-                    />
-                  </div>
-                ))}
+                ].map((field) => {
+                  // Special handling for dropdown fields
+                  if (field.key === 'paidFrom') {
+                    return (
+                      <div key={field.key}>
+                        <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                        <select
+                          value={(formData as any)[field.key] || ''}
+                          onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                        >
+                          <option value="">Select {field.label.toLowerCase()}</option>
+                          {predefinedValues.paidFrom.map((value) => (
+                            <option key={value} value={value}>{value}</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  } else if (field.key === 'category') {
+                    return (
+                      <div key={field.key}>
+                        <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                        <select
+                          value={(formData as any)[field.key] || ''}
+                          onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                        >
+                          <option value="">Select {field.label.toLowerCase()}</option>
+                          {predefinedValues.categories.map((value) => (
+                            <option key={value} value={value}>{value}</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <div key={field.key}>
+                        <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                        <input
+                          type="text"
+                          value={(formData as any)[field.key] || ''}
+                          onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                        />
+                      </div>
+                    );
+                  }
+                })}
 
                 <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
                      <div>
@@ -1820,7 +2069,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               </span>
             )}
           </div>
-          
+
           {/* Search and Filter Row */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
             <div className="flex items-center gap-3">
@@ -1841,7 +2090,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 <select
                   value={filterDesignation}
                   onChange={(e) => setFilterDesignation(e.target.value)}
-                  className="appearance-none bg-slate-950 border border-slate-700 text-slate-300 text-sm rounded-lg pl-8 pr-8 py-2 focus:outline-none focus:border-emerald-500/50 hover:bg-slate-900 transition-colors cursor-pointer min-w-[140px]"
+                  className="appearance-none bg-slate-950 border border-slate-700 text-slate-300 text-sm rounded-lg pl-8 pr-8 py-2 focus:outline-none focus:border-emerald-500/50 hover:bg-slate-900 transition-colors cursor-pointer min-w-35"
                 >
                   <option value="">All Designations</option>
                   {uniqueDesignations.map((opt) => (
@@ -1852,9 +2101,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               </div>
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Primary Actions */}
+            {/* Action Buttons - Grouped and Simplified */}
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => {
@@ -1867,28 +2115,42 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 Add Employee
               </button>
 
-              {/* Bulk Actions Dropdown */}
-              <div className="relative">
+              <div className="flex items-center gap-1 border-l border-slate-700 pl-2 ml-2">
                 <button
                   type="button"
-                  className="flex items-center gap-2 px-3 py-2 bg-slate-800/40 text-slate-200 border border-slate-700 rounded-lg text-sm hover:bg-slate-800/70 transition-colors"
-                  onClick={() => {/* TODO: Add dropdown logic */}}
+                  onClick={() => setShowPredefinedValues(!showPredefinedValues)}
+                  className={`p-2 rounded-lg text-sm transition-colors ${
+                    showPredefinedValues
+                      ? 'bg-slate-700 text-slate-200'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                  }`}
+                  title="Manage predefined values"
                 >
-                  <FileUp className="w-4 h-4" />
-                  Bulk Actions
+                  <Settings className="w-4 h-4" />
                 </button>
-                {/* TODO: Add dropdown menu with bulk update and schedule upload */}
-              </div>
 
-              {/* Export Button */}
-              <button
-                type="button"
-                onClick={handleExportToExcel}
-                className="flex items-center gap-2 px-3 py-2 bg-slate-800/40 text-slate-200 border border-slate-700 rounded-lg text-sm hover:bg-slate-800/70 transition-colors"
-              >
-                <Download className="w-4 h-4" />
-                Export
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAdditionalFields(!showAdditionalFields)}
+                  className={`p-2 rounded-lg text-sm transition-colors ${
+                    showAdditionalFields
+                      ? 'bg-slate-700 text-slate-200'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                  }`}
+                  title="Manage additional fields"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportToExcel}
+                  className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 rounded-lg text-sm transition-colors"
+                  title="Export to Excel"
+                >
+                  <Download className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1960,7 +2222,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 placeholder="Add field (e.g. PAN)"
                 value={newExtraLabel}
                 onChange={(e) => setNewExtraLabel(e.target.value)}
-                className="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded px-2 py-1 focus:outline-none focus:border-emerald-500/50 min-w-[160px]"
+                className="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded px-2 py-1 focus:outline-none focus:border-emerald-500/50 min-w-40"
               />
               <button
                 type="button"
@@ -1974,6 +2236,205 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           </div>
         )}
       </div>
+
+      {/* Predefined Values Management */}
+      <div className="border-b border-slate-800">
+        <button
+          onClick={() => setShowPredefinedValues(!showPredefinedValues)}
+          className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-slate-800/30 transition-colors"
+        >
+          <div className="space-y-1">
+            <div className="text-xs font-semibold text-slate-300 uppercase tracking-wide flex items-center gap-2">
+              <Settings className="w-4 h-4" />
+              Predefined Values Management
+            </div>
+            <div className="text-[11px] text-slate-500">
+              Manage dropdown options for Team, Designation, Paid From, and Category • Click to {showPredefinedValues ? 'hide' : 'show'}
+            </div>
+          </div>
+          {showPredefinedValues ? (
+            <ChevronUp className="w-4 h-4 text-slate-400" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-slate-400" />
+          )}
+        </button>
+
+        {showPredefinedValues && (
+          <div className="px-4 pb-4 border-t border-slate-800/50">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-slate-200">Manage Predefined Values</h3>
+              <button
+                onClick={() => setShowPredefinedValues(false)}
+                className="text-slate-400 hover:text-slate-200"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Teams (Work Partners) */}
+              <button
+                onClick={() => setPredefinedModal({ type: 'team', isOpen: true })}
+                className="flex items-center justify-between p-3 bg-slate-800/50 hover:bg-slate-800/70 border border-slate-700 rounded-lg transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <Users className="w-5 h-5 text-slate-400" />
+                  <div className="text-left">
+                    <div className="text-sm font-medium text-slate-200">Teams</div>
+                    <div className="text-xs text-slate-500">{predefinedValues.teams.length} values</div>
+                  </div>
+                </div>
+                <ChevronDown className="w-4 h-4 text-slate-400" />
+              </button>
+
+              {/* Designations */}
+              <button
+                onClick={() => setPredefinedModal({ type: 'designation', isOpen: true })}
+                className="flex items-center justify-between p-3 bg-slate-800/50 hover:bg-slate-800/70 border border-slate-700 rounded-lg transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <Briefcase className="w-5 h-5 text-slate-400" />
+                  <div className="text-left">
+                    <div className="text-sm font-medium text-slate-200">Designations</div>
+                    <div className="text-xs text-slate-500">{predefinedValues.designations.length} values</div>
+                  </div>
+                </div>
+                <ChevronDown className="w-4 h-4 text-slate-400" />
+              </button>
+
+              {/* Paid From */}
+              <button
+                onClick={() => setPredefinedModal({ type: 'paidFrom', isOpen: true })}
+                className="flex items-center justify-between p-3 bg-slate-800/50 hover:bg-slate-800/70 border border-slate-700 rounded-lg transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <CreditCard className="w-5 h-5 text-slate-400" />
+                  <div className="text-left">
+                    <div className="text-sm font-medium text-slate-200">Paid From</div>
+                    <div className="text-xs text-slate-500">{predefinedValues.paidFrom.length} values</div>
+                  </div>
+                </div>
+                <ChevronDown className="w-4 h-4 text-slate-400" />
+              </button>
+
+              {/* Categories */}
+              <button
+                onClick={() => setPredefinedModal({ type: 'category', isOpen: true })}
+                className="flex items-center justify-between p-3 bg-slate-800/50 hover:bg-slate-800/70 border border-slate-700 rounded-lg transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <Tag className="w-5 h-5 text-slate-400" />
+                  <div className="text-left">
+                    <div className="text-sm font-medium text-slate-200">Categories</div>
+                    <div className="text-xs text-slate-500">{predefinedValues.categories.length} values</div>
+                  </div>
+                </div>
+                <ChevronDown className="w-4 h-4 text-slate-400" />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Predefined Values Modal */}
+      {predefinedModal.isOpen && predefinedModal.type && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-lg shadow-xl max-w-md w-full max-h-[80vh] overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-slate-700">
+              <div className="flex items-center gap-2">
+                {predefinedModal.type === 'team' && <Users className="w-5 h-5 text-slate-400" />}
+                {predefinedModal.type === 'designation' && <Briefcase className="w-5 h-5 text-slate-400" />}
+                {predefinedModal.type === 'paidFrom' && <CreditCard className="w-5 h-5 text-slate-400" />}
+                {predefinedModal.type === 'category' && <Tag className="w-5 h-5 text-slate-400" />}
+                <h3 className="text-lg font-medium text-slate-200 capitalize">
+                  {predefinedModal.type === 'team' ? 'Teams' :
+                   predefinedModal.type === 'designation' ? 'Designations' :
+                   predefinedModal.type === 'paidFrom' ? 'Paid From' : 'Categories'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setPredefinedModal({ type: null, isOpen: false })}
+                className="text-slate-400 hover:text-slate-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 max-h-96 overflow-y-auto">
+              <div className="space-y-3">
+                {(() => {
+                  const values = predefinedModal.type === 'team' ? predefinedValues.teams :
+                                predefinedModal.type === 'designation' ? predefinedValues.designations :
+                                predefinedModal.type === 'paidFrom' ? predefinedValues.paidFrom :
+                                predefinedValues.categories;
+
+                  return values.length > 0 ? (
+                    <div className="space-y-2">
+                      {values.map((value) => (
+                        <div
+                          key={value}
+                          className="flex items-center justify-between p-2 bg-slate-800 rounded border border-slate-700"
+                        >
+                          <span className="text-sm text-slate-200">{value}</span>
+                          <button
+                            type="button"
+                            className="text-slate-500 hover:text-rose-400 ml-2"
+                            onClick={() => handleRemovePredefinedValue(
+                              predefinedModal.type === 'team' ? 'teams' :
+                              predefinedModal.type === 'designation' ? 'designations' :
+                              predefinedModal.type === 'paidFrom' ? 'paidFrom' : 'categories',
+                              value
+                            )}
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500 text-center py-4">
+                      No {predefinedModal.type === 'team' ? 'teams' :
+                          predefinedModal.type === 'designation' ? 'designations' :
+                          predefinedModal.type === 'paidFrom' ? 'paid from values' : 'categories'} yet.
+                    </p>
+                  );
+                })()}
+              </div>
+
+              <div className="mt-4 pt-4 border-t border-slate-700">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder={`Add ${predefinedModal.type === 'team' ? 'team' :
+                                        predefinedModal.type === 'designation' ? 'designation' :
+                                        predefinedModal.type === 'paidFrom' ? 'paid from' : 'category'}...`}
+                    value={newPredefinedValue.type === predefinedModal.type ? newPredefinedValue.value : ''}
+                    onChange={(e) => setNewPredefinedValue({
+                      type: predefinedModal.type!,
+                      value: e.target.value
+                    })}
+                    className="flex-1 bg-slate-950 border border-slate-700 text-slate-200 text-sm rounded px-3 py-2 focus:outline-none focus:border-emerald-500/50"
+                    onKeyPress={(e) => e.key === 'Enter' && handleAddPredefinedValue()}
+                  />
+                  <button
+                    onClick={() => {
+                      setNewPredefinedValue({
+                        type: predefinedModal.type!,
+                        value: newPredefinedValue.type === predefinedModal.type ? newPredefinedValue.value : ''
+                      });
+                      handleAddPredefinedValue();
+                    }}
+                    disabled={isSavingPredefinedValue || (newPredefinedValue.type === predefinedModal.type && !newPredefinedValue.value.trim())}
+                    className="px-4 py-2 bg-emerald-600 text-white text-sm rounded hover:bg-emerald-500 disabled:opacity-50"
+                  >
+                    {isSavingPredefinedValue ? 'Adding...' : 'Add'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Bulk Upload Format Preview */}
       <div className="border-b border-slate-800">
@@ -2113,7 +2574,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 <td className="px-4 py-3 font-mono text-slate-400">{user.odId}</td>
                 <td className="px-4 py-3 text-slate-200 font-medium">{user.name}</td>
                 <td className="px-4 py-3 text-slate-400">{user.email}</td>
-                <td className="px-4 py-3 text-slate-400">{user.team || '-'}</td>
+                <td className="px-4 py-3 text-slate-400">{user.workingUnderPartner || user.team || '-'}</td>
                 <td className="px-4 py-3 text-slate-400">{user.designation || '-'}</td>
                 <td className="px-4 py-3 text-slate-400">
                   {user.joiningDate ? new Date(user.joiningDate).toLocaleDateString() : '-'}

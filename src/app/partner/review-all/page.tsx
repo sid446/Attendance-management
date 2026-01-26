@@ -39,6 +39,8 @@ export default function ReviewAllPage() {
   const [remarks, setRemarks] = useState<{ [key: string]: string }>({});
   const [values, setValues] = useState<{ [key: string]: string }>({});
   const [processing, setProcessing] = useState(false);
+  const [leaveTypeFilter, setLeaveTypeFilter] = useState<string>('all');
+  const [personFilter, setPersonFilter] = useState<string>('all');
 
   useEffect(() => {
     if (!partnerName) {
@@ -111,6 +113,26 @@ export default function ReviewAllPage() {
     return ranges.join(', ');
   };
 
+  // Get unique filter options from request groups
+  const getUniqueLeaveTypes = () => {
+    const types = new Set(requestGroups.map(group => group.requestedStatus));
+    return Array.from(types).sort();
+  };
+
+  const getUniquePersons = () => {
+    const persons = new Set(requestGroups.map(group => group.userName));
+    return Array.from(persons).sort();
+  };
+
+  // Filter request groups based on selected filters
+  const getFilteredRequestGroups = () => {
+    return requestGroups.filter(group => {
+      const matchesLeaveType = leaveTypeFilter === 'all' || group.requestedStatus === leaveTypeFilter;
+      const matchesPerson = personFilter === 'all' || group.userName === personFilter;
+      return matchesLeaveType && matchesPerson;
+    });
+  };
+
   const handleSelectGroup = (groupId: string, checked: boolean) => {
     if (checked) {
       setSelectedGroupIds(prev => [...prev, groupId]);
@@ -120,8 +142,10 @@ export default function ReviewAllPage() {
   };
 
   const handleSelectAll = (checked: boolean) => {
+    const filteredGroups = getFilteredRequestGroups();
     if (checked) {
-      setSelectedGroupIds(requestGroups.map((_, index) => index.toString()));
+      const originalIndices = filteredGroups.map(group => requestGroups.indexOf(group).toString());
+      setSelectedGroupIds(originalIndices);
     } else {
       setSelectedGroupIds([]);
     }
@@ -290,10 +314,10 @@ export default function ReviewAllPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4">
+    <div className="min-h-screen bg-gray-50 py-4 px-2 sm:px-4">
       <div className="max-w-6xl mx-auto">
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h1 className="text-2xl font-semibold text-gray-900 mb-2">Review All Pending Requests</h1>
+        <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-4 sm:mb-6">
+          <h1 className="text-xl sm:text-2xl font-semibold text-gray-900 mb-2">Review All Pending Requests</h1>
           <p className="text-gray-600 text-sm leading-relaxed">Select the requests you want to approve or reject from your employees.</p>
         </div>
 
@@ -303,66 +327,121 @@ export default function ReviewAllPage() {
           </div>
         ) : (
           <>
+            {/* Filters Section */}
+            <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-6 border border-gray-100">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-0">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4 sm:mb-0">Filters</h2>
+                <div className="flex flex-col sm:flex-row sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
+                    <label className="text-sm font-medium text-gray-700">Leave Type:</label>
+                    <select
+                      value={leaveTypeFilter}
+                      onChange={(e) => setLeaveTypeFilter(e.target.value)}
+                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 text-black focus:ring-blue-500 focus:border-blue-500 w-full sm:w-auto"
+                    >
+                      <option value="all">All Leave Types</option>
+                      {getUniqueLeaveTypes().map(type => (
+                        <option key={type} value={type}>{type}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
+                    <label className="text-sm font-medium text-gray-700">Person:</label>
+                    <select
+                      value={personFilter}
+                      onChange={(e) => setPersonFilter(e.target.value)}
+                      className="px-3 py-2 border text-black border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full sm:w-auto"
+                    >
+                      <option value="all">All Persons</option>
+                      {getUniquePersons().map(person => (
+                        <option key={person} value={person}>{person}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {(leaveTypeFilter !== 'all' || personFilter !== 'all') && (
+                    <button
+                      onClick={() => {
+                        setLeaveTypeFilter('all');
+                        setPersonFilter('all');
+                      }}
+                      className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors w-full sm:w-auto"
+                    >
+                      Clear Filters
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
             <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-100">
               <div className="px-6 py-4 border-b border-gray-200 bg-gray-50/50">
                 <label className="flex items-center space-x-3 cursor-pointer group">
                   <input
                     type="checkbox"
-                    checked={selectedGroupIds.length === requestGroups.length}
+                    checked={getFilteredRequestGroups().length > 0 && getFilteredRequestGroups().every(group => {
+                      const originalIndex = requestGroups.indexOf(group);
+                      return selectedGroupIds.includes(originalIndex.toString());
+                    })}
                     onChange={(e) => handleSelectAll(e.target.checked)}
                     className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
                   />
-                  <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900 transition-colors">Select All Groups</span>
+                  <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900 transition-colors">
+                    Select All {getFilteredRequestGroups().length} Group{getFilteredRequestGroups().length !== 1 ? 's' : ''}
+                  </span>
                 </label>
               </div>
 
               <div className="divide-y divide-gray-100">
-                {requestGroups.map((group, index) => (
-                  <div key={index} className="px-6 py-5 hover:bg-gray-50/50 transition-colors">
-                    <div className="flex items-start space-x-4">
-                      <input
-                        type="checkbox"
-                        checked={selectedGroupIds.includes(index.toString())}
-                        onChange={(e) => handleSelectGroup(index.toString(), e.target.checked)}
-                        className="mt-1 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center space-x-3">
-                            <h3 className="text-base font-semibold text-gray-900">{group.userName}</h3>
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
-                              {group.requestedStatus}
-                            </span>
+                {getFilteredRequestGroups().map((group, filteredIndex) => {
+                  // Find the original index in requestGroups
+                  const originalIndex = requestGroups.findIndex(rg => rg === group);
+                  return (
+                    <div key={originalIndex} className="px-6 py-5 hover:bg-gray-50/50 transition-colors">
+                      <div className="flex items-start space-x-4">
+                        <input
+                          type="checkbox"
+                          checked={selectedGroupIds.includes(originalIndex.toString())}
+                          onChange={(e) => handleSelectGroup(originalIndex.toString(), e.target.checked)}
+                          className="mt-1 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center space-x-3">
+                              <h3 className="text-base font-semibold text-gray-900">{group.userName}</h3>
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                                {group.requestedStatus}
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-sm text-gray-600">
-                            <span className="font-medium">Dates:</span> {group.dateDisplay}
-                          </p>
-                          {group.reason && (
+                          <div className="space-y-1">
                             <p className="text-sm text-gray-600">
-                              <span className="font-medium">Reason:</span> {group.reason}
+                              <span className="font-medium">Dates:</span> {group.dateDisplay}
                             </p>
-                          )}
-                          <p className="text-sm text-gray-600">
-                            <span className="font-medium">Time:</span> {group.timeRange}
-                          </p>
-                          <p className="text-sm text-gray-500">
-                            {group.dates.length} request{group.dates.length > 1 ? 's' : ''} • {group.requestIds.length} attendance record{group.requestIds.length > 1 ? 's' : ''}
-                          </p>
+                            {group.reason && (
+                              <p className="text-sm text-gray-600">
+                                <span className="font-medium">Reason:</span> {group.reason}
+                              </p>
+                            )}
+                            <p className="text-sm text-gray-600">
+                              <span className="font-medium">Time:</span> {group.timeRange}
+                            </p>
+                            <p className="text-sm text-gray-500">
+                              {group.dates.length} request{group.dates.length > 1 ? 's' : ''} • {group.requestIds.length} attendance record{group.requestIds.length > 1 ? 's' : ''}
+                            </p>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
-            <div className="mt-8 flex justify-end space-x-4">
+            <div className="mt-8 flex flex-col sm:flex-row sm:justify-end space-y-4 sm:space-y-0 sm:space-x-4">
               <button
                 onClick={() => openModal('reject')}
                 disabled={selectedGroupIds.length === 0}
-                className="inline-flex items-center px-6 py-3 border border-red-300 text-sm font-medium rounded-lg text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white transition-all duration-200 shadow-sm"
+                className="inline-flex items-center justify-center px-6 py-3 border border-red-300 text-sm font-medium rounded-lg text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white transition-all duration-200 shadow-sm w-full sm:w-auto"
               >
                 <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -372,7 +451,7 @@ export default function ReviewAllPage() {
               <button
                 onClick={() => openModal('approve')}
                 disabled={selectedGroupIds.length === 0}
-                className="inline-flex items-center px-6 py-3 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600 transition-all duration-200 shadow-sm"
+                className="inline-flex items-center justify-center px-6 py-3 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600 transition-all duration-200 shadow-sm w-full sm:w-auto"
               >
                 <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -458,14 +537,14 @@ export default function ReviewAllPage() {
                 <>
                   {/* Same Remark Section */}
                   <div className="space-y-3">
-                    <label className="block text-sm font-medium text-gray-700">
+                    <label className="block text-sm font-medium text-black">
                       Remark <span className="text-red-500">*</span>
                     </label>
                     <textarea
                       value={remarks.all || ''}
                       onChange={(e) => setRemarks({ ...remarks, all: e.target.value })}
                       rows={4}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-none"
+                      className="w-full px-4 py-3 border text-black border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-none"
                       placeholder="Enter remark for all selected requests..."
                     />
                   </div>
@@ -474,7 +553,7 @@ export default function ReviewAllPage() {
                   {modalAction === 'approve' && (
                     applySameValue ? (
                       <div className="space-y-3">
-                        <label className="block text-sm font-medium text-gray-700">
+                        <label className="block text-sm font-medium text-black">
                           Attendance Value <span className="text-red-500">*</span>
                         </label>
                         <div className="relative">
@@ -485,18 +564,18 @@ export default function ReviewAllPage() {
                             max="1"
                             value={values.all || '1'}
                             onChange={(e) => setValues({ ...values, all: e.target.value })}
-                            className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 pr-12"
+                            className="w-full px-4 py-3 text-black border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 pr-12"
                             placeholder="0.00 - 1.00"
                           />
-                          <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-sm text-gray-500">
+                          <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-sm text-black">
                             days
                           </div>
                         </div>
-                        <p className="text-xs text-gray-500">Applied to all selected requests</p>
+                        <p className="text-xs text-black">Applied to all selected requests</p>
                       </div>
                     ) : (
                       <div className="space-y-4">
-                        <label className="block text-sm font-medium text-gray-700">
+                        <label className="block text-sm font-medium text-black">
                           Attendance Values <span className="text-red-500">*</span>
                         </label>
                         {selectedGroupIds.map(groupId => {
@@ -522,10 +601,10 @@ export default function ReviewAllPage() {
                                   max="1"
                                   value={values[groupId] || '1'}
                                   onChange={(e) => setValues({ ...values, [groupId]: e.target.value })}
-                                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 pr-12"
+                                  className="w-full px-4 text-black py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 pr-12"
                                   placeholder="0.00 - 1.00"
                                 />
-                                <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-sm text-gray-500">
+                                <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-sm text-black">
                                   days
                                 </div>
                               </div>
@@ -538,7 +617,7 @@ export default function ReviewAllPage() {
                 </>
               ) : (
                 <div className="space-y-4">
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label className="block text-sm font-medium text-black">
                     Individual Settings <span className="text-red-500">*</span>
                   </label>
                   {selectedGroupIds.map(groupId => {
@@ -559,7 +638,7 @@ export default function ReviewAllPage() {
 
                         {modalAction === 'approve' && (
                           <div className="mb-4">
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <label className="block text-sm font-medium text-black mb-2">
                               Attendance Value
                             </label>
                             <div className="relative">
@@ -570,10 +649,10 @@ export default function ReviewAllPage() {
                                 max="1"
                                 value={values[groupId] || '1'}
                                 onChange={(e) => setValues({ ...values, [groupId]: e.target.value })}
-                                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 pr-12"
+                                className="w-full px-4 py-2 text-black border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 pr-12"
                                 placeholder="0.00 - 1.00"
                               />
-                              <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-sm text-gray-500">
+                              <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-sm text-black">
                                 days
                               </div>
                             </div>
@@ -581,14 +660,14 @@ export default function ReviewAllPage() {
                         )}
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="block text-sm font-medium text-black mb-2">
                             Remark
                           </label>
                           <textarea
                             value={remarks[groupId] || ''}
                             onChange={(e) => setRemarks({ ...remarks, [groupId]: e.target.value })}
                             rows={3}
-                            className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-none"
+                            className="w-full px-4 py-3 border text-black  border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-none"
                             placeholder="Enter remark for this request..."
                           />
                         </div>

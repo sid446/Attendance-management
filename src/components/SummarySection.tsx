@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { AttendanceSummaryView, User } from '@/types/ui';
-import { Search, Calendar, ChevronLeft, ChevronRight, BarChart3, Users, Clock, AlertCircle, TrendingUp, UserX, UserCheck, Download, ListChecks, X } from 'lucide-react';
+import { Search, Calendar, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, BarChart3, Users, Clock, AlertCircle, TrendingUp, UserX, UserCheck, Download, ListChecks, X } from 'lucide-react';
 import { BulkLeaveManager } from './BulkLeaveManager';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -89,6 +89,24 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
   const [rangeEnd, setRangeEnd] = useState<string>('');
   const [rangeModalOpen, setRangeModalOpen] = useState(false);
   const [currentWeekStart, setCurrentWeekStart] = useState<string>('');
+  
+  // Advanced Filtering State
+  const [teamFilter, setTeamFilter] = useState<string>('all');
+  const [designationFilter, setDesignationFilter] = useState<string>('all');
+  const [lateFilter, setLateFilter] = useState<{operator: string, value: number}>({operator: 'all', value: 0});
+  const [presentFilter, setPresentFilter] = useState<{operator: string, value: number}>({operator: 'all', value: 0});
+  const [absentFilter, setAbsentFilter] = useState<{operator: string, value: number}>({operator: 'all', value: 0});
+  const [leaveFilter, setLeaveFilter] = useState<{operator: string, value: number}>({operator: 'all', value: 0});
+  const [halfDayFilter, setHalfDayFilter] = useState<{operator: string, value: number}>({operator: 'all', value: 0});
+  const [workHoursFilter, setWorkHoursFilter] = useState<{operator: string, value: number}>({operator: 'all', value: 0});
+  const [excessFilter, setExcessFilter] = useState<{operator: string, value: number}>({operator: 'all', value: 0});
+  
+  // Sorting State
+  const [sortField, setSortField] = useState<string>('calcExcessDeficit');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  
+  // Filter Modal State
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   
   // Detail Modal State
   const [detailModal, setDetailModal] = useState<{isOpen: boolean; title: string; data: {date: string; info: string; subInfo?: string}[]}>({
@@ -434,13 +452,103 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       return count;
   };
 
+  const getUniqueTeams = () => {
+    const teams = new Set(summaries.map(item => item.team).filter(Boolean));
+    return Array.from(teams).sort();
+  };
+
+  const getUniqueDesignations = () => {
+    const designations = new Set(summaries.map(item => item.designation).filter(Boolean));
+    return Array.from(designations).sort();
+  };
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const clearAllFilters = () => {
+    setTeamFilter('all');
+    setDesignationFilter('all');
+    setLateFilter({operator: 'all', value: 0});
+    setPresentFilter({operator: 'all', value: 0});
+    setAbsentFilter({operator: 'all', value: 0});
+    setLeaveFilter({operator: 'all', value: 0});
+    setHalfDayFilter({operator: 'all', value: 0});
+    setWorkHoursFilter({operator: 'all', value: 0});
+    setExcessFilter({operator: 'all', value: 0});
+    setSearchTerm('');
+  };
+
+  const hasActiveFilters = () => {
+    return teamFilter !== 'all' ||
+           designationFilter !== 'all' ||
+           lateFilter.operator !== 'all' ||
+           presentFilter.operator !== 'all' ||
+           absentFilter.operator !== 'all' ||
+           leaveFilter.operator !== 'all' ||
+           halfDayFilter.operator !== 'all' ||
+           workHoursFilter.operator !== 'all' ||
+           excessFilter.operator !== 'all' ||
+           searchTerm !== '';
+  };
+
   const filteredSummaries = useMemo(() => {
     let list = summaries;
+    
+    // Text search filter
     if (searchTerm) {
       list = summaries.filter(item => 
-        item.userName.toLowerCase().includes(searchTerm.toLowerCase())
+        item.userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (item.employeeCode && item.employeeCode.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (item.odId && item.odId.toLowerCase().includes(searchTerm.toLowerCase()))
       );
     }
+    
+    // Advanced filters
+    if (teamFilter !== 'all') {
+      list = list.filter(item => item.team === teamFilter);
+    }
+    
+    if (designationFilter !== 'all') {
+      list = list.filter(item => item.designation === designationFilter);
+    }
+    
+    // Numeric filters with operators
+    const applyNumericFilter = (value: number, filter: {operator: string, value: number}) => {
+      if (filter.operator === 'all') return true;
+      switch (filter.operator) {
+        case 'equals': return value === filter.value;
+        case 'greater': return value > filter.value;
+        case 'less': return value < filter.value;
+        case 'greaterEqual': return value >= filter.value;
+        case 'lessEqual': return value <= filter.value;
+        default: return true;
+      }
+    };
+    
+    list = list.filter(item => {
+      const lateCount = calculateLateArrivals(item);
+      const presentCount = item.summary.totalPresent;
+      const absentCount = item.summary.totalAbsent;
+      const leaveCount = item.summary.totalLeave;
+      const halfDayCount = item.summary.totalHalfDay;
+      const workHours = item.summary.totalHour;
+      const excessHours = item.calcExcessDeficit || 0;
+      
+      return applyNumericFilter(lateCount, lateFilter) &&
+             applyNumericFilter(presentCount, presentFilter) &&
+             applyNumericFilter(absentCount, absentFilter) &&
+             applyNumericFilter(leaveCount, leaveFilter) &&
+             applyNumericFilter(halfDayCount, halfDayFilter) &&
+             applyNumericFilter(workHours, workHoursFilter) &&
+             applyNumericFilter(excessHours, excessFilter);
+    });
+    
     // Enrich with calculations
     const enriched = list.map(item => {
         const sched = item.calcScheduled !== undefined ? item.calcScheduled : calculateTotalScheduledHours(item);
@@ -457,15 +565,83 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         };
     });
 
-    // Sort by Excess/Deficit Descending
-    enriched.sort((a, b) => b.calcExcessDeficit - a.calcExcessDeficit);
+    // Apply sorting
+    enriched.sort((a, b) => {
+      let aValue: any, bValue: any;
+      
+      switch (sortField) {
+        case 'userName':
+          aValue = a.userName.toLowerCase();
+          bValue = b.userName.toLowerCase();
+          break;
+        case 'team':
+          aValue = a.team || '';
+          bValue = b.team || '';
+          break;
+        case 'designation':
+          aValue = a.designation || '';
+          bValue = b.designation || '';
+          break;
+        case 'employeeCode':
+          aValue = a.employeeCode || a.odId || '';
+          bValue = b.employeeCode || b.odId || '';
+          break;
+        case 'totalWorkingDays':
+          aValue = a.summary.totalPresent + a.summary.totalAbsent + a.summary.totalLeave;
+          bValue = b.summary.totalPresent + b.summary.totalAbsent + b.summary.totalLeave;
+          break;
+        case 'calcScheduled':
+          aValue = a.calcScheduled || 0;
+          bValue = b.calcScheduled || 0;
+          break;
+        case 'totalHour':
+          aValue = a.summary.totalHour;
+          bValue = b.summary.totalHour;
+          break;
+        case 'calcExcessDeficit':
+          aValue = a.calcExcessDeficit || 0;
+          bValue = b.calcExcessDeficit || 0;
+          break;
+        case 'calcLate':
+          aValue = a.calcLate || 0;
+          bValue = b.calcLate || 0;
+          break;
+        case 'totalHalfDay':
+          aValue = a.summary.totalHalfDay;
+          bValue = b.summary.totalHalfDay;
+          break;
+        case 'totalPresent':
+          aValue = a.summary.totalPresent;
+          bValue = b.summary.totalPresent;
+          break;
+        case 'totalAbsent':
+          aValue = a.summary.totalAbsent;
+          bValue = b.summary.totalAbsent;
+          break;
+        case 'totalLeave':
+          aValue = a.summary.totalLeave;
+          bValue = b.summary.totalLeave;
+          break;
+        default:
+          aValue = a.calcExcessDeficit || 0;
+          bValue = b.calcExcessDeficit || 0;
+      }
+      
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        const comparison = aValue.localeCompare(bValue);
+        return sortDirection === 'asc' ? comparison : -comparison;
+      } else {
+        const comparison = aValue - bValue;
+        return sortDirection === 'asc' ? comparison : -comparison;
+      }
+    });
 
-    // Add Rank
+    // Add Rank based on sorted order
     return enriched.map((item, index) => ({
       ...item,
       rank: index + 1
     }));
-  }, [summaries, searchTerm, selectedYear, selectedMonth]);
+  }, [summaries, searchTerm, selectedYear, selectedMonth, teamFilter, designationFilter, lateFilter, presentFilter, absentFilter, leaveFilter, halfDayFilter, workHoursFilter, excessFilter, sortField, sortDirection]);
 
   // Calculate Aggregates for the Dashboard
   const stats = useMemo(() => {
@@ -492,25 +668,26 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     
     // Create header row with styling markers
     const headers = [
-      "Sr. No.", "Employee Name", "Team", "Designation", "Scheduled Hours", "Actual Hours", 
-      "Excess/Deficit", "Rank", "Late Arrivals", "Half Days", "Present Days", 
-      "Absent Days", "Leaves Taken"
+      "Sr. No.", "Employee Name", "Emp Code", "Team", "Designation", "Scheduled Hours", "Actual Hours", 
+      "Excess/Deficit", "Late Arrivals", "Half Days", "Present Days", 
+      "Absent Days", "Working Days", "Leaves Taken"
     ];
     
     // Create data rows
     const rows = filteredSummaries.map((item, index) => [
       index + 1,
       item.userName,
+      item.employeeCode || item.odId || 'N/A',
       item.team || 'N/A',
       item.designation || 'N/A',
       item.calcScheduled?.toFixed(1) || '0.0',
       item.summary.totalHour.toFixed(1),
       item.calcExcessDeficit !== undefined ? item.calcExcessDeficit.toFixed(1) : '0.0',
-      item.rank,
       item.calcLate || 0,
       item.summary.totalHalfDay || 0,
       item.summary.totalPresent || 0,
       item.summary.totalAbsent || 0,
+      item.summary.totalPresent + item.summary.totalAbsent + item.summary.totalLeave,
       item.summary.totalLeave || 0
     ]);
     
@@ -520,9 +697,9 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     
     // Set column widths
     ws['!cols'] = [
-      { wch: 8 },  { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, 
+      { wch: 8 },  { wch: 25 }, { wch: 12 }, { wch: 15 }, { wch: 15 }, { wch: 12 }, { wch: 15 }, 
       { wch: 13 }, { wch: 15 }, { wch: 8 },  { wch: 14 }, { wch: 11 }, 
-      { wch: 14 }, { wch: 13 }, { wch: 14 }
+      { wch: 12 }, { wch: 14 }
     ];
     
     // Apply cell styles using the `s` property
@@ -808,6 +985,161 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     );
   };
 
+  const AdvancedFiltersModal: React.FC<{isOpen: boolean; onClose: () => void}> = ({isOpen, onClose}) => {
+    if (!isOpen) return null;
+
+    const NumericFilterInput: React.FC<{
+      label: string;
+      filter: {operator: string, value: number};
+      onChange: (filter: {operator: string, value: number}) => void;
+    }> = ({label, filter, onChange}) => (
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-slate-300">{label}</label>
+        <div className="flex gap-2">
+          <select
+            value={filter.operator}
+            onChange={(e) => onChange({...filter, operator: e.target.value})}
+            className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-md px-2 py-1 flex-1"
+          >
+            <option value="all">All</option>
+            <option value="equals">=</option>
+            <option value="greater">&gt;</option>
+            <option value="less">&lt;</option>
+            <option value="greaterEqual">≥</option>
+            <option value="lessEqual">≤</option>
+          </select>
+          {filter.operator !== 'all' && (
+            <input
+              type="number"
+              min="0"
+              step="0.5"
+              value={filter.value}
+              onChange={(e) => onChange({...filter, value: parseFloat(e.target.value) || 0})}
+              className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-md px-2 py-1 w-20"
+              placeholder="0"
+            />
+          )}
+        </div>
+      </div>
+    );
+
+    return (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+        <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+          <div className="bg-slate-950 px-4 py-3 border-b border-slate-800 flex justify-between items-center shrink-0">
+              <h3 className="font-semibold text-slate-100">Advanced Filters</h3>
+              <button onClick={onClose} className="text-slate-500 hover:text-white"><X className="w-5 h-5"/></button>
+          </div>
+          <div className="p-4 flex-1 overflow-y-auto">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Basic Filters */}
+              <div className="space-y-4">
+                <h4 className="text-slate-200 font-medium border-b border-slate-700 pb-2">Basic Filters</h4>
+                
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-slate-300">Team</label>
+                  <select
+                    value={teamFilter}
+                    onChange={(e) => setTeamFilter(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-md px-3 py-2"
+                  >
+                    <option value="all">All Teams</option>
+                    {getUniqueTeams().map(team => (
+                      <option key={team} value={team}>{team}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-slate-300">Designation</label>
+                  <select
+                    value={designationFilter}
+                    onChange={(e) => setDesignationFilter(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-md px-3 py-2"
+                  >
+                    <option value="all">All Designations</option>
+                    {getUniqueDesignations().map(designation => (
+                      <option key={designation} value={designation}>{designation}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Numeric Filters */}
+              <div className="space-y-4">
+                <h4 className="text-slate-200 font-medium border-b border-slate-700 pb-2">Numeric Filters</h4>
+                
+                <NumericFilterInput
+                  label="Late Arrivals"
+                  filter={lateFilter}
+                  onChange={setLateFilter}
+                />
+                
+                <NumericFilterInput
+                  label="Present Days"
+                  filter={presentFilter}
+                  onChange={setPresentFilter}
+                />
+                
+                <NumericFilterInput
+                  label="Absent Days"
+                  filter={absentFilter}
+                  onChange={setAbsentFilter}
+                />
+                
+                <NumericFilterInput
+                  label="Leave Days"
+                  filter={leaveFilter}
+                  onChange={setLeaveFilter}
+                />
+                
+                <NumericFilterInput
+                  label="Half Days"
+                  filter={halfDayFilter}
+                  onChange={setHalfDayFilter}
+                />
+                
+                <NumericFilterInput
+                  label="Work Hours"
+                  filter={workHoursFilter}
+                  onChange={setWorkHoursFilter}
+                />
+                
+                <NumericFilterInput
+                  label="Excess/Deficit Hours"
+                  filter={excessFilter}
+                  onChange={setExcessFilter}
+                />
+              </div>
+            </div>
+          </div>
+          <div className="bg-slate-950 px-4 py-3 border-t border-slate-800 flex justify-between items-center shrink-0">
+            <button
+              onClick={clearAllFilters}
+              className="px-4 py-2 text-slate-400 hover:text-slate-200 text-sm rounded-md hover:bg-slate-800 transition-colors"
+            >
+              Clear All
+            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={onClose}
+                className="px-4 py-2 text-slate-400 hover:text-slate-200 text-sm rounded-md hover:bg-slate-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={onClose}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-md transition-colors"
+              >
+                Apply Filters
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
       {/* 1. Control Bar */}
@@ -946,6 +1278,23 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
             </button>
             <span className="text-xs text-slate-400">Status</span>
           </div>
+
+          <div className="flex flex-col items-center gap-1">
+            <button 
+              onClick={() => setShowAdvancedFilters(true)}
+              className={`p-2 rounded-full transition-colors border shadow-sm ${
+                hasActiveFilters() 
+                  ? 'bg-blue-600 hover:bg-blue-500 text-white border-blue-600' 
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700'
+              }`}
+              title="Advanced Filters"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
+            </button>
+            <span className="text-xs text-slate-400">Filters</span>
+          </div>
         </div>
       </div>
 
@@ -1018,18 +1367,149 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                       className="rounded border-slate-600 text-emerald-600 focus:ring-emerald-500"
                     />
                   </th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-400">Rank</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-300">Employee</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-400">Team</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-400">Designation</th>
-                  <th className="px-4 py-3 text-right font-semibold text-slate-400">Scheduled</th>
-                  <th className="px-4 py-3 text-right font-semibold text-slate-300">Work Hours</th>
-                  <th className="px-4 py-3 text-right font-semibold text-emerald-300/90">Excess</th>
-                  <th className="px-4 py-3 text-right font-semibold text-amber-300/90">Late</th>
-                  <th className="px-4 py-3 text-right font-semibold text-slate-300">Half Days</th>
-                  <th className="px-4 py-3 text-right font-semibold text-emerald-300">Present</th>
-                  <th className="px-4 py-3 text-right font-semibold text-rose-300">Absent</th>
-                  <th className="px-4 py-3 text-right font-semibold text-sky-300">Leave</th>
+                  <th 
+                    className="px-4 py-3 text-left font-semibold text-slate-300 cursor-pointer hover:bg-slate-800/60 select-none"
+                    onClick={() => handleSort('userName')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Employee
+                      {sortField === 'userName' && (
+                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-4 py-3 text-left font-semibold text-slate-400 cursor-pointer hover:bg-slate-800/60 select-none"
+                    onClick={() => handleSort('employeeCode')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Emp Code
+                      {sortField === 'employeeCode' && (
+                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-4 py-3 text-left font-semibold text-slate-400 cursor-pointer hover:bg-slate-800/60 select-none"
+                    onClick={() => handleSort('team')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Team
+                      {sortField === 'team' && (
+                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-4 py-3 text-left font-semibold text-slate-400 cursor-pointer hover:bg-slate-800/60 select-none"
+                    onClick={() => handleSort('designation')}
+                  >
+                    <div className="flex items-center gap-1">
+                      Designation
+                      {sortField === 'designation' && (
+                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-4 py-3 text-right font-semibold text-slate-400 cursor-pointer hover:bg-slate-800/60 select-none"
+                    onClick={() => handleSort('calcScheduled')}
+                  >
+                    <div className="flex items-center gap-1 justify-end">
+                      Scheduled
+                      {sortField === 'calcScheduled' && (
+                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-4 py-3 text-right font-semibold text-slate-300 cursor-pointer hover:bg-slate-800/60 select-none"
+                    onClick={() => handleSort('totalHour')}
+                  >
+                    <div className="flex items-center gap-1 justify-end">
+                      Work Hours
+                      {sortField === 'totalHour' && (
+                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-4 py-3 text-right font-semibold text-emerald-300/90 cursor-pointer hover:bg-slate-800/60 select-none"
+                    onClick={() => handleSort('calcExcessDeficit')}
+                  >
+                    <div className="flex items-center gap-1 justify-end">
+                      Excess
+                      {sortField === 'calcExcessDeficit' && (
+                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-4 py-3 text-right font-semibold text-amber-300/90 cursor-pointer hover:bg-slate-800/60 select-none"
+                    onClick={() => handleSort('calcLate')}
+                  >
+                    <div className="flex items-center gap-1 justify-end">
+                      Late
+                      {sortField === 'calcLate' && (
+                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-4 py-3 text-right font-semibold text-slate-300 cursor-pointer hover:bg-slate-800/60 select-none"
+                    onClick={() => handleSort('totalHalfDay')}
+                  >
+                    <div className="flex items-center gap-1 justify-end">
+                      Half Days
+                      {sortField === 'totalHalfDay' && (
+                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-4 py-3 text-right font-semibold text-emerald-300 cursor-pointer hover:bg-slate-800/60 select-none"
+                    onClick={() => handleSort('totalPresent')}
+                  >
+                    <div className="flex items-center gap-1 justify-end">
+                      Present
+                      {sortField === 'totalPresent' && (
+                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-4 py-3 text-right font-semibold text-rose-300 cursor-pointer hover:bg-slate-800/60 select-none"
+                    onClick={() => handleSort('totalAbsent')}
+                  >
+                    <div className="flex items-center gap-1 justify-end">
+                      Absent
+                      {sortField === 'totalAbsent' && (
+                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-4 py-3 text-right font-semibold text-slate-400 cursor-pointer hover:bg-slate-800/60 select-none"
+                    onClick={() => handleSort('totalWorkingDays')}
+                  >
+                    <div className="flex items-center gap-1 justify-end">
+                      Working Days
+                      {sortField === 'totalWorkingDays' && (
+                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    className="px-4 py-3 text-right font-semibold text-sky-300 cursor-pointer hover:bg-slate-800/60 select-none"
+                    onClick={() => handleSort('totalLeave')}
+                  >
+                    <div className="flex items-center gap-1 justify-end">
+                      Leave
+                      {sortField === 'totalLeave' && (
+                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+                      )}
+                    </div>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
@@ -1046,11 +1526,11 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                         className="rounded border-slate-600 text-emerald-600 focus:ring-emerald-500"
                       />
                     </td>
-                    <td className="px-4 py-3 text-left font-mono text-slate-500 font-bold">{item.rank}</td>
                     <td className="px-4 py-3">
                       <div className="font-medium text-slate-200 group-hover:text-white cursor-pointer" onClick={() => onEmployeeClick(item.userId, item.monthYear)}>{item.userName}</div>
                       <div className="text-[10px] text-slate-500 font-mono hidden md:block">{item.employeeCode || item.odId || item.userId}</div>
                     </td>
+                    <td className="px-4 py-3 text-left font-mono text-slate-400">{item.employeeCode || item.odId || '-'}</td>
                     <td className="px-4 py-3 text-left text-slate-400">{item.team || '-'}</td>
                     <td className="px-4 py-3 text-left text-slate-400">{item.designation || '-'}</td>
                     <td className="px-4 py-3 text-right font-mono text-slate-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => item.calcScheduled > 0 && openDetail(e, 'ScheduledHours', item)}>
@@ -1092,6 +1572,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                            <span className="hover:underline" title="Click to view details">{item.summary.totalAbsent}</span>
                         ) : '-'}
                     </td>
+                    <td className="px-4 py-3 text-right font-mono text-slate-400">{item.summary.totalPresent + item.summary.totalAbsent + item.summary.totalLeave}</td>
                     <td className="px-4 py-3 text-right font-mono text-sky-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => item.summary.totalLeave > 0 && openDetail(e, 'Leave', item)}>
                         {item.summary.totalLeave > 0 ? (
                            <span className="hover:underline" title="Click to view details">{item.summary.totalLeave}</span>
@@ -1121,6 +1602,8 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       />
 
       <RangeModal isOpen={rangeModalOpen} onClose={() => setRangeModalOpen(false)} />
+
+      <AdvancedFiltersModal isOpen={showAdvancedFilters} onClose={() => setShowAdvancedFilters(false)} />
     </div>
   );
 };

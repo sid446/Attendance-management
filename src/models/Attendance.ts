@@ -72,7 +72,8 @@ const DailyRecordSchema: Schema = new Schema(
         'Half Day (HD)',
         'Work From Home (WFH)',
         'Weekly Off - Work From Home (WO-WFH)',
-        'Onsite Presence (OS-P)'
+        'Onsite Presence (OS-P)',
+        'Thumb machine - not working'
       ],
       default: 'ThumbMachine',
     },
