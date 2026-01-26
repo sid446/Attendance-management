@@ -94,7 +94,7 @@ PredefinedValuesSchema.statics.getAllValues = async function(): Promise<{
   return result;
 };
 
-const PredefinedValues: IPredefinedValuesModel = mongoose.models.PredefinedValues ||
+const PredefinedValues = (mongoose.models.PredefinedValues as IPredefinedValuesModel) ||
   mongoose.model<IPredefinedValues, IPredefinedValuesModel>('PredefinedValues', PredefinedValuesSchema);
 
 export default PredefinedValues;
