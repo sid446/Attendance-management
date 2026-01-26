@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 interface Request {
@@ -23,7 +23,7 @@ interface RequestGroup {
   requestIds: string[];
 }
 
-export default function ReviewAllPage() {
+function ReviewAllPageContent() {
   const searchParams = useSearchParams();
   const partnerName = searchParams.get('partnerName');
   const [requestGroups, setRequestGroups] = useState<RequestGroup[]>([]);
@@ -715,5 +715,13 @@ export default function ReviewAllPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ReviewAllPage() {
+  return (
+    <Suspense fallback={<div className="flex justify-center items-center min-h-screen">Loading...</div>}>
+      <ReviewAllPageContent />
+    </Suspense>
   );
 }
