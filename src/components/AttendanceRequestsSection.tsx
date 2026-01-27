@@ -64,9 +64,9 @@ interface AttendanceRequestsSectionProps {
 const DateRangeRequestBlock: React.FC<{
   rangeGroup: DateRangeGroup;
   isAdminView?: boolean;
-  onApproveReject?: (requestId: string, action: 'approve' | 'reject', remarks?: string) => void;
+  onApproveReject?: (requestId: string | string[], action: 'approve' | 'reject', remarks?: string) => void;
   processingRequest?: string | null;
-  openApprovalModal?: (requestId: string, action: 'approve' | 'reject') => void;
+  openApprovalModal?: (requestId: string | string[], action: 'approve' | 'reject') => void;
 }> = ({ rangeGroup, isAdminView = false, onApproveReject, processingRequest, openApprovalModal }) => {
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -327,9 +327,9 @@ const AttendanceRequestsTable: React.FC<{
   getStatusIcon: (status: string) => React.ReactNode;
   getStatusColor: (status: string) => string;
   isAdminView?: boolean;
-  onApproveReject?: (requestId: string, action: 'approve' | 'reject', remarks?: string) => void;
+  onApproveReject?: (requestId: string | string[], action: 'approve' | 'reject', remarks?: string) => void;
   processingRequest?: string | null;
-  openApprovalModal?: (requestId: string, action: 'approve' | 'reject') => void;
+  openApprovalModal?: (requestId: string | string[], action: 'approve' | 'reject') => void;
 }> = ({ rangeGroups, individualRequests, getStatusIcon, getStatusColor, isAdminView = false, onApproveReject, processingRequest, openApprovalModal }) => {
   return (
     <div className="overflow-x-auto">
@@ -422,14 +422,14 @@ const AttendanceRequestsTable: React.FC<{
                   {group.status === 'Pending' && (
                     <div className="flex gap-2">
                       <button
-                        onClick={() => openApprovalModal && openApprovalModal(group.ids[0], 'approve')}
+                        onClick={() => openApprovalModal && openApprovalModal(group.ids, 'approve')}
                         disabled={processingRequest === group.ids[0]}
                         className="px-2 py-1 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700 disabled:opacity-50"
                       >
                         {processingRequest === group.ids[0] ? '...' : 'Approve'}
                       </button>
                       <button
-                        onClick={() => openApprovalModal && openApprovalModal(group.ids[0], 'reject')}
+                        onClick={() => openApprovalModal && openApprovalModal(group.ids, 'reject')}
                         disabled={processingRequest === group.ids[0]}
                         className="px-2 py-1 bg-rose-600 text-white text-xs rounded hover:bg-rose-700 disabled:opacity-50"
                       >
@@ -535,7 +535,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
   const [processingRequest, setProcessingRequest] = useState<string | null>(null);
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [approvalAction, setApprovalAction] = useState<'approve' | 'reject'>('approve');
-  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [selectedRequestId, setSelectedRequestId] = useState<string | string[] | null>(null);
   const [approvalRemarks, setApprovalRemarks] = useState('');
   const [approvalValue, setApprovalValue] = useState('');
 
@@ -563,22 +563,44 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
     }
   };
 
-  const handleApproveReject = async (requestId: string, action: 'approve' | 'reject', remarks?: string, value?: string) => {
-    setProcessingRequest(requestId);
+  const handleApproveReject = async (requestId: string | string[], action: 'approve' | 'reject', remarks?: string, value?: string) => {
+    const requestIds = Array.isArray(requestId) ? requestId : [requestId];
+    const processingId = Array.isArray(requestId) ? requestId[0] : requestId; // Use first ID for UI state
+
+    setProcessingRequest(processingId as string);
     try {
-      const response = await fetch('/api/employee/approve', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          requestId,
-          action,
-          remarks,
-          value,
-          approvedBy: 'HR' // Assuming admin is HR, could be made dynamic
-        }),
-      });
+      let response;
+
+      if (requestIds.length > 1) {
+        // Use bulk action for multiple requests (ranged requests)
+        response = await fetch('/api/partner/bulk-action', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            action,
+            ids: requestIds,
+            remark: remarks,
+            value: value ? parseFloat(value) : undefined
+          }),
+        });
+      } else {
+        // Use single approve for individual requests
+        response = await fetch('/api/employee/approve', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            requestId: requestIds[0],
+            action,
+            remarks,
+            value,
+            approvedBy: 'HR' // Assuming admin is HR, could be made dynamic
+          }),
+        });
+      }
 
       const result = await response.json();
 
@@ -598,7 +620,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
     }
   };
 
-  const openApprovalModal = (requestId: string, action: 'approve' | 'reject') => {
+  const openApprovalModal = (requestId: string | string[], action: 'approve' | 'reject') => {
     setSelectedRequestId(requestId);
     setApprovalAction(action);
     setApprovalRemarks('');

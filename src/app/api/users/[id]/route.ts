@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
+import EmployeeHistory from '@/models/EmployeeHistory';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -41,10 +42,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
     const body = await request.json();
-    const { 
-      odId, 
-      name, 
-      email, 
+    const {
+      odId,
+      name,
+      email,
       designation,
       team,
       joiningDate,
@@ -95,7 +96,40 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       registeredUnderPartner,
       workingUnderPartner,
       workingTiming,
+      changedBy, // Who made the change
+      changeReason // Reason for the change
     } = body;
+
+    // Get current user data before update for history tracking
+    const currentUser = await User.findById(id);
+    if (!currentUser) {
+      return NextResponse.json(
+        { success: false, error: 'User not found' },
+        { status: 404 }
+      );
+    }
+
+    // Track changes for history fields
+    const historyFields = ['workingUnderPartner', 'designation', 'paidFrom', 'category', 'qualificationLevel', 'registeredUnderPartner'];
+    const historyEntries = [];
+
+    for (const field of historyFields) {
+      const newValue = body[field];
+      const oldValue = currentUser[field as keyof typeof currentUser];
+
+      // Check if the field value has changed
+      if (newValue !== undefined && String(newValue) !== String(oldValue || '')) {
+        historyEntries.push({
+          employeeId: id,
+          fieldName: field,
+          oldValue: String(oldValue || ''),
+          newValue: String(newValue || ''),
+          changedBy: changedBy || 'System',
+          changeReason: changeReason || 'Employee update',
+          changedAt: new Date()
+        });
+      }
+    }
 
     const user = await User.findByIdAndUpdate(
       id,
@@ -162,6 +196,16 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         { success: false, error: 'User not found' },
         { status: 404 }
       );
+    }
+
+    // Save history entries
+    if (historyEntries.length > 0) {
+      try {
+        await EmployeeHistory.insertMany(historyEntries);
+      } catch (historyError) {
+        console.error('Error saving employee history:', historyError);
+        // Don't fail the main update if history saving fails
+      }
     }
 
     // If extraInfo labels were updated for this user, propagate those labels

@@ -24,7 +24,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
 
   // UI State
   const [showAdditionalFields, setShowAdditionalFields] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'basic' | 'schedule' | 'extended'>('basic');
+  const [activeTab, setActiveTab] = useState<'basic' | 'schedule' | 'extended' | 'history'>('basic');
   const [showBulkUploadFormat, setShowBulkUploadFormat] = useState<boolean>(false);
 
   // Predefined Values State
@@ -49,6 +49,11 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
     value: string;
   }>({ type: 'team', value: '' });
   const [isSavingPredefinedValue, setIsSavingPredefinedValue] = useState<boolean>(false);
+
+  // History State
+  const [employeeHistory, setEmployeeHistory] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState<boolean>(false);
+  const [changeReason, setChangeReason] = useState<string>('');
 
   // Schedule Year Management State
   const [selectedScheduleYear, setSelectedScheduleYear] = useState<number>(new Date().getFullYear());
@@ -79,6 +84,26 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       setError(err instanceof Error ? err.message : 'Failed to fetch users');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Fetch employee history
+  const fetchEmployeeHistory = async (userId: string) => {
+    setHistoryLoading(true);
+    try {
+      const response = await fetch(`/api/users/${userId}/history`);
+      const result = await response.json();
+      if (result.success) {
+        setEmployeeHistory(result.data);
+      } else {
+        console.error('Failed to fetch employee history:', result.error);
+        setEmployeeHistory([]);
+      }
+    } catch (err) {
+      console.error('Failed to fetch employee history:', err);
+      setEmployeeHistory([]);
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
@@ -136,11 +161,15 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
     setAvailableScheduleYears(getAvailableScheduleYears(user));
     setSelectedScheduleYear(new Date().getFullYear()); // Default to current year
     setError(null);
+    // Fetch employee history
+    fetchEmployeeHistory(user._id);
   };
 
   const handleCancelEdit = () => {
     setEditingUser(null);
     setFormData({});
+    setEmployeeHistory([]);
+    setChangeReason('');
     setError(null);
   };
 
@@ -403,7 +432,11 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          changedBy: 'HR Admin', // You can make this dynamic based on logged-in user
+          changeReason: changeReason || 'Employee information update'
+        }),
       });
 
       const result = await response.json();
@@ -416,6 +449,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       setUsers(prev => prev.map(u => u._id === editingUser._id ? result.data : u));
       setEditingUser(null);
       setFormData({});
+      setEmployeeHistory([]);
+      setChangeReason('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save changes');
     } finally {
@@ -1043,6 +1078,16 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               >
                 Extended
               </button>
+              <button
+                onClick={() => setActiveTab('history')}
+                className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'history'
+                    ? 'bg-emerald-600 text-white'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                }`}
+              >
+                History
+              </button>
             </div>
           </div>
 
@@ -1571,6 +1616,95 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     <p className="text-[11px] text-slate-500">No additional info fields defined yet.</p>
                   )}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* History Tab */}
+          {activeTab === 'history' && (
+            <div className="md:col-span-2">
+              <div className="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
+                <h3 className="text-lg font-semibold text-slate-200 mb-4">Change History</h3>
+
+                {/* Change Reason Input */}
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-slate-300 mb-2">
+                    Reason for Changes (Optional)
+                  </label>
+                  <textarea
+                    value={changeReason}
+                    onChange={(e) => setChangeReason(e.target.value)}
+                    placeholder="Enter reason for the changes being made..."
+                    className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    rows={3}
+                  />
+                </div>
+
+                {/* History Table */}
+                {historyLoading ? (
+                  <div className="text-center py-8">
+                    <div className="text-slate-400">Loading history...</div>
+                  </div>
+                ) : employeeHistory.length === 0 ? (
+                  <div className="text-center py-8">
+                    <div className="text-slate-400">No change history found</div>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm text-slate-300">
+                      <thead className="bg-slate-950/50 text-slate-400 font-medium border-b border-slate-800">
+                        <tr>
+                          <th className="px-4 py-3">Field</th>
+                          <th className="px-4 py-3">Old Value</th>
+                          <th className="px-4 py-3">New Value</th>
+                          <th className="px-4 py-3">Changed By</th>
+                          <th className="px-4 py-3">Date</th>
+                          <th className="px-4 py-3">Reason</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800">
+                        {employeeHistory.map((entry, index) => (
+                          <tr key={index} className="hover:bg-slate-800/30">
+                            <td className="px-4 py-3">
+                              <span className="text-slate-200 font-medium">
+                                {entry.fieldName === 'workingUnderPartner' ? 'Work Partner' :
+                                 entry.fieldName === 'designation' ? 'Designation' :
+                                 entry.fieldName === 'paidFrom' ? 'Paid From' :
+                                 entry.fieldName === 'category' ? 'Category' :
+                                 entry.fieldName === 'qualificationLevel' ? 'Qualification' :
+                                 entry.fieldName === 'registeredUnderPartner' ? 'Reg. Partner' :
+                                 entry.fieldName}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="text-slate-400 line-through">{entry.oldValue || 'N/A'}</span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="text-emerald-400 font-medium">{entry.newValue || 'N/A'}</span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="text-slate-300">{entry.changedBy}</span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="text-slate-400 text-xs">
+                                {new Date(entry.changedAt).toLocaleDateString('en-US', {
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="text-slate-400 text-xs">{entry.changeReason || 'N/A'}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
           )}
