@@ -14,6 +14,8 @@ interface EmployeeMonthViewProps {
   error: string | null;
   onLoadAttendance: (employeeId: string, monthYear: string) => void;
   onDayClick?: (date: string, currentStatus: string) => void; // Added for interactivity
+  selectionStart?: string | null;
+  onSelectionStartChange?: (date: string | null) => void;
 }
 
 export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
@@ -27,8 +29,16 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
   isLoading,
   error,
   onLoadAttendance,
-  onDayClick
+  onDayClick,
+  selectionStart: externalSelectionStart,
+  onSelectionStartChange
 }) => {
+  // Selection state for range picking - use external state if provided
+  const [internalSelectionStart, setInternalSelectionStart] = React.useState<string | null>(null);
+  const [hoveredDate, setHoveredDate] = React.useState<string | null>(null);
+  
+  const selectionStart = externalSelectionStart !== undefined ? externalSelectionStart : internalSelectionStart;
+  const setSelectionStart = onSelectionStartChange || setInternalSelectionStart;
   // Try to find user details from the 'users' list first, otherwise fallback to summaries
   const userFromList = users.find(u => u._id === selectedEmployeeId);
   const summaryFromList = summaries.find((s) => s.userId === selectedEmployeeId);
@@ -369,56 +379,84 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                 const dateObj = new Date(selectedYear, selectedMonth - 1, day);
                 const isLate = rec ? isLateArrival(dateObj, rec.inTime) : false;
 
+                // Selection highlighting logic
+                const currentDateStr = `${selectedYear}-${String(selectedMonth).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                const isFutureDate = dateObj >= new Date();
+                const isSelectionStart = selectionStart === currentDateStr;
+                const isInRange = selectionStart && hoveredDate && (() => {
+                  const start = new Date(Math.min(new Date(selectionStart).getTime(), new Date(hoveredDate).getTime()));
+                  const end = new Date(Math.max(new Date(selectionStart).getTime(), new Date(hoveredDate).getTime()));
+                  return dateObj >= start && dateObj <= end;
+                })();
+
                 let borderClass = 'border-slate-700';
                 let bgClass = 'bg-slate-950/40';
                 let badgeClass = 'border-slate-700 bg-slate-800 text-slate-400';
                 let Icon = XCircle;
 
-                if (status === 'Present') {
-                    borderClass = isLate ? 'border-amber-500/50' : 'border-emerald-500/50'; // Amber border if late
-                    bgClass = isLate ? 'bg-amber-500/5' : 'bg-emerald-500/5';
-                    badgeClass = 'border-emerald-500/60 bg-emerald-500/15 text-emerald-100';
-                    Icon = CheckCircle;
-                } else if (status === 'Absent') {
-                    borderClass = 'border-rose-500/50';
-                    bgClass = 'bg-rose-500/5';
-                    badgeClass = 'border-rose-500/60 bg-rose-500/15 text-rose-100';
-                    Icon = XCircle;
-                } else if (status === 'Leave' || status === 'On leave') {
-                    borderClass = 'border-sky-500/50';
-                    bgClass = 'bg-sky-500/5';
-                    badgeClass = 'border-sky-500/60 bg-sky-500/15 text-sky-100';
-                    Icon = CalendarOff;
-                } else if (status === 'Holiday' || status === 'Week Off') {
-                    borderClass = 'border-amber-500/50';
-                    bgClass = 'bg-amber-500/5';
-                    badgeClass = 'border-amber-500/60 bg-amber-500/15 text-amber-100';
-                    Icon = Briefcase;
-                } else if (status === 'HalfDay' || status === 'Half Day (HD)') {
-                    borderClass = 'border-orange-500/50';
-                    bgClass = 'bg-orange-500/5';
-                    badgeClass = 'border-orange-500/60 bg-orange-500/15 text-orange-100';
-                    Icon = AlertTriangle;
-                } else if (typeof status === 'string') {
-                    // Fallback for new types (OHD, WFH, OS-P, etc.)
-                    // Treat them generally as "Provisional/Special" - Blue/Purple?
-                    // Let's use a Generic Present-like style but maybe different color
-                    borderClass = 'border-indigo-500/50';
-                    bgClass = 'bg-indigo-500/5';
-                    badgeClass = 'border-indigo-500/60 bg-indigo-500/15 text-indigo-100';
-                    Icon = Briefcase;
+                // Apply selection highlighting
+                if (isSelectionStart) {
+                  borderClass = 'border-dashed border-2 border-blue-400';
+                  bgClass = 'bg-blue-500/10';
+                } else if (isInRange && isFutureDate) {
+                  borderClass = 'border-blue-300/50';
+                  bgClass = 'bg-blue-500/5';
+                } else {
+                  // Original status-based styling
+                  if (status === 'Present') {
+                      borderClass = isLate ? 'border-amber-500/50' : 'border-emerald-500/50'; // Amber border if late
+                      bgClass = isLate ? 'bg-amber-500/5' : 'bg-emerald-500/5';
+                      badgeClass = 'border-emerald-500/60 bg-emerald-500/15 text-emerald-100';
+                      Icon = CheckCircle;
+                  } else if (status === 'Absent') {
+                      borderClass = 'border-rose-500/50';
+                      bgClass = 'bg-rose-500/5';
+                      badgeClass = 'border-rose-500/60 bg-rose-500/15 text-rose-100';
+                      Icon = XCircle;
+                  } else if (status === 'Leave' || status === 'On leave') {
+                      borderClass = 'border-sky-500/50';
+                      bgClass = 'bg-sky-500/5';
+                      badgeClass = 'border-sky-500/60 bg-sky-500/15 text-sky-100';
+                      Icon = CalendarOff;
+                  } else if (status === 'Holiday' || status === 'Week Off') {
+                      borderClass = 'border-amber-500/50';
+                      bgClass = 'bg-amber-500/5';
+                      badgeClass = 'border-amber-500/60 bg-amber-500/15 text-amber-100';
+                      Icon = Briefcase;
+                  } else if (status === 'HalfDay' || status === 'Half Day (HD)') {
+                      borderClass = 'border-orange-500/50';
+                      bgClass = 'bg-orange-500/5';
+                      badgeClass = 'border-orange-500/60 bg-orange-500/15 text-orange-100';
+                      Icon = AlertTriangle;
+                  } else if (typeof status === 'string') {
+                      // Fallback for new types (OHD, WFH, OS-P, etc.)
+                      // Treat them generally as "Provisional/Special" - Blue/Purple?
+                      // Let's use a Generic Present-like style but maybe different color
+                      borderClass = 'border-indigo-500/50';
+                      bgClass = 'bg-indigo-500/5';
+                      badgeClass = 'border-indigo-500/60 bg-indigo-500/15 text-indigo-100';
+                      Icon = Briefcase;
+                  }
                 }
 
                 return (
                   <div
                     key={day}
                     onClick={() => {
-                        if (onDayClick && status === 'Absent') {
+                        if (onDayClick) {
                             const dateStr = `${selectedYear}-${String(selectedMonth).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-                            onDayClick(dateStr, status);
+                            onDayClick(dateStr, status || 'No Record');
                         }
                     }}
-                    className={`h-24 rounded-md border px-2 py-1 flex flex-col gap-1 text-[11px] ${borderClass} ${bgClass} ${onDayClick && status === 'Absent' ? 'cursor-pointer hover:ring-2 hover:ring-emerald-500/50 transition-shadow' : ''}`}
+                    onMouseEnter={() => {
+                      if (selectionStart && isFutureDate) {
+                        setHoveredDate(currentDateStr);
+                      }
+                    }}
+                    onMouseLeave={() => {
+                      setHoveredDate(null);
+                    }}
+                    className={`h-24 rounded-md border px-2 py-1 flex flex-col gap-1 text-[11px] ${borderClass} ${bgClass} ${onDayClick ? 'cursor-pointer hover:ring-2 hover:ring-emerald-500/50 transition-shadow' : ''}`}
                   >
                     <div className="flex items-center justify-between text-slate-300">
                       <span className="font-semibold">{day}</span>

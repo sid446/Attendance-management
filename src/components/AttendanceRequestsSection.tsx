@@ -21,6 +21,10 @@ interface AttendanceRequest {
   status: 'Pending' | 'Approved' | 'Rejected';
   startTime?: string;
   endTime?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  rejectedBy?: string;
+  rejectedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -39,6 +43,10 @@ interface DateRangeGroup {
   endDate: string;
   startTime?: string;
   endTime?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  rejectedBy?: string;
+  rejectedAt?: string;
   createdAt: string;
   ids: string[]; // Array of request IDs for this range
 }
@@ -47,10 +55,19 @@ interface AttendanceRequestsSectionProps {
   userId?: string;
   partnerName?: string;
   isEmployeeView?: boolean;
+  isAdminView?: boolean;
+  userRole?: 'HR' | 'Partner';
+  onRequestUpdate?: () => void;
 }
 
 // Component for displaying a range of consecutive dates as a single block
-const DateRangeRequestBlock: React.FC<{ rangeGroup: DateRangeGroup }> = ({ rangeGroup }) => {
+const DateRangeRequestBlock: React.FC<{
+  rangeGroup: DateRangeGroup;
+  isAdminView?: boolean;
+  onApproveReject?: (requestId: string, action: 'approve' | 'reject', remarks?: string) => void;
+  processingRequest?: string | null;
+  openApprovalModal?: (requestId: string, action: 'approve' | 'reject') => void;
+}> = ({ rangeGroup, isAdminView = false, onApproveReject, processingRequest, openApprovalModal }) => {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'Approved':
@@ -147,6 +164,27 @@ const DateRangeRequestBlock: React.FC<{ rangeGroup: DateRangeGroup }> = ({ range
             </div>
           )}
 
+          {(rangeGroup.approvedBy || rangeGroup.rejectedBy) && (
+            <div className="mb-2">
+              <span className="font-medium text-gray-700">
+                {rangeGroup.status === 'Approved' ? 'Approved' : 'Rejected'} by: </span>
+              <span className="text-gray-900">
+                {rangeGroup.approvedBy || rangeGroup.rejectedBy}
+                {(rangeGroup.approvedAt || rangeGroup.rejectedAt) && (
+                  <span className="text-xs text-gray-500 ml-2">
+                    on {new Date(rangeGroup.approvedAt || rangeGroup.rejectedAt!).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </span>
+                )}
+              </span>
+            </div>
+          )}
+
           <div className="text-xs text-gray-500">
             Requested on {new Date(rangeGroup.createdAt).toLocaleDateString('en-US', {
               year: 'numeric',
@@ -167,6 +205,24 @@ const DateRangeRequestBlock: React.FC<{ rangeGroup: DateRangeGroup }> = ({ range
           }`}>
             {rangeGroup.status}
           </span>
+          {isAdminView && rangeGroup.status === 'Pending' && (
+            <div className="flex gap-2 ml-4">
+              <button
+                onClick={() => openApprovalModal && openApprovalModal(rangeGroup.ids[0], 'approve')}
+                disabled={processingRequest === rangeGroup.ids[0]}
+                className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 disabled:opacity-50"
+              >
+                {processingRequest === rangeGroup.ids[0] ? 'Processing...' : 'Approve'}
+              </button>
+              <button
+                onClick={() => openApprovalModal && openApprovalModal(rangeGroup.ids[0], 'reject')}
+                disabled={processingRequest === rangeGroup.ids[0]}
+                className="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 disabled:opacity-50"
+              >
+                {processingRequest === rangeGroup.ids[0] ? 'Processing...' : 'Reject'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -250,6 +306,10 @@ const groupRequestsIntoRanges = (requests: AttendanceRequest[]): {
           endDate: range[range.length - 1].date,
           startTime: firstRequest.startTime,
           endTime: firstRequest.endTime,
+          approvedBy: firstRequest.approvedBy,
+          approvedAt: firstRequest.approvedAt,
+          rejectedBy: firstRequest.rejectedBy,
+          rejectedAt: firstRequest.rejectedAt,
           createdAt: firstRequest.createdAt,
           ids: range.map(r => r._id)
         });
@@ -266,7 +326,11 @@ const AttendanceRequestsTable: React.FC<{
   individualRequests: AttendanceRequest[];
   getStatusIcon: (status: string) => React.ReactNode;
   getStatusColor: (status: string) => string;
-}> = ({ rangeGroups, individualRequests, getStatusIcon, getStatusColor }) => {
+  isAdminView?: boolean;
+  onApproveReject?: (requestId: string, action: 'approve' | 'reject', remarks?: string) => void;
+  processingRequest?: string | null;
+  openApprovalModal?: (requestId: string, action: 'approve' | 'reject') => void;
+}> = ({ rangeGroups, individualRequests, getStatusIcon, getStatusColor, isAdminView = false, onApproveReject, processingRequest, openApprovalModal }) => {
   return (
     <div className="overflow-x-auto">
       <table className="w-full border-collapse">
@@ -274,9 +338,6 @@ const AttendanceRequestsTable: React.FC<{
           <tr className="bg-slate-800/50">
             <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider border-b border-slate-700">
               Employee
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider border-b border-slate-700">
-              Type
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider border-b border-slate-700">
               Date Range
@@ -294,15 +355,22 @@ const AttendanceRequestsTable: React.FC<{
               Status
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider border-b border-slate-700">
+              Action By
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider border-b border-slate-700">
               Partner
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider border-b border-slate-700">
               Submitted
             </th>
+            {isAdminView && (
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider border-b border-slate-700">
+                Actions
+              </th>
+            )}
           </tr>
         </thead>
         <tbody className="bg-slate-900/30">
-          {/* Range Groups */}
           {rangeGroups.map((group) => (
             <tr key={`range-${group.ids.join('-')}`} className="hover:bg-slate-800/30 transition-colors">
               <td className="px-4 py-3 border-b border-slate-700">
@@ -310,11 +378,6 @@ const AttendanceRequestsTable: React.FC<{
                   <div className="text-sm font-medium text-slate-200">{group.userName}</div>
                   <div className="text-xs text-slate-400">{group.designation || 'Employee'}</div>
                 </div>
-              </td>
-              <td className="px-4 py-3 border-b border-slate-700">
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-900/40 text-blue-300 border border-blue-700/60">
-                  Range ({group.dates.length} days)
-                </span>
               </td>
               <td className="px-4 py-3 border-b border-slate-700">
                 <div className="text-sm text-slate-200">
@@ -341,6 +404,11 @@ const AttendanceRequestsTable: React.FC<{
                 </div>
               </td>
               <td className="px-4 py-3 border-b border-slate-700">
+                <span className="text-sm text-slate-300">
+                  {group.approvedBy || group.rejectedBy || group.partnerName}
+                </span>
+              </td>
+              <td className="px-4 py-3 border-b border-slate-700">
                 <span className="text-sm text-slate-300">{group.partnerName}</span>
               </td>
               <td className="px-4 py-3 border-b border-slate-700">
@@ -349,6 +417,28 @@ const AttendanceRequestsTable: React.FC<{
                   <div className="text-xs">{new Date(group.createdAt).toLocaleTimeString()}</div>
                 </div>
               </td>
+              {isAdminView && (
+                <td className="px-4 py-3 border-b border-slate-700">
+                  {group.status === 'Pending' && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => openApprovalModal && openApprovalModal(group.ids[0], 'approve')}
+                        disabled={processingRequest === group.ids[0]}
+                        className="px-2 py-1 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700 disabled:opacity-50"
+                      >
+                        {processingRequest === group.ids[0] ? '...' : 'Approve'}
+                      </button>
+                      <button
+                        onClick={() => openApprovalModal && openApprovalModal(group.ids[0], 'reject')}
+                        disabled={processingRequest === group.ids[0]}
+                        className="px-2 py-1 bg-rose-600 text-white text-xs rounded hover:bg-rose-700 disabled:opacity-50"
+                      >
+                        {processingRequest === group.ids[0] ? '...' : 'Reject'}
+                      </button>
+                    </div>
+                  )}
+                </td>
+              )}
             </tr>
           ))}
 
@@ -360,11 +450,6 @@ const AttendanceRequestsTable: React.FC<{
                   <div className="text-sm font-medium text-slate-200">{request.userName}</div>
                   <div className="text-xs text-slate-400">{request.userId?.designation || 'Employee'}</div>
                 </div>
-              </td>
-              <td className="px-4 py-3 border-b border-slate-700">
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-900/40 text-gray-300 border border-gray-700/60">
-                  Single Day
-                </span>
               </td>
               <td className="px-4 py-3 border-b border-slate-700">
                 <div className="text-sm text-slate-200">
@@ -391,6 +476,11 @@ const AttendanceRequestsTable: React.FC<{
                 </div>
               </td>
               <td className="px-4 py-3 border-b border-slate-700">
+                <span className="text-sm text-slate-300">
+                  {request.approvedBy || request.rejectedBy || request.partnerName}
+                </span>
+              </td>
+              <td className="px-4 py-3 border-b border-slate-700">
                 <span className="text-sm text-slate-300">{request.partnerName}</span>
               </td>
               <td className="px-4 py-3 border-b border-slate-700">
@@ -399,6 +489,28 @@ const AttendanceRequestsTable: React.FC<{
                   <div className="text-xs">{new Date(request.createdAt).toLocaleTimeString()}</div>
                 </div>
               </td>
+              {isAdminView && (
+                <td className="px-4 py-3 border-b border-slate-700">
+                  {request.status === 'Pending' && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => openApprovalModal && openApprovalModal(request._id, 'approve')}
+                        disabled={processingRequest === request._id}
+                        className="px-2 py-1 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700 disabled:opacity-50"
+                      >
+                        {processingRequest === request._id ? '...' : 'Approve'}
+                      </button>
+                      <button
+                        onClick={() => openApprovalModal && openApprovalModal(request._id, 'reject')}
+                        disabled={processingRequest === request._id}
+                        className="px-2 py-1 bg-rose-600 text-white text-xs rounded hover:bg-rose-700 disabled:opacity-50"
+                      >
+                        {processingRequest === request._id ? '...' : 'Reject'}
+                      </button>
+                    </div>
+                  )}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -410,13 +522,22 @@ const AttendanceRequestsTable: React.FC<{
 export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps> = ({
   userId,
   partnerName,
-  isEmployeeView = false
+  isEmployeeView = false,
+  isAdminView = false,
+  userRole = 'Partner',
+  onRequestUpdate
 }) => {
   const [requests, setRequests] = useState<AttendanceRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'Pending' | 'Approved' | 'Rejected'>('all');
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('table');
+  const [processingRequest, setProcessingRequest] = useState<string | null>(null);
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
+  const [approvalAction, setApprovalAction] = useState<'approve' | 'reject'>('approve');
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [approvalRemarks, setApprovalRemarks] = useState('');
+  const [approvalValue, setApprovalValue] = useState('');
 
   const fetchRequests = async () => {
     try {
@@ -440,6 +561,64 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleApproveReject = async (requestId: string, action: 'approve' | 'reject', remarks?: string, value?: string) => {
+    setProcessingRequest(requestId);
+    try {
+      const response = await fetch('/api/employee/approve', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          requestId,
+          action,
+          remarks,
+          value,
+          approvedBy: 'HR' // Assuming admin is HR, could be made dynamic
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        // Refresh the requests
+        await fetchRequests();
+        if (onRequestUpdate) {
+          onRequestUpdate();
+        }
+      } else {
+        setError(result.error || 'Failed to process request');
+      }
+    } catch (err) {
+      setError('Failed to process request');
+    } finally {
+      setProcessingRequest(null);
+    }
+  };
+
+  const openApprovalModal = (requestId: string, action: 'approve' | 'reject') => {
+    setSelectedRequestId(requestId);
+    setApprovalAction(action);
+    setApprovalRemarks('');
+    setApprovalValue('');
+    setShowApprovalModal(true);
+  };
+
+  const closeApprovalModal = () => {
+    setShowApprovalModal(false);
+    setSelectedRequestId(null);
+    setApprovalRemarks('');
+    setApprovalValue('');
+  };
+
+  const handleModalSubmit = async () => {
+    if (!selectedRequestId) return;
+
+    await handleApproveReject(selectedRequestId, approvalAction, approvalRemarks, approvalValue);
+    setShowApprovalModal(false);
+    setSelectedRequestId(null);
   };
 
   useEffect(() => {
@@ -471,6 +650,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
         'End Time': group.endTime || '',
         'Reason': group.reason || '',
         'Status': group.status,
+        'Action By': group.approvedBy || group.rejectedBy || group.partnerName,
         'Partner Remarks': group.partnerRemarks || '',
         'Submitted Date': new Date(group.createdAt).toLocaleDateString(),
         'Submitted Time': new Date(group.createdAt).toLocaleTimeString()
@@ -491,6 +671,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
         'End Time': request.endTime || '',
         'Reason': request.reason || '',
         'Status': request.status,
+        'Action By': request.approvedBy || request.rejectedBy || request.partnerName,
         'Partner Remarks': request.partnerRemarks || '',
         'Submitted Date': new Date(request.createdAt).toLocaleDateString(),
         'Submitted Time': new Date(request.createdAt).toLocaleTimeString()
@@ -514,6 +695,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
       { wch: 10 }, // End Time
       { wch: 20 }, // Reason
       { wch: 10 }, // Status
+      { wch: 15 }, // Action By
       { wch: 20 }, // Partner Remarks
       { wch: 12 }, // Submitted Date
       { wch: 12 }  // Submitted Time
@@ -650,12 +832,22 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
           individualRequests={filteredIndividualRequests}
           getStatusIcon={getStatusIcon}
           getStatusColor={getStatusColor}
+          isAdminView={isAdminView}
+          onApproveReject={handleApproveReject}
+          processingRequest={processingRequest}
+          openApprovalModal={openApprovalModal}
         />
       ) : (
         <div className="space-y-3">
-          {/* Render range groups first */}
           {filteredRangeGroups.map((rangeGroup) => (
-            <DateRangeRequestBlock key={`range-${rangeGroup.ids.join('-')}`} rangeGroup={rangeGroup} />
+            <DateRangeRequestBlock
+              key={`range-${rangeGroup.ids.join('-')}`}
+              rangeGroup={rangeGroup}
+              isAdminView={isAdminView}
+              onApproveReject={handleApproveReject}
+              processingRequest={processingRequest}
+              openApprovalModal={openApprovalModal}
+            />
           ))}
 
           {/* Render individual requests */}
@@ -709,12 +901,112 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
                 </div>
               )}
 
+              {(request.approvedBy || request.rejectedBy) && (
+                <div className="mb-3">
+                  <p className="text-xs font-medium text-slate-300 mb-1">
+                    {request.status === 'Approved' ? 'Approved' : 'Rejected'} by:
+                  </p>
+                  <p className="text-sm text-slate-400 bg-slate-900/50 rounded px-3 py-2">
+                    {request.approvedBy || request.rejectedBy}
+                    {(request.approvedAt || request.rejectedAt) && (
+                      <span className="text-xs text-slate-500 ml-2">
+                        on {new Date(request.approvedAt || request.rejectedAt!).toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </span>
+                    )}
+                  </p>
+                </div>
+              )}
+
               <div className="flex items-center justify-between text-xs text-slate-500">
                 <span>Partner: {request.partnerName}</span>
                 <span>Submitted: {new Date(request.createdAt).toLocaleDateString()}</span>
               </div>
+
+              {isAdminView && request.status === 'Pending' && (
+                <div className="flex gap-2 mt-3 pt-3 border-t border-slate-700">
+                  <button
+                    onClick={() => openApprovalModal(request._id, 'approve')}
+                    disabled={processingRequest === request._id}
+                    className="flex-1 px-3 py-2 bg-emerald-600 text-white text-sm rounded hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                  >
+                    {processingRequest === request._id ? 'Processing...' : 'Approve'}
+                  </button>
+                  <button
+                    onClick={() => openApprovalModal(request._id, 'reject')}
+                    disabled={processingRequest === request._id}
+                    className="flex-1 px-3 py-2 bg-rose-600 text-white text-sm rounded hover:bg-rose-700 disabled:opacity-50 transition-colors"
+                  >
+                    {processingRequest === request._id ? 'Processing...' : 'Reject'}
+                  </button>
+                </div>
+              )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Approval Modal */}
+      {showApprovalModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+            <h3 className="text-lg text-blackhave a  font-semibold mb-4">
+              {approvalAction === 'approve' ? 'Approve Request' : 'Reject Request'}
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Remarks
+                </label>
+                <textarea
+                  value={approvalRemarks}
+                  onChange={(e) => setApprovalRemarks(e.target.value)}
+                  className="w-full px-3 py-2 border text-black border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  rows={3}
+                  placeholder="Enter remarks for this action..."
+                />
+              </div>
+              {approvalAction === 'approve' && userRole === 'HR' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Value
+                  </label>
+                  <input
+                    type="number"
+                    value={approvalValue}
+                    onChange={(e) => setApprovalValue(e.target.value)}
+                    className="w-full px-3 py-2 border text-black border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter value..."
+                    step="0.01"
+                  />
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end space-x-3 mt-6">
+              <button
+                onClick={closeApprovalModal}
+                className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleModalSubmit}
+                disabled={processingRequest === selectedRequestId}
+                className={`px-4 py-2 text-white rounded-md disabled:opacity-50 ${
+                  approvalAction === 'approve'
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                    : 'bg-rose-600 hover:bg-rose-700'
+                }`}
+              >
+                {processingRequest === selectedRequestId ? 'Processing...' : approvalAction === 'approve' ? 'Approve' : 'Reject'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </section>

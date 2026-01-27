@@ -846,13 +846,23 @@ export default function AttendanceUpload() {
 
       const days: AttendanceRecord[] = Object.entries(recordsObj).map(([dateKey, value]: [string, any]) => {
         let status: any = 'Present';
-        if (value.typeOfPresence === 'Leave' || value.typeOfPresence === 'On leave') status = 'On leave';
-        else if (value.typeOfPresence === 'Holiday') status = 'Holiday';
-        else if (value.halfDay) status = 'HalfDay';
-        else if (!value.checkin && !value.checkout && (value.typeOfPresence !== 'Leave' && value.typeOfPresence !== 'On leave') && value.typeOfPresence !== 'Holiday') status = 'Absent';
         
-        // Fallback for explicit absent if type isn't set but no time
-         if (status === 'Present' && !value.checkin && !value.checkout) status = 'Absent';
+        // Determine status based on typeOfPresence
+        if (value.typeOfPresence === 'Leave' || value.typeOfPresence === 'On leave') {
+          status = 'Leave';
+        } else if (value.typeOfPresence === 'Holiday') {
+          status = 'Holiday';
+        } else if (value.typeOfPresence === 'Absent') {
+          status = 'Absent';
+        } else if (value.halfDay) {
+          status = 'HalfDay';
+        } else if (value.typeOfPresence && value.typeOfPresence.includes('Present')) {
+          status = 'Present';
+        } else if (!value.checkin && !value.checkout) {
+          status = 'Absent';
+        } else {
+          status = 'Present'; // Default for any other case with times
+        }
 
         return {
           id: doc.userId?._id ? String(doc.userId._id) : '',
@@ -1109,7 +1119,10 @@ export default function AttendanceUpload() {
 
             {/* Attendance Requests Section */}
             {activeSection === 'requests' && (
-              <AttendanceRequestsSection />
+              <AttendanceRequestsSection 
+                isAdminView={true}
+                userRole="HR"
+              />
             )}
 
             {/* Holiday Management Section */}

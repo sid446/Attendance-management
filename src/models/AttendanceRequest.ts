@@ -13,6 +13,12 @@ export interface IAttendanceRequest extends Document {
   startTime?: string;
   endTime?: string;
   partnerRemarks?: string;
+  hrRemarks?: string; // HR remarks when approved by HR
+  hrValue?: string; // HR value when approved by HR
+  approvedBy?: string; // 'HR' or partner name
+  approvedAt?: Date;
+  rejectedBy?: string; // 'HR' or partner name
+  rejectedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -34,7 +40,13 @@ const AttendanceRequestSchema: Schema = new Schema(
     },
     startTime: { type: String },
     endTime: { type: String },
-    partnerRemarks: { type: String }
+    partnerRemarks: { type: String },
+    hrRemarks: { type: String },
+    hrValue: { type: String },
+    approvedBy: { type: String },
+    approvedAt: { type: Date },
+    rejectedBy: { type: String },
+    rejectedAt: { type: Date }
   },
   {
     timestamps: true,

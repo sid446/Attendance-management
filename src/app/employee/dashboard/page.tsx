@@ -46,6 +46,9 @@ export default function EmployeeDashboard() {
   const [futureEndTime, setFutureEndTime] = useState('');
   const [sendingFutureRequest, setSendingFutureRequest] = useState(false);
 
+  // Calendar selection state
+  const [calendarSelectionStart, setCalendarSelectionStart] = useState<string | null>(null);
+
   useEffect(() => {
     const stored = localStorage.getItem('employeeUser');
     if (!stored) {
@@ -123,14 +126,59 @@ export default function EmployeeDashboard() {
   const handleMonthChange = (val: string) => {
       setMonthYear(val);
       if (user) fetchAttendance(user._id, val);
+      // Clear any ongoing selection when changing months
+      setCalendarSelectionStart(null);
+      setFutureStartDate('');
+      setFutureEndDate('');
+      setFutureReason('');
+      setFutureStartTime('');
+      setFutureEndTime('');
   };
 
   const handleDayClick = (date: string) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const clickedDate = new Date(date);
+    clickedDate.setHours(0, 0, 0, 0);
+    
+    if (clickedDate >= today) {
+      // Future date - handle future request
+      if (!futureStartDate) {
+        // First future date clicked - set as start date, don't open modal yet
+        setFutureStartDate(date);
+        setFutureEndDate(date); // Default to same date
+        setFutureType('On leave');
+        setFutureReason('');
+        setFutureStartTime('');
+        setFutureEndTime('');
+        setCalendarSelectionStart(date); // Set calendar selection for highlighting
+        // Don't open modal yet - let user select second date
+      } else if (futureStartDate === date) {
+        // Clicking the same date - open modal for single date request
+        setShowFutureModal(true);
+        setCalendarSelectionStart(null); // Clear calendar selection
+      } else {
+        // Second future date clicked - set as end date and open modal
+        const start = new Date(futureStartDate);
+        const end = new Date(date);
+        if (end >= start) {
+          setFutureEndDate(date);
+        } else {
+          // If clicked date is before start, swap them
+          setFutureEndDate(futureStartDate);
+          setFutureStartDate(date);
+        }
+        setShowFutureModal(true);
+        setCalendarSelectionStart(null); // Clear calendar selection
+      }
+    } else {
+      // Past date - handle correction request
       setSelectedDate(date);
       setRequestStatus('On leave');
       setRequestReason('');
       setStartTime('');
       setEndTime('');
+    }
   };
 
   const submitRequest = async () => {
@@ -287,6 +335,7 @@ export default function EmployeeDashboard() {
               setFutureReason('');
               setFutureStartTime('');
               setFutureEndTime('');
+              setCalendarSelectionStart(null);
           } else {
               alert(json.error || 'Failed to send request');
           }
@@ -354,6 +403,34 @@ export default function EmployeeDashboard() {
                   Apply Future Leave
                </button>
 
+               {futureStartDate && (
+                 <div className="flex gap-2">
+                   <button 
+                     onClick={() => setShowFutureModal(true)}
+                     className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors animate-pulse"
+                   >
+                     {futureStartDate === futureEndDate 
+                       ? `Request for ${futureStartDate}` 
+                       : `Request ${futureStartDate} to ${futureEndDate}`
+                     }
+                   </button>
+                   <button 
+                     onClick={() => {
+                       setFutureStartDate('');
+                       setFutureEndDate('');
+                       setFutureReason('');
+                       setFutureStartTime('');
+                       setFutureEndTime('');
+                       setCalendarSelectionStart(null);
+                     }}
+                     className="bg-gray-600 hover:bg-gray-500 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                     title="Clear selection"
+                   >
+                     ✕
+                   </button>
+                 </div>
+               )}
+
                <button onClick={handleLogout} className="flex items-center gap-2 hover:text-rose-400 transition-colors text-sm">
                    <LogOut className="w-4 h-4" /> Sign Out
                </button>
@@ -374,6 +451,8 @@ export default function EmployeeDashboard() {
               error={fetchError}
               onLoadAttendance={() => user && fetchAttendance(user._id, monthYear)}
               onDayClick={handleDayClick}
+              selectionStart={calendarSelectionStart}
+              onSelectionStartChange={setCalendarSelectionStart}
            />
        </main>
 
@@ -453,11 +532,25 @@ export default function EmployeeDashboard() {
                <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
                    <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
                        <h3 className="font-semibold text-white">Future Request</h3>
-                       <button onClick={() => setShowFutureModal(false)} className="text-slate-500 hover:text-white"><X className="w-5 h-5"/></button>
+                       <button onClick={() => {
+                         setShowFutureModal(false);
+                         setFutureStartDate('');
+                         setFutureEndDate('');
+                         setFutureReason('');
+                         setFutureStartTime('');
+                         setFutureEndTime('');
+                         setCalendarSelectionStart(null);
+                       }} className="text-slate-500 hover:text-white"><X className="w-5 h-5"/></button>
                    </div>
                    <div className="p-6 space-y-4">
                        <div className="p-3 bg-indigo-900/20 border border-indigo-500/30 rounded-lg text-indigo-200 text-sm">
-                           Apply for upcoming leaves or special attendance.
+                           {futureStartDate === futureEndDate 
+                             ? `Selected date: ${futureStartDate}`
+                             : `Selected range: ${futureStartDate} to ${futureEndDate}`
+                           }
+                           <div className="mt-2 text-xs text-indigo-300">
+                             📅 Dates selected from calendar. Click another date to change range, or proceed with request.
+                           </div>
                        </div>
 
                        <div className="grid grid-cols-2 gap-4">
@@ -468,19 +561,8 @@ export default function EmployeeDashboard() {
                                <input 
                                  type="date" 
                                  value={futureStartDate}
-                                 onChange={(e) => {
-                                     const selectedDate = e.target.value;
-                                     const day = new Date(selectedDate).getDay();
-                                     if (day === 0) {
-                                         alert('Sundays are not allowed for leave applications.');
-                                         return;
-                                     }
-                                     setFutureStartDate(selectedDate);
-                                     if (TIMED_CATEGORIES.includes(futureType)) {
-                                         setFutureEndDate(selectedDate);
-                                     }
-                                 }}
-                                 className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-indigo-500"
+                                 readOnly
+                                 className="w-full bg-slate-800 border border-slate-600 rounded-lg p-2.5 text-slate-300 cursor-not-allowed"
                                />
                            </div>
                            {!TIMED_CATEGORIES.includes(futureType) && (
@@ -489,17 +571,8 @@ export default function EmployeeDashboard() {
                                    <input 
                                      type="date" 
                                      value={futureEndDate}
-                                     onChange={(e) => {
-                                         const selectedDate = e.target.value;
-                                         const day = new Date(selectedDate).getDay();
-                                         if (day === 0) {
-                                             alert('Sundays are not allowed for leave applications.');
-                                             return;
-                                         }
-                                         setFutureEndDate(selectedDate);
-                                     }}
-                                     min={futureStartDate}
-                                     className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-indigo-500"
+                                     readOnly
+                                     className="w-full bg-slate-800 border border-slate-600 rounded-lg p-2.5 text-slate-300 cursor-not-allowed"
                                    />
                                </div>
                            )}
