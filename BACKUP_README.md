@@ -5,11 +5,12 @@ This guide explains how to backup and restore your attendance application data u
 ## Overview
 
 The backup system provides:
-- **Full database backups** of all MongoDB collections
+- **Full database backups** stored securely in MongoDB
 - **Manual backup creation** via UI or API
 - **Automated backup scripts** for scheduled backups
 - **Restore functionality** to recover data from backups
-- **Backup management** with cleanup of old files
+- **Backup management** with automatic cleanup
+- **Vercel-compatible** - works on serverless platforms
 
 ## Data Collections Backed Up
 
@@ -22,6 +23,18 @@ The following collections are included in backups:
 - `machineformats` - Machine format settings
 - `predefinedvalues` - Predefined dropdown values
 
+## Backup Storage
+
+**✅ Backups are stored securely in your MongoDB database** in a dedicated `backups` collection.
+
+### Advantages of MongoDB Storage:
+- **Vercel Compatible**: Works perfectly on serverless platforms like Vercel
+- **Always Accessible**: Backups survive server restarts and deployments
+- **Web Interface**: Can be managed through your application UI
+- **Automatic Cleanup**: Old backups are automatically removed after 90 days
+- **No File System**: No filesystem permissions or storage issues
+- **Database Transactions**: Backups are stored atomically
+
 ## Manual Backup (via UI)
 
 1. **Access Backup Management**:
@@ -31,10 +44,10 @@ The following collections are included in backups:
 2. **Create Backup**:
    - Click "Create New Backup" button
    - Wait for the backup process to complete
-   - The backup file will be saved to `./backups/` directory
+   - The backup will be stored securely in your MongoDB database
 
 3. **View Available Backups**:
-   - See all available backup files with creation dates and sizes
+   - See all available backups with creation dates and sizes
    - View which collections are included in each backup
 
 ## Manual Backup (via Command Line)
@@ -79,29 +92,16 @@ curl -X POST http://localhost:3000/api/backup/restore \
 4. Set action to run: `cmd.exe`
 5. Arguments: `/c cd /d "C:\path\to\your\app" && npm run backup`
 
-## Backup File Structure
+## Backup Storage
 
-Backup files are stored as JSON in the `./backups/` directory with naming:
-```
-backup_2024-01-27T10-30-00-000Z.json
-```
+**✅ Backups are stored securely in your MongoDB database** in a dedicated `backups` collection.
 
-Each backup contains:
-```json
-{
-  "metadata": {
-    "timestamp": "2024-01-27T10:30:00.000Z",
-    "collections": ["users", "attendances", ...],
-    "mongooseVersion": "9.1.2",
-    "nodeVersion": "v20.x.x"
-  },
-  "data": {
-    "users": [...],
-    "attendances": [...],
-    ...
-  }
-}
-```
+### Advantages of MongoDB Storage:
+- **Vercel Compatible**: Works perfectly on serverless platforms like Vercel
+- **Always Accessible**: Backups survive server restarts and deployments
+- **Web Interface**: Can be managed through your application UI
+- **Automatic Cleanup**: Old backups are automatically removed after 90 days
+- **No File System**: No filesystem permissions or storage issues
 
 ## Backup Storage Recommendations
 
@@ -162,7 +162,7 @@ POST /api/backup/restore
 Content-Type: application/json
 
 {
-  "fileName": "backup_2024-01-27T10-30-00-000Z.json"
+  "backupId": "507f1f77bcf86cd799439011"
 }
 ```
 
@@ -181,7 +181,7 @@ Content-Type: application/json
 - Check available disk space
 
 ### Restore Fails:
-- Verify backup file exists and is valid JSON
+- Verify backup ID exists in database
 - Check database write permissions
 - Ensure application has database connection
 

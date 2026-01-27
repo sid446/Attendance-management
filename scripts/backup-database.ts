@@ -1,7 +1,6 @@
 #!/usr/bin/env tsx
 
 import { createDatabaseBackup, cleanupOldBackups } from '../src/lib/backup';
-import path from 'path';
 
 async function runAutomatedBackup() {
   console.log('🚀 Starting automated database backup...');
@@ -14,13 +13,14 @@ async function runAutomatedBackup() {
 
     if (result.success) {
       console.log('✅ Backup created successfully!');
-      console.log(`📁 File: ${result.filePath}`);
+      console.log(`🆔 Backup ID: ${result.backupId}`);
+      console.log(`📁 File: ${result.fileName}`);
       console.log(`📊 Size: ${result.fileSize} bytes`);
       console.log(`🗂️ Collections: ${result.collections.join(', ')}`);
       console.log(`🕒 Timestamp: ${result.timestamp.toISOString()}`);
 
       // Cleanup old backups (keep only last 10)
-      const deletedCount = cleanupOldBackups('./backups', 10);
+      const deletedCount = await cleanupOldBackups(10);
       if (deletedCount > 0) {
         console.log(`🧹 Cleaned up ${deletedCount} old backup(s)`);
       }

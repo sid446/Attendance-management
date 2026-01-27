@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Download, Upload, Trash2, Database, Clock, FileText, AlertTriangle, CheckCircle, RefreshCw } from 'lucide-react';
 
 interface BackupFile {
+  _id: string;
   fileName: string;
-  filePath: string;
   size: number;
   created: Date;
   collections: string[];
@@ -96,12 +96,12 @@ export const BackupManagementSection: React.FC = () => {
   };
 
   // Restore from backup
-  const handleRestoreBackup = async (fileName: string) => {
+  const handleRestoreBackup = async (backupId: string, fileName: string) => {
     if (!confirm(`Are you sure you want to restore from ${fileName}? This will overwrite current data.`)) {
       return;
     }
 
-    setRestoringBackup(fileName);
+    setRestoringBackup(backupId);
     setError(null);
     setSuccess(null);
 
@@ -111,14 +111,14 @@ export const BackupManagementSection: React.FC = () => {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ fileName }),
+        body: JSON.stringify({ backupId }),
       });
 
       const result = await response.json();
 
       if (result.success) {
         setSuccess(`Successfully restored ${result.data.documents} documents from ${result.data.collections.length} collections`);
-        // Optionally refresh data or redirect
+        fetchBackupData(); // Refresh the list
       } else {
         setError(result.error || 'Failed to restore backup');
       }
@@ -262,8 +262,8 @@ export const BackupManagementSection: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => handleRestoreBackup(backup.fileName)}
-                      disabled={restoringBackup === backup.fileName}
+                      onClick={() => handleRestoreBackup(backup._id, backup.fileName)}
+                      disabled={restoringBackup === backup._id}
                       className="flex items-center gap-1 px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs transition-colors disabled:opacity-50"
                     >
                       {restoringBackup === backup.fileName ? (
@@ -285,9 +285,10 @@ export const BackupManagementSection: React.FC = () => {
       <div className="mt-6 p-4 bg-slate-800/30 rounded-lg border border-slate-700">
         <h4 className="text-sm font-semibold text-slate-200 mb-2">Backup Information</h4>
         <ul className="text-sm text-slate-400 space-y-1">
-          <li>• Backups are stored in the <code className="bg-slate-900 px-1 rounded">./backups</code> directory</li>
+          <li>• Backups are stored securely in your MongoDB database</li>
           <li>• Each backup contains all collections and their data</li>
           <li>• Restore operations will overwrite existing data</li>
+          <li>• Backups are automatically cleaned up after 90 days</li>
           <li>• Only the 10 most recent backups are kept automatically</li>
           <li>• Backups include metadata about creation time and collections</li>
         </ul>

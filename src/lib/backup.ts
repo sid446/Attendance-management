@@ -1,21 +1,19 @@
 import mongoose from 'mongoose';
-import fs from 'fs';
-import path from 'path';
-import { promisify } from 'util';
+import BackupModel, { IBackupDocument } from '@/models/Backup';
 
 export interface BackupOptions {
   includeCollections?: string[];
   excludeCollections?: string[];
-  outputPath?: string;
   compress?: boolean;
 }
 
 export interface BackupResult {
   success: boolean;
-  filePath?: string;
-  fileSize?: number;
+  backupId?: string;
+  fileName?: string;
   collections: string[];
   timestamp: Date;
+  fileSize?: number;
   error?: string;
 }
 
@@ -27,21 +25,15 @@ export interface RestoreResult {
 }
 
 /**
- * Create a backup of MongoDB collections
+ * Create a backup of MongoDB collections and store in database
  */
 export async function createDatabaseBackup(options: BackupOptions = {}): Promise<BackupResult> {
   try {
     const {
       includeCollections = [],
       excludeCollections = [],
-      outputPath = './backups',
       compress = true
     } = options;
-
-    // Ensure backup directory exists
-    if (!fs.existsSync(outputPath)) {
-      fs.mkdirSync(outputPath, { recursive: true });
-    }
 
     // Get all collections
     const db = mongoose.connection.db;
@@ -63,7 +55,6 @@ export async function createDatabaseBackup(options: BackupOptions = {}): Promise
 
     const timestamp = new Date();
     const fileName = `backup_${timestamp.toISOString().replace(/[:.]/g, '-')}.json`;
-    const filePath = path.join(outputPath, fileName);
 
     const backupData: any = {
       metadata: {
@@ -82,18 +73,32 @@ export async function createDatabaseBackup(options: BackupOptions = {}): Promise
       backupData.data[collectionName] = documents;
     }
 
-    // Write backup file
-    const jsonData = JSON.stringify(backupData, null, 2);
-    fs.writeFileSync(filePath, jsonData);
+    // Calculate approximate file size (JSON string length)
+    const jsonData = JSON.stringify(backupData);
+    const fileSize = Buffer.byteLength(jsonData, 'utf8');
 
-    const stats = fs.statSync(filePath);
+    // Store backup in MongoDB
+    const backupDocument: Partial<IBackupDocument> = {
+      fileName,
+      data: backupData,
+      metadata: {
+        timestamp,
+        collections: collectionsToBackup,
+        mongooseVersion: mongoose.version,
+        nodeVersion: process.version,
+        fileSize
+      }
+    };
+
+    const savedBackup = await BackupModel.create(backupDocument);
 
     return {
       success: true,
-      filePath,
-      fileSize: stats.size,
+      backupId: savedBackup._id.toString(),
+      fileName,
       collections: collectionsToBackup,
-      timestamp
+      timestamp,
+      fileSize
     };
 
   } catch (error) {
@@ -107,15 +112,17 @@ export async function createDatabaseBackup(options: BackupOptions = {}): Promise
 }
 
 /**
- * Restore database from backup file
+ * Restore database from backup stored in MongoDB
  */
-export async function restoreDatabaseFromBackup(filePath: string): Promise<RestoreResult> {
+export async function restoreDatabaseFromBackup(backupId: string): Promise<RestoreResult> {
   try {
-    if (!fs.existsSync(filePath)) {
-      throw new Error('Backup file not found');
+    // Find backup in database
+    const backup = await BackupModel.findById(backupId);
+    if (!backup) {
+      throw new Error('Backup not found');
     }
 
-    const backupData = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    const backupData = backup.data;
     const db = mongoose.connection.db;
     if (!db) {
       throw new Error('Database connection not available');
@@ -157,45 +164,28 @@ export async function restoreDatabaseFromBackup(filePath: string): Promise<Resto
 }
 
 /**
- * List available backup files
+ * List available backup files from MongoDB
  */
-export function listBackupFiles(backupPath: string = './backups'): Array<{
+export async function listBackupFiles(): Promise<Array<{
+  _id: string;
   fileName: string;
-  filePath: string;
   size: number;
   created: Date;
-  collections?: string[];
-}> {
+  collections: string[];
+}>> {
   try {
-    if (!fs.existsSync(backupPath)) {
-      return [];
-    }
+    const backups = await BackupModel.find({})
+      .select('_id fileName metadata createdAt')
+      .sort({ createdAt: -1 })
+      .lean();
 
-    const files = fs.readdirSync(backupPath)
-      .filter(file => file.startsWith('backup_') && file.endsWith('.json'))
-      .map(file => {
-        const filePath = path.join(backupPath, file);
-        const stats = fs.statSync(filePath);
-
-        let collections: string[] = [];
-        try {
-          const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-          collections = data.metadata?.collections || [];
-        } catch (e) {
-          // Ignore parsing errors
-        }
-
-        return {
-          fileName: file,
-          filePath,
-          size: stats.size,
-          created: stats.mtime,
-          collections
-        };
-      })
-      .sort((a, b) => b.created.getTime() - a.created.getTime()); // Most recent first
-
-    return files;
+    return backups.map(backup => ({
+      _id: backup._id.toString(),
+      fileName: backup.fileName,
+      size: backup.metadata.fileSize,
+      created: backup.createdAt,
+      collections: backup.metadata.collections
+    }));
   } catch (error) {
     console.error('Error listing backup files:', error);
     return [];
@@ -205,23 +195,23 @@ export function listBackupFiles(backupPath: string = './backups'): Array<{
 /**
  * Delete old backup files (keep only the most recent N backups)
  */
-export function cleanupOldBackups(backupPath: string = './backups', keepCount: number = 10): number {
+export async function cleanupOldBackups(keepCount: number = 10): Promise<number> {
   try {
-    const files = listBackupFiles(backupPath);
+    const backups = await BackupModel.find({})
+      .select('_id createdAt')
+      .sort({ createdAt: -1 })
+      .lean();
 
-    if (files.length <= keepCount) {
+    if (backups.length <= keepCount) {
       return 0;
     }
 
-    const filesToDelete = files.slice(keepCount);
-    let deletedCount = 0;
+    const backupsToDelete = backups.slice(keepCount);
+    const deleteIds = backupsToDelete.map(backup => backup._id);
 
-    for (const file of filesToDelete) {
-      fs.unlinkSync(file.filePath);
-      deletedCount++;
-    }
+    const result = await BackupModel.deleteMany({ _id: { $in: deleteIds } });
 
-    return deletedCount;
+    return result.deletedCount || 0;
   } catch (error) {
     console.error('Error cleaning up old backups:', error);
     return 0;
@@ -229,16 +219,39 @@ export function cleanupOldBackups(backupPath: string = './backups', keepCount: n
 }
 
 /**
- * Get backup statistics
+ * Get backup statistics from MongoDB
  */
-export function getBackupStats(backupPath: string = './backups') {
-  const files = listBackupFiles(backupPath);
+export async function getBackupStats() {
+  try {
+    const backups = await BackupModel.find({}).select('metadata createdAt').lean();
 
-  return {
-    totalBackups: files.length,
-    totalSize: files.reduce((sum, file) => sum + file.size, 0),
-    oldestBackup: files.length > 0 ? files[files.length - 1].created : null,
-    newestBackup: files.length > 0 ? files[0].created : null,
-    collections: [...new Set(files.flatMap(f => f.collections || []))]
-  };
+    if (backups.length === 0) {
+      return {
+        totalBackups: 0,
+        totalSize: 0,
+        oldestBackup: null,
+        newestBackup: null,
+        collections: []
+      };
+    }
+
+    const sortedBackups = backups.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    return {
+      totalBackups: backups.length,
+      totalSize: backups.reduce((sum, backup) => sum + (backup.metadata.fileSize || 0), 0),
+      oldestBackup: sortedBackups[sortedBackups.length - 1].createdAt,
+      newestBackup: sortedBackups[0].createdAt,
+      collections: [...new Set(backups.flatMap(b => b.metadata.collections || []))]
+    };
+  } catch (error) {
+    console.error('Error getting backup stats:', error);
+    return {
+      totalBackups: 0,
+      totalSize: 0,
+      oldestBackup: null,
+      newestBackup: null,
+      collections: []
+    };
+  }
 }

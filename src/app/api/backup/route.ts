@@ -11,14 +11,14 @@ export async function GET(request: NextRequest) {
 
     if (action === 'list') {
       // List available backups
-      const backups = listBackupFiles();
+      const backups = await listBackupFiles();
       return NextResponse.json({
         success: true,
         data: backups
       });
     } else if (action === 'stats') {
       // Get backup statistics
-      const stats = getBackupStats();
+      const stats = await getBackupStats();
       return NextResponse.json({
         success: true,
         data: stats
