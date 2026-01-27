@@ -327,6 +327,16 @@ export default function EmployeeDashboard() {
     'Thumb machine - not working'
   ];
 
+  // Limited options for future requests
+  const futureStatusOptions = [
+    'On leave',
+    'Half Day - weekdays',
+    'Half Day - weekoff',
+    'WFH - weekdays',
+    'WFH - weekoff',
+    'Weekoff - special allowance'
+  ];
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
        {/* Header */}
@@ -510,7 +520,7 @@ export default function EmployeeDashboard() {
                              }}
                              className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-indigo-500"
                            >
-                              {statusOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                              {futureStatusOptions.map(s => <option key={s} value={s}>{s}</option>)}
                            </select>
                        </div>
 
