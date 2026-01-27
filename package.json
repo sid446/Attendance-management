@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "seed:predefined-values": "tsx scripts/seed-predefined-values.ts",
-    "test:api": "tsx scripts/test-api.ts"
+    "test:api": "tsx scripts/test-api.ts",
+    "backup": "tsx scripts/backup-database.ts",
+    "backup:create": "tsx scripts/backup-database.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.3",

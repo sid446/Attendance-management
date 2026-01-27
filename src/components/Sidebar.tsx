@@ -1,9 +1,9 @@
 import React from 'react';
-import { FileSpreadsheet, Upload, CheckCircle, Clock, Users, LogOut, Calendar } from 'lucide-react';
+import { FileSpreadsheet, Upload, CheckCircle, Clock, Users, LogOut, Calendar, Database } from 'lucide-react';
 
 interface SidebarProps {
-  activeSection: 'upload' | 'summary' | 'employee' | 'employees' | 'requests' | 'holidays';
-  setActiveSection: (section: 'upload' | 'summary' | 'employee' | 'employees' | 'requests' | 'holidays') => void;
+  activeSection: 'upload' | 'summary' | 'employee' | 'employees' | 'requests' | 'holidays' | 'backup';
+  setActiveSection: (section: 'upload' | 'summary' | 'employee' | 'employees' | 'requests' | 'holidays' | 'backup') => void;
   uploadTotal: number;
   uploadSaved: number;
   uploadFailed: number;
@@ -107,6 +107,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
         >
           <Calendar className="w-4 h-4" />
           <span>Holiday Management</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSection('backup')}
+          className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
+            activeSection === 'backup'
+              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
+              : 'text-slate-300 hover:bg-slate-800/60'
+          }`}
+        >
+          <Database className="w-4 h-4" />
+          <span>Database Backup</span>
         </button>
       </nav>
 

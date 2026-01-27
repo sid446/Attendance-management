@@ -11,6 +11,7 @@ import { EmployeeMonthView } from '@/components/EmployeeMonthView';
 import { EmployeeManagementSection } from '@/components/EmployeeManagementSection';
 import { AttendanceRequestsSection } from '@/components/AttendanceRequestsSection';
 import { HolidayManagement } from '@/components/HolidayManagement';
+import { BackupManagementSection } from '@/components/BackupManagementSection';
 import { get } from "http";
 
 export default function AttendanceUpload() {
@@ -38,7 +39,7 @@ export default function AttendanceUpload() {
   const [uploadTotal, setUploadTotal] = useState<number>(0);
   const [uploadSaved, setUploadSaved] = useState<number>(0);
   const [uploadFailed, setUploadFailed] = useState<number>(0);
-  const [activeSection, setActiveSection] = useState<'upload' | 'summary' | 'employee' | 'employees' | 'requests' | 'holidays'>('summary');
+  const [activeSection, setActiveSection] = useState<'upload' | 'summary' | 'employee' | 'employees' | 'requests' | 'holidays' | 'backup'>('summary');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [selectedEmployeeMonth, setSelectedEmployeeMonth] = useState<string>('');
   const [employeeDays, setEmployeeDays] = useState<AttendanceRecord[]>([]);
@@ -1128,6 +1129,11 @@ export default function AttendanceUpload() {
             {/* Holiday Management Section */}
             {activeSection === 'holidays' && (
               <HolidayManagement />
+            )}
+
+            {/* Database Backup Section */}
+            {activeSection === 'backup' && (
+              <BackupManagementSection />
             )}
           </div>
         </main>
