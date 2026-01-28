@@ -131,6 +131,26 @@ export async function restoreDatabaseFromBackup(backupId: string): Promise<Resto
     let totalDocuments = 0;
     const restoredCollections: string[] = [];
 
+    // Helper function to convert string _id to ObjectId
+    const convertIdsToObjectId = (obj: any): any => {
+      if (obj && typeof obj === 'object') {
+        if (obj._id && typeof obj._id === 'string') {
+          obj._id = new mongoose.Types.ObjectId(obj._id);
+        }
+        // Recursively convert nested objects and arrays
+        for (const key in obj) {
+          if (obj.hasOwnProperty(key)) {
+            if (Array.isArray(obj[key])) {
+              obj[key] = obj[key].map(convertIdsToObjectId);
+            } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+              obj[key] = convertIdsToObjectId(obj[key]);
+            }
+          }
+        }
+      }
+      return obj;
+    };
+
     // Restore each collection
     for (const [collectionName, documents] of Object.entries(backupData.data || {})) {
       const collection = db.collection(collectionName);
@@ -138,9 +158,10 @@ export async function restoreDatabaseFromBackup(backupId: string): Promise<Resto
       // Clear existing data
       await collection.deleteMany({});
 
-      // Insert backup data
+      // Convert IDs back to ObjectId and insert backup data
       if (Array.isArray(documents) && documents.length > 0) {
-        await collection.insertMany(documents);
+        const convertedDocuments = documents.map(convertIdsToObjectId);
+        await collection.insertMany(convertedDocuments);
         totalDocuments += documents.length;
       }
 

@@ -531,6 +531,8 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'Pending' | 'Approved' | 'Rejected'>('all');
+  const [monthFilter, setMonthFilter] = useState<string>('all');
+  const [leaveTypeFilter, setLeaveTypeFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('table');
   const [processingRequest, setProcessingRequest] = useState<string | null>(null);
   const [showApprovalModal, setShowApprovalModal] = useState(false);
@@ -650,10 +652,18 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
   const exportToExcel = () => {
     const { rangeGroups, individualRequests } = groupRequestsIntoRanges(requests);
     const filteredRangeGroups = rangeGroups.filter(group =>
-      filter === 'all' || group.status === filter
+      (filter === 'all' || group.status === filter) &&
+      (monthFilter === 'all' || group.dates.some(date => {
+        const requestDate = new Date(date);
+        const monthYear = `${requestDate.getFullYear()}-${String(requestDate.getMonth() + 1).padStart(2, '0')}`;
+        return monthYear === monthFilter;
+      })) &&
+      (leaveTypeFilter === 'all' || group.requestedStatus === leaveTypeFilter)
     );
     const filteredIndividualRequests = individualRequests.filter(request =>
-      filter === 'all' || request.status === filter
+      (filter === 'all' || request.status === filter) &&
+      (monthFilter === 'all' || request.monthYear === monthFilter) &&
+      (leaveTypeFilter === 'all' || request.requestedStatus === leaveTypeFilter)
     );
 
     const excelData: any[] = [];
@@ -732,11 +742,19 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
   const { rangeGroups, individualRequests } = groupRequestsIntoRanges(requests);
 
   const filteredRangeGroups = rangeGroups.filter(group =>
-    filter === 'all' || group.status === filter
+    (filter === 'all' || group.status === filter) &&
+    (monthFilter === 'all' || group.dates.some(date => {
+      const requestDate = new Date(date);
+      const monthYear = `${requestDate.getFullYear()}-${String(requestDate.getMonth() + 1).padStart(2, '0')}`;
+      return monthYear === monthFilter;
+    })) &&
+    (leaveTypeFilter === 'all' || group.requestedStatus === leaveTypeFilter)
   );
 
   const filteredIndividualRequests = individualRequests.filter(request =>
-    filter === 'all' || request.status === filter
+    (filter === 'all' || request.status === filter) &&
+    (monthFilter === 'all' || request.monthYear === monthFilter) &&
+    (leaveTypeFilter === 'all' || request.requestedStatus === leaveTypeFilter)
   );
 
   const getStatusIcon = (status: string) => {
@@ -815,6 +833,39 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
             <Table className="w-4 h-4" />
           </button>
           <select
+            value={monthFilter}
+            onChange={(e) => setMonthFilter(e.target.value)}
+            className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-sm text-slate-200 focus:border-emerald-500 focus:outline-none"
+          >
+            <option value="all">All Months</option>
+            {Array.from(new Set(requests.map(r => r.monthYear)))
+              .sort()
+              .reverse()
+              .map(monthYear => {
+                const [year, month] = monthYear.split('-');
+                const monthName = new Date(parseInt(year), parseInt(month) - 1).toLocaleString('default', { month: 'long' });
+                return (
+                  <option key={monthYear} value={monthYear}>
+                    {monthName} {year}
+                  </option>
+                );
+              })}
+          </select>
+          <select
+            value={leaveTypeFilter}
+            onChange={(e) => setLeaveTypeFilter(e.target.value)}
+            className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-sm text-slate-200 focus:border-emerald-500 focus:outline-none"
+          >
+            <option value="all">All Leave Types</option>
+            {Array.from(new Set(requests.map(r => r.requestedStatus)))
+              .sort()
+              .map(leaveType => (
+                <option key={leaveType} value={leaveType}>
+                  {leaveType}
+                </option>
+              ))}
+          </select>
+          <select
             value={filter}
             onChange={(e) => setFilter(e.target.value as any)}
             className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-sm text-slate-200 focus:border-emerald-500 focus:outline-none"
@@ -845,7 +896,9 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
         <div className="text-center py-8">
           <AlertCircle className="w-12 h-12 text-slate-500 mx-auto mb-3" />
           <p className="text-slate-400">
-            {filter === 'all' ? 'No attendance requests found' : `No ${filter.toLowerCase()} requests found`}
+            {filter === 'all' && monthFilter === 'all' && leaveTypeFilter === 'all'
+              ? 'No attendance requests found'
+              : 'No requests found for selected filters'}
           </p>
         </div>
       ) : viewMode === 'table' ? (
