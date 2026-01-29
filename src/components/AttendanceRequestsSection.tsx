@@ -1046,7 +1046,19 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
                   placeholder="Enter remarks for this action..."
                 />
               </div>
-              {approvalAction === 'approve' && userRole === 'HR' && (
+              {approvalAction === 'approve' && selectedRequestId && !(() => {
+                if (Array.isArray(selectedRequestId)) {
+                  // For range requests, check if any request in the range is a leave request
+                  return selectedRequestId.some(id => {
+                    const request = requests.find(r => r._id === id);
+                    return request && (request.requestedStatus.toLowerCase().includes('leave') || request.requestedStatus === 'On leave');
+                  });
+                } else {
+                  // For single requests
+                  const request = requests.find(r => r._id === selectedRequestId);
+                  return request && (request.requestedStatus.toLowerCase().includes('leave') || request.requestedStatus === 'On leave');
+                }
+              })() && userRole === 'HR' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Value
@@ -1059,6 +1071,26 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
                     placeholder="Enter value..."
                     step="0.01"
                   />
+                </div>
+              )}
+
+              {approvalAction === 'approve' && selectedRequestId && (() => {
+                if (Array.isArray(selectedRequestId)) {
+                  // For range requests, check if any request in the range is a leave request
+                  return selectedRequestId.some(id => {
+                    const request = requests.find(r => r._id === id);
+                    return request && (request.requestedStatus.toLowerCase().includes('leave') || request.requestedStatus === 'On leave');
+                  });
+                } else {
+                  // For single requests
+                  const request = requests.find(r => r._id === selectedRequestId);
+                  return request && (request.requestedStatus.toLowerCase().includes('leave') || request.requestedStatus === 'On leave');
+                }
+              })() && (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-blue-800 text-sm">
+                    For leave requests, the system will automatically determine if it's paid or unpaid leave based on available earned leave balance.
+                  </p>
                 </div>
               )}
             </div>

@@ -69,6 +69,15 @@ export interface IUser extends Document {
     value: string;
   }[];
 
+  // Leave balance management
+  leaveBalance?: {
+    earned: number;
+    used: number;
+    remaining: number;
+    lastUpdated: Date;
+    monthlyEarned: number;
+  };
+
   // Year-wise schedules - NEW STRUCTURE
   schedules?: Record<string, IYearlySchedule>; // Key is year (e.g., "2025", "2026")
 
@@ -295,6 +304,13 @@ const UserSchema: Schema = new Schema(
         _id: false,
       },
     ],
+    leaveBalance: {
+      earned: { type: Number, default: 0 },
+      used: { type: Number, default: 0 },
+      remaining: { type: Number, default: 0 },
+      lastUpdated: { type: Date, default: Date.now },
+      monthlyEarned: { type: Number, default: 2 },
+    },
     joiningDate: {
       type: Date,
       

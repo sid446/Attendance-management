@@ -107,7 +107,8 @@ export default function EmployeeDashboard() {
                   inTime: value.checkin ?? '',
                   outTime: value.checkout ?? '',
                   status: status,
-                  typeOfPresence: value.typeOfPresence
+                  typeOfPresence: value.typeOfPresence,
+                  value: value.value
                 };
             });
             setEmployeeDays(days);

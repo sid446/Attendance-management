@@ -374,67 +374,64 @@ function ReviewAllPageContent() {
             </div>
 
             <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-100">
-              <div className="px-6 py-4 border-b border-gray-200 bg-gray-50/50">
-                <label className="flex items-center space-x-3 cursor-pointer group">
-                  <input
-                    type="checkbox"
-                    checked={getFilteredRequestGroups().length > 0 && getFilteredRequestGroups().every(group => {
-                      const originalIndex = requestGroups.indexOf(group);
-                      return selectedGroupIds.includes(originalIndex.toString());
-                    })}
-                    onChange={(e) => handleSelectAll(e.target.checked)}
-                    className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-                  />
-                  <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900 transition-colors">
-                    Select All {getFilteredRequestGroups().length} Group{getFilteredRequestGroups().length !== 1 ? 's' : ''}
-                  </span>
-                </label>
-              </div>
-
-              <div className="divide-y divide-gray-100">
-                {getFilteredRequestGroups().map((group, filteredIndex) => {
-                  // Find the original index in requestGroups
-                  const originalIndex = requestGroups.findIndex(rg => rg === group);
-                  return (
-                    <div key={originalIndex} className="px-6 py-5 hover:bg-gray-50/50 transition-colors">
-                      <div className="flex items-start space-x-4">
+              <table className="w-full">
+                <thead className="bg-gray-50/50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-6 py-4 text-left">
+                      <label className="flex items-center space-x-3 cursor-pointer group">
                         <input
                           type="checkbox"
-                          checked={selectedGroupIds.includes(originalIndex.toString())}
-                          onChange={(e) => handleSelectGroup(originalIndex.toString(), e.target.checked)}
-                          className="mt-1 w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                          checked={getFilteredRequestGroups().length > 0 && getFilteredRequestGroups().every(group => {
+                            const originalIndex = requestGroups.indexOf(group);
+                            return selectedGroupIds.includes(originalIndex.toString());
+                          })}
+                          onChange={(e) => handleSelectAll(e.target.checked)}
+                          className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
                         />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center space-x-3">
-                              <h3 className="text-base font-semibold text-gray-900">{group.userName}</h3>
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
-                                {group.requestedStatus}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="space-y-1">
-                            <p className="text-sm text-gray-600">
-                              <span className="font-medium">Dates:</span> {group.dateDisplay}
-                            </p>
-                            {group.reason && (
-                              <p className="text-sm text-gray-600">
-                                <span className="font-medium">Reason:</span> {group.reason}
-                              </p>
-                            )}
-                            <p className="text-sm text-gray-600">
-                              <span className="font-medium">Time:</span> {group.timeRange}
-                            </p>
-                            <p className="text-sm text-gray-500">
-                              {group.dates.length} request{group.dates.length > 1 ? 's' : ''} • {group.requestIds.length} attendance record{group.requestIds.length > 1 ? 's' : ''}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                        <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900 transition-colors">
+                          Select All
+                        </span>
+                      </label>
+                    </th>
+                    <th className="px-6 py-4 text-left text-sm font-medium text-gray-700">Employee Name</th>
+                    <th className="px-6 py-4 text-left text-sm font-medium text-gray-700">Leave Type</th>
+                    <th className="px-6 py-4 text-left text-sm font-medium text-gray-700">Dates</th>
+                    <th className="px-6 py-4 text-left text-sm font-medium text-gray-700">Reason</th>
+                    <th className="px-6 py-4 text-left text-sm font-medium text-gray-700">Time</th>
+                    <th className="px-6 py-4 text-left text-sm font-medium text-gray-700">Details</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {getFilteredRequestGroups().map((group, filteredIndex) => {
+                    // Find the original index in requestGroups
+                    const originalIndex = requestGroups.findIndex(rg => rg === group);
+                    return (
+                      <tr key={originalIndex} className="hover:bg-gray-50/50 transition-colors">
+                        <td className="px-6 py-4">
+                          <input
+                            type="checkbox"
+                            checked={selectedGroupIds.includes(originalIndex.toString())}
+                            onChange={(e) => handleSelectGroup(originalIndex.toString(), e.target.checked)}
+                            className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                          />
+                        </td>
+                        <td className="px-6 py-4 text-sm font-semibold text-gray-900">{group.userName}</td>
+                        <td className="px-6 py-4">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                            {group.requestedStatus}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-600">{group.dateDisplay}</td>
+                        <td className="px-6 py-4 text-sm text-gray-600">{group.reason || '-'}</td>
+                        <td className="px-6 py-4 text-sm text-gray-600">{group.timeRange}</td>
+                        <td className="px-6 py-4 text-sm text-gray-500">
+                          {group.dates.length} request{group.dates.length > 1 ? 's' : ''} • {group.requestIds.length} record{group.requestIds.length > 1 ? 's' : ''}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
 
             <div className="mt-8 flex flex-col sm:flex-row sm:justify-end space-y-4 sm:space-y-0 sm:space-x-4">
@@ -549,8 +546,11 @@ function ReviewAllPageContent() {
                     />
                   </div>
 
-                  {/* Same Value Section - Only for approve */}
-                  {modalAction === 'approve' && (
+                  {/* Same Value Section - Only for approve and non-leave requests */}
+                  {modalAction === 'approve' && !selectedGroupIds.some(id => {
+                    const group = requestGroups[parseInt(id)];
+                    return group.requestedStatus.toLowerCase().includes('leave') || group.requestedStatus === 'On leave';
+                  }) && (
                     applySameValue ? (
                       <div className="space-y-3">
                         <label className="block text-sm font-medium text-black">
@@ -674,6 +674,18 @@ function ReviewAllPageContent() {
                       </div>
                     );
                   })}
+
+                  {/* Info for leave requests */}
+                  {modalAction === 'approve' && selectedGroupIds.some(id => {
+                    const group = requestGroups[parseInt(id)];
+                    return group.requestedStatus.toLowerCase().includes('leave') || group.requestedStatus === 'On leave';
+                  }) && (
+                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <p className="text-blue-800 text-sm">
+                        For leave requests, the system will automatically determine if it's paid or unpaid leave based on available earned leave balance.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

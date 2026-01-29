@@ -109,12 +109,25 @@ export async function POST(request: NextRequest) {
                 }
 
                 rec.typeOfPresence = requestedStatus as any;
-                rec.value = appliedValue!;
                 
-                if (rec.value > 0 && rec.value < 1) {
-                    rec.halfDay = true;
+                // Determine value based on request type
+                const isLeaveRequest = requestedStatus.toLowerCase().includes('leave') ||
+                                      requestedStatus.toLowerCase().includes('absent') ||
+                                      requestedStatus === 'On leave';
+                
+                if (isLeaveRequest) {
+                  // For leave requests, calculate paid/unpaid based on balance
+                  const { calculateLeaveUsage } = await import('@/lib/leaveManagement');
+                  const leaveUsage = await calculateLeaveUsage(userId, date, requestedStatus);
+                  rec.value = leaveUsage.value;
+                  rec.halfDay = false; // Leave is either full day paid or unpaid
                 } else {
-                    rec.halfDay = false;
+                  rec.value = appliedValue!;
+                  if (rec.value > 0 && rec.value < 1) {
+                      rec.halfDay = true;
+                  } else {
+                      rec.halfDay = false;
+                  }
                 }
 
                 if (startTime && endTime) {
@@ -128,6 +141,12 @@ export async function POST(request: NextRequest) {
                 const user = await User.findById(userId);
                 attendance.summary = calculateSummary(attendance.records, user);
                 await attendance.save();
+
+                // Update leave balance if this is a leave request
+                if (isLeaveRequest && rec.value === 1) {
+                  const { updateLeaveBalanceOnApproval } = await import('@/lib/leaveManagement');
+                  await updateLeaveBalanceOnApproval(userId, date, true);
+                }
             }
 
             successCount++;

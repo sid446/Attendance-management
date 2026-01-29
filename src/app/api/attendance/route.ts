@@ -53,6 +53,7 @@ export async function POST(request: NextRequest) {
     if (Array.isArray(records) && records.length > 0) {
       const processed: Array<{ odId: string; userId: string; monthYear: string; date: string; createdUser: boolean }> = [];
       const errors: Array<{ odId: string; reason: string }> = [];
+      const uploadedMonths = new Set<string>();
 
       // Pre-fetch all users for efficient in-memory matching
       const allUsers = await User.find({}).select('name _id odId scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth');
@@ -94,6 +95,9 @@ export async function POST(request: NextRequest) {
           let createdUser = false; // logic changed: we never create user here now
 
           const { isoDate, isoMonthYear } = normalizeExcelDate(rec.date);
+
+          // Track uploaded months for leave increment
+          uploadedMonths.add(isoMonthYear);
 
           // Find existing attendance or create new one per user per month
           let attendance = await Attendance.findOne({ userId: user._id, monthYear: isoMonthYear });
@@ -309,6 +313,51 @@ export async function POST(request: NextRequest) {
             await attendance.save();
           }
         }
+      }
+
+      // Increment leave balance for processed users
+      try {
+        const now = new Date();
+        // Group processed by monthYear
+        const processedByMonth: Record<string, string[]> = {};
+        for (const p of processed) {
+          if (!processedByMonth[p.monthYear]) processedByMonth[p.monthYear] = [];
+          processedByMonth[p.monthYear].push(p.userId);
+        }
+
+        for (const [monthYear, userIds] of Object.entries(processedByMonth)) {
+          for (const userId of userIds) {
+            const user = await User.findById(userId);
+            if (!user || !user.isActive) continue;
+
+            const monthlyEarned = user.leaveBalance?.monthlyEarned || 2;
+
+            // Check if leave was already incremented for this month
+            const lastUpdated = user.leaveBalance?.lastUpdated;
+            const currentEarned = user.leaveBalance?.earned || 0;
+            if (lastUpdated) {
+              const lastUpdatedMonth = `${lastUpdated.getFullYear()}-${String(lastUpdated.getMonth() + 1).padStart(2, '0')}`;
+              if (lastUpdatedMonth === monthYear) {
+                continue; // Already incremented for this month
+              }
+            }
+
+            // Increment earned leave
+            const newEarned = currentEarned + monthlyEarned;
+            const currentUsed = user.leaveBalance?.used || 0;
+            const newRemaining = newEarned - currentUsed;
+
+            await User.findByIdAndUpdate(user._id, {
+              'leaveBalance.earned': newEarned,
+              'leaveBalance.remaining': Math.max(0, newRemaining),
+              'leaveBalance.lastUpdated': now,
+            });
+          }
+          console.log(`Leave balance incremented for ${userIds.length} users in month ${monthYear}`);
+        }
+      } catch (leaveError) {
+        console.error('Error incrementing leave balance:', leaveError);
+        // Don't fail the upload if leave increment fails
       }
 
       return NextResponse.json(

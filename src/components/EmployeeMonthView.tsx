@@ -418,6 +418,16 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                       bgClass = 'bg-sky-500/5';
                       badgeClass = 'border-sky-500/60 bg-sky-500/15 text-sky-100';
                       Icon = CalendarOff;
+                      // Determine if paid or unpaid leave
+                      if (rec && rec.value !== undefined && rec.value > 0) {
+                        status = 'Paid Leave';
+                      } else {
+                        // If value is 0 or undefined, treat as unpaid leave
+                        status = 'Unpaid Leave';
+                        borderClass = 'border-rose-500/50';
+                        bgClass = 'bg-rose-500/5';
+                        badgeClass = 'border-rose-500/60 bg-rose-500/15 text-rose-100';
+                      }
                   } else if (status === 'Holiday' || status === 'Week Off') {
                       borderClass = 'border-amber-500/50';
                       bgClass = 'bg-amber-500/5';
@@ -518,7 +528,11 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
           </div>
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded border border-blue-500/60 bg-blue-500/15"></div>
-            <span className="text-slate-300">Leave</span>
+            <span className="text-slate-300">Paid Leave</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded border border-red-500/60 bg-red-500/15"></div>
+            <span className="text-slate-300">Unpaid Leave</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded border border-indigo-500/60 bg-indigo-500/15"></div>

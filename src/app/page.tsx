@@ -12,6 +12,7 @@ import { EmployeeManagementSection } from '@/components/EmployeeManagementSectio
 import { AttendanceRequestsSection } from '@/components/AttendanceRequestsSection';
 import { HolidayManagement } from '@/components/HolidayManagement';
 import { BackupManagementSection } from '@/components/BackupManagementSection';
+import { LeaveManagementSection } from '@/components/LeaveManagementSection';
 import { get } from "http";
 
 export default function AttendanceUpload() {
@@ -39,7 +40,7 @@ export default function AttendanceUpload() {
   const [uploadTotal, setUploadTotal] = useState<number>(0);
   const [uploadSaved, setUploadSaved] = useState<number>(0);
   const [uploadFailed, setUploadFailed] = useState<number>(0);
-  const [activeSection, setActiveSection] = useState<'upload' | 'summary' | 'employee' | 'employees' | 'requests' | 'holidays' | 'backup'>('summary');
+  const [activeSection, setActiveSection] = useState<'upload' | 'summary' | 'employee' | 'employees' | 'requests' | 'holidays' | 'backup' | 'leave'>('summary');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [selectedEmployeeMonth, setSelectedEmployeeMonth] = useState<string>('');
   const [employeeDays, setEmployeeDays] = useState<AttendanceRecord[]>([]);
@@ -872,7 +873,8 @@ export default function AttendanceUpload() {
           inTime: value.checkin ?? '',
           outTime: value.checkout ?? '',
           status: status,
-          typeOfPresence: value.typeOfPresence
+          typeOfPresence: value.typeOfPresence,
+          value: value.value
         };
       });
 
@@ -1134,6 +1136,15 @@ export default function AttendanceUpload() {
             {/* Database Backup Section */}
             {activeSection === 'backup' && (
               <BackupManagementSection />
+            )}
+
+            {/* Leave Management Section */}
+            {activeSection === 'leave' && (
+              <LeaveManagementSection
+                isLoading={false}
+                error={null}
+                onRefresh={() => {}}
+              />
             )}
           </div>
         </main>

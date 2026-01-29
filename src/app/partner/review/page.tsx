@@ -207,7 +207,7 @@ function PartnerReviewContent() {
                   />
                 </div>
 
-                {action === 'approve' && (
+                {action === 'approve' && !request.requestedStatus.toLowerCase().includes('leave') && request.requestedStatus !== 'On leave' && (
                   <div>
                     <label className="block text-sm font-medium text-slate-300 mb-2">
                       Attendance Value
@@ -224,6 +224,14 @@ function PartnerReviewContent() {
                     />
                     <p className="text-xs text-slate-400 mt-1">
                       Set the attendance value (0-2). Standard: 1.0, Outstation: 1.2, Half Day: 0.75
+                    </p>
+                  </div>
+                )}
+
+                {action === 'approve' && (request.requestedStatus.toLowerCase().includes('leave') || request.requestedStatus === 'On leave') && (
+                  <div className="p-3 bg-blue-900/20 border border-blue-500/30 rounded-lg">
+                    <p className="text-blue-200 text-sm">
+                      For leave requests, the system will automatically determine if it's paid or unpaid leave based on available earned leave balance.
                     </p>
                   </div>
                 )}

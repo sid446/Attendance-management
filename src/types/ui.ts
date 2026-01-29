@@ -6,6 +6,7 @@ export interface AttendanceRecord {
   outTime: string;
   status: 'Present' | 'Absent' | 'On leave' | 'Holiday' | 'HalfDay'|'Leave';
   typeOfPresence?: string;
+  value?: number; // Attendance value: 1 for present, 0 for absent, 0.75 for half day
 }
 
 export interface AttendanceSummaryView {

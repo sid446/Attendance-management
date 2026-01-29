@@ -4,6 +4,7 @@ import AttendanceRequest from '@/models/AttendanceRequest';
 import Attendance from '@/models/Attendance';
 import User from '@/models/User';
 import { transporter, mailOptions } from '@/lib/mailer';
+import { calculateLeaveUsage, updateLeaveBalanceOnApproval } from '@/lib/leaveManagement';
 
 function calculateDuration(start: string, end: string): number {
     if (!start || !end) return 0;
@@ -208,6 +209,14 @@ export async function GET(request: NextRequest) {
         
         await attendance.save();
 
+        // Update leave balance if it's a paid leave
+        if (requestedStatus === 'On leave' || requestedStatus === 'Absent') {
+          const leaveUsage = await calculateLeaveUsage(userId, date, requestedStatus);
+          if (leaveUsage.isPaidLeave) {
+            await updateLeaveBalanceOnApproval(userId, date, true);
+          }
+        }
+
         return new NextResponse(`
             <html><body style="font-family:sans-serif; text-align:center; padding:40px;">
                 <h1 style="color:green">Approved</h1>
@@ -293,7 +302,9 @@ export async function POST(request: NextRequest) {
           rec.value = 0.75;
           rec.halfDay = true;
         } else if (requestedStatus === 'Absent' || requestedStatus === 'On leave') {
-          rec.value = 0;
+          // Use leave management to determine if paid or unpaid leave
+          const leaveUsage = await calculateLeaveUsage(userId, date, requestedStatus);
+          rec.value = leaveUsage.value;
           rec.halfDay = false;
         } else if (requestedStatus === 'Holiday' || requestedStatus === 'Weekoff - special allowance') {
           rec.value = 0;
