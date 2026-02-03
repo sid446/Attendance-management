@@ -4,13 +4,25 @@ import mongoose, { Schema, Document, Model } from 'mongoose';
 export interface IScheduleTime {
   inTime: string;   // Format: "HH:mm" e.g., "09:00"
   outTime: string;  // Format: "HH:mm" e.g., "18:00"
+  isHoliday?: boolean; // Whether this day is a holiday
+  isHalfDay?: boolean; // Whether this day is a half day
 }
 
-// Yearly schedule interface
-export interface IYearlySchedule {
-  regular?: IScheduleTime;
+// Daily schedule interface
+export interface IDailySchedule {
+  monday?: IScheduleTime;
+  tuesday?: IScheduleTime;
+  wednesday?: IScheduleTime;
+  thursday?: IScheduleTime;
+  friday?: IScheduleTime;
   saturday?: IScheduleTime;
-  monthly?: IScheduleTime;
+  sunday?: IScheduleTime;
+}
+
+// Schedule entry with effective date
+export interface IScheduleEntry {
+  effectiveFrom: Date; // Date from which this schedule becomes effective
+  daily: IDailySchedule; // Per-day schedules
 }
 
 export interface IUser extends Document {
@@ -26,6 +38,7 @@ export interface IUser extends Document {
   employeeCode?: string;
   paidFrom?: string;
   category?: string;
+  employmentType?: string;
   tallyName?: string;
   gender?: string;
   parentName?: string;
@@ -49,8 +62,14 @@ export interface IUser extends Document {
   panNumber?: string;
   basicSalary?: string; // Basis Salary/Stipend/Fees
   laptopAllowance?: string;
+  otherAllowance?: string;
+  bonus?: string;
+  incentive?: string;
   totalSalaryPerMonth?: string;
   totalSalaryPerAnnum?: string;
+  pf?: string; // Provident Fund
+  esi?: string; // Employee State Insurance
+  gratuity?: string;
   articleshipStartDate?: Date;
   transferCase?: string;
   firstYearArticleship?: string;
@@ -78,8 +97,8 @@ export interface IUser extends Document {
     monthlyEarned: number;
   };
 
-  // Year-wise schedules - NEW STRUCTURE
-  schedules?: Record<string, IYearlySchedule>; // Key is year (e.g., "2025", "2026")
+  // Schedule entries with effective dates - NEW STRUCTURE
+  schedules?: IScheduleEntry[]; // Array of schedule entries, ordered by effectiveFrom ascending
 
   // Legacy fields for backward compatibility
   scheduleInOutTime?: IScheduleTime;      // Regular weekday schedule
@@ -101,16 +120,46 @@ const ScheduleTimeSchema: Schema = new Schema(
       type: String,
       default: '18:00',
     },
+    isHoliday: {
+      type: Boolean,
+      default: false,
+    },
+    isHalfDay: {
+      type: Boolean,
+      default: false,
+    },
   },
   { _id: false }
 );
 
-// Yearly schedule schema
-const YearlyScheduleSchema: Schema = new Schema(
+// Daily schedule schema
+const DailyScheduleSchema: Schema = new Schema(
   {
-    regular: ScheduleTimeSchema,
-    saturday: ScheduleTimeSchema,
-    monthly: ScheduleTimeSchema,
+    monday: ScheduleTimeSchema,
+    tuesday: ScheduleTimeSchema,
+    wednesday: ScheduleTimeSchema,
+    thursday: ScheduleTimeSchema,
+    friday: ScheduleTimeSchema,
+    saturday: {
+      ...ScheduleTimeSchema.obj,
+      isHalfDay: { type: Boolean, default: true }, // Saturday defaults to half day
+    },
+    sunday: {
+      ...ScheduleTimeSchema.obj,
+      isHoliday: { type: Boolean, default: true }, // Sunday defaults to holiday
+    },
+  },
+  { _id: false }
+);
+
+// Schedule entry schema
+const ScheduleEntrySchema: Schema = new Schema(
+  {
+    effectiveFrom: {
+      type: Date,
+      required: true,
+    },
+    daily: DailyScheduleSchema,
   },
   { _id: false }
 );
@@ -158,6 +207,11 @@ const UserSchema: Schema = new Schema(
     category: {
       type: String,
       trim: true,
+    },
+    employmentType: {
+      type: String,
+      enum: ['halftime', 'fulltime', 'article'],
+      default: 'fulltime',
     },
     tallyName: {
       type: String,
@@ -247,11 +301,35 @@ const UserSchema: Schema = new Schema(
       type: String,
       trim: true,
     },
+    otherAllowance: {
+      type: String,
+      trim: true,
+    },
+    bonus: {
+      type: String,
+      trim: true,
+    },
+    incentive: {
+      type: String,
+      trim: true,
+    },
     totalSalaryPerMonth: {
       type: String,
       trim: true,
     },
     totalSalaryPerAnnum: {
+      type: String,
+      trim: true,
+    },
+    pf: {
+      type: String,
+      trim: true,
+    },
+    esi: {
+      type: String,
+      trim: true,
+    },
+    gratuity: {
       type: String,
       trim: true,
     },
@@ -315,11 +393,10 @@ const UserSchema: Schema = new Schema(
       type: Date,
       
     },
-    // Year-wise schedules - NEW STRUCTURE
+    // Schedule entries with effective dates - NEW STRUCTURE
     schedules: {
-      type: Map,
-      of: YearlyScheduleSchema,
-      default: {},
+      type: [ScheduleEntrySchema],
+      default: [],
     },
     // Legacy fields for backward compatibility
     scheduleInOutTime: {

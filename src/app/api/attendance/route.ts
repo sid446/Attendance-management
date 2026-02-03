@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     }
 
     const attendanceRecords = await Attendance.find(query)
-      .populate('userId', 'name employeeId odId employeeCode email department team designation workingUnderPartner scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth')
+      .populate('userId', 'name employeeId odId employeeCode email department team designation workingUnderPartner schedules scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth')
       .sort({ monthYear: -1 });
 
     return NextResponse.json({
@@ -56,40 +56,59 @@ export async function POST(request: NextRequest) {
       const uploadedMonths = new Set<string>();
 
       // Pre-fetch all users for efficient in-memory matching
-      const allUsers = await User.find({}).select('name _id odId scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth');
+      const allUsers = await User.find({}).select('name _id odId employeeCode designation employmentType scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth');
       
       // Helper to strip non-alphanumeric characters for fuzzy matching
       const normalizeForMatch = (s: string) => s.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
 
       for (const rec of records) {
         try {
-          const odId = String(rec.id);
+          const odId = String(rec.id || rec.employeeCode || 'UNKNOWN');
           const recName = rec.name ? String(rec.name).trim() : '';
 
-          // 1. Match ONLY by Name (User request)
+          // 1. Match by Name first, then fallback to Employee Code (from OD-ID column)
           let user = null;
 
           if (recName) {
-            // A. Try exact match
+            // A. Try exact match by name
             user = allUsers.find(u => u.name === recName);
             
-            // B. Case-insensitive
+            // B. Case-insensitive name match
             if (!user) {
               user = allUsers.find(u => u.name.toLowerCase() === recName.toLowerCase());
             }
 
-            // C. Stripped Match (ignores all spaces, dots, special chars)
-            // e.g. "Padmaja Vikas.Sunkad" -> "padmajavikassunkad" match "Padmaja.Vikas.Sunkad" -> "padmajavikassunkad"
+            // C. Stripped Match by name (ignores all spaces, dots, special chars)
             if (!user) {
               const target = normalizeForMatch(recName);
               user = allUsers.find(u => normalizeForMatch(u.name) === target);
             }
           }
 
-          // 2. If still not found, skip this record (DO NOT create new user)
+          // D. If still not found by name, try matching by Employee Code or OD-ID
+          if (!user && odId && odId !== 'UNKNOWN') {
+            user = allUsers.find(u => u.employeeCode === odId || u.odId === odId);
+            
+            // Try case-insensitive match
+            if (!user) {
+              user = allUsers.find(u => 
+                (u.employeeCode && u.employeeCode.toLowerCase() === odId.toLowerCase()) ||
+                (u.odId && u.odId.toLowerCase() === odId.toLowerCase())
+              );
+            }
+          }
+
+          // 2. If still not found, skip this record
           if (!user) {
-             errors.push({ odId, reason: `User not found by Name "${recName}"` });
+             errors.push({ odId, reason: `User not found by Name "${recName}" or Employee ID "${odId}"` });
              continue;
+          }
+
+          // 3. Update user's OD-ID if it's different from what's in Excel
+          if (odId && odId !== 'UNKNOWN' && user.odId !== odId) {
+            await User.findByIdAndUpdate(user._id, { odId });
+            // Update the user in our local array too
+            user.odId = odId;
           }
 
           let createdUser = false; // logic changed: we never create user here now
@@ -190,12 +209,36 @@ export async function POST(request: NextRequest) {
                  if (typeOfPresence === 'On leave' || typeOfPresence === 'Absent') {
                      finalValue = 0;
                  } else if (typeOfPresence && typeOfPresence.includes('Half Day')) {
-                     finalValue = 0.75; 
+                     finalValue = 0.5; 
                      finalHalfDay = true;
                  } else {
                      finalValue = 1;
                  }
              }
+          }
+
+          // Special handling for Article employees
+          const isArticleEmployee = user && (user.employmentType === 'article' || user.designation?.toLowerCase() === 'article');
+          if (isArticleEmployee) {
+            // Article employees are treated as full-time
+            // Even with 00:00 times, they should be marked as present (not absent)
+            if (finalTotalHour === 0) {
+              finalValue = 0; // Treat as present
+              typeOfPresence = 'ThumbMachine';
+            }
+            
+            // Determine half-day for Article employees: arrive after 1:00 PM or spent less than 3:30 hours
+            // Skip half-day calculation if times are 00:00
+            if (finalCheckin !== '00:00' || finalCheckout !== '00:00') {
+              const isAfter1PM = finalCheckin ? finalCheckin >= '13:00' : false;
+              finalHalfDay = isAfter1PM || finalTotalHour < 3.5;
+            }
+          }
+
+          // Special case: if in time and out time is 00:00, halfDay must be false and typeOfPresence must be ThumbMachine
+          if (finalCheckin === '00:00' && finalCheckout === '00:00') {
+            typeOfPresence = 'ThumbMachine';
+            finalHalfDay = false;
           }
 
           attendance.records.set(isoDate, {
@@ -468,6 +511,83 @@ export async function POST(request: NextRequest) {
 }
 
 // Helper function to calculate summary from records
+// Helper to get scheduled times for a user on a specific date
+function getScheduledTimes(user: IUser | null | undefined, dateStr: string): { inTime: string; outTime: string; isHoliday: boolean; isHalfDay: boolean } {
+  if (!user) return { inTime: '09:00', outTime: '18:00', isHoliday: false, isHalfDay: false };
+
+  const date = new Date(dateStr);
+  const dayOfWeek = date.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+  const month = date.getMonth() + 1; // 1-12
+
+  // Try new schedule entries structure
+  if (user.schedules && Array.isArray(user.schedules)) {
+    // Find the schedule entry applicable for this date (effectiveFrom <= date, take latest)
+    const applicableEntry = user.schedules
+      .filter(entry => entry.effectiveFrom <= date)
+      .sort((a, b) => b.effectiveFrom.getTime() - a.effectiveFrom.getTime())[0];
+    
+    if (applicableEntry && applicableEntry.daily) {
+      const daily = applicableEntry.daily;
+      let daySchedule: any = null;
+
+      switch (dayOfWeek) {
+        case 0: daySchedule = daily.sunday; break;
+        case 1: daySchedule = daily.monday; break;
+        case 2: daySchedule = daily.tuesday; break;
+        case 3: daySchedule = daily.wednesday; break;
+        case 4: daySchedule = daily.thursday; break;
+        case 5: daySchedule = daily.friday; break;
+        case 6: daySchedule = daily.saturday; break;
+      }
+
+      if (daySchedule) {
+        return {
+          inTime: daySchedule.inTime || '09:00',
+          outTime: daySchedule.outTime || '18:00',
+          isHoliday: daySchedule.isHoliday || false,
+          isHalfDay: daySchedule.isHalfDay || false,
+        };
+      }
+    }
+  }
+
+  // Fallback to legacy schedules
+  let inTime = '09:00';
+  let outTime = '18:00';
+  let isHoliday = false;
+  let isHalfDay = false;
+
+  if (month === 12 || month === 1) {
+    inTime = user.scheduleInOutTimeMonth?.inTime || '09:00';
+    outTime = user.scheduleInOutTimeMonth?.outTime || '18:00';
+    isHoliday = user.scheduleInOutTimeMonth?.isHoliday || false;
+    isHalfDay = user.scheduleInOutTimeMonth?.isHalfDay || false;
+  } else if (dayOfWeek === 6) { // Saturday
+    inTime = user.scheduleInOutTimeSat?.inTime || '09:00';
+    outTime = user.scheduleInOutTimeSat?.outTime || '18:00';
+    isHoliday = user.scheduleInOutTimeSat?.isHoliday || false;
+    isHalfDay = user.scheduleInOutTimeSat?.isHalfDay || false;
+  } else if (dayOfWeek !== 0) { // Regular (Mon-Fri)
+    inTime = user.scheduleInOutTime?.inTime || '09:00';
+    outTime = user.scheduleInOutTime?.outTime || '18:00';
+    isHoliday = user.scheduleInOutTime?.isHoliday || false;
+    isHalfDay = user.scheduleInOutTime?.isHalfDay || false;
+  } else { // Sunday
+    inTime = user.scheduleInOutTime?.inTime || '09:00';
+    outTime = user.scheduleInOutTime?.outTime || '18:00';
+    isHoliday = user.scheduleInOutTime?.isHoliday || true; // Sunday default holiday
+    isHalfDay = user.scheduleInOutTime?.isHalfDay || false;
+  }
+
+  return { inTime, outTime, isHoliday, isHalfDay };
+}
+
+// Helper to convert time string to minutes
+function timeToMinutes(time: string): number {
+  const [h, m] = time.split(':').map(Number);
+  return h * 60 + m;
+}
+
 function calculateSummary(
   records: Map<string, {
     checkin: string;
@@ -489,57 +609,76 @@ function calculateSummary(
   let totalLeave = 0;
 
   records.forEach((record, dateStr) => {
-    totalHour += record.totalHour || 0;
-    excessHour += record.excessHour || 0;
+    // Recalculate totalHour and excessHour
+    const scheduled = getScheduledTimes(user, dateStr);
+    const checkin = record.checkin;
+    const checkout = record.checkout;
 
-    // Determine if this is an articleship employee
-    const isArticleship = user && user.designation && user.designation.toLowerCase() === 'article';
+    let calculatedTotalHour = calculateTotalHours(checkin, checkout);
+    let calculatedExcessHour = 0;
 
-    // Determine half-day based on user type and check-in time
-    let isHalfDay = false;
-    if (record.checkin) {
-      const checkinTime = record.checkin;
-      const isAfter1PM = checkinTime >= '13:00';
-      
-      if (isArticleship) {
-        // For articleship: half-day if arrive after 1 PM
-        isHalfDay = isAfter1PM;
-      } else {
-        // For others: half-day if arrive after 1 PM AND less than 6 hours worked
-        isHalfDay = isAfter1PM && (record.totalHour < 6);
+    // Update record's totalHour
+    record.totalHour = calculatedTotalHour;
+
+    // Calculate excess for articles
+    const isArticleEmployee = user && user.designation?.toLowerCase() === 'article';
+    if (isArticleEmployee && checkin && checkout && checkin !== '00:00' && checkout !== '00:00' && scheduled.inTime && scheduled.outTime) {
+      // Early arrival
+      if (checkin < scheduled.inTime) {
+        const earlyMinutes = timeToMinutes(scheduled.inTime) - timeToMinutes(checkin);
+        calculatedExcessHour += earlyMinutes / 60;
+      }
+      // Late leaving: excess if more than 30 min beyond scheduled out
+      if (checkout > scheduled.outTime) {
+        const lateMinutes = timeToMinutes(checkout) - timeToMinutes(scheduled.outTime);
+        if (lateMinutes > 30) {
+          calculatedExcessHour += (lateMinutes - 30) / 60;
+        }
       }
     }
 
-    // Update the record's halfDay flag
-    record.halfDay = isHalfDay;
+    // Update record's excessHour
+    record.excessHour = Number(calculatedExcessHour.toFixed(2));
+
+    totalHour += record.totalHour;
+    excessHour += record.excessHour;
+
+    // Determine half-day based on employmentType (only for summary calculation, don't override individual record flags)
+    let isHalfDay = record.halfDay || false; // Use existing halfDay flag if already set
+    if (!record.halfDay) { // Only recalculate if not already set
+      // Special case: if in time and out time is 00:00, halfDay must be false
+      if (checkin === '00:00' && checkout === '00:00') {
+        isHalfDay = false;
+      } else {
+        const employmentType = user?.employmentType || 'fulltime';
+        const designation = user?.designation?.toLowerCase();
+        const isArticle = employmentType === 'article' || designation === 'article';
+        const isAfter1PM = checkin ? checkin >= '13:00' : false;
+
+        if (employmentType === 'fulltime' && !isArticle) {
+          // Half day if arrive after 1:30 PM or spent less than 6.5 hours
+          isHalfDay = isAfter1PM || record.totalHour < 6.5;
+        } else if (employmentType === 'halftime') {
+          // Can come anytime, half day if spent less than 60% of scheduled time
+          const scheduledHours = scheduled.inTime && scheduled.outTime ? calculateTotalHours(scheduled.inTime, scheduled.outTime) : 0;
+          const requiredHours = scheduledHours * 0.6;
+          isHalfDay = record.totalHour < requiredHours;
+        } else if (isArticle) {
+          // Half day if arrive after 1:00 PM or spent less than 3:30 hours
+          isHalfDay = isAfter1PM || record.totalHour < 3.5;
+        }
+      }
+
+      // Update the record's halfDay flag only if it wasn't already set
+      record.halfDay = isHalfDay;
+    }
 
     if (isHalfDay) {
       totalHalfDay++;
     }
 
-    // Determine scheduled in-time for this specific date
-    let scheduledIn = '10:00'; // Default fallback
-    
-    if (user) {
-      const dateDate = new Date(dateStr);
-      // JS getDay(): 0=Sun, 1=Mon, ..., 6=Sat
-      const dayOfWeek = dateDate.getDay(); 
-      const month = dateDate.getMonth() + 1; // 1-12
-
-      // "Sch-Out (Dec- Jan)" logic: Special schedule for Dec (12) and Jan (1)
-      if (month === 12 || month === 1) {
-         scheduledIn = user.scheduleInOutTimeMonth?.inTime || '09:00';
-      } else if (dayOfWeek === 6) { // Saturday
-         scheduledIn = user.scheduleInOutTimeSat?.inTime || '09:00';
-      } else if (dayOfWeek !== 0) { // Regular (Mon-Fri)
-         scheduledIn = user.scheduleInOutTime?.inTime || '09:00';
-      }
-      // Sunday (0) usually doesn't have late arrival, but if record exists, use regular or ignore?
-      // Assuming no late arrival calc for Sunday usually, but let's stick to Regular if present
-      if (dayOfWeek === 0) scheduledIn = user.scheduleInOutTime?.inTime || '09:00';
-    }
-
-    if (record.checkin && record.checkin > scheduledIn) {
+    // Late arrival: if checkin > scheduled in
+    if (checkin && scheduled.inTime && checkin > scheduled.inTime) {
       totalLateArrival++;
     }
 
@@ -560,6 +699,7 @@ function calculateSummary(
         }
         break;
       case 'On leave':
+      case 'Leave':
         totalLeave++;
         break;
       case 'Holiday':

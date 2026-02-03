@@ -8,12 +8,14 @@
     "start": "next start",
     "lint": "eslint",
     "seed:predefined-values": "tsx scripts/seed-predefined-values.ts",
+    "update:employment-type": "tsx scripts/update-employment-type.ts",
     "test:api": "tsx scripts/test-api.ts",
     "backup": "tsx scripts/backup-database.ts",
     "backup:create": "tsx scripts/backup-database.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.3",
+    "exceljs": "^4.4.0",
     "googleapis": "^170.1.0",
     "lucide-react": "^0.562.0",
     "mongodb": "^7.0.0",

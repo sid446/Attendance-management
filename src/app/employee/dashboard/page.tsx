@@ -80,9 +80,16 @@ export default function EmployeeDashboard() {
                 userName: doc.userId.name,
                 monthYear: doc.monthYear,
                 schedules: {
-                   regular: doc.userId.scheduleInOutTime,
-                   saturday: doc.userId.scheduleInOutTimeSat,
-                   monthly: doc.userId.scheduleInOutTimeMonth
+                   effectiveFrom: new Date().toISOString(), // Default effective date for display
+                   daily: {
+                      monday: doc.userId.scheduleInOutTime ? { inTime: doc.userId.scheduleInOutTime.inTime, outTime: doc.userId.scheduleInOutTime.outTime, isHoliday: false, isHalfDay: false } : undefined,
+                      tuesday: doc.userId.scheduleInOutTime ? { inTime: doc.userId.scheduleInOutTime.inTime, outTime: doc.userId.scheduleInOutTime.outTime, isHoliday: false, isHalfDay: false } : undefined,
+                      wednesday: doc.userId.scheduleInOutTime ? { inTime: doc.userId.scheduleInOutTime.inTime, outTime: doc.userId.scheduleInOutTime.outTime, isHoliday: false, isHalfDay: false } : undefined,
+                      thursday: doc.userId.scheduleInOutTime ? { inTime: doc.userId.scheduleInOutTime.inTime, outTime: doc.userId.scheduleInOutTime.outTime, isHoliday: false, isHalfDay: false } : undefined,
+                      friday: doc.userId.scheduleInOutTime ? { inTime: doc.userId.scheduleInOutTime.inTime, outTime: doc.userId.scheduleInOutTime.outTime, isHoliday: false, isHalfDay: false } : undefined,
+                      saturday: doc.userId.scheduleInOutTimeSat ? { inTime: doc.userId.scheduleInOutTimeSat.inTime, outTime: doc.userId.scheduleInOutTimeSat.outTime, isHoliday: false, isHalfDay: true } : undefined,
+                      sunday: { inTime: '09:00', outTime: '18:00', isHoliday: true, isHalfDay: false },
+                   }
                 },
                 summary: doc.summary
              };
@@ -198,21 +205,13 @@ export default function EmployeeDashboard() {
       if (requestStatus === 'Present - outstation' && summary?.schedules) {
           const date = new Date(selectedDate);
           const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-          const month = date.getMonth() + 1; // 1-12
-          
-          let scheduleToUse;
-          if (month === 12 || month === 1) {
-              // December or January - use monthly schedule
-              scheduleToUse = summary.schedules.monthly;
-          } else if (dayOfWeek === 6) {
-              // Saturday - use saturday schedule
-              scheduleToUse = summary.schedules.saturday;
-          } else if (dayOfWeek !== 0) {
-              // Monday to Friday - use regular schedule
-              scheduleToUse = summary.schedules.regular;
-          }
-          
-          if (scheduleToUse) {
+
+          const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+          const dayName = dayNames[dayOfWeek];
+
+          const scheduleToUse = summary?.schedules?.daily?.[dayName as keyof typeof summary.schedules.daily];
+
+          if (scheduleToUse && !scheduleToUse.isHoliday) {
               finalStartTime = scheduleToUse.inTime;
               finalEndTime = scheduleToUse.outTime;
           }
@@ -510,7 +509,7 @@ export default function EmployeeDashboard() {
                              value={requestReason}
                              onChange={(e) => setRequestReason(e.target.value)}
                              placeholder="E.g., Forgot to punch out due to client meeting..."
-                             className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-slate-200 outline-none focus:border-emerald-500 min-h-[80px]"
+                             className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-slate-200 outline-none focus:border-emerald-500 min-h-20"
                              required
                            />
                        </div>
@@ -629,7 +628,7 @@ export default function EmployeeDashboard() {
                              value={futureReason}
                              onChange={(e) => setFutureReason(e.target.value)}
                              placeholder="Reason for future absence..."
-                             className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-slate-200 outline-none focus:border-indigo-500 min-h-[80px]"
+                             className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-slate-200 outline-none focus:border-indigo-500 min-h-20"
                              required
                            />
                        </div>

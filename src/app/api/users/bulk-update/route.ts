@@ -75,6 +75,7 @@ export async function POST(request: NextRequest) {
             paidFrom: emp.paidFrom,
             designation: emp.designation,
             category: emp.category,
+            employmentType: emp.category === 'Article' ? 'article' : 'fulltime',
             tallyName: emp.tallyName,
             gender: emp.gender,
             parentName: emp.parentName,
@@ -97,8 +98,14 @@ export async function POST(request: NextRequest) {
           panNumber: emp.panNumber,
           basicSalary: emp.basicSalary,
           laptopAllowance: emp.laptopAllowance,
+          otherAllowance: emp.otherAllowance,
+          bonus: emp.bonus,
+          incentive: emp.incentive,
           totalSalaryPerMonth: emp.totalSalaryPerMonth,
           totalSalaryPerAnnum: emp.totalSalaryPerAnnum,
+          pf: emp.pf,
+          esi: emp.esi,
+          gratuity: emp.gratuity,
             articleshipStartDate: emp.articleshipStartDate,
             transferCase: emp.transferCase,
             firstYearArticleship: emp.firstYearArticleship,
@@ -128,6 +135,9 @@ export async function POST(request: NextRequest) {
         if (matchedUser) {
             // Update existing
             Object.assign(matchedUser, updateData);
+            
+            // Set employmentType based on category
+            matchedUser.employmentType = emp.category === 'Article' ? 'article' : 'fulltime';
             
             // Should valid date checks be here? the model handles type casting usually, but explicit Date object is better if coming as string
             if (updateData.articleshipStartDate) matchedUser.articleshipStartDate = new Date(updateData.articleshipStartDate);

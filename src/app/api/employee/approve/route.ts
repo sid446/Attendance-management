@@ -297,6 +297,7 @@ function calculateSummary(
         }
         break;
       case 'On leave':
+      case 'Leave':
         totalLeave++;
         break;
       case 'Holiday':

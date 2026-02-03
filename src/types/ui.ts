@@ -6,7 +6,7 @@ export interface AttendanceRecord {
   outTime: string;
   status: 'Present' | 'Absent' | 'On leave' | 'Holiday' | 'HalfDay'|'Leave';
   typeOfPresence?: string;
-  value?: number; // Attendance value: 1 for present, 0 for absent, 0.75 for half day
+  value?: number; // Attendance value: 1 for present, 0 for absent, 0.5 for half day
 }
 
 export interface AttendanceSummaryView {
@@ -18,7 +18,7 @@ export interface AttendanceSummaryView {
   team?: string; // Added optional team field
   designation?: string; // Added optional designation field
   monthYear: string;
-  schedules?: YearlySchedule; // Year-specific schedule for this summary's year
+  schedules?: ScheduleEntry; // Applicable schedule entry for this summary's month/year
   summary: {
     totalHour: number;
     totalLateArrival: number;
@@ -43,15 +43,28 @@ export interface AttendanceSummaryView {
 export interface ScheduleTime {
   inTime: string;
   outTime: string;
+  isHoliday?: boolean;
+  isHalfDay?: boolean;
 }
 
-export interface YearlySchedule {
-  regular?: ScheduleTime;
+export interface DailySchedule {
+  monday?: ScheduleTime;
+  tuesday?: ScheduleTime;
+  wednesday?: ScheduleTime;
+  thursday?: ScheduleTime;
+  friday?: ScheduleTime;
   saturday?: ScheduleTime;
-  monthly?: ScheduleTime;
+  sunday?: ScheduleTime;
+}
+
+// Schedule entry with effective date
+export interface ScheduleEntry {
+  effectiveFrom: string; // ISO date string for frontend
+  daily: DailySchedule;
 }
 
 export interface User {
+  leaveBalance: any;
   _id: string;
   odId: string;
   name: string;
@@ -64,6 +77,7 @@ export interface User {
   employeeCode?: string;
   paidFrom?: string;
   category?: string;
+  employmentType?: string;
   tallyName?: string;
   gender?: string;
   parentName?: string;
@@ -87,8 +101,17 @@ export interface User {
   panNumber?: string;
   basicSalary?: string; // Basis Salary/Stipend/Fees
   laptopAllowance?: string;
+  otherAllowance?: string;
+  bonus?: string;
+  incentive?: string;
   totalSalaryPerMonth?: string;
   totalSalaryPerAnnum?: string;
+  pf?: string;
+  esi?: string;
+  gratuity?: string;
+  totalLeavesDue?: number;
+  totalLeavesTaken?: number;
+  balanceLeaves?: number;
   articleshipStartDate?: string;
   transferCase?: string;
   firstYearArticleship?: string;
@@ -107,8 +130,8 @@ export interface User {
     value: string;
   }[];
 
-  // Year-wise schedules - NEW STRUCTURE
-  schedules?: Record<string, YearlySchedule>; // Key is year (e.g., "2025", "2026")
+  // Schedule entries with effective dates - NEW STRUCTURE
+  schedules?: ScheduleEntry[]; // Array of schedule entries, ordered by effectiveFrom ascending
 
   // Legacy fields for backward compatibility (will be migrated)
   scheduleInOutTime?: ScheduleTime;

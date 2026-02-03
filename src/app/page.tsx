@@ -1,8 +1,8 @@
 "use client";
-import React, { useState, ChangeEvent, useEffect } from "react";
+import React, { useState, ChangeEvent, useEffect, useCallback } from "react";
 import * as XLSX from 'xlsx';
 import { X } from 'lucide-react';
-import { AttendanceRecord, AttendanceSummaryView, User } from '@/types/ui';
+import { AttendanceRecord, AttendanceSummaryView, User, DailySchedule } from '@/types/ui';
 import { LoginView } from '@/components/LoginView';
 import { Sidebar } from '@/components/Sidebar';
 import { UploadSection } from '@/components/UploadSection';
@@ -583,7 +583,7 @@ export default function AttendanceUpload() {
     }
   };
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     try {
       const response = await fetch('/api/users');
       const result = await response.json();
@@ -593,9 +593,8 @@ export default function AttendanceUpload() {
     } catch (err) {
       console.error('Failed to fetch users:', err);
     }
-  };
+  }, []);
 
- 
   const calculateScheduledHoursForDate = (date: Date, schedules: any): number => {
     if (!schedules) return 0;
 
@@ -605,30 +604,24 @@ export default function AttendanceUpload() {
       return h + (m / 60);
     };
 
-    const dow = date.getDay();
-    if (dow === 0) return 0; // Sunday off
+    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const dayName = dayNames[date.getDay()];
 
-    let inTime, outTime;
-    if (dow === 6) {
-      inTime = schedules.saturday?.inTime || schedules.regular?.inTime;
-      outTime = schedules.saturday?.outTime || schedules.regular?.outTime;
-    } else {
-      const month = date.getMonth() + 1;
-      if (month === 1 || month === 12) {
-        inTime = schedules.monthly?.inTime || schedules.regular?.inTime;
-        outTime = schedules.monthly?.outTime || schedules.regular?.outTime;
-      } else {
-        inTime = schedules.regular?.inTime;
-        outTime = schedules.regular?.outTime;
-      }
+    const daySchedule = schedules?.daily?.[dayName];
+
+    if (!daySchedule || daySchedule.isHoliday) {
+      return 0;
     }
+
+    const inTime = daySchedule.inTime;
+    const outTime = daySchedule.outTime;
 
     const start = timeToHours(inTime);
     const end = timeToHours(outTime);
     return (start && end && end > start) ? (end - start) : 9; // Default 9 hours
   };
 
-  const fetchSummaries = async (filter: string | {start: string, end: string} | {startDate: string, endDate: string}): Promise<void> => {
+  const fetchSummaries = useCallback(async (filter: string | {start: string, end: string} | {startDate: string, endDate: string}): Promise<void> => {
     setLoadingSummaries(true);
     try {
       let monthYears: string[] = [];
@@ -665,6 +658,15 @@ export default function AttendanceUpload() {
         }
         monthYears = months;
       }
+
+      // Fetch all users with schedules for schedule lookup
+      const usersResponse = await fetch('/api/users');
+      const usersResult = await usersResponse.json();
+      const allUsersWithSchedules = usersResult.success ? usersResult.data : [];
+      const userScheduleMap = new Map<string, any>();
+      allUsersWithSchedules.forEach((user: any) => {
+        userScheduleMap.set(String(user._id), user);
+      });
 
       // Fetch all months
       const allItems: any[] = [];
@@ -754,33 +756,57 @@ export default function AttendanceUpload() {
       }
 
       const mapped: AttendanceSummaryView[] = Array.from(userMap.values()).map((item) => {
-        // Get the year for schedule lookup
+        // Get the monthYear for schedule lookup
         const monthYear = typeof filter === 'string' ? filter : ('end' in filter ? filter.end : filter.endDate);
-        const year = monthYear.split('-')[0];
         
-        // Get schedule for the specific year
-        const getScheduleForYear = (user: any, year: string) => {
-          if (user.schedules && user.schedules[year]) {
-            return user.schedules[year];
-          }
-          // Fallback to legacy structure
-          return {
-            regular: user.scheduleInOutTime,
-            saturday: user.scheduleInOutTimeSat,
-            monthly: user.scheduleInOutTimeMonth,
-          };
+        // Get applicable schedule for the specific monthYear
+        const getApplicableSchedule = (user: any, monthYear: string) => {
+          if (!user?.schedules || !Array.isArray(user.schedules)) return null;
+          const targetDate = new Date(monthYear + '-01');
+          const applicable = user.schedules
+            .filter((s: any) => new Date(s.effectiveFrom) <= targetDate)
+            .sort((a: any, b: any) => new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime())[0];
+          return applicable || null;
         };
-        
-        const yearSchedule = getScheduleForYear(item.userId, year);
+
+        console.log('item.userId:', item.userId);
+        console.log('item.userId.schedules:', item.userId?.schedules);
+
+        const userFromMap = userScheduleMap.get(item.userId?._id ? String(item.userId._id) : '');
+        console.log('userFromMap:', userFromMap);
+        console.log('userFromMap.schedules:', userFromMap?.schedules);
+
+        const yearSchedule = getApplicableSchedule(userFromMap || item.userId, monthYear);
+
+        // Helper function to get schedule for a specific day
+        const getDaySchedule = (dayName: string) => {
+          return yearSchedule?.daily?.[dayName] || null;
+        };
 
         let totalScheduled = 0;
         // Calculate scheduled hours for each day that has attendance data
         for (const date of Object.keys(item.recordDetails)) {
           const d = new Date(date);
           const rec = item.recordDetails[date];
-          // Only add scheduled hours if it's not a holiday
-          if (rec.typeOfPresence !== 'Holiday') {
-            totalScheduled += calculateScheduledHoursForDate(d, yearSchedule);
+          
+          // Get applicable schedule for this specific date
+          const getApplicableScheduleForDate = (user: any, date: Date) => {
+            if (!user?.schedules || !Array.isArray(user.schedules)) return null;
+            const applicable = user.schedules
+              .filter((s: any) => new Date(s.effectiveFrom) <= date)
+              .sort((a: any, b: any) => new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime())[0];
+            return applicable || null;
+          };
+          
+          const dateSchedule = getApplicableScheduleForDate(userFromMap || item.userId, d);
+          
+          // Only add scheduled hours if it's not a holiday and not marked as holiday in schedule
+          const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+          const dayName = dayNames[d.getDay()];
+          const daySchedule = dateSchedule?.daily?.[dayName];
+
+          if (rec.typeOfPresence !== 'Holiday' && !daySchedule?.isHoliday) {
+            totalScheduled += calculateScheduledHoursForDate(d, dateSchedule);
           }
         }
 
@@ -819,9 +845,9 @@ export default function AttendanceUpload() {
     } finally {
       setLoadingSummaries(false);
     }
-  };
+  }, []);
 
-  const fetchEmployeeMonthly = async (userId: string, monthYear: string): Promise<void> => {
+  const fetchEmployeeMonthly = useCallback(async (userId: string, monthYear: string): Promise<void> => {
     if (!userId || !monthYear) return;
 
     setEmployeeLoading(true);
@@ -891,7 +917,7 @@ export default function AttendanceUpload() {
     } finally {
       setEmployeeLoading(false);
     }
-  };
+  }, []);
 
   // Login UI (when not authenticated)
   if (!isAuthenticated) {
@@ -965,6 +991,7 @@ export default function AttendanceUpload() {
                 uploadFailed={uploadFailed}
                 isLoading={loadingSummaries}
                 onFilterChange={fetchSummaries}
+                onRefreshUsers={fetchUsers}
                 onEmployeeClick={(userId, monthYear) => {
                   setSelectedEmployeeId(userId);
                   setActiveSection('employees');
@@ -1026,8 +1053,10 @@ export default function AttendanceUpload() {
                                             const actual = parseMin(rec.inTime);
                                             const d = new Date(rec.date);
                                             const dow = d.getDay();
-                                            let schedStr = summary.schedules.regular?.inTime;
-                                            if (dow === 6 && summary.schedules.saturday?.inTime) schedStr = summary.schedules.saturday.inTime;
+                                            const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+                                            const dayName = dayNames[dow] as keyof DailySchedule;
+                                            const daySchedule = summary.schedules?.daily?.[dayName];
+                                            let schedStr = daySchedule?.inTime;
                                             
                                             // Sunday/Holiday skipped
                                             if (dow === 0) return false;
@@ -1057,13 +1086,14 @@ export default function AttendanceUpload() {
                                         // Re-check Late for display
                                         let isLate = false;
                                         if (rec.status === 'Present' && summary?.schedules) {
-                                             // (Simplification of logic above for display flag)
-                                              const parseMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h*60+m; };
-                                              const actual = rec.inTime ? parseMin(rec.inTime) : 0;
-                                              const dow = d.getDay();
-                                              let schedStr = summary.schedules.regular?.inTime;
-                                              if (dow === 6 && summary.schedules.saturday?.inTime) schedStr = summary.schedules.saturday.inTime;
-                                              if (dow !== 0 && schedStr && actual > parseMin(schedStr)) isLate = true;
+                                             const parseMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h*60+m; };
+                                             const actual = rec.inTime ? parseMin(rec.inTime) : 0;
+                                             const dow = d.getDay();
+                                             const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+                                             const dayName = dayNames[dow];
+                                             const daySchedule = summary.schedules?.daily?.[dayName as keyof DailySchedule];
+                                             const schedStr = daySchedule?.inTime;
+                                             if (dow !== 0 && !daySchedule?.isHoliday && schedStr && actual > parseMin(schedStr)) isLate = true;
                                         }
 
                                         let statusColor = 'text-slate-300';
@@ -1117,7 +1147,10 @@ export default function AttendanceUpload() {
 
             {/* Employee Management Section */}
             {activeSection === 'employees' && (
-              <EmployeeManagementSection selectedUserId={selectedEmployeeId} />
+              <EmployeeManagementSection 
+                selectedUserId={selectedEmployeeId}
+                onRefreshUsers={fetchUsers}
+              />
             )}
 
             {/* Attendance Requests Section */}

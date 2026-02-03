@@ -1,9 +1,9 @@
 import React, { useState, useEffect, ChangeEvent, useMemo } from 'react';
 import * as XLSX from 'xlsx';
-import { User, ScheduleTime } from '@/types/ui';
+import { User, ScheduleTime, DailySchedule } from '@/types/ui';
 import { Edit2, Save, X, Plus, Upload, FileUp, Filter, Trash2, Search, Download, ChevronDown, ChevronUp, FileSpreadsheet, Settings, Users, Briefcase, CreditCard, Tag } from 'lucide-react';
 
-export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | null }> = ({ selectedUserId }) => {
+export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | null; onRefreshUsers?: () => void }> = ({ selectedUserId, onRefreshUsers }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +24,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
 
   // UI State
   const [showAdditionalFields, setShowAdditionalFields] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'basic' | 'schedule' | 'extended' | 'history'>('basic');
+  const [activeTab, setActiveTab] = useState<'basic' | 'schedule' | 'extended' | 'bank' | 'salary' | 'history'>('basic');
   const [showBulkUploadFormat, setShowBulkUploadFormat] = useState<boolean>(false);
 
   // Predefined Values State
@@ -54,10 +54,6 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   const [employeeHistory, setEmployeeHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState<boolean>(false);
   const [changeReason, setChangeReason] = useState<string>('');
-
-  // Schedule Year Management State
-  const [selectedScheduleYear, setSelectedScheduleYear] = useState<number>(new Date().getFullYear());
-  const [availableScheduleYears, setAvailableScheduleYears] = useState<number[]>([]);
 
   // Extra Info State
   const [newExtraLabel, setNewExtraLabel] = useState<string>('');
@@ -152,14 +148,22 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
     setEditingUser(user);
     // Deep copy or structured clone to avoid mutation issues,
     // ensuring dates are strings compatible with inputs if needed
-    setFormData({
+    const formDataCopy = {
       ...user,
       joiningDate: user.joiningDate ? new Date(user.joiningDate).toISOString().split('T')[0] : '',
       // Ensure team matches workingUnderPartner
       team: user.workingUnderPartner || user.team || '',
-    });
-    setAvailableScheduleYears(getAvailableScheduleYears(user));
-    setSelectedScheduleYear(new Date().getFullYear()); // Default to current year
+    };
+    
+    // Convert schedule effectiveFrom dates to strings for form inputs
+    if (formDataCopy.schedules && Array.isArray(formDataCopy.schedules)) {
+      formDataCopy.schedules = formDataCopy.schedules.map((entry: any) => ({
+        ...entry,
+        effectiveFrom: entry.effectiveFrom ? new Date(entry.effectiveFrom).toISOString().split('T')[0] : ''
+      }));
+    }
+    
+    setFormData(formDataCopy);
     setError(null);
     // Fetch employee history
     fetchEmployeeHistory(user._id);
@@ -337,34 +341,63 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   }, []);
 
   // Schedule Helper Functions
-  const getScheduleForYear = (user: User, year: number): { regular?: ScheduleTime; saturday?: ScheduleTime; monthly?: ScheduleTime } => {
-    // Check if user has new year-wise schedule structure
-    if (user.schedules && user.schedules[year.toString()]) {
-      return user.schedules[year.toString()];
+  const getScheduleForYear = (user: User, year: number): { daily?: DailySchedule; regular?: ScheduleTime; saturday?: ScheduleTime; monthly?: ScheduleTime } => {
+    // Check if user has new schedule entries structure
+    if (user?.schedules && Array.isArray(user.schedules)) {
+      const yearStart = new Date(year, 0, 1);
+      const yearEnd = new Date(year, 11, 31);
+      
+      // Find the schedule entry applicable for this year (effectiveFrom <= yearEnd, take latest)
+      const applicableEntry = user.schedules
+        .filter(entry => new Date(entry.effectiveFrom) <= yearEnd)
+        .sort((a, b) => new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime())[0];
+      
+      if (applicableEntry) {
+        return { daily: applicableEntry.daily };
+      }
     }
 
     // Fallback to legacy structure for backward compatibility
     return {
-      regular: user.scheduleInOutTime,
-      saturday: user.scheduleInOutTimeSat,
-      monthly: user.scheduleInOutTimeMonth,
+      regular: user?.scheduleInOutTime,
+      saturday: user?.scheduleInOutTimeSat,
+      monthly: user?.scheduleInOutTimeMonth,
     };
   };
 
-  const setScheduleForYear = (user: User, year: number, scheduleType: 'regular' | 'saturday' | 'monthly', scheduleTime: ScheduleTime | undefined): User => {
-    const yearKey = year.toString();
-
-    // Initialize schedules object if it doesn't exist
-    const schedules = user.schedules || {};
-
-    // Initialize year schedule if it doesn't exist
-    if (!schedules[yearKey]) {
-      schedules[yearKey] = {};
+  const setScheduleForYear = (user: User, year: number, day: string, scheduleTime: ScheduleTime | undefined): User => {
+    const effectiveFrom = new Date(year, 0, 1).toISOString(); // January 1st of the year as ISO string
+    
+    // Initialize schedules array if it doesn't exist
+    const schedules = Array.isArray(user.schedules) ? [...user.schedules] : [];
+    
+    // Find existing entry for this year
+    const existingIndex = schedules.findIndex(entry => 
+      new Date(entry.effectiveFrom).getTime() === new Date(effectiveFrom).getTime()
+    );
+    
+    let entry;
+    if (existingIndex >= 0) {
+      entry = { ...schedules[existingIndex] };
+    } else {
+      entry = {
+        effectiveFrom,
+        daily: {},
+      };
     }
-
-    // Update the specific schedule type
-    schedules[yearKey][scheduleType] = scheduleTime;
-
+    
+    // Update the specific day
+    if (!entry.daily) entry.daily = {};
+    (entry.daily as any)[day] = scheduleTime;
+    
+    if (existingIndex >= 0) {
+      schedules[existingIndex] = entry;
+    } else {
+      schedules.push(entry);
+      // Sort by effectiveFrom ascending
+      schedules.sort((a, b) => new Date(a.effectiveFrom).getTime() - new Date(b.effectiveFrom).getTime());
+    }
+    
     return {
       ...user,
       schedules,
@@ -374,11 +407,10 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   const getAvailableScheduleYears = (user: User): number[] => {
     const years = new Set<number>();
 
-    // Add years from new structure
-    if (user.schedules) {
-      Object.keys(user.schedules).forEach(yearStr => {
-        const year = parseInt(yearStr);
-        if (!isNaN(year)) years.add(year);
+    // Add years from new schedule entries structure
+    if (user.schedules && Array.isArray(user.schedules)) {
+      user.schedules.forEach(entry => {
+        years.add(new Date(entry.effectiveFrom).getFullYear());
       });
     }
 
@@ -393,31 +425,85 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
     return Array.from(years).sort((a, b) => b - a); // Most recent first
   };
 
-  const handleScheduleChange = (scheduleType: 'regular' | 'saturday' | 'monthly', field: 'inTime' | 'outTime', value: string) => {
-    setFormData(prev => {
-      const user = prev as User;
-      const currentSchedule = getScheduleForYear(user, selectedScheduleYear);
 
-      let updatedSchedule: ScheduleTime | undefined;
-      if (scheduleType === 'regular') {
-        updatedSchedule = {
-          ...currentSchedule.regular,
-          [field]: value,
-        } as ScheduleTime;
-      } else if (scheduleType === 'saturday') {
-        updatedSchedule = {
-          ...currentSchedule.saturday,
-          [field]: value,
-        } as ScheduleTime;
-      } else if (scheduleType === 'monthly') {
-        updatedSchedule = {
-          ...currentSchedule.monthly,
-          [field]: value,
-        } as ScheduleTime;
+
+  const handleScheduleEntryChange = (entryIndex: number, day: string, field: 'inTime' | 'outTime' | 'isHoliday' | 'isHalfDay', value: string | boolean) => {
+    setFormData(prev => {
+      const schedules = Array.isArray(prev.schedules) ? [...prev.schedules] : [];
+      if (!schedules[entryIndex]) return prev;
+
+      const entry = { ...schedules[entryIndex] };
+      if (!entry.daily) entry.daily = {};
+
+      const daySchedule = (entry.daily as any)[day] || {};
+
+      let updatedDaySchedule: any;
+      if (field === 'isHoliday' || field === 'isHalfDay') {
+        updatedDaySchedule = { ...daySchedule, [field]: value };
+      } else {
+        updatedDaySchedule = { ...daySchedule, [field]: value };
       }
 
-      return setScheduleForYear(user, selectedScheduleYear, scheduleType, updatedSchedule);
+      entry.daily = { ...entry.daily, [day]: updatedDaySchedule };
+      schedules[entryIndex] = entry;
+
+      return { ...prev, schedules };
     });
+  };
+
+  const handleEffectiveFromChange = (entryIndex: number, value: string) => {
+    setFormData(prev => {
+      const schedules = Array.isArray(prev.schedules) ? [...prev.schedules] : [];
+      if (!schedules[entryIndex]) return prev;
+
+      schedules[entryIndex] = { ...schedules[entryIndex], effectiveFrom: value };
+      // Sort by effectiveFrom descending
+      schedules.sort((a, b) => new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime());
+
+      return { ...prev, schedules };
+    });
+  };
+
+  const handleAddScheduleEntry = () => {
+    const newEffectiveFrom = new Date().toISOString().split('T')[0]; // Today's date
+    setFormData(prev => {
+      const schedules = Array.isArray(prev.schedules) ? [...prev.schedules] : [];
+      const newEntry = {
+        effectiveFrom: newEffectiveFrom,
+        daily: {
+          monday: { inTime: '10:45', outTime: '19:45' },
+          tuesday: { inTime: '10:45', outTime: '19:45' },
+          wednesday: { inTime: '10:45', outTime: '19:45' },
+          thursday: { inTime: '10:45', outTime: '19:45' },
+          friday: { inTime: '10:45', outTime: '19:45' },
+          saturday: { inTime: '10:45', outTime: '13:45', isHalfDay: true },
+          sunday: { inTime: '', outTime: '', isHoliday: true }
+        }
+      };
+      schedules.push(newEntry);
+      schedules.sort((a, b) => new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime());
+      return { ...prev, schedules };
+    });
+  };
+
+  const handleRemoveScheduleEntry = (entryIndex: number) => {
+    setFormData(prev => {
+      const schedules = Array.isArray(prev.schedules) ? [...prev.schedules] : [];
+      schedules.splice(entryIndex, 1);
+      return { ...prev, schedules };
+    });
+  };
+
+  // Helper function to prepare formData for saving (convert effectiveFrom strings to Date objects)
+  const prepareFormDataForSave = (data: any) => {
+    const prepared = { ...data };
+    if (prepared.schedules && Array.isArray(prepared.schedules)) {
+      prepared.schedules = prepared.schedules.map((entry: any) => ({
+        ...entry,
+        effectiveFrom: new Date(entry.effectiveFrom)
+      }));
+    }
+    return prepared;
   };
 
   const handleSave = async () => {
@@ -433,7 +519,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          ...formData,
+          ...prepareFormDataForSave(formData),
           changedBy: 'HR Admin', // You can make this dynamic based on logged-in user
           changeReason: changeReason || 'Employee information update'
         }),
@@ -451,6 +537,11 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       setFormData({});
       setEmployeeHistory([]);
       setChangeReason('');
+      
+      // Refresh user data to ensure schedule changes are reflected
+      if (onRefreshUsers) {
+        onRefreshUsers();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save changes');
     } finally {
@@ -473,7 +564,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(prepareFormDataForSave(formData)),
       });
 
       const result = await response.json();
@@ -486,6 +577,11 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       setUsers(prev => [...prev, result.data]);
       setIsAddingNew(false);
       setFormData({});
+      
+      // Refresh user data to ensure new user is included
+      if (onRefreshUsers) {
+        onRefreshUsers();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create employee');
     } finally {
@@ -920,8 +1016,17 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       'PAN',
       'Basis Salary/Stipend/Fees',
       'Laptop Allowance',
+      'Other Allowance',
+      'Bonus',
+      'Incentive',
       'Total Salary (P/M)',
       'Per Annum',
+      'PF',
+      'ESI',
+      'Gratuity',
+      'Total Leaves Due',
+      'Total Leaves Taken',
+      'Balance Leaves',
       'Date of Joining -in Asija',
       'Articleship Start Date',
       'Transfer Case',
@@ -987,8 +1092,17 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         u.panNumber || '',
         u.basicSalary || '',
         u.laptopAllowance || '',
+        u.otherAllowance || '',
+        u.bonus || '',
+        u.incentive || '',
         u.totalSalaryPerMonth || '',
         u.totalSalaryPerAnnum || '',
+        u.pf || '',
+        u.esi || '',
+        u.gratuity || '',
+        u.leaveBalance?.earned || 0,
+        u.leaveBalance?.used || 0,
+        u.leaveBalance?.remaining || 0,
         toDateString(u.joiningDate),
         toDateString(u.articleshipStartDate),
         u.transferCase || '',
@@ -1077,6 +1191,26 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 }`}
               >
                 Extended
+              </button>
+              <button
+                onClick={() => setActiveTab('bank')}
+                className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'bank'
+                    ? 'bg-emerald-600 text-white'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                }`}
+              >
+                Bank Details
+              </button>
+              <button
+                onClick={() => setActiveTab('salary')}
+                className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'salary'
+                    ? 'bg-emerald-600 text-white'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                }`}
+              >
+                Salary & Leave
               </button>
               <button
                 onClick={() => setActiveTab('history')}
@@ -1170,6 +1304,20 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 </div>
 
                 <div>
+                  <label className="block text-xs text-slate-400 mb-1">Employment Type</label>
+                  <select
+                    value={formData.employmentType || ''}
+                    onChange={(e) => handleInputChange('employmentType', e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  >
+                    <option value="">Select employment type</option>
+                    <option value="fulltime">Full Time</option>
+                    <option value="halftime">Half Time</option>
+                    <option value="article">Article</option>
+                  </select>
+                </div>
+
+                <div>
                   <label className="block text-xs text-slate-400 mb-1">Joining Date</label>
                   <input
                     type="date"
@@ -1200,97 +1348,381 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           {activeTab === 'schedule' && (
             <div className="md:col-span-2 space-y-6">
               <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                <h3 className="text-sm font-medium text-slate-300">Work Schedule</h3>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs text-slate-500">Year:</label>
-                  <select
-                    value={selectedScheduleYear}
-                    onChange={(e) => setSelectedScheduleYear(Number(e.target.value))}
-                    className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded px-2 py-1"
-                  >
-                    {availableScheduleYears.map(year => (
-                      <option key={year} value={year}>{year}</option>
-                    ))}
-                  </select>
-                </div>
+                <h3 className="text-sm font-medium text-slate-300">Work Schedule Entries</h3>
+                <button
+                  onClick={handleAddScheduleEntry}
+                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-sm rounded"
+                >
+                  Add New Schedule Entry
+                </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Regular Schedule */}
-                <div className="space-y-2">
-                  <label className="text-xs font-semibold text-emerald-500/80">Regular (Mon-Fri)</label>
-                  <div className="space-y-2">
-                    <div>
-                      <label className="text-xs text-slate-500">In Time</label>
+              {(formData.schedules || []).map((entry, index) => (
+                <div key={index} className="border border-slate-800 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm text-slate-300">Effective From:</label>
                       <input
-                        type="time"
-                        value={getScheduleForYear(formData as User, selectedScheduleYear).regular?.inTime || ''}
-                        onChange={(e) => handleScheduleChange('regular', 'inTime', e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                        type="date"
+                        value={entry.effectiveFrom ? new Date(entry.effectiveFrom).toISOString().split('T')[0] : ''}
+                        onChange={(e) => handleEffectiveFromChange(index, e.target.value)}
+                        className=" border border-slate-800 text-black bg-zinc-300  text-sm rounded px-2 py-1"
                       />
                     </div>
-                    <div>
-                      <label className="text-xs text-slate-500">Out Time</label>
-                      <input
-                        type="time"
-                        value={getScheduleForYear(formData as User, selectedScheduleYear).regular?.outTime || ''}
-                        onChange={(e) => handleScheduleChange('regular', 'outTime', e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
-                      />
-                    </div>
+                    <button
+                      onClick={() => handleRemoveScheduleEntry(index)}
+                      className="px-2 py-1 bg-rose-600 hover:bg-rose-500 text-white text-sm rounded"
+                    >
+                      Remove
+                    </button>
                   </div>
-                </div>
 
-                {/* Saturday Schedule */}
-                <div className="space-y-2">
-                  <label className="text-xs font-semibold text-emerald-500/80">Saturday</label>
-                  <div className="space-y-2">
-                     <div>
-                      <label className="text-xs text-slate-500">In Time</label>
-                      <input
-                        type="time"
-                        value={getScheduleForYear(formData as User, selectedScheduleYear).saturday?.inTime || ''}
-                        onChange={(e) => handleScheduleChange('saturday', 'inTime', e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
-                      />
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {/* Monday */}
+                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-semibold text-emerald-400">Monday</label>
+                        <div className="flex gap-2">
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.monday?.isHoliday) || false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'monday', 'isHoliday', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Holiday
+                          </label>
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.monday?.isHalfDay) || false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'monday', 'isHalfDay', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Half Day
+                          </label>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div>
+                          <label className="text-xs text-slate-500">In Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.monday?.inTime || '10:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'monday', 'inTime', e.target.value)}
+                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm "
+                            disabled={entry.daily?.monday?.isHoliday}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-500">Out Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.monday?.outTime || '19:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'monday', 'outTime', e.target.value)}
+                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm "
+                            disabled={entry.daily?.monday?.isHoliday}
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <label className="text-xs text-slate-500">Out Time</label>
-                      <input
-                        type="time"
-                        value={getScheduleForYear(formData as User, selectedScheduleYear).saturday?.outTime || ''}
-                        onChange={(e) => handleScheduleChange('saturday', 'outTime', e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
-                      />
-                    </div>
-                  </div>
-                </div>
 
-                 {/* Monthly Schedule */}
-                 <div className="space-y-2">
-                  <label className="text-xs font-semibold text-emerald-500/80">Monthly Special</label>
-                  <div className="space-y-2">
-                     <div>
-                      <label className="text-xs text-slate-500">In Time</label>
-                      <input
-                        type="time"
-                        value={getScheduleForYear(formData as User, selectedScheduleYear).monthly?.inTime || ''}
-                        onChange={(e) => handleScheduleChange('monthly', 'inTime', e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
-                      />
+                    {/* Tuesday */}
+                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-semibold text-emerald-400">Tuesday</label>
+                        <div className="flex gap-2">
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.tuesday?.isHoliday) || false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'tuesday', 'isHoliday', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Holiday
+                          </label>
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.tuesday?.isHalfDay) || false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'tuesday', 'isHalfDay', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Half Day
+                          </label>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div>
+                          <label className="text-xs text-slate-500">In Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.tuesday?.inTime || '10:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'tuesday', 'inTime', e.target.value)}
+                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm "
+                            disabled={entry.daily?.tuesday?.isHoliday}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-500">Out Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.tuesday?.outTime || '19:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'tuesday', 'outTime', e.target.value)}
+                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm "
+                            disabled={entry.daily?.tuesday?.isHoliday}
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <label className="text-xs text-slate-500">Out Time</label>
-                      <input
-                        type="time"
-                        value={formData.scheduleInOutTimeMonth?.outTime || ''}
-                        onChange={(e) => handleScheduleChange('monthly', 'outTime', e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
-                      />
+
+                    {/* Wednesday */}
+                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-semibold text-emerald-400">Wednesday</label>
+                        <div className="flex gap-2">
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.wednesday?.isHoliday) || false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'wednesday', 'isHoliday', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Holiday
+                          </label>
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.wednesday?.isHalfDay) || false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'wednesday', 'isHalfDay', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Half Day
+                          </label>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div>
+                          <label className="text-xs text-slate-500">In Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.wednesday?.inTime || '10:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'wednesday', 'inTime', e.target.value)}
+                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm "
+                            disabled={entry.daily?.wednesday?.isHoliday}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-500">Out Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.wednesday?.outTime || '19:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'wednesday', 'outTime', e.target.value)}
+                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm"
+                            disabled={entry.daily?.wednesday?.isHoliday}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Thursday */}
+                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-semibold text-emerald-400">Thursday</label>
+                        <div className="flex gap-2">
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.thursday?.isHoliday) || false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'thursday', 'isHoliday', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Holiday
+                          </label>
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.thursday?.isHalfDay) || false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'thursday', 'isHalfDay', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Half Day
+                          </label>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div>
+                          <label className="text-xs text-slate-500">In Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.thursday?.inTime || '10:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'thursday', 'inTime', e.target.value)}
+                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm"
+                            disabled={entry.daily?.thursday?.isHoliday}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-500">Out Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.thursday?.outTime || '19:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'thursday', 'outTime', e.target.value)}
+                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm"
+                            disabled={entry.daily?.thursday?.isHoliday}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Friday */}
+                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-semibold text-emerald-400">Friday</label>
+                        <div className="flex gap-2">
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.friday?.isHoliday) || false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'friday', 'isHoliday', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Holiday
+                          </label>
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.friday?.isHalfDay) || false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'friday', 'isHalfDay', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Half Day
+                          </label>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div>
+                          <label className="text-xs text-slate-500">In Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.friday?.inTime || '10:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'friday', 'inTime', e.target.value)}
+                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm"
+                            disabled={entry.daily?.friday?.isHoliday}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-500">Out Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.friday?.outTime || '19:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'friday', 'outTime', e.target.value)}
+                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm"
+                            disabled={entry.daily?.friday?.isHoliday}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Saturday */}
+                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-semibold text-emerald-400">Saturday</label>
+                        <div className="flex gap-2">
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.saturday?.isHoliday) || false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'saturday', 'isHoliday', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Holiday
+                          </label>
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.saturday?.isHalfDay) !== false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'saturday', 'isHalfDay', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Half Day
+                          </label>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div>
+                          <label className="text-xs text-slate-500">In Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.saturday?.inTime || '10:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'saturday', 'inTime', e.target.value)}
+                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm"
+                            disabled={entry.daily?.saturday?.isHoliday}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-500">Out Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.saturday?.outTime || '13:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'saturday', 'outTime', e.target.value)}
+                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm"
+                            disabled={entry.daily?.saturday?.isHoliday}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Sunday */}
+                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-semibold text-emerald-400">Sunday</label>
+                        <div className="flex gap-2">
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.sunday?.isHoliday) !== false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'sunday', 'isHoliday', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Holiday
+                          </label>
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.sunday?.isHalfDay) || false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'sunday', 'isHalfDay', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Half Day
+                          </label>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div>
+                          <label className="text-xs text-slate-500">In Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.sunday?.inTime || '10:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'sunday', 'inTime', e.target.value)}
+                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm"
+                            disabled={entry.daily?.sunday?.isHoliday}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-500">Out Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.sunday?.outTime || '19:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'sunday', 'outTime', e.target.value)}
+                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm"
+                            disabled={entry.daily?.sunday?.isHoliday}
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              ))}
             </div>
           )}
 
@@ -1430,60 +1862,6 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Bank Name</label>
-                    <input
-                      type="text"
-                      value={(formData as any).bankName || ''}
-                      onChange={(e) => handleInputChange('bankName' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Branch Name</label>
-                    <input
-                      type="text"
-                      value={(formData as any).branchName || ''}
-                      onChange={(e) => handleInputChange('branchName' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Account No.</label>
-                    <input
-                      type="text"
-                      value={(formData as any).accountNumber || ''}
-                      onChange={(e) => handleInputChange('accountNumber' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">IFSC</label>
-                    <input
-                      type="text"
-                      value={(formData as any).ifscCode || ''}
-                      onChange={(e) => handleInputChange('ifscCode' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Type of Account</label>
-                    <input
-                      type="text"
-                      value={(formData as any).accountType || ''}
-                      onChange={(e) => handleInputChange('accountType' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Name of Account Holder</label>
-                    <input
-                      type="text"
-                      value={(formData as any).accountHolderName || ''}
-                      onChange={(e) => handleInputChange('accountHolderName' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                    />
-                  </div>
-                  <div>
                     <label className="block text-xs text-slate-400 mb-1">Aadhar No.</label>
                     <input
                       type="text"
@@ -1505,42 +1883,6 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
 
                 {/* Salary Information */}
                 <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Basis Salary/Stipend/Fees</label>
-                    <input
-                      type="text"
-                      value={(formData as any).basicSalary || ''}
-                      onChange={(e) => handleInputChange('basicSalary' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Laptop Allowance</label>
-                    <input
-                      type="text"
-                      value={(formData as any).laptopAllowance || ''}
-                      onChange={(e) => handleInputChange('laptopAllowance' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Total Salary (P/M)</label>
-                    <input
-                      type="text"
-                      value={(formData as any).totalSalaryPerMonth || ''}
-                      onChange={(e) => handleInputChange('totalSalaryPerMonth' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Per Annum</label>
-                    <input
-                      type="text"
-                      value={(formData as any).totalSalaryPerAnnum || ''}
-                      onChange={(e) => handleInputChange('totalSalaryPerAnnum' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                    />
-                  </div>
                 </div>
 
                 {/* Articleship & Professional */}
@@ -1616,6 +1958,495 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     <p className="text-[11px] text-slate-500">No additional info fields defined yet.</p>
                   )}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Bank Details Tab */}
+          {activeTab === 'bank' && (
+            <div className="md:col-span-2">
+              <h3 className="text-sm font-medium text-slate-300 border-b border-slate-800 pb-2 mb-4">Bank Details</h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Bank Name</label>
+                  <input
+                    type="text"
+                    value={(formData as any).bankName || ''}
+                    onChange={(e) => handleInputChange('bankName' as keyof User, e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Branch Name</label>
+                  <input
+                    type="text"
+                    value={(formData as any).branchName || ''}
+                    onChange={(e) => handleInputChange('branchName' as keyof User, e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Account Number</label>
+                  <input
+                    type="text"
+                    value={(formData as any).accountNumber || ''}
+                    onChange={(e) => handleInputChange('accountNumber' as keyof User, e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">IFSC Code</label>
+                  <input
+                    type="text"
+                    value={(formData as any).ifscCode || ''}
+                    onChange={(e) => handleInputChange('ifscCode' as keyof User, e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Account Type</label>
+                  <input
+                    type="text"
+                    value={(formData as any).accountType || ''}
+                    onChange={(e) => handleInputChange('accountType' as keyof User, e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Account Holder Name</label>
+                  <input
+                    type="text"
+                    value={(formData as any).accountHolderName || ''}
+                    onChange={(e) => handleInputChange('accountHolderName' as keyof User, e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Salary & Leave Tab */}
+          {activeTab === 'salary' && (
+            <div className="md:col-span-2">
+              <h3 className="text-sm font-medium text-slate-300 border-b border-slate-800 pb-2 mb-4">Salary & Leave Information</h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                
+                {/* Salary Details */}
+                <div className="md:col-span-3">
+                  <h4 className="text-sm font-medium text-slate-400 mb-3 border-b border-slate-700 pb-1">Salary Details</h4>
+                </div>
+                
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Basic Salary</label>
+                  <input
+                    type="text"
+                    value={(formData as any).basicSalary || ''}
+                    onChange={(e) => handleInputChange('basicSalary' as keyof User, e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Laptop Allowance</label>
+                  <input
+                    type="text"
+                    value={(formData as any).laptopAllowance || ''}
+                    onChange={(e) => handleInputChange('laptopAllowance' as keyof User, e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Other Allowance</label>
+                  <input
+                    type="text"
+                    value={(formData as any).otherAllowance || ''}
+                    onChange={(e) => handleInputChange('otherAllowance' as keyof User, e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Bonus</label>
+                  <input
+                    type="text"
+                    value={(formData as any).bonus || ''}
+                    onChange={(e) => handleInputChange('bonus' as keyof User, e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Incentive</label>
+                  <input
+                    type="text"
+                    value={(formData as any).incentive || ''}
+                    onChange={(e) => handleInputChange('incentive' as keyof User, e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Total Salary (P/M)</label>
+                  <input
+                    type="text"
+                    value={(formData as any).totalSalaryPerMonth || ''}
+                    onChange={(e) => handleInputChange('totalSalaryPerMonth' as keyof User, e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+                
+                {/* Deductions */}
+                <div className="md:col-span-3">
+                  <h4 className="text-sm font-medium text-slate-400 mb-3 border-b border-slate-700 pb-1">Deductions</h4>
+                </div>
+                
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">PF (Provident Fund)</label>
+                  <input
+                    type="text"
+                    value={(formData as any).pf || ''}
+                    onChange={(e) => handleInputChange('pf' as keyof User, e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">ESI</label>
+                  <input
+                    type="text"
+                    value={(formData as any).esi || ''}
+                    onChange={(e) => handleInputChange('esi' as keyof User, e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Gratuity</label>
+                  <input
+                    type="text"
+                    value={(formData as any).gratuity || ''}
+                    onChange={(e) => handleInputChange('gratuity' as keyof User, e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+                
+                {/* Leave Information */}
+                <div className="md:col-span-3">
+                  <h4 className="text-sm font-medium text-slate-400 mb-3 border-b border-slate-700 pb-1">Leave Information</h4>
+                </div>
+                
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Total Earned</label>
+                  <div className="text-sm text-slate-200 font-medium bg-slate-950 border border-slate-800 rounded px-3 py-2">
+                    {(formData as any).leaveBalance?.earned || 0} days
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Total Used</label>
+                  <div className="text-sm text-slate-200 font-medium bg-slate-950 border border-slate-800 rounded px-3 py-2">
+                    {(formData as any).leaveBalance?.used || 0} days
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Balance Available</label>
+                  <div className={`text-sm font-medium bg-slate-950 border border-slate-800 rounded px-3 py-2 ${
+                    ((formData as any).leaveBalance?.remaining || 0) > 0 ? 'text-sky-400' : 'text-slate-400'
+                  }`}>
+                    {(formData as any).leaveBalance?.remaining || 0} days
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Monthly Earned Rate</label>
+                  <div className="text-sm text-slate-200 font-medium bg-slate-950 border border-slate-800 rounded px-3 py-2">
+                    {(formData as any).leaveBalance?.monthlyEarned || 2} days/month
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Last Updated</label>
+                  <div className="text-sm text-slate-200 font-medium bg-slate-950 border border-slate-800 rounded px-3 py-2">
+                    {(formData as any).leaveBalance?.lastUpdated 
+                      ? new Date((formData as any).leaveBalance.lastUpdated).toLocaleDateString()
+                      : 'Never'
+                    }
+                  </div>
+                </div>
+                
+              </div>
+            </div>
+          )}
+
+          {/* Extended Tab */}
+          {activeTab === 'extended' && (
+            <div className="md:col-span-2">
+              <h3 className="text-sm font-medium text-slate-300 border-b border-slate-800 pb-2 mb-4">Extended Details (Optional)</h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                
+                {/* Identity & Contact */}
+                {[
+                  { label: 'Registration No.', key: 'registrationNo' },
+                  { label: 'Employee Code', key: 'employeeCode' },
+                  { label: 'Paid From', key: 'paidFrom' },
+                  { label: 'Tally Name', key: 'tallyName' },
+                  { label: 'Category', key: 'category' },
+                  { label: 'Gender', key: 'gender' },
+                  { label: 'Mobile No.', key: 'mobileNumber' },
+                  { label: 'Alt Mobile', key: 'alternateMobileNumber' },
+                  { label: 'Alt Email', key: 'alternateEmail' },
+                  { label: 'Parent Name', key: 'parentName' },
+                  { label: 'Parent Occ.', key: 'parentOccupation' },
+                ].map((field) => {
+                  // Special handling for dropdown fields
+                  if (field.key === 'paidFrom') {
+                    return (
+                      <div key={field.key}>
+                        <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                        <select
+                          value={(formData as any)[field.key] || ''}
+                          onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                        >
+                          <option value="">Select {field.label.toLowerCase()}</option>
+                          {predefinedValues.paidFrom.map((value) => (
+                            <option key={value} value={value}>{value}</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  } else if (field.key === 'category') {
+                    return (
+                      <div key={field.key}>
+                        <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                        <select
+                          value={(formData as any)[field.key] || ''}
+                          onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                        >
+                          <option value="">Select {field.label.toLowerCase()}</option>
+                          {predefinedValues.categories.map((value) => (
+                            <option key={value} value={value}>{value}</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <div key={field.key}>
+                        <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                        <input
+                          type="text"
+                          value={(formData as any)[field.key] || ''}
+                          onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                        />
+                      </div>
+                    );
+                  }
+                })}
+
+                <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                     <div>
+                        <label className="block text-xs text-slate-400 mb-1">Address Line 1</label>
+                        <input
+                          type="text"
+                          value={formData.address1 || ''}
+                          onChange={(e) => handleInputChange('address1', e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-400 mb-1">Address Line 2</label>
+                        <input
+                          type="text"
+                          value={formData.address2 || ''}
+                          onChange={(e) => handleInputChange('address2', e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                        />
+                      </div>
+                </div>
+
+                {/* Emergency Contact & Banking */}
+                <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Emergency Contact No.</label>
+                    <input
+                      type="text"
+                      value={(formData as any).emergencyContactNo || ''}
+                      onChange={(e) => handleInputChange('emergencyContactNo' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Relation</label>
+                    <input
+                      type="text"
+                      value={(formData as any).emergencyContactRelation || ''}
+                      onChange={(e) => handleInputChange('emergencyContactRelation' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Anniversary Date</label>
+                    <input
+                      type="date"
+                      value={(formData as any).anniversaryDate ? new Date((formData as any).anniversaryDate).toISOString().split('T')[0] : ''}
+                      onChange={(e) => handleInputChange('anniversaryDate' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Bank Name</label>
+                    <input
+                      type="text"
+                      value={(formData as any).bankName || ''}
+                      onChange={(e) => handleInputChange('bankName' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Branch Name</label>
+                    <input
+                      type="text"
+                      value={(formData as any).branchName || ''}
+                      onChange={(e) => handleInputChange('branchName' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Account No.</label>
+                    <input
+                      type="text"
+                      value={(formData as any).accountNumber || ''}
+                      onChange={(e) => handleInputChange('accountNumber' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">IFSC</label>
+                    <input
+                      type="text"
+                      value={(formData as any).ifscCode || ''}
+                      onChange={(e) => handleInputChange('ifscCode' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Type of Account</label>
+                    <input
+                      type="text"
+                      value={(formData as any).accountType || ''}
+                      onChange={(e) => handleInputChange('accountType' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Name of Account Holder</label>
+                    <input
+                      type="text"
+                      value={(formData as any).accountHolderName || ''}
+                      onChange={(e) => handleInputChange('accountHolderName' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Aadhar No.</label>
+                    <input
+                      type="text"
+                      value={(formData as any).aadhaarNumber || ''}
+                      onChange={(e) => handleInputChange('aadhaarNumber' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">PAN</label>
+                    <input
+                      type="text"
+                      value={(formData as any).panNumber || ''}
+                      onChange={(e) => handleInputChange('panNumber' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                </div>
+
+                {/* Salary Information */}
+                <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Basis Salary/Stipend/Fees</label>
+                    <input
+                      type="text"
+                      value={(formData as any).basicSalary || ''}
+                      onChange={(e) => handleInputChange('basicSalary' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Laptop Allowance</label>
+                    <input
+                      type="text"
+                      value={(formData as any).laptopAllowance || ''}
+                      onChange={(e) => handleInputChange('laptopAllowance' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Total Salary (P/M)</label>
+                    <input
+                      type="text"
+                      value={(formData as any).totalSalaryPerMonth || ''}
+                      onChange={(e) => handleInputChange('totalSalaryPerMonth' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Per Annum</label>
+                    <input
+                      type="text"
+                      value={(formData as any).totalSalaryPerAnnum || ''}
+                      onChange={(e) => handleInputChange('totalSalaryPerAnnum' as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                </div>
+
+                {/* Articleship & Professional */}
+                {[
+                  { label: 'Transfer Case', key: 'transferCase' },
+                  { label: '1st Year Art.', key: 'firstYearArticleship' },
+                  { label: '2nd Year Art.', key: 'secondYearArticleship' },
+                  { label: '3rd Year Art.', key: 'thirdYearArticleship' },
+                  { label: 'Filled Scholarship', key: 'filledScholarship' },
+                  { label: 'Qualification', key: 'qualificationLevel' },
+                  { label: 'Reg. Partner', key: 'registeredUnderPartner' },
+                  { label: 'Work. Partner', key: 'workingUnderPartner' },
+                  { label: 'Work Timing (Text)', key: 'workingTiming' },
+                ].map((field) => (
+                  <div key={field.key}>
+                     <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                    <input
+                      type="text"
+                      value={(formData as any)[field.key] || ''}
+                      onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    />
+                  </div>
+                ))}
+
+                {/* Dates */}
+                 <div>
+                  <label className="block text-xs text-slate-400 mb-1">Articleship Start</label>
+                  <input
+                    type="date"
+                    value={formData.articleshipStartDate ? new Date(formData.articleshipStartDate).toISOString().split('T')[0] : ''}
+                    onChange={(e) => handleInputChange('articleshipStartDate', e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                  />
+                </div>
+                 <div>
+                  <label className="block text-xs text-slate-400 mb-1">Next Attempt Due</label>
+                  <input
+                    type="date"
+                    value={formData.nextAttemptDueDate ? new Date(formData.nextAttemptDueDate).toISOString().split('T')[0] : ''}
+                    onChange={(e) => handleInputChange('nextAttemptDueDate', e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                  />
+                </div>
+
               </div>
             </div>
           )}
@@ -1897,97 +2728,381 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           {activeTab === 'schedule' && (
             <div className="md:col-span-2 space-y-6">
               <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                <h3 className="text-sm font-medium text-slate-300">Work Schedule</h3>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs text-slate-500">Year:</label>
-                  <select
-                    value={selectedScheduleYear}
-                    onChange={(e) => setSelectedScheduleYear(Number(e.target.value))}
-                    className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded px-2 py-1"
-                  >
-                    {availableScheduleYears.map(year => (
-                      <option key={year} value={year}>{year}</option>
-                    ))}
-                  </select>
-                </div>
+                <h3 className="text-sm font-medium text-slate-300">Work Schedule Entries</h3>
+                <button
+                  onClick={handleAddScheduleEntry}
+                  className="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded"
+                >
+                  Add New Schedule Entry
+                </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Regular Schedule */}
-                <div className="space-y-2">
-                  <label className="text-xs font-semibold text-purple-500/80">Regular (Mon-Fri)</label>
-                  <div className="space-y-2">
-                    <div>
-                      <label className="text-xs text-slate-500">In Time</label>
+              {(formData.schedules || []).map((entry, index) => (
+                <div key={index} className="border border-slate-800 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm text-slate-300">Effective From:</label>
                       <input
-                        type="time"
-                        value={getScheduleForYear(formData as User, selectedScheduleYear).regular?.inTime || ''}
-                        onChange={(e) => handleScheduleChange('regular', 'inTime', e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                        type="date"
+                        value={entry.effectiveFrom ? new Date(entry.effectiveFrom).toISOString().split('T')[0] : ''}
+                        onChange={(e) => handleEffectiveFromChange(index, e.target.value)}
+                        className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded px-2 py-1"
                       />
                     </div>
-                    <div>
-                      <label className="text-xs text-slate-500">Out Time</label>
-                      <input
-                        type="time"
-                        value={getScheduleForYear(formData as User, selectedScheduleYear).regular?.outTime || ''}
-                        onChange={(e) => handleScheduleChange('regular', 'outTime', e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
-                      />
-                    </div>
+                    <button
+                      onClick={() => handleRemoveScheduleEntry(index)}
+                      className="px-2 py-1 bg-rose-600 hover:bg-rose-500 text-white text-sm rounded"
+                    >
+                      Remove
+                    </button>
                   </div>
-                </div>
 
-                {/* Saturday Schedule */}
-                <div className="space-y-2">
-                  <label className="text-xs font-semibold text-purple-500/80">Saturday</label>
-                  <div className="space-y-2">
-                     <div>
-                      <label className="text-xs text-slate-500">In Time</label>
-                      <input
-                        type="time"
-                        value={getScheduleForYear(formData as User, selectedScheduleYear).saturday?.inTime || ''}
-                        onChange={(e) => handleScheduleChange('saturday', 'inTime', e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
-                      />
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {/* Monday */}
+                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-semibold text-purple-400">Monday</label>
+                        <div className="flex gap-2">
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.monday?.isHoliday) || false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'monday', 'isHoliday', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Holiday
+                          </label>
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.monday?.isHalfDay) || false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'monday', 'isHalfDay', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Half Day
+                          </label>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div>
+                          <label className="text-xs text-slate-500">In Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.monday?.inTime || '10:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'monday', 'inTime', e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            disabled={entry.daily?.monday?.isHoliday}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-500">Out Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.monday?.outTime || '19:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'monday', 'outTime', e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            disabled={entry.daily?.monday?.isHoliday}
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <label className="text-xs text-slate-500">Out Time</label>
-                      <input
-                        type="time"
-                        value={getScheduleForYear(formData as User, selectedScheduleYear).saturday?.outTime || ''}
-                        onChange={(e) => handleScheduleChange('saturday', 'outTime', e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
-                      />
-                    </div>
-                  </div>
-                </div>
 
-                 {/* Monthly Schedule */}
-                 <div className="space-y-2">
-                  <label className="text-xs font-semibold text-purple-500/80">Monthly Special</label>
-                  <div className="space-y-2">
-                     <div>
-                      <label className="text-xs text-slate-500">In Time</label>
-                      <input
-                        type="time"
-                        value={getScheduleForYear(formData as User, selectedScheduleYear).monthly?.inTime || ''}
-                        onChange={(e) => handleScheduleChange('monthly', 'inTime', e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
-                      />
+                    {/* Tuesday */}
+                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-semibold text-purple-400">Tuesday</label>
+                        <div className="flex gap-2">
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.tuesday?.isHoliday) || false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'tuesday', 'isHoliday', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Holiday
+                          </label>
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.tuesday?.isHalfDay) || false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'tuesday', 'isHalfDay', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Half Day
+                          </label>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div>
+                          <label className="text-xs text-slate-500">In Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.tuesday?.inTime || '10:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'tuesday', 'inTime', e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            disabled={entry.daily?.tuesday?.isHoliday}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-500">Out Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.tuesday?.outTime || '19:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'tuesday', 'outTime', e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            disabled={entry.daily?.tuesday?.isHoliday}
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <label className="text-xs text-slate-500">Out Time</label>
-                      <input
-                        type="time"
-                        value={getScheduleForYear(formData as User, selectedScheduleYear).monthly?.outTime || ''}
-                        onChange={(e) => handleScheduleChange('monthly', 'outTime', e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
-                      />
+
+                    {/* Wednesday */}
+                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-semibold text-purple-400">Wednesday</label>
+                        <div className="flex gap-2">
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.wednesday?.isHoliday) || false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'wednesday', 'isHoliday', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Holiday
+                          </label>
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.wednesday?.isHalfDay) || false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'wednesday', 'isHalfDay', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Half Day
+                          </label>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div>
+                          <label className="text-xs text-slate-500">In Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.wednesday?.inTime || '10:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'wednesday', 'inTime', e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            disabled={entry.daily?.wednesday?.isHoliday}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-500">Out Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.wednesday?.outTime || '19:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'wednesday', 'outTime', e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            disabled={entry.daily?.wednesday?.isHoliday}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Thursday */}
+                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-semibold text-purple-400">Thursday</label>
+                        <div className="flex gap-2">
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.thursday?.isHoliday) || false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'thursday', 'isHoliday', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Holiday
+                          </label>
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.thursday?.isHalfDay) || false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'thursday', 'isHalfDay', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Half Day
+                          </label>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div>
+                          <label className="text-xs text-slate-500">In Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.thursday?.inTime || '10:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'thursday', 'inTime', e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            disabled={entry.daily?.thursday?.isHoliday}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-500">Out Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.thursday?.outTime || '19:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'thursday', 'outTime', e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            disabled={entry.daily?.thursday?.isHoliday}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Friday */}
+                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-semibold text-purple-400">Friday</label>
+                        <div className="flex gap-2">
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.friday?.isHoliday) || false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'friday', 'isHoliday', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Holiday
+                          </label>
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.friday?.isHalfDay) || false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'friday', 'isHalfDay', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Half Day
+                          </label>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div>
+                          <label className="text-xs text-slate-500">In Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.friday?.inTime || '10:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'friday', 'inTime', e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            disabled={entry.daily?.friday?.isHoliday}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-500">Out Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.friday?.outTime || '19:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'friday', 'outTime', e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            disabled={entry.daily?.friday?.isHoliday}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Saturday */}
+                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-semibold text-purple-400">Saturday</label>
+                        <div className="flex gap-2">
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.saturday?.isHoliday) || false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'saturday', 'isHoliday', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Holiday
+                          </label>
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.saturday?.isHalfDay) !== false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'saturday', 'isHalfDay', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Half Day
+                          </label>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div>
+                          <label className="text-xs text-slate-500">In Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.saturday?.inTime || '10:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'saturday', 'inTime', e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            disabled={entry.daily?.saturday?.isHoliday}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-500">Out Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.saturday?.outTime || '13:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'saturday', 'outTime', e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            disabled={entry.daily?.saturday?.isHoliday}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Sunday */}
+                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-semibold text-purple-400">Sunday</label>
+                        <div className="flex gap-2">
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.sunday?.isHoliday) !== false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'sunday', 'isHoliday', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Holiday
+                          </label>
+                          <label className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={(entry.daily?.sunday?.isHalfDay) || false}
+                              onChange={(e) => handleScheduleEntryChange(index, 'sunday', 'isHalfDay', e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            Half Day
+                          </label>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div>
+                          <label className="text-xs text-slate-500">In Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.sunday?.inTime || '10:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'sunday', 'inTime', e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            disabled={entry.daily?.sunday?.isHoliday}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-500">Out Time</label>
+                          <input
+                            type="time"
+                            value={entry.daily?.sunday?.outTime || '19:45'}
+                            onChange={(e) => handleScheduleEntryChange(index, 'sunday', 'outTime', e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            disabled={entry.daily?.sunday?.isHoliday}
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              ))}
             </div>
           )}
 
@@ -2388,6 +3503,24 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 >
                   <Download className="w-4 h-4" />
                 </button>
+
+                <label
+                  className={`p-2 rounded-lg text-sm transition-colors cursor-pointer ${
+                    isUploading
+                      ? 'text-slate-500 cursor-not-allowed'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                  }`}
+                  title={isUploading ? 'Uploading...' : 'Bulk Upload from Excel'}
+                >
+                  <Upload className="w-4 h-4" />
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleBulkUpload}
+                    className="hidden"
+                    disabled={isUploading}
+                  />
+                </label>
               </div>
             </div>
           </div>

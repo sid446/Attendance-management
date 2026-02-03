@@ -1,7 +1,7 @@
 import React from 'react';
 import { Clock, CheckCircle, XCircle, AlertTriangle, CalendarOff, Briefcase, ChevronLeft, ChevronRight, User as UserIcon, Calendar } from 'lucide-react';
-import { AttendanceSummaryView, AttendanceRecord, User } from '@/types/ui';
-
+import { AttendanceSummaryView, AttendanceRecord, User, DailySchedule } from '@/types/ui';
+import { ScheduleEntry } from '@/types/ui';
 interface EmployeeMonthViewProps {
   summaries: AttendanceSummaryView[];
   users: User[]; // All available users for dropdown
@@ -154,15 +154,16 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
       const actualMins = parseMinutes(inTimeStr);
       const dow = date.getDay();
       
-      let scheduledStr = summaryFromList.schedules.regular?.inTime; // Default regular
+      // Day names mapping
+      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      const dayName = dayNames[dow] as keyof DailySchedule;
       
-      if (dow === 6 && summaryFromList.schedules.saturday?.inTime) {
-          scheduledStr = summaryFromList.schedules.saturday.inTime;
-      }
+      // Get scheduled in time from the new schedule format
+      const daySchedule = summaryFromList.schedules.daily?.[dayName];
+      const scheduledStr = daySchedule?.inTime;
       
-      if (dow === 0) return false; // Sunday or holiday logic handled separately
+      if (dow === 0 || !scheduledStr) return false; // Sunday or no schedule
 
-      if (!scheduledStr) return false;
       const scheduledMins = parseMinutes(scheduledStr);
 
       // 15 mins grace period? Or strict? Let's Assume strict > scheduled

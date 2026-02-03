@@ -97,6 +97,7 @@ function calculateSummary(
              totalPresent++;
              break;
           case 'On leave':
+          case 'Leave':
              totalLeave++;
              break;
           case 'Holiday':
@@ -299,7 +300,7 @@ export async function POST(request: NextRequest) {
       } else {
         // Fallback auto-calculation if no value provided
         if (requestedStatus.includes('Half Day')) {
-          rec.value = 0.75;
+          rec.value = 0.5;
           rec.halfDay = true;
         } else if (requestedStatus === 'Absent' || requestedStatus === 'On leave') {
           // Use leave management to determine if paid or unpaid leave
@@ -319,7 +320,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Set halfDay flag based on value if not already set
-      if (rec.value === 0.75) {
+      if (rec.value === 0.5) {
         rec.halfDay = true;
       }
 

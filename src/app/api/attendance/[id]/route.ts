@@ -88,7 +88,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       if (record && dailyRecord.value === undefined) {
         const typeOfPresence = record.typeOfPresence;
         if (typeOfPresence.includes('Half Day')) {
-          record.value = 0.75;
+          record.value = 0.5;
           record.halfDay = true;
         } else if (typeOfPresence === 'Absent' || typeOfPresence === 'On leave') {
           record.value = 0;
@@ -280,6 +280,7 @@ function calculateSummary(records: Map<string, {
         }
         break;
       case 'On leave':
+      case 'Leave':
         totalLeave++;
         break;
       case 'Holiday':

@@ -53,6 +53,7 @@ export interface User {
   employeeCode?: string;
   paidFrom?: string;
   category?: string;
+  employmentType?: string;
   tallyName?: string;
   gender?: string;
   parentName?: string;

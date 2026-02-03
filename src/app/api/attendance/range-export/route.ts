@@ -134,13 +134,13 @@ export async function POST(request: NextRequest) {
           'Status': status,
           'In Time': inTime,
           'Out Time': outTime,
-          'Total Hours': totalHours.toFixed(2),
+          'Total Hours': formatHoursMinutes(totalHours),
           'Type of Presence': typeOfPresence,
           'Late Arrival': isLate ? 'Yes' : 'No',
           'Half Day': isHalfDay ? 'Yes' : 'No',
           'Remarks': remarks,
-          'Scheduled Hours': calculateScheduledHours(user, d),
-          'Excess/Deficit Hours': status === 'Present' ? (totalHours - calculateScheduledHours(user, d)).toFixed(2) : '0.00'
+          'Scheduled Hours': formatHoursMinutes(calculateScheduledHours(user, d)),
+          'Excess/Deficit Hours': (status === 'Present' && inTime !== '00:00' && outTime !== '00:00') ? formatHoursMinutes(totalHours - calculateScheduledHours(user, d)) : '0'
         });
       }
     }
@@ -185,4 +185,17 @@ function calculateScheduledHours(user: any, date: Date): number {
   const outMins = timeToMinutes(schedule.outTime);
 
   return (outMins - inMins) / 60;
+}
+
+function formatHoursMinutes(hours: number): string {
+  const absHours = Math.abs(hours);
+  if (absHours === 0) return '0';
+  const totalMinutes = Math.round(absHours * 60);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  const sign = hours < 0 ? '-' : '';
+  if (h === 0) {
+    return `${sign}${m}m`;
+  }
+  return `${sign}${h}h ${m}m`;
 }

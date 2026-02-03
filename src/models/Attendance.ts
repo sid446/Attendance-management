@@ -8,7 +8,7 @@ export interface IDailyRecord {
   excessHour: number;     // Extra hours beyond standard
   typeOfPresence: 'ThumbMachine' | 'Manual' | 'Remote' | 'On leave' | 'Holiday' | 'Absent' | 'Present - in office' | 'Present - client place' | 'Present - outstation' | 'Present - weekoff' | 'Half Day - weekdays' | 'Half Day - weekoff' | 'WFH - weekdays' | 'WFH - weekoff' | 'Weekoff - special allowance' | 'Weekly Off - Present (WO-Present)' | 'Half Day (HD)' | 'Work From Home (WFH)' | 'Weekly Off - Work From Home (WO-WFH)' | 'Onsite Presence (OS-P)';
   halfDay: boolean;
-  value: number;          // Attendance value: 1 for present, 0 for absent, 0.75 for half day
+  value: number;          // Attendance value: 1 for present, 0 for absent, 0.5 for half day
   remarks?: string;
 }
 
