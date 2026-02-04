@@ -728,6 +728,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         tallyName: findCol(['Tally Name']),
         gender: findCol(['Gender']),
         email: findCol(['Asija Mail ID', 'Email', 'Mail ID']),
+        attendanceEmail: findCol(['Attendance Email', 'Attendance Mail ID']),
         parentName: findCol(['Parents/Guardians Names', 'Parent / Guardian Name', 'Father Name', 'Parent Name']),
         parentOcc: findCol(['Parents/Guardians Occupation', 'Parent / Guardian Occupation', 'Father Occupation']),
         mobile: findCol(['Cell No.', 'Mobile', 'Phone']),
@@ -799,6 +800,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           gender: getVal(idx.gender),
             // Use Asija Mail ID as email logic or fallback
           email: getVal(idx.email), 
+          attendanceEmail: getVal(idx.attendanceEmail),
           parentName: getVal(idx.parentName),
           parentOccupation: getVal(idx.parentOcc),
           mobileNumber: getVal(idx.mobile),
@@ -996,6 +998,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       'Tally Name',
       'Gender',
       'Asija Mail ID',
+      'Attendance Email',
       'Parents/Guardians Names',
       'Parents/Guardians Occupation',
       'Cell No.',
@@ -1072,6 +1075,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         u.tallyName || '',
         u.gender || '',
         u.email || '',
+        u.attendanceEmail || '',
         u.parentName || '',
         u.parentOccupation || '',
         u.mobileNumber || '',
@@ -1257,6 +1261,16 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="email"
                     value={formData.email || ''}
                     onChange={(e) => handleInputChange('email', e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Attendance Email</label>
+                  <input
+                    type="email"
+                    value={formData.attendanceEmail || ''}
+                    onChange={(e) => handleInputChange('attendanceEmail', e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
                   />
                 </div>
@@ -1744,6 +1758,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   { label: 'Mobile No.', key: 'mobileNumber' },
                   { label: 'Alt Mobile', key: 'alternateMobileNumber' },
                   { label: 'Alt Email', key: 'alternateEmail' },
+                  { label: 'Attendance Email', key: 'attendanceEmail' },
                   { label: 'Parent Name', key: 'parentName' },
                   { label: 'Parent Occ.', key: 'parentOccupation' },
                 ].map((field) => {
@@ -2189,6 +2204,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   { label: 'Mobile No.', key: 'mobileNumber' },
                   { label: 'Alt Mobile', key: 'alternateMobileNumber' },
                   { label: 'Alt Email', key: 'alternateEmail' },
+                  { label: 'Attendance Email', key: 'attendanceEmail' },
                   { label: 'Parent Name', key: 'parentName' },
                   { label: 'Parent Occ.', key: 'parentOccupation' },
                 ].map((field) => {
@@ -3124,6 +3140,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   { label: 'Mobile No.', key: 'mobileNumber' },
                   { label: 'Alt Mobile', key: 'alternateMobileNumber' },
                   { label: 'Alt Email', key: 'alternateEmail' },
+                  { label: 'Attendance Email', key: 'attendanceEmail' },
                   { label: 'Parent Name', key: 'parentName' },
                   { label: 'Parent Occ.', key: 'parentOccupation' },
                 ].map((field) => {

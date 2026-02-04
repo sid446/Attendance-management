@@ -29,6 +29,7 @@ export interface IUser extends Document {
   odId: string;
   name: string;
   email: string;
+  attendanceEmail?: string; // New field for attendance-related emails
   designation?: string;
   team?: string;
   joiningDate: Date;
@@ -164,7 +165,7 @@ const ScheduleEntrySchema: Schema = new Schema(
   { _id: false }
 );
 
-const UserSchema: Schema = new Schema(
+const UserSchema = new Schema(
   {
     odId: {
       type: String,
@@ -181,6 +182,11 @@ const UserSchema: Schema = new Schema(
       type: String,
      
       unique: true,
+      trim: true,
+      lowercase: true,
+    },
+    attendanceEmail: {
+      type: String,
       trim: true,
       lowercase: true,
     },
@@ -420,6 +426,8 @@ const UserSchema: Schema = new Schema(
     timestamps: true,
   }
 );
+
+// Note: attendanceEmail is automatically set to email in API routes when creating/updating users
 
 const User: Model<IUser> =
   mongoose.models.User || mongoose.model<IUser>('User', UserSchema);

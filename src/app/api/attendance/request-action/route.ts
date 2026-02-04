@@ -344,7 +344,7 @@ export async function POST(request: NextRequest) {
 
     // Send email notification to employee
     try {
-      const employeeEmail = (reqRecord.userId as any).email;
+      const employeeEmail = (reqRecord.userId as any).attendanceEmail || (reqRecord.userId as any).email;
       const statusText = action === 'approve' ? 'Approved' : 'Rejected';
       const statusColor = action === 'approve' ? '#10b981' : '#ef4444';
 

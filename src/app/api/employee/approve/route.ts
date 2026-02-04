@@ -181,7 +181,7 @@ export async function POST(request: NextRequest) {
 
         await transporter.sendMail({
           ...mailOptions,
-          to: user.email,
+          to: user.attendanceEmail || user.email,
           subject,
           html
         });

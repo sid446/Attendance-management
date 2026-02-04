@@ -31,7 +31,8 @@ export async function POST(request: NextRequest) {
     const { 
       odId, 
       name, 
-      email, 
+      email,
+      attendanceEmail,
       designation,
       team,
       joiningDate,
@@ -98,6 +99,7 @@ export async function POST(request: NextRequest) {
       odId,
       name,
       email,
+      attendanceEmail: attendanceEmail || email, // Use provided attendanceEmail or default to email
       designation,
       team,
       joiningDate: new Date(joiningDate),

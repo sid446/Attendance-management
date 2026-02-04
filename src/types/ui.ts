@@ -69,6 +69,7 @@ export interface User {
   odId: string;
   name: string;
   email: string;
+  attendanceEmail?: string;
   designation?: string;
   team?: string;
   joiningDate: string; // ISO string for frontend

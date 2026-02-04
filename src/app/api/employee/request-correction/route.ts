@@ -78,7 +78,9 @@ export async function POST(request: NextRequest) {
       ]
     });
 
-    if (partnerUser && partnerUser.email) {
+    if (partnerUser && partnerUser.attendanceEmail) {
+      partnerEmail = partnerUser.attendanceEmail;
+    } else if (partnerUser && partnerUser.email) {
       partnerEmail = partnerUser.email;
     } else {
       return NextResponse.json({ success: false, error: `Partner "${partnerName}" email not found in system` }, { status: 400 });

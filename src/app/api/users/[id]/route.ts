@@ -46,6 +46,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       odId,
       name,
       email,
+      attendanceEmail,
       designation,
       team,
       joiningDate,
@@ -143,6 +144,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         ...(odId && { odId }),
         ...(name && { name }),
         ...(email && { email }),
+        // Set attendanceEmail: use provided value or default to email
+        ...((attendanceEmail !== undefined || email) && { 
+          attendanceEmail: attendanceEmail !== undefined ? attendanceEmail : email 
+        }),
         ...(designation !== undefined && { designation }),
         ...(team !== undefined && { team }),
         ...(joiningDate && { joiningDate: new Date(joiningDate) }),
