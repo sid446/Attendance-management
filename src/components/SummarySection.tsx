@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { AttendanceSummaryView, User, DailySchedule, ScheduleTime } from '@/types/ui';
-import { Search, Calendar, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, BarChart3, Users, Clock, AlertCircle, TrendingUp, UserX, UserCheck, Download, ListChecks, X } from 'lucide-react';
+import { Search, Calendar, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, BarChart3, Users, Clock, AlertCircle, TrendingUp, UserX, UserCheck, Download, ListChecks, X, Eye } from 'lucide-react';
 import { BulkLeaveManager } from './BulkLeaveManager';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -2246,6 +2246,9 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                       className="rounded border-slate-600 text-emerald-600 focus:ring-emerald-500"
                     />
                   </th>
+                  <th className="px-2 py-3 text-center font-semibold text-slate-400">
+                    View
+                  </th>
                   <th 
                     className="px-4 py-3 text-left font-semibold text-slate-300 cursor-pointer hover:bg-slate-800/60 select-none"
                     onClick={() => handleSort('userName')}
@@ -2415,6 +2418,15 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                         onChange={(e) => handleSelectEmployee(item.userId, e.target.checked)}
                         className="rounded border-slate-600 text-emerald-600 focus:ring-emerald-500"
                       />
+                    </td>
+                    <td className="px-2 py-3 text-center">
+                      <button
+                        onClick={() => onEmployeeClick(item.userId, item.monthYear)}
+                        className="p-1.5 rounded-md bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/40 hover:text-emerald-300 transition-colors"
+                        title={`View ${item.userName}'s month details`}
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
                     </td>
                     <td className="px-4 py-3">
                       <div className="font-medium text-slate-200 group-hover:text-white cursor-pointer" onClick={() => onEmployeeClick(item.userId, item.monthYear)}>{item.userName}</div>
