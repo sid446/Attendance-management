@@ -62,6 +62,7 @@ interface SummarySectionProps {
   isLoading?: boolean;
   onFilterChange: (filter: string | {start: string, end: string} | {startDate: string, endDate: string}) => void;
   onEmployeeClick: (userId: string, monthYear: string) => void;
+  onEmployeeDetailClick?: (userId: string) => void; // Opens employee management detail
   onRefreshUsers?: () => void; // Optional function to refresh user data
   // Upload stats kept for context if needed, but made optional/less prominent
   uploadTotal?: number;
@@ -75,6 +76,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
   isLoading = false,
   onFilterChange,
   onEmployeeClick,
+  onEmployeeDetailClick,
   onRefreshUsers,
   uploadTotal = 0,
   uploadSaved = 0,
@@ -2429,7 +2431,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                       </button>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="font-medium text-slate-200 group-hover:text-white cursor-pointer" onClick={() => onEmployeeClick(item.userId, item.monthYear)}>{item.userName}</div>
+                      <div className="font-medium text-slate-200 group-hover:text-white cursor-pointer" onClick={() => onEmployeeDetailClick?.(item.userId)}>{item.userName}</div>
                       <div className="text-[10px] text-slate-500 font-mono hidden md:block">{item.employeeCode || item.odId || item.userId}</div>
                     </td>
                     <td className="px-4 py-3 text-left font-mono text-slate-400">{item.employeeCode || item.odId || '-'}</td>

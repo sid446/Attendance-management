@@ -1019,6 +1019,10 @@ export default function AttendanceUpload() {
                   // Auto-load attendance for this employee/month
                   fetchEmployeeMonthly(userId, monthYear);
                 }}
+                onEmployeeDetailClick={(userId) => {
+                  setSelectedEmployeeId(userId);
+                  setActiveSection('employees');
+                }}
               />
             )}
                 
