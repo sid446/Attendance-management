@@ -1014,7 +1014,10 @@ export default function AttendanceUpload() {
                 onRefreshUsers={fetchUsers}
                 onEmployeeClick={(userId, monthYear) => {
                   setSelectedEmployeeId(userId);
-                  setActiveSection('employees');
+                  setSelectedEmployeeMonth(monthYear);
+                  setActiveSection('employee');
+                  // Auto-load attendance for this employee/month
+                  fetchEmployeeMonthly(userId, monthYear);
                 }}
               />
             )}
