@@ -2,6 +2,7 @@ import React, { useState, useEffect, ChangeEvent, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { User, ScheduleTime, DailySchedule } from '@/types/ui';
 import { Edit2, Save, X, Plus, Upload, FileUp, Filter, Trash2, Search, Download, ChevronDown, ChevronUp, FileSpreadsheet, Settings, Users, Briefcase, CreditCard, Tag } from 'lucide-react';
+import type { Workbook, Worksheet, Row, Cell } from 'exceljs';
 
 export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | null; onRefreshUsers?: () => void }> = ({ selectedUserId, onRefreshUsers }) => {
   const [users, setUsers] = useState<User[]>([]);
@@ -26,6 +27,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   const [showAdditionalFields, setShowAdditionalFields] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'basic' | 'schedule' | 'extended' | 'bank' | 'salary' | 'history'>('basic');
   const [showBulkUploadFormat, setShowBulkUploadFormat] = useState<boolean>(false);
+  const [showSettingsPanel, setShowSettingsPanel] = useState<boolean>(false);
 
   // Predefined Values State
   const [showPredefinedValues, setShowPredefinedValues] = useState<boolean>(false);
@@ -1016,80 +1018,103 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
     return true;
   });
 
-  const handleExportToExcel = () => {
+  const handleExportToExcel = async () => {
     if (!users.length) {
       alert('No employees to export');
       return;
     }
 
-    const headerRow = [
-      'Name',
-      'Registration / Membership No.',
-      'Employee Code',
-      'Paid From',
-      'Designation',
-      'Category',
-      'Tally Name',
-      'Gender',
-      'Asija Mail ID',
-      'Attendance Email',
-      'Parents/Guardians Names',
-      'Parents/Guardians Occupation',
-      'Cell No.',
-      'Alternate No.',
-      'Alternate Mail Id',
-      'Address 1',
-      'Address 2',
-      'Emergency Contact No.',
-      'Relation',
-      'Anniversary Date',
-      'Bank Name',
-      'Branch Name',
-      'Account No.',
-      'IFSC',
-      'Type of Account',
-      'Name of Account Holder',
-      'Aadhar No.',
-      'PAN',
-      'Basis Salary/Stipend/Fees',
-      'Laptop Allowance',
-      'Other Allowance',
-      'Bonus',
-      'Incentive',
-      'Total Salary (P/M)',
-      'Per Annum',
-      'PF',
-      'ESI',
-      'Gratuity',
-      'Total Leaves Due',
-      'Total Leaves Taken',
-      'Balance Leaves',
-      'Date of Joining -in Asija',
-      'Articleship Start Date',
-      'Transfer Case',
-      '1st Yr of Articleship',
-      '2nd Yr of Articleship',
-      '3rd Yr of Articleship',
-      'Filled Scholarship',
-      'Qualification Level',
-      'Next Attempt Due Date',
-      'Registered Under Partner',
-      'Working Under Partner',
-      'Work Timings',
-      ...allExtraLabels,
+    // Import ExcelJS dynamically
+    const ExcelJS = (await import('exceljs')).default;
+
+    // Create workbook
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Asija Attendance System';
+    workbook.created = new Date();
+    
+    const worksheet = workbook.addWorksheet('Master', {
+      views: [{ state: 'frozen', xSplit: 1, ySplit: 1 }] // Freeze first row and first column
+    });
+
+    // Define all columns matching the upload format exactly
+    const baseColumns = [
+      { key: 'name', header: 'Name', width: 22 },
+      { key: 'registrationNo', header: 'Registration / Membership No.', width: 25 },
+      { key: 'employeeCode', header: 'Employee Code', width: 15 },
+      { key: 'paidFrom', header: 'Paid From', width: 12 },
+      { key: 'designation', header: 'Designation', width: 18 },
+      { key: 'category', header: 'Category', width: 12 },
+      { key: 'tallyName', header: 'Tally Name', width: 18 },
+      { key: 'gender', header: 'Gender', width: 10 },
+      { key: 'email', header: 'Asija Mail ID', width: 28 },
+      { key: 'attendanceEmail', header: 'Attendance Email', width: 28 },
+      { key: 'parentName', header: 'Parents/Guardians Names', width: 25 },
+      { key: 'parentOccupation', header: 'Parents/Guardians Occupation', width: 25 },
+      { key: 'mobileNumber', header: 'Cell No.', width: 15 },
+      { key: 'alternateMobileNumber', header: 'Alternate No.', width: 15 },
+      { key: 'alternateEmail', header: 'Alternate Mail Id', width: 25 },
+      { key: 'address1', header: 'Address 1', width: 35 },
+      { key: 'address2', header: 'Address 2', width: 35 },
+      { key: 'emergencyContactNo', header: 'Emergency Contact No.', width: 18 },
+      { key: 'emergencyContactRelation', header: 'Relation', width: 12 },
+      { key: 'anniversaryDate', header: 'Anniversary Date', width: 15 },
+      { key: 'bankName', header: 'Bank Name', width: 20 },
+      { key: 'branchName', header: 'Branch Name', width: 18 },
+      { key: 'accountNumber', header: 'Account No.', width: 18 },
+      { key: 'ifscCode', header: 'IFSC', width: 12 },
+      { key: 'accountType', header: 'Type of Account', width: 15 },
+      { key: 'accountHolderName', header: 'Name of Account Holder', width: 22 },
+      { key: 'aadhaarNumber', header: 'Aadhar No.', width: 15 },
+      { key: 'panNumber', header: 'PAN', width: 12 },
+      { key: 'basicSalary', header: 'Basis Salary/Stipend/Fees', width: 22 },
+      { key: 'laptopAllowance', header: 'Laptop Allowance', width: 16 },
+      { key: 'otherAllowance', header: 'Other Allowance', width: 15 },
+      { key: 'bonus', header: 'Bonus', width: 10 },
+      { key: 'incentive', header: 'Incentive', width: 10 },
+      { key: 'totalSalaryPerMonth', header: 'Total Salary (P/M)', width: 16 },
+      { key: 'totalSalaryPerAnnum', header: 'Per Annum', width: 14 },
+      { key: 'pf', header: 'PF', width: 10 },
+      { key: 'esi', header: 'ESI', width: 10 },
+      { key: 'gratuity', header: 'Gratuity', width: 10 },
+      { key: 'leavesEarned', header: 'Total Leaves Due', width: 16 },
+      { key: 'leavesTaken', header: 'Total Leaves Taken', width: 18 },
+      { key: 'balanceLeaves', header: 'Balance Leaves', width: 14 },
+      { key: 'joiningDate', header: 'Date of Joining -in Asija', width: 22 },
+      { key: 'articleshipStartDate', header: 'Articleship Start Date', width: 20 },
+      { key: 'transferCase', header: 'Transfer Case', width: 14 },
+      { key: 'firstYearArticleship', header: '1st Yr of Articleship', width: 18 },
+      { key: 'secondYearArticleship', header: '2nd Yr of Articleship', width: 18 },
+      { key: 'thirdYearArticleship', header: '3rd Yr of Articleship', width: 18 },
+      { key: 'filledScholarship', header: 'Filled Scholarship', width: 16 },
+      { key: 'qualificationLevel', header: 'Qualification Level', width: 18 },
+      { key: 'nextAttemptDueDate', header: 'Next Attempt Due Date', width: 20 },
+      { key: 'registeredUnderPartner', header: 'Registered Under Partner', width: 22 },
+      { key: 'workingUnderPartner', header: 'Working Under Partner', width: 20 },
+      { key: 'workTimings', header: 'Work Timings', width: 15 },
     ];
 
+    // Add extra info columns dynamically
+    const extraColumns = allExtraLabels.map((label, idx) => ({
+      key: `extra_${idx}`,
+      header: label,
+      width: Math.max(15, label.length + 2)
+    }));
+
+    worksheet.columns = [...baseColumns, ...extraColumns];
+
+    // Helper to format date
     const toDateString = (value?: string) => {
       if (!value) return '';
       const d = new Date(value);
       if (isNaN(d.getTime())) return '';
-      const yyyy = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
       const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const yyyy = d.getFullYear();
       return `${dd}-${mm}-${yyyy}`;
     };
 
-    const rows = users.map((u) => {
+    // Add data rows
+    users.forEach((u) => {
       const regularIn = u.scheduleInOutTime?.inTime || '';
       const regularOut = u.scheduleInOutTime?.outTime || '';
       const workTimingText =
@@ -1099,80 +1124,176 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           ? `${regularIn}-${regularOut}`
           : '';
 
-      return [
-        u.name || '',
-        u.registrationNo || '',
-        u.employeeCode || '',
-        u.paidFrom || '',
-        u.designation || '',
-        u.category || '',
-        u.tallyName || '',
-        u.gender || '',
-        u.email || '',
-        u.attendanceEmail || '',
-        u.parentName || '',
-        u.parentOccupation || '',
-        u.mobileNumber || '',
-        u.alternateMobileNumber || '',
-        u.alternateEmail || '',
-        u.address1 || '',
-        u.address2 || '',
-        u.emergencyContactNo || '',
-        u.emergencyContactRelation || '',
-        toDateString(u.anniversaryDate),
-        u.bankName || '',
-        u.branchName || '',
-        u.accountNumber || '',
-        u.ifscCode || '',
-        u.accountType || '',
-        u.accountHolderName || '',
-        u.aadhaarNumber || '',
-        u.panNumber || '',
-        u.basicSalary || '',
-        u.laptopAllowance || '',
-        u.otherAllowance || '',
-        u.bonus || '',
-        u.incentive || '',
-        u.totalSalaryPerMonth || '',
-        u.totalSalaryPerAnnum || '',
-        u.pf || '',
-        u.esi || '',
-        u.gratuity || '',
-        u.leaveBalance?.earned || 0,
-        u.leaveBalance?.used || 0,
-        u.leaveBalance?.remaining || 0,
-        toDateString(u.joiningDate),
-        toDateString(u.articleshipStartDate),
-        u.transferCase || '',
-        u.firstYearArticleship || '',
-        u.secondYearArticleship || '',
-        u.thirdYearArticleship || '',
-        u.filledScholarship || '',
-        u.qualificationLevel || '',
-        toDateString(u.nextAttemptDueDate),
-        u.registeredUnderPartner || '',
-        u.workingUnderPartner || '',
-        workTimingText,
-        ...allExtraLabels.map(label => {
-          const item = u.extraInfo?.find(e => e.label === label);
-          return item?.value || '';
-        }),
-      ];
+      const rowData: { [key: string]: any } = {
+        name: u.name || '',
+        registrationNo: u.registrationNo || '',
+        employeeCode: u.employeeCode || '',
+        paidFrom: u.paidFrom || '',
+        designation: u.designation || '',
+        category: u.category || '',
+        tallyName: u.tallyName || '',
+        gender: u.gender || '',
+        email: u.email || '',
+        attendanceEmail: u.attendanceEmail || '',
+        parentName: u.parentName || '',
+        parentOccupation: u.parentOccupation || '',
+        mobileNumber: u.mobileNumber || '',
+        alternateMobileNumber: u.alternateMobileNumber || '',
+        alternateEmail: u.alternateEmail || '',
+        address1: u.address1 || '',
+        address2: u.address2 || '',
+        emergencyContactNo: u.emergencyContactNo || '',
+        emergencyContactRelation: u.emergencyContactRelation || '',
+        anniversaryDate: toDateString(u.anniversaryDate),
+        bankName: u.bankName || '',
+        branchName: u.branchName || '',
+        accountNumber: u.accountNumber || '',
+        ifscCode: u.ifscCode || '',
+        accountType: u.accountType || '',
+        accountHolderName: u.accountHolderName || '',
+        aadhaarNumber: u.aadhaarNumber || '',
+        panNumber: u.panNumber || '',
+        basicSalary: u.basicSalary || '',
+        laptopAllowance: u.laptopAllowance || '',
+        otherAllowance: u.otherAllowance || '',
+        bonus: u.bonus || '',
+        incentive: u.incentive || '',
+        totalSalaryPerMonth: u.totalSalaryPerMonth || '',
+        totalSalaryPerAnnum: u.totalSalaryPerAnnum || '',
+        pf: u.pf || '',
+        esi: u.esi || '',
+        gratuity: u.gratuity || '',
+        leavesEarned: u.leaveBalance?.earned || 0,
+        leavesTaken: u.leaveBalance?.used || 0,
+        balanceLeaves: u.leaveBalance?.remaining || 0,
+        joiningDate: toDateString(u.joiningDate),
+        articleshipStartDate: toDateString(u.articleshipStartDate),
+        transferCase: u.transferCase || '',
+        firstYearArticleship: u.firstYearArticleship || '',
+        secondYearArticleship: u.secondYearArticleship || '',
+        thirdYearArticleship: u.thirdYearArticleship || '',
+        filledScholarship: u.filledScholarship || '',
+        qualificationLevel: u.qualificationLevel || '',
+        nextAttemptDueDate: toDateString(u.nextAttemptDueDate),
+        registeredUnderPartner: u.registeredUnderPartner || '',
+        workingUnderPartner: u.workingUnderPartner || '',
+        workTimings: workTimingText,
+      };
+
+      // Add extra info columns
+      allExtraLabels.forEach((label, idx) => {
+        const item = u.extraInfo?.find(e => e.label === label);
+        rowData[`extra_${idx}`] = item?.value || '';
+      });
+
+      worksheet.addRow(rowData);
     });
 
-    const ws = XLSX.utils.aoa_to_sheet([headerRow, ...rows]);
+    // Style the header row
+    const headerRow = worksheet.getRow(1);
+    headerRow.height = 35;
 
-    // Set column widths so header text is fully visible
-    const colWidths = headerRow.map((header) => {
-      const base = header.length + 2;
-      // Limit max width to keep sheet readable
-      const wch = Math.max(12, Math.min(base, 40));
-      return { wch };
+    // Define color groups for better visual organization
+    const colorGroups = {
+      personal: { start: 1, end: 8, color: 'FF2E7D32' },      // Green - Personal Info
+      contact: { start: 9, end: 17, color: 'FF1565C0' },      // Blue - Contact Info
+      address: { start: 16, end: 17, color: 'FF00838F' },     // Teal - Address
+      emergency: { start: 18, end: 19, color: 'FFD84315' },   // Orange - Emergency
+      family: { start: 20, end: 20, color: 'FF6A1B9A' },      // Purple - Family
+      bank: { start: 21, end: 26, color: 'FF00695C' },        // Dark Teal - Bank
+      identity: { start: 27, end: 28, color: 'FF4527A0' },    // Deep Purple - Identity
+      salary: { start: 29, end: 38, color: 'FFC62828' },      // Red - Salary
+      leave: { start: 39, end: 41, color: 'FFEF6C00' },       // Amber - Leave
+      employment: { start: 42, end: 53, color: 'FF283593' },  // Indigo - Employment
+      extra: { start: 54, end: 999, color: 'FF37474F' },      // Blue Grey - Extra Info
+    };
+
+    headerRow.eachCell((cell, colNumber) => {
+      cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+
+      // Determine color based on column group
+      let bgColor = 'FF37474F'; // Default grey
+      for (const [, group] of Object.entries(colorGroups)) {
+        if (colNumber >= group.start && colNumber <= group.end) {
+          bgColor = group.color;
+          break;
+        }
+      }
+
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: bgColor }
+      };
+
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FF000000' } },
+        bottom: { style: 'medium', color: { argb: 'FF000000' } },
+        left: { style: 'thin', color: { argb: 'FF000000' } },
+        right: { style: 'thin', color: { argb: 'FF000000' } }
+      };
     });
-    (ws as any)['!cols'] = colWidths;
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Master');
-    XLSX.writeFile(wb, 'employee_master.xlsx');
+
+    // Style data rows with alternating colors
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return; // Skip header row
+
+      const isEvenRow = rowNumber % 2 === 0;
+      
+      row.eachCell((cell, colNumber) => {
+        cell.font = { size: 10, color: { argb: 'FF1A1A1A' } };
+        
+        // Alternating row colors
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: isEvenRow ? 'FFF5F5F5' : 'FFFFFFFF' }
+        };
+
+        // Left align text columns, center align others
+        const textColumns = [1, 2, 6, 7, 9, 10, 11, 12, 15, 16, 17, 21, 22, 26]; // Name, addresses, emails, etc.
+        cell.alignment = {
+          vertical: 'middle',
+          horizontal: textColumns.includes(colNumber) ? 'left' : 'center',
+          wrapText: colNumber >= 16 && colNumber <= 17 // Wrap text for address columns
+        };
+
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+          bottom: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+          left: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+          right: { style: 'thin', color: { argb: 'FFE0E0E0' } }
+        };
+      });
+
+      row.height = 22; // Set consistent row height
+    });
+
+    // Add autofilter to header row
+    worksheet.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: worksheet.columnCount }
+    };
+
+    // Generate filename with date
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+    const fileName = `Employee_Master_${dateStr}.xlsx`;
+
+    // Save file
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+    // Create download link
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
   };
 
   if (loading && !users.length) {
@@ -3460,52 +3581,83 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
 
   // ============== LIST VIEW =================
   return (
-    <div className="bg-slate-900/50 rounded-lg border border-slate-800">
-      {/* Header */}
-      <div className="p-4 border-b border-slate-800">
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold text-slate-200">Employee Management</h2>
+    <div className="min-h-screen bg-slate-950">
+      {/* Header Section */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-900 to-slate-800 border-b border-slate-800">
+        <div className="px-6 py-6">
+          {/* Title Row */}
+          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
+            <div>
+              <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+                <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-purple-700 rounded-xl flex items-center justify-center">
+                  <Users className="w-5 h-5 text-white" />
+                </div>
+                Employee Management
+              </h1>
+              <p className="text-slate-400 text-sm mt-1">Manage employee information, schedules, and records</p>
+            </div>
+
+            {/* Quick Stats */}
             {!loading && (
-              <span className="px-2.5 py-0.5 rounded-full bg-slate-800 text-xs font-medium text-slate-400 border border-slate-700">
-                {filteredUsers.length} employees
-                {filterDesignation && <span className="text-slate-500 ml-1">({filterDesignation})</span>}
-              </span>
+              <div className="flex items-center gap-3">
+                <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl px-4 py-2.5 flex items-center gap-3">
+                  <div className="w-8 h-8 bg-emerald-500/20 rounded-lg flex items-center justify-center">
+                    <Users className="w-4 h-4 text-emerald-400" />
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold text-white">{users.length}</p>
+                    <p className="text-xs text-slate-400">Total Employees</p>
+                  </div>
+                </div>
+                <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl px-4 py-2.5 flex items-center gap-3">
+                  <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center">
+                    <Briefcase className="w-4 h-4 text-blue-400" />
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold text-white">{uniqueDesignations.length}</p>
+                    <p className="text-xs text-slate-400">Designations</p>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
 
-          {/* Search and Filter Row */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
-            <div className="flex items-center gap-3">
-              {/* Search Input */}
-              <div className="relative">
+          {/* Search and Actions Row */}
+          <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-4">
+            {/* Search and Filter */}
+            <div className="flex flex-1 items-center gap-3">
+              <div className="relative flex-1 max-w-md">
                 <input
                   type="text"
-                  placeholder="Search employees..."
+                  placeholder="Search by name, email, code..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="bg-slate-950 border border-slate-700 text-slate-300 text-sm rounded-lg pl-8 pr-3 py-2 focus:outline-none focus:border-emerald-500/50 hover:bg-slate-900 transition-colors w-48 lg:w-64"
+                  className="w-full bg-slate-800/50 border border-slate-700 text-slate-200 text-sm rounded-xl pl-10 pr-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 placeholder-slate-500 transition-all"
                 />
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
 
-              {/* Designation Filter */}
-              <div className="relative">
-                <select
-                  value={filterDesignation}
-                  onChange={(e) => setFilterDesignation(e.target.value)}
-                  className="appearance-none bg-slate-950 border border-slate-700 text-slate-300 text-sm rounded-lg pl-8 pr-8 py-2 focus:outline-none focus:border-emerald-500/50 hover:bg-slate-900 transition-colors cursor-pointer min-w-35"
-                >
-                  <option value="">All Designations</option>
-                  {uniqueDesignations.map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-                <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
-              </div>
+              <select
+                value={filterDesignation}
+                onChange={(e) => setFilterDesignation(e.target.value)}
+                className="bg-slate-800/50 border border-slate-700 text-slate-200 text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 cursor-pointer min-w-[180px]"
+              >
+                <option value="">All Designations</option>
+                {uniqueDesignations.map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
             </div>
 
-            {/* Action Buttons - Grouped and Simplified */}
+            {/* Action Buttons */}
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -3513,277 +3665,561 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   setFormData({ isActive: true });
                   setIsAddingNew(true);
                 }}
-                className="flex items-center gap-2 px-4 py-2 bg-purple-600/20 text-purple-400 border border-purple-500/30 rounded-lg text-sm hover:bg-purple-600/30 transition-colors font-medium"
+                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-purple-500/20"
               >
                 <Plus className="w-4 h-4" />
                 Add Employee
               </button>
 
-              <div className="flex items-center gap-1 border-l border-slate-700 pl-2 ml-2">
-                <button
-                  type="button"
-                  onClick={() => setShowPredefinedValues(!showPredefinedValues)}
-                  className={`p-2 rounded-lg text-sm transition-colors ${
-                    showPredefinedValues
-                      ? 'bg-slate-700 text-slate-200'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                  }`}
-                  title="Manage predefined values"
-                >
-                  <Settings className="w-4 h-4" />
-                </button>
+              <div className="h-8 w-px bg-slate-700 mx-1" />
 
-                <button
-                  type="button"
-                  onClick={() => setShowAdditionalFields(!showAdditionalFields)}
-                  className={`p-2 rounded-lg text-sm transition-colors ${
-                    showAdditionalFields
-                      ? 'bg-slate-700 text-slate-200'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                  }`}
-                  title="Manage additional fields"
-                >
-                  <FileSpreadsheet className="w-4 h-4" />
-                </button>
+              <button
+                type="button"
+                onClick={() => setShowSettingsPanel(!showSettingsPanel)}
+                className={`p-2.5 rounded-xl text-sm transition-all ${
+                  showSettingsPanel
+                    ? 'bg-slate-700 text-white ring-2 ring-slate-600'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800 bg-slate-800/50'
+                }`}
+                title="Settings: Custom Fields, Predefined Values, Excel Format"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
 
-                <button
-                  type="button"
-                  onClick={handleExportToExcel}
-                  className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 rounded-lg text-sm transition-colors"
-                  title="Export to Excel"
-                >
-                  <Download className="w-4 h-4" />
-                </button>
+              <button
+                type="button"
+                onClick={handleExportToExcel}
+                className="p-2.5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 bg-slate-800/50 rounded-xl text-sm transition-all"
+                title="Export to Excel"
+              >
+                <Download className="w-4 h-4" />
+              </button>
 
-                <label
-                  className={`p-2 rounded-lg text-sm transition-colors cursor-pointer ${
-                    isUploading
-                      ? 'text-slate-500 cursor-not-allowed'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                  }`}
-                  title={isUploading ? 'Uploading...' : 'Bulk Upload from Excel'}
-                >
-                  <Upload className="w-4 h-4" />
-                  <input
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={handleBulkUpload}
-                    className="hidden"
-                    disabled={isUploading}
-                  />
-                </label>
-              </div>
+              <label
+                className={`p-2.5 rounded-xl text-sm transition-all cursor-pointer ${
+                  isUploading
+                    ? 'text-slate-500 cursor-not-allowed bg-slate-800/30'
+                    : 'text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 bg-slate-800/50'
+                }`}
+                title={isUploading ? 'Uploading...' : 'Bulk Upload from Excel'}
+              >
+                <Upload className="w-4 h-4" />
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={handleBulkUpload}
+                  className="hidden"
+                  disabled={isUploading}
+                />
+              </label>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Global Additional Info Fields - Collapsible */}
-      <div className="border-b border-slate-800">
-        <button
-          onClick={() => setShowAdditionalFields(!showAdditionalFields)}
-          className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-slate-800/30 transition-colors"
-        >
-          <div className="space-y-1">
-            <div className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Additional Info Fields</div>
-            <div className="text-[11px] text-slate-500">
-              {allExtraLabels.length} custom fields • Click to {showAdditionalFields ? 'hide' : 'show'} management
-            </div>
-          </div>
-          {showAdditionalFields ? (
-            <ChevronUp className="w-4 h-4 text-slate-400" />
-          ) : (
-            <ChevronDown className="w-4 h-4 text-slate-400" />
+      {/* Filter Tags */}
+      {(searchTerm || filterDesignation) && (
+        <div className="px-6 py-3 bg-slate-900/50 border-b border-slate-800 flex items-center gap-2">
+          <span className="text-xs text-slate-500">Active filters:</span>
+          {searchTerm && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-purple-500/10 text-purple-400 text-xs rounded-lg border border-purple-500/20">
+              Search: "{searchTerm}"
+              <button onClick={() => setSearchTerm('')} className="hover:text-purple-300">
+                <X className="w-3 h-3" />
+              </button>
+            </span>
           )}
-        </button>
-        
-        {showAdditionalFields && (
-          <div className="px-4 pb-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3 border-t border-slate-800/50">
-            <div className="space-y-1">
-              {allExtraLabels.length > 0 ? (
-                <div className="flex flex-wrap gap-1">
-                  {allExtraLabels.map((label) => (
-                    <span
-                      key={label}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800 text-[11px] text-slate-200 border border-slate-700"
-                    >
-                      <span>{label}</span>
-                      <button
-                        type="button"
-                        className="text-slate-500 hover:text-rose-400"
-                        onClick={async () => {
-                          if (!window.confirm(`Remove field "${label}" from all employees?`)) return;
-                          try {
-                            const res = await fetch('/api/users/extra-info', {
-                              method: 'DELETE',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ label }),
-                            });
-                            const json = await res.json();
-                            if (!res.ok || !json.success) {
-                              throw new Error(json.error || 'Failed to remove field');
-                            }
-                            fetchUsers();
-                          } catch (err) {
-                            alert(err instanceof Error ? err.message : 'Failed to remove field');
-                          }
-                        }}
+          {filterDesignation && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-500/10 text-blue-400 text-xs rounded-lg border border-blue-500/20">
+              {filterDesignation}
+              <button onClick={() => setFilterDesignation('')} className="hover:text-blue-300">
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          )}
+          <button
+            onClick={() => { setSearchTerm(''); setFilterDesignation(''); }}
+            className="text-xs text-slate-500 hover:text-slate-300 ml-2"
+          >
+            Clear all
+          </button>
+        </div>
+      )}
+
+      {/* Settings Panel - Only visible when Settings button is clicked */}
+      {showSettingsPanel && (
+        <div className="bg-slate-900/30 border-b border-slate-800">
+          {/* Panel Header */}
+          <div className="px-6 py-3 bg-slate-800/30 border-b border-slate-800/50 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Settings className="w-4 h-4 text-slate-400" />
+              <span className="text-sm font-medium text-slate-300">Settings & Configuration</span>
+            </div>
+            <button
+              onClick={() => setShowSettingsPanel(false)}
+              className="p-1 text-slate-500 hover:text-slate-300 hover:bg-slate-700/50 rounded-lg transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Additional Info Fields - Collapsible */}
+          <div className="border-b border-slate-800/50">
+          <button
+            onClick={() => setShowAdditionalFields(!showAdditionalFields)}
+            className="w-full px-6 py-3 flex items-center justify-between text-left hover:bg-slate-800/20 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center">
+                <Tag className="w-4 h-4 text-slate-400" />
+              </div>
+              <div>
+                <div className="text-sm font-medium text-slate-200">Custom Fields</div>
+                <div className="text-xs text-slate-500">
+                  {allExtraLabels.length} additional fields configured
+                </div>
+              </div>
+            </div>
+            <div className={`p-1 rounded-lg transition-transform ${showAdditionalFields ? 'rotate-180' : ''}`}>
+              <ChevronDown className="w-4 h-4 text-slate-400" />
+            </div>
+          </button>
+          
+          {showAdditionalFields && (
+            <div className="px-6 pb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div className="flex-1">
+                {allExtraLabels.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {allExtraLabels.map((label) => (
+                      <span
+                        key={label}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/50 text-xs text-slate-200 border border-slate-700/50 group"
                       >
-                        ×
-                      </button>
-                    </span>
+                        <span>{label}</span>
+                        <button
+                          type="button"
+                          className="text-slate-500 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={async () => {
+                            if (!window.confirm(`Remove field "${label}" from all employees?`)) return;
+                            try {
+                              const res = await fetch('/api/users/extra-info', {
+                                method: 'DELETE',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ label }),
+                              });
+                              const json = await res.json();
+                              if (!res.ok || !json.success) {
+                                throw new Error(json.error || 'Failed to remove field');
+                              }
+                              fetchUsers();
+                            } catch (err) {
+                              alert(err instanceof Error ? err.message : 'Failed to remove field');
+                            }
+                          }}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500">No custom fields configured. Add one to get started.</p>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="New field name..."
+                  value={newExtraLabel}
+                  onChange={(e) => setNewExtraLabel(e.target.value)}
+                  className="bg-slate-800/50 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 min-w-[160px]"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddGlobalExtraLabel}
+                  disabled={isSavingExtraLabel || !newExtraLabel.trim()}
+                  className="px-4 py-2 rounded-lg text-sm bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                >
+                  {isSavingExtraLabel ? 'Adding...' : 'Add Field'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Predefined Values Management - Collapsible */}
+        <div className="border-b border-slate-800/50">
+          <button
+            onClick={() => setShowPredefinedValues(!showPredefinedValues)}
+            className="w-full px-6 py-3 flex items-center justify-between text-left hover:bg-slate-800/20 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center">
+                <Settings className="w-4 h-4 text-slate-400" />
+              </div>
+              <div>
+                <div className="text-sm font-medium text-slate-200">Predefined Values</div>
+                <div className="text-xs text-slate-500">
+                  Manage dropdown options for Team, Designation, Paid From, and Category
+                </div>
+              </div>
+            </div>
+            <div className={`p-1 rounded-lg transition-transform ${showPredefinedValues ? 'rotate-180' : ''}`}>
+              <ChevronDown className="w-4 h-4 text-slate-400" />
+            </div>
+          </button>
+
+          {showPredefinedValues && (
+            <div className="px-6 pb-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                {/* Teams */}
+                <button
+                  onClick={() => setPredefinedModal({ type: 'team', isOpen: true })}
+                  className="flex items-center justify-between p-4 bg-slate-800/30 hover:bg-slate-800/50 border border-slate-700/50 rounded-xl transition-all group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center">
+                      <Users className="w-5 h-5 text-blue-400" />
+                    </div>
+                    <div className="text-left">
+                      <div className="text-sm font-medium text-slate-200">Teams</div>
+                      <div className="text-xs text-slate-500">{predefinedValues.teams.length} values</div>
+                    </div>
+                  </div>
+                  <ChevronDown className="w-4 h-4 text-slate-500 group-hover:text-slate-300 -rotate-90" />
+                </button>
+
+                {/* Designations */}
+                <button
+                  onClick={() => setPredefinedModal({ type: 'designation', isOpen: true })}
+                  className="flex items-center justify-between p-4 bg-slate-800/30 hover:bg-slate-800/50 border border-slate-700/50 rounded-xl transition-all group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-purple-500/10 rounded-lg flex items-center justify-center">
+                      <Briefcase className="w-5 h-5 text-purple-400" />
+                    </div>
+                    <div className="text-left">
+                      <div className="text-sm font-medium text-slate-200">Designations</div>
+                      <div className="text-xs text-slate-500">{predefinedValues.designations.length} values</div>
+                    </div>
+                  </div>
+                  <ChevronDown className="w-4 h-4 text-slate-500 group-hover:text-slate-300 -rotate-90" />
+                </button>
+
+                {/* Paid From */}
+                <button
+                  onClick={() => setPredefinedModal({ type: 'paidFrom', isOpen: true })}
+                  className="flex items-center justify-between p-4 bg-slate-800/30 hover:bg-slate-800/50 border border-slate-700/50 rounded-xl transition-all group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-emerald-500/10 rounded-lg flex items-center justify-center">
+                      <CreditCard className="w-5 h-5 text-emerald-400" />
+                    </div>
+                    <div className="text-left">
+                      <div className="text-sm font-medium text-slate-200">Paid From</div>
+                      <div className="text-xs text-slate-500">{predefinedValues.paidFrom.length} values</div>
+                    </div>
+                  </div>
+                  <ChevronDown className="w-4 h-4 text-slate-500 group-hover:text-slate-300 -rotate-90" />
+                </button>
+
+                {/* Categories */}
+                <button
+                  onClick={() => setPredefinedModal({ type: 'category', isOpen: true })}
+                  className="flex items-center justify-between p-4 bg-slate-800/30 hover:bg-slate-800/50 border border-slate-700/50 rounded-xl transition-all group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-amber-500/10 rounded-lg flex items-center justify-center">
+                      <Tag className="w-5 h-5 text-amber-400" />
+                    </div>
+                    <div className="text-left">
+                      <div className="text-sm font-medium text-slate-200">Categories</div>
+                      <div className="text-xs text-slate-500">{predefinedValues.categories.length} values</div>
+                    </div>
+                  </div>
+                  <ChevronDown className="w-4 h-4 text-slate-500 group-hover:text-slate-300 -rotate-90" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Bulk Upload Format - Collapsible */}
+        <div className="border-b border-slate-800/50">
+          <button
+            onClick={() => setShowBulkUploadFormat(!showBulkUploadFormat)}
+            className="w-full px-6 py-3 flex items-center justify-between text-left hover:bg-slate-800/20 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center">
+                <FileSpreadsheet className="w-4 h-4 text-slate-400" />
+              </div>
+              <div>
+                <div className="text-sm font-medium text-slate-200">Excel Upload Format</div>
+                <div className="text-xs text-slate-500">
+                  View expected column headers for bulk import
+                </div>
+              </div>
+            </div>
+            <div className={`p-1 rounded-lg transition-transform ${showBulkUploadFormat ? 'rotate-180' : ''}`}>
+              <ChevronDown className="w-4 h-4 text-slate-400" />
+            </div>
+          </button>
+
+          {showBulkUploadFormat && (
+            <div className="px-6 pb-4">
+              <div className="bg-slate-800/30 rounded-xl p-4 mb-3 border border-slate-700/30">
+                <h4 className="text-sm font-medium text-slate-200 mb-3">Expected Column Headers</h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
+                  {[
+                    'Name',
+                    'Registration / Membership No.',
+                    'Employee Code',
+                    'Paid From',
+                    'Designation',
+                    'Category',
+                    'Tally Name',
+                    'Gender',
+                    'Asija Mail ID',
+                    'Parents/Guardians Names',
+                    'Parents/Guardians Occupation',
+                    'Cell No.',
+                    'Alternate No.',
+                    'Alternate Mail Id',
+                    'Address 1',
+                    'Address 2',
+                    'Emergency Contact No.',
+                    'Relation',
+                    'Anniversary Date',
+                    'Bank Name',
+                    'Branch Name',
+                    'Account No.',
+                    'IFSC',
+                    'Type of Account',
+                    'Name of Account Holder',
+                    'Aadhar No.',
+                    'PAN',
+                    'Basis Salary/Stipend/Fees',
+                    'Laptop Allowance',
+                    'Total Salary (P/M)',
+                    'Per Annum',
+                    'Date of Joining -in Asija',
+                    'Articleship Start Date',
+                    'Transfer Case',
+                    '1st Yr of Articleship',
+                    '2nd Yr of Articleship',
+                    '3rd Yr of Articleship',
+                    'Filled Scholarship',
+                    'Qualification Level',
+                    'Next Attempt Due Date',
+                    'Registered Under Partner',
+                    'Working Under Partner',
+                    'Work Timings'
+                  ].map((column, index) => (
+                    <div
+                      key={index}
+                      className={`text-xs px-3 py-2 rounded-lg border ${
+                        column === 'Name' 
+                          ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30' 
+                          : 'text-slate-300 bg-slate-800/40 border-slate-700/50'
+                      }`}
+                    >
+                      {column}
+                      {column === 'Name' && <span className="ml-1 text-emerald-400">*</span>}
+                    </div>
                   ))}
                 </div>
-              ) : (
-                <p className="text-[11px] text-slate-500">No additional fields yet.</p>
-              )}
+                <p className="text-xs text-slate-500 mt-3">
+                  <span className="text-emerald-400">*</span> Required field. All other columns are optional.
+                </p>
+              </div>
+              <div className="bg-blue-500/5 rounded-xl p-4 border border-blue-500/20">
+                <p className="text-sm text-blue-300">
+                  <strong className="text-blue-400">💡 Pro Tip:</strong> Use the Export button to download a template with all current employees, then modify it and upload the updated data.
+                </p>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                placeholder="Add field (e.g. PAN)"
-                value={newExtraLabel}
-                onChange={(e) => setNewExtraLabel(e.target.value)}
-                className="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded px-2 py-1 focus:outline-none focus:border-emerald-500/50 min-w-40"
-              />
-              <button
-                type="button"
-                onClick={handleAddGlobalExtraLabel}
-                disabled={isSavingExtraLabel}
-                className="px-3 py-1 rounded text-xs bg-emerald-600 text-white border border-emerald-500/70 hover:bg-emerald-500 disabled:opacity-50"
-              >
-                {isSavingExtraLabel ? 'Adding...' : 'Add Field'}
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Predefined Values Management */}
-      <div className="border-b border-slate-800">
-        <button
-          onClick={() => setShowPredefinedValues(!showPredefinedValues)}
-          className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-slate-800/30 transition-colors"
-        >
-          <div className="space-y-1">
-            <div className="text-xs font-semibold text-slate-300 uppercase tracking-wide flex items-center gap-2">
-              <Settings className="w-4 h-4" />
-              Predefined Values Management
-            </div>
-            <div className="text-[11px] text-slate-500">
-              Manage dropdown options for Team, Designation, Paid From, and Category • Click to {showPredefinedValues ? 'hide' : 'show'}
-            </div>
-          </div>
-          {showPredefinedValues ? (
-            <ChevronUp className="w-4 h-4 text-slate-400" />
-          ) : (
-            <ChevronDown className="w-4 h-4 text-slate-400" />
           )}
-        </button>
+        </div>
+      </div>
+      )}
 
-        {showPredefinedValues && (
-          <div className="px-4 pb-4 border-t border-slate-800/50">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-medium text-slate-200">Manage Predefined Values</h3>
-              <button
-                onClick={() => setShowPredefinedValues(false)}
-                className="text-slate-400 hover:text-slate-200"
-              >
-                <X className="w-4 h-4" />
-              </button>
+      {/* Error/Success Messages */}
+      {error && (
+        <div className="mx-6 mt-4 bg-rose-500/10 text-rose-300 px-4 py-3 rounded-xl border border-rose-500/20 flex items-center gap-3">
+          <div className="w-8 h-8 bg-rose-500/20 rounded-lg flex items-center justify-center shrink-0">
+            <X className="w-4 h-4 text-rose-400" />
+          </div>
+          <span className="text-sm">{error}</span>
+        </div>
+      )}
+
+      {uploadStats && (
+        <div className="mx-6 mt-4">
+          <div className="bg-emerald-500/10 text-emerald-300 px-4 py-3 rounded-xl border border-emerald-500/20 flex items-center gap-3">
+            <div className="w-8 h-8 bg-emerald-500/20 rounded-lg flex items-center justify-center shrink-0">
+              <Upload className="w-4 h-4 text-emerald-400" />
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Teams (Work Partners) */}
-              <button
-                onClick={() => setPredefinedModal({ type: 'team', isOpen: true })}
-                className="flex items-center justify-between p-3 bg-slate-800/50 hover:bg-slate-800/70 border border-slate-700 rounded-lg transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <Users className="w-5 h-5 text-slate-400" />
-                  <div className="text-left">
-                    <div className="text-sm font-medium text-slate-200">Teams</div>
-                    <div className="text-xs text-slate-500">{predefinedValues.teams.length} values</div>
-                  </div>
-                </div>
-                <ChevronDown className="w-4 h-4 text-slate-400" />
-              </button>
-
-              {/* Designations */}
-              <button
-                onClick={() => setPredefinedModal({ type: 'designation', isOpen: true })}
-                className="flex items-center justify-between p-3 bg-slate-800/50 hover:bg-slate-800/70 border border-slate-700 rounded-lg transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <Briefcase className="w-5 h-5 text-slate-400" />
-                  <div className="text-left">
-                    <div className="text-sm font-medium text-slate-200">Designations</div>
-                    <div className="text-xs text-slate-500">{predefinedValues.designations.length} values</div>
-                  </div>
-                </div>
-                <ChevronDown className="w-4 h-4 text-slate-400" />
-              </button>
-
-              {/* Paid From */}
-              <button
-                onClick={() => setPredefinedModal({ type: 'paidFrom', isOpen: true })}
-                className="flex items-center justify-between p-3 bg-slate-800/50 hover:bg-slate-800/70 border border-slate-700 rounded-lg transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <CreditCard className="w-5 h-5 text-slate-400" />
-                  <div className="text-left">
-                    <div className="text-sm font-medium text-slate-200">Paid From</div>
-                    <div className="text-xs text-slate-500">{predefinedValues.paidFrom.length} values</div>
-                  </div>
-                </div>
-                <ChevronDown className="w-4 h-4 text-slate-400" />
-              </button>
-
-              {/* Categories */}
-              <button
-                onClick={() => setPredefinedModal({ type: 'category', isOpen: true })}
-                className="flex items-center justify-between p-3 bg-slate-800/50 hover:bg-slate-800/70 border border-slate-700 rounded-lg transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <Tag className="w-5 h-5 text-slate-400" />
-                  <div className="text-left">
-                    <div className="text-sm font-medium text-slate-200">Categories</div>
-                    <div className="text-xs text-slate-500">{predefinedValues.categories.length} values</div>
-                  </div>
-                </div>
-                <ChevronDown className="w-4 h-4 text-slate-400" />
-              </button>
+            <div className="text-sm">
+              <strong>Upload Complete:</strong> {uploadStats.updated} updated, {uploadStats.created} created
+              {uploadStats.failed > 0 && <span className="text-rose-400 ml-2">, {uploadStats.failed} failed</span>}
             </div>
           </div>
-        )}
+          {uploadStats.errors && uploadStats.errors.length > 0 && (
+            <div className="mt-2 bg-rose-950/20 border border-rose-900/30 rounded-xl p-4 max-h-40 overflow-y-auto">
+              <p className="text-xs font-semibold text-rose-300 mb-2">Error Details:</p>
+              <ul className="text-xs text-rose-400/80 space-y-1">
+                {uploadStats.errors.map((err: string | number | bigint | boolean | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | React.ReactPortal | Promise<string | number | bigint | boolean | React.ReactPortal | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | null | undefined> | null | undefined, idx: React.Key | null | undefined) => (
+                  <li key={idx}>{err}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Employee Table */}
+      <div className="p-6">
+        <div className="bg-slate-900/50 rounded-2xl border border-slate-800 overflow-hidden">
+          {/* Table Header */}
+          <div className="px-4 py-3 bg-slate-800/30 border-b border-slate-800 flex items-center justify-between">
+            <span className="text-sm font-medium text-slate-300">
+              {filteredUsers.length === users.length 
+                ? `${users.length} employees` 
+                : `Showing ${filteredUsers.length} of ${users.length} employees`}
+            </span>
+          </div>
+
+          {loading ? (
+            <div className="px-6 py-12 text-center">
+              <div className="animate-spin rounded-full h-10 w-10 border-2 border-slate-700 border-t-purple-500 mx-auto"></div>
+              <p className="mt-4 text-slate-400 text-sm">Loading employees...</p>
+            </div>
+          ) : filteredUsers.length === 0 ? (
+            <div className="px-6 py-12 text-center">
+              <div className="w-16 h-16 bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <Users className="w-8 h-8 text-slate-600" />
+              </div>
+              <p className="text-slate-400 text-sm">
+                {users.length === 0 
+                  ? 'No employees found. Add an employee or upload from Excel to get started.' 
+                  : 'No employees match your search criteria.'}
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-800/50 text-slate-400 font-medium text-xs uppercase tracking-wide">
+                  <tr>
+                    <th className="px-4 py-3.5">Employee</th>
+                    <th className="px-4 py-3.5 hidden md:table-cell">Email</th>
+                    <th className="px-4 py-3.5 hidden lg:table-cell">Team</th>
+                    <th className="px-4 py-3.5 hidden sm:table-cell">Designation</th>
+                    <th className="px-4 py-3.5 hidden xl:table-cell">Joined</th>
+                    <th className="px-4 py-3.5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/50">
+                  {filteredUsers.map((user, index) => (
+                    <tr 
+                      key={user._id} 
+                      className={`hover:bg-slate-800/30 transition-colors ${index % 2 === 0 ? 'bg-slate-900/20' : ''}`}
+                    >
+                      <td className="px-4 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 bg-gradient-to-br from-purple-500/20 to-purple-700/20 rounded-xl flex items-center justify-center border border-purple-500/20">
+                            <span className="text-sm font-semibold text-purple-400">
+                              {user.name?.charAt(0).toUpperCase() || '?'}
+                            </span>
+                          </div>
+                          <div>
+                            <p className="font-medium text-slate-200">{user.name}</p>
+                            <p className="text-xs text-slate-500 font-mono">{user.odId || user.employeeCode || '-'}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5 hidden md:table-cell">
+                        <span className="text-slate-400">{user.email || '-'}</span>
+                      </td>
+                      <td className="px-4 py-3.5 hidden lg:table-cell">
+                        <span className="text-slate-400">{user.workingUnderPartner || user.team || '-'}</span>
+                      </td>
+                      <td className="px-4 py-3.5 hidden sm:table-cell">
+                        {user.designation ? (
+                          <span className="inline-flex px-2.5 py-1 bg-slate-800/50 text-slate-300 text-xs rounded-lg border border-slate-700/50">
+                            {user.designation}
+                          </span>
+                        ) : (
+                          <span className="text-slate-500">-</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3.5 hidden xl:table-cell">
+                        <span className="text-slate-400">
+                          {user.joiningDate ? new Date(user.joiningDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3.5 text-right">
+                        <div className="inline-flex items-center gap-1">
+                          <button
+                            onClick={() => handleEditClick(user)}
+                            className="p-2 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-all"
+                            title="Edit Employee"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteUser(user)}
+                            className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all"
+                            title="Delete Employee"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Predefined Values Modal */}
       {predefinedModal.isOpen && predefinedModal.type && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-lg shadow-xl max-w-md w-full max-h-[80vh] overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-slate-700">
-              <div className="flex items-center gap-2">
-                {predefinedModal.type === 'team' && <Users className="w-5 h-5 text-slate-400" />}
-                {predefinedModal.type === 'designation' && <Briefcase className="w-5 h-5 text-slate-400" />}
-                {predefinedModal.type === 'paidFrom' && <CreditCard className="w-5 h-5 text-slate-400" />}
-                {predefinedModal.type === 'category' && <Tag className="w-5 h-5 text-slate-400" />}
-                <h3 className="text-lg font-medium text-slate-200 capitalize">
-                  {predefinedModal.type === 'team' ? 'Teams' :
-                   predefinedModal.type === 'designation' ? 'Designations' :
-                   predefinedModal.type === 'paidFrom' ? 'Paid From' : 'Categories'}
-                </h3>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl max-w-md w-full max-h-[80vh] overflow-hidden">
+            <div className="flex items-center justify-between p-5 border-b border-slate-700/50 bg-slate-800/30">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                  predefinedModal.type === 'team' ? 'bg-blue-500/10' :
+                  predefinedModal.type === 'designation' ? 'bg-purple-500/10' :
+                  predefinedModal.type === 'paidFrom' ? 'bg-emerald-500/10' : 'bg-amber-500/10'
+                }`}>
+                  {predefinedModal.type === 'team' && <Users className="w-5 h-5 text-blue-400" />}
+                  {predefinedModal.type === 'designation' && <Briefcase className="w-5 h-5 text-purple-400" />}
+                  {predefinedModal.type === 'paidFrom' && <CreditCard className="w-5 h-5 text-emerald-400" />}
+                  {predefinedModal.type === 'category' && <Tag className="w-5 h-5 text-amber-400" />}
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-200">
+                    {predefinedModal.type === 'team' ? 'Teams' :
+                     predefinedModal.type === 'designation' ? 'Designations' :
+                     predefinedModal.type === 'paidFrom' ? 'Paid From' : 'Categories'}
+                  </h3>
+                  <p className="text-xs text-slate-500">Manage dropdown options</p>
+                </div>
               </div>
               <button
                 onClick={() => setPredefinedModal({ type: null, isOpen: false })}
-                className="text-slate-400 hover:text-slate-200"
+                className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 rounded-lg transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-4 max-h-96 overflow-y-auto">
-              <div className="space-y-3">
+            <div className="p-5 max-h-80 overflow-y-auto">
+              <div className="space-y-2">
                 {(() => {
                   const values = predefinedModal.type === 'team' ? predefinedValues.teams :
                                 predefinedModal.type === 'designation' ? predefinedValues.designations :
@@ -3791,248 +4227,79 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                                 predefinedValues.categories;
 
                   return values.length > 0 ? (
-                    <div className="space-y-2">
-                      {values.map((value) => (
-                        <div
-                          key={value}
-                          className="flex items-center justify-between p-2 bg-slate-800 rounded border border-slate-700"
+                    values.map((value) => (
+                      <div
+                        key={value}
+                        className="flex items-center justify-between p-3 bg-slate-800/50 hover:bg-slate-800 rounded-xl border border-slate-700/50 group transition-colors"
+                      >
+                        <span className="text-sm text-slate-200">{value}</span>
+                        <button
+                          type="button"
+                          className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                          onClick={() => handleRemovePredefinedValue(
+                            predefinedModal.type === 'team' ? 'teams' :
+                            predefinedModal.type === 'designation' ? 'designations' :
+                            predefinedModal.type === 'paidFrom' ? 'paidFrom' : 'categories',
+                            value
+                          )}
                         >
-                          <span className="text-sm text-slate-200">{value}</span>
-                          <button
-                            type="button"
-                            className="text-slate-500 hover:text-rose-400 ml-2"
-                            onClick={() => handleRemovePredefinedValue(
-                              predefinedModal.type === 'team' ? 'teams' :
-                              predefinedModal.type === 'designation' ? 'designations' :
-                              predefinedModal.type === 'paidFrom' ? 'paidFrom' : 'categories',
-                              value
-                            )}
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))
                   ) : (
-                    <p className="text-sm text-slate-500 text-center py-4">
-                      No {predefinedModal.type === 'team' ? 'teams' :
-                          predefinedModal.type === 'designation' ? 'designations' :
-                          predefinedModal.type === 'paidFrom' ? 'paid from values' : 'categories'} yet.
-                    </p>
+                    <div className="text-center py-8">
+                      <div className="w-12 h-12 bg-slate-800 rounded-xl flex items-center justify-center mx-auto mb-3">
+                        {predefinedModal.type === 'team' && <Users className="w-6 h-6 text-slate-600" />}
+                        {predefinedModal.type === 'designation' && <Briefcase className="w-6 h-6 text-slate-600" />}
+                        {predefinedModal.type === 'paidFrom' && <CreditCard className="w-6 h-6 text-slate-600" />}
+                        {predefinedModal.type === 'category' && <Tag className="w-6 h-6 text-slate-600" />}
+                      </div>
+                      <p className="text-sm text-slate-500">
+                        No {predefinedModal.type === 'team' ? 'teams' :
+                            predefinedModal.type === 'designation' ? 'designations' :
+                            predefinedModal.type === 'paidFrom' ? 'paid from values' : 'categories'} yet
+                      </p>
+                      <p className="text-xs text-slate-600 mt-1">Add one below to get started</p>
+                    </div>
                   );
                 })()}
               </div>
+            </div>
 
-              <div className="mt-4 pt-4 border-t border-slate-700">
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder={`Add ${predefinedModal.type === 'team' ? 'team' :
-                                        predefinedModal.type === 'designation' ? 'designation' :
-                                        predefinedModal.type === 'paidFrom' ? 'paid from' : 'category'}...`}
-                    value={newPredefinedValue.type === predefinedModal.type ? newPredefinedValue.value : ''}
-                    onChange={(e) => setNewPredefinedValue({
+            <div className="p-5 border-t border-slate-700/50 bg-slate-800/20">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder={`Add ${predefinedModal.type === 'team' ? 'team' :
+                                      predefinedModal.type === 'designation' ? 'designation' :
+                                      predefinedModal.type === 'paidFrom' ? 'paid from' : 'category'}...`}
+                  value={newPredefinedValue.type === predefinedModal.type ? newPredefinedValue.value : ''}
+                  onChange={(e) => setNewPredefinedValue({
+                    type: predefinedModal.type!,
+                    value: e.target.value
+                  })}
+                  className="flex-1 bg-slate-800/50 border border-slate-700 text-slate-200 text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50"
+                  onKeyPress={(e) => e.key === 'Enter' && handleAddPredefinedValue()}
+                />
+                <button
+                  onClick={() => {
+                    setNewPredefinedValue({
                       type: predefinedModal.type!,
-                      value: e.target.value
-                    })}
-                    className="flex-1 bg-slate-950 border border-slate-700 text-slate-200 text-sm rounded px-3 py-2 focus:outline-none focus:border-emerald-500/50"
-                    onKeyPress={(e) => e.key === 'Enter' && handleAddPredefinedValue()}
-                  />
-                  <button
-                    onClick={() => {
-                      setNewPredefinedValue({
-                        type: predefinedModal.type!,
-                        value: newPredefinedValue.type === predefinedModal.type ? newPredefinedValue.value : ''
-                      });
-                      handleAddPredefinedValue();
-                    }}
-                    disabled={isSavingPredefinedValue || (newPredefinedValue.type === predefinedModal.type && !newPredefinedValue.value.trim())}
-                    className="px-4 py-2 bg-emerald-600 text-white text-sm rounded hover:bg-emerald-500 disabled:opacity-50"
-                  >
-                    {isSavingPredefinedValue ? 'Adding...' : 'Add'}
-                  </button>
-                </div>
+                      value: newPredefinedValue.type === predefinedModal.type ? newPredefinedValue.value : ''
+                    });
+                    handleAddPredefinedValue();
+                  }}
+                  disabled={isSavingPredefinedValue || (newPredefinedValue.type === predefinedModal.type && !newPredefinedValue.value.trim())}
+                  className="px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {isSavingPredefinedValue ? 'Adding...' : 'Add'}
+                </button>
               </div>
             </div>
           </div>
         </div>
       )}
-
-      {/* Bulk Upload Format Preview */}
-      <div className="border-b border-slate-800">
-        <button
-          onClick={() => setShowBulkUploadFormat(!showBulkUploadFormat)}
-          className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-slate-800/30 transition-colors"
-        >
-          <div className="space-y-1">
-            <div className="text-xs font-semibold text-slate-300 uppercase tracking-wide flex items-center gap-2">
-              <FileSpreadsheet className="w-4 h-4" />
-              Bulk Upload Excel Format
-            </div>
-            <div className="text-[11px] text-slate-500">
-              View expected column headers for bulk employee upload • Click to {showBulkUploadFormat ? 'hide' : 'show'}
-            </div>
-          </div>
-          {showBulkUploadFormat ? (
-            <ChevronUp className="w-4 h-4 text-slate-400" />
-          ) : (
-            <ChevronDown className="w-4 h-4 text-slate-400" />
-          )}
-        </button>
-
-        {showBulkUploadFormat && (
-          <div className="px-4 pb-4 border-t border-slate-800/50">
-            <div className="bg-slate-800/20 rounded-lg p-4 mb-3">
-              <h4 className="text-sm font-medium text-slate-200 mb-2">Expected Column Headers</h4>
-              <p className="text-xs text-slate-400 mb-3">
-                Your Excel file should have these columns in the first row. All columns are optional except "Name".
-                Custom fields can be added as additional columns after "Work Timings".
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                {[
-                  'Name',
-                  'Registration / Membership No.',
-                  'Employee Code',
-                  'Paid From',
-                  'Designation',
-                  'Category',
-                  'Tally Name',
-                  'Gender',
-                  'Asija Mail ID',
-                  'Parents/Guardians Names',
-                  'Parents/Guardians Occupation',
-                  'Cell No.',
-                  'Alternate No.',
-                  'Alternate Mail Id',
-                  'Address 1',
-                  'Address 2',
-                  'Emergency Contact No.',
-                  'Relation',
-                  'Anniversary Date',
-                  'Bank Name',
-                  'Branch Name',
-                  'Account No.',
-                  'IFSC',
-                  'Type of Account',
-                  'Name of Account Holder',
-                  'Aadhar No.',
-                  'PAN',
-                  'Basis Salary/Stipend/Fees',
-                  'Laptop Allowance',
-                  'Total Salary (P/M)',
-                  'Per Annum',
-                  'Date of Joining -in Asija',
-                  'Articleship Start Date',
-                  'Transfer Case',
-                  '1st Yr of Articleship',
-                  '2nd Yr of Articleship',
-                  '3rd Yr of Articleship',
-                  'Filled Scholarship',
-                  'Qualification Level',
-                  'Next Attempt Due Date',
-                  'Registered Under Partner',
-                  'Working Under Partner',
-                  'Work Timings'
-                ].map((column, index) => (
-                  <div
-                    key={index}
-                    className="text-xs text-slate-300 bg-slate-800/40 px-3 py-2 rounded border border-slate-700/50"
-                  >
-                    {column}
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="bg-slate-800/10 rounded-lg p-3 border border-slate-700/30">
-              <p className="text-xs text-slate-400">
-                <strong>Tip:</strong> Use the "Export" button above to download a template with all current employees,
-                then modify it and use "Bulk Actions" to upload the updated data.
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {error && (
-        <div className="m-4 bg-rose-500/10 text-rose-300 px-4 py-3 rounded-md border border-rose-500/20">
-          {error}
-        </div>
-      )}
-
-      {uploadStats && (
-        <div className="m-4">
-          <div className="bg-emerald-500/10 text-emerald-300 px-4 py-3 rounded-md border border-emerald-500/20 text-sm">
-            <strong>Upload Complete:</strong> Updated {uploadStats.updated}, Created {uploadStats.created}, Failed {uploadStats.failed}.
-          </div>
-          {uploadStats.errors && uploadStats.errors.length > 0 && (
-            <div className="mt-2 bg-rose-950/20 border border-rose-900/30 rounded-md p-3 max-h-40 overflow-y-auto">
-                <p className="text-xs font-semibold text-rose-300 mb-2">Error Details:</p>
-                <ul className="text-xs text-rose-400/80 space-y-1">
-                    {uploadStats.errors.map((err: string | number | bigint | boolean | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | React.ReactPortal | Promise<string | number | bigint | boolean | React.ReactPortal | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | null | undefined> | null | undefined, idx: React.Key | null | undefined) => (
-                        <li key={idx}>{err}</li>
-                    ))}
-                </ul>
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm text-slate-300">
-          <thead className="bg-slate-950/50 text-slate-400 font-medium border-b border-slate-800">
-            <tr>
-              <th className="px-4 py-3">OD ID</th>
-              <th className="px-4 py-3">Name</th>
-              <th className="px-4 py-3">Email</th>
-              <th className="px-4 py-3">Team</th>
-              <th className="px-4 py-3">Designation</th>
-              <th className="px-4 py-3">Joined</th>
-              <th className="px-4 py-3 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800">
-            {filteredUsers.map((user) => (
-              <tr key={user._id} className="hover:bg-slate-800/30 transition-colors">
-                <td className="px-4 py-3 font-mono text-slate-400">{user.odId}</td>
-                <td className="px-4 py-3 text-slate-200 font-medium">{user.name}</td>
-                <td className="px-4 py-3 text-slate-400">{user.email}</td>
-                <td className="px-4 py-3 text-slate-400">{user.workingUnderPartner || user.team || '-'}</td>
-                <td className="px-4 py-3 text-slate-400">{user.designation || '-'}</td>
-                <td className="px-4 py-3 text-slate-400">
-                  {user.joiningDate ? new Date(user.joiningDate).toLocaleDateString() : '-'}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <button
-                    onClick={() => handleEditClick(user)}
-                    className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded transition-colors"
-                    title="Edit User"
-                  >
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDeleteUser(user)}
-                    className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors ml-1"
-                    title="Delete User"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {users.length === 0 && !loading && (
-              <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
-                  No employees found. Upload attendance sheet to auto-create users.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 };
-function setUploadStats(arg0: null) {
-  throw new Error('Function not implemented.');
-}
-

@@ -22,9 +22,12 @@ interface AttendanceRequest {
   startTime?: string;
   endTime?: string;
   approvedBy?: string;
+  approvedByEmail?: string;
   approvedAt?: string;
   rejectedBy?: string;
+  rejectedByEmail?: string;
   rejectedAt?: string;
+  hrValue?: string; // HR value when approved by HR
   createdAt: string;
   updatedAt: string;
 }
@@ -44,9 +47,12 @@ interface DateRangeGroup {
   startTime?: string;
   endTime?: string;
   approvedBy?: string;
+  approvedByEmail?: string;
   approvedAt?: string;
   rejectedBy?: string;
+  rejectedByEmail?: string;
   rejectedAt?: string;
+  hrValue?: string;
   createdAt: string;
   ids: string[]; // Array of request IDs for this range
 }
@@ -307,9 +313,12 @@ const groupRequestsIntoRanges = (requests: AttendanceRequest[]): {
           startTime: firstRequest.startTime,
           endTime: firstRequest.endTime,
           approvedBy: firstRequest.approvedBy,
+          approvedByEmail: firstRequest.approvedByEmail,
           approvedAt: firstRequest.approvedAt,
           rejectedBy: firstRequest.rejectedBy,
+          rejectedByEmail: firstRequest.rejectedByEmail,
           rejectedAt: firstRequest.rejectedAt,
+          hrValue: firstRequest.hrValue,
           createdAt: firstRequest.createdAt,
           ids: range.map(r => r._id)
         });
@@ -356,6 +365,12 @@ const AttendanceRequestsTable: React.FC<{
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider border-b border-slate-700">
               Action By
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider border-b border-slate-700">
+              Email
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider border-b border-slate-700">
+              Value
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider border-b border-slate-700">
               Partner
@@ -406,6 +421,16 @@ const AttendanceRequestsTable: React.FC<{
               <td className="px-4 py-3 border-b border-slate-700">
                 <span className="text-sm text-slate-300">
                   {group.approvedBy || group.rejectedBy || group.partnerName}
+                </span>
+              </td>
+              <td className="px-4 py-3 border-b border-slate-700">
+                <span className="text-sm text-slate-300">
+                  {group.approvedByEmail || group.rejectedByEmail || '-'}
+                </span>
+              </td>
+              <td className="px-4 py-3 border-b border-slate-700">
+                <span className="text-sm text-slate-300">
+                  {group.hrValue || '-'}
                 </span>
               </td>
               <td className="px-4 py-3 border-b border-slate-700">
@@ -478,6 +503,16 @@ const AttendanceRequestsTable: React.FC<{
               <td className="px-4 py-3 border-b border-slate-700">
                 <span className="text-sm text-slate-300">
                   {request.approvedBy || request.rejectedBy || request.partnerName}
+                </span>
+              </td>
+              <td className="px-4 py-3 border-b border-slate-700">
+                <span className="text-sm text-slate-300">
+                  {request.approvedByEmail || request.rejectedByEmail || '-'}
+                </span>
+              </td>
+              <td className="px-4 py-3 border-b border-slate-700">
+                <span className="text-sm text-slate-300">
+                  {request.hrValue || '-'}
                 </span>
               </td>
               <td className="px-4 py-3 border-b border-slate-700">
@@ -584,7 +619,9 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
             action,
             ids: requestIds,
             remark: remarks,
-            value: value ? parseFloat(value) : undefined
+            value: value ? parseFloat(value) : undefined,
+            approvedBy: 'HR',
+            approvedByEmail: 'hr@asija.in'
           }),
         });
       } else {
@@ -599,7 +636,8 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
             action,
             remarks,
             value,
-            approvedBy: 'HR' // Assuming admin is HR, could be made dynamic
+            approvedBy: 'HR',
+            approvedByEmail: 'hr@asija.in'
           }),
         });
       }
@@ -683,6 +721,8 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
         'Reason': group.reason || '',
         'Status': group.status,
         'Action By': group.approvedBy || group.rejectedBy || group.partnerName,
+        'Email': group.approvedByEmail || group.rejectedByEmail || '',
+        'Value': group.hrValue || '',
         'Partner Remarks': group.partnerRemarks || '',
         'Submitted Date': new Date(group.createdAt).toLocaleDateString(),
         'Submitted Time': new Date(group.createdAt).toLocaleTimeString()
@@ -704,6 +744,8 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
         'Reason': request.reason || '',
         'Status': request.status,
         'Action By': request.approvedBy || request.rejectedBy || request.partnerName,
+        'Email': request.approvedByEmail || request.rejectedByEmail || '',
+        'Value': request.hrValue || '',
         'Partner Remarks': request.partnerRemarks || '',
         'Submitted Date': new Date(request.createdAt).toLocaleDateString(),
         'Submitted Time': new Date(request.createdAt).toLocaleTimeString()
@@ -728,6 +770,8 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
       { wch: 20 }, // Reason
       { wch: 10 }, // Status
       { wch: 15 }, // Action By
+      { wch: 25 }, // Email
+      { wch: 8 },  // Value
       { wch: 20 }, // Partner Remarks
       { wch: 12 }, // Submitted Date
       { wch: 12 }  // Submitted Time

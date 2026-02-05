@@ -393,56 +393,52 @@ export default function EmployeeDashboard() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
        {/* Header */}
-       <header className="bg-slate-900 border-b border-slate-800 p-4 px-8 flex justify-between items-center">
-           <div>
-               <h1 className="text-xl font-bold text-white">My Attendance</h1>
-               <p className="text-xs text-slate-400">Welcome, {user.name}</p>
+       <header className="bg-slate-900 border-b border-slate-800 p-3 px-4 sm:px-6 sticky top-0 z-40">
+           <div className="flex items-center justify-between gap-3">
+               <div className="min-w-0 flex-1">
+                   <h1 className="text-base sm:text-xl font-bold text-white truncate">My Attendance</h1>
+                   <p className="text-[11px] sm:text-xs text-slate-400 truncate">Welcome, {user.name}</p>
+               </div>
+
+               <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+                   <button onClick={handleLogout} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-rose-400 transition-colors touch-manipulation active:scale-95" title="Sign Out">
+                       <LogOut className="w-5 h-5" />
+                   </button>
+               </div>
            </div>
            
-           <div className="flex gap-4">
-               <button 
-                  onClick={() => setShowFutureModal(true)}
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                >
-                  Apply Future Leave
+           {/* Selection banner - shown when dates are selected */}
+           {futureStartDate && (
+             <div className="mt-2 flex items-center gap-2 bg-emerald-900/30 border border-emerald-500/30 rounded-lg p-2">
+               <button
+                 onClick={() => setShowFutureModal(true)}
+                 className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-md text-xs font-medium transition-colors animate-pulse truncate active:scale-95 touch-manipulation"
+               >
+                 {futureStartDate === futureEndDate
+                   ? `Request for ${futureStartDate}`
+                   : `${futureStartDate} → ${futureEndDate}`
+                 }
                </button>
-
-               {futureStartDate && (
-                 <div className="flex gap-2">
-                   <button 
-                     onClick={() => setShowFutureModal(true)}
-                     className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors animate-pulse"
-                   >
-                     {futureStartDate === futureEndDate 
-                       ? `Request for ${futureStartDate}` 
-                       : `Request ${futureStartDate} to ${futureEndDate}`
-                     }
-                   </button>
-                   <button 
-                     onClick={() => {
-                       setFutureStartDate('');
-                       setFutureEndDate('');
-                       setFutureReason('');
-                       setFutureStartTime('');
-                       setFutureEndTime('');
-                       setCalendarSelectionStart(null);
-                     }}
-                     className="bg-gray-600 hover:bg-gray-500 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors"
-                     title="Clear selection"
-                   >
-                     ✕
-                   </button>
-                 </div>
-               )}
-
-               <button onClick={handleLogout} className="flex items-center gap-2 hover:text-rose-400 transition-colors text-sm">
-                   <LogOut className="w-4 h-4" /> Sign Out
+               <button
+                 onClick={() => {
+                   setFutureStartDate('');
+                   setFutureEndDate('');
+                   setFutureReason('');
+                   setFutureStartTime('');
+                   setFutureEndTime('');
+                   setCalendarSelectionStart(null);
+                 }}
+                 className="p-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-md transition-colors touch-manipulation active:scale-95"
+                 title="Clear selection"
+               >
+                 <X className="w-4 h-4" />
                </button>
-           </div>
+             </div>
+           )}
        </header>
 
        {/* Content */}
-       <main className="flex-1 p-8 max-w-7xl mx-auto w-full">
+       <main className="flex-1 p-3 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">
            <EmployeeMonthView 
               summaries={summary ? [summary] : []}
               users={[user]}
@@ -457,18 +453,19 @@ export default function EmployeeDashboard() {
               onDayClick={handleDayClick}
               selectionStart={calendarSelectionStart}
               onSelectionStartChange={setCalendarSelectionStart}
+              onApplyFutureRequest={() => setShowFutureModal(true)}
            />
        </main>
 
        {/* Correction Modal */}
        {selectedDate && (
-           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-               <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
-                   <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
-                       <h3 className="font-semibold text-white">Request Correction</h3>
+           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4">
+               <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+                   <div className="p-3 sm:p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
+                       <h3 className="font-semibold text-white text-sm sm:text-base">Request Correction</h3>
                        <button onClick={() => setSelectedDate(null)} className="text-slate-500 hover:text-white"><X className="w-5 h-5"/></button>
                    </div>
-                   <div className="p-6 space-y-4">
+                   <div className="p-4 sm:p-6 space-y-4">
                        <div className="p-3 bg-emerald-900/20 border border-emerald-500/30 rounded-lg text-emerald-200 text-sm">
                            Requesting change for <strong>{selectedDate}</strong>
                        </div>
@@ -478,21 +475,21 @@ export default function EmployeeDashboard() {
                            <select 
                              value={requestStatus}
                              onChange={(e) => setRequestStatus(e.target.value)}
-                             className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-emerald-500"
+                             className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-emerald-500 text-sm sm:text-base"
                            >
                               {statusOptions.map(s => <option key={s} value={s}>{s}</option>)}
                            </select>
                        </div>
 
                        {(requestStatus !== 'On leave' && requestStatus !== 'Present - outstation') && (
-                           <div className="grid grid-cols-2 gap-4">
+                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                <div className="space-y-2">
                                    <label className="text-sm font-medium text-slate-300">Start Time</label>
                                    <input 
                                      type="time" 
                                      value={startTime}
                                      onChange={(e) => setStartTime(e.target.value)}
-                                     className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-emerald-500"
+                                     className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-emerald-500 text-sm sm:text-base"
                                    />
                                </div>
                                <div className="space-y-2">
@@ -501,7 +498,7 @@ export default function EmployeeDashboard() {
                                      type="time" 
                                      value={endTime}
                                      onChange={(e) => setEndTime(e.target.value)}
-                                     className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-emerald-500"
+                                     className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-emerald-500 text-sm sm:text-base"
                                    />
                                </div>
                            </div>
@@ -513,7 +510,7 @@ export default function EmployeeDashboard() {
                              value={requestReason}
                              onChange={(e) => setRequestReason(e.target.value)}
                              placeholder="E.g., Forgot to punch out due to client meeting..."
-                             className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-slate-200 outline-none focus:border-emerald-500 min-h-20"
+                             className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-slate-200 outline-none focus:border-emerald-500 min-h-20 text-sm sm:text-base"
                              required
                            />
                        </div>
@@ -521,7 +518,7 @@ export default function EmployeeDashboard() {
                        <button 
                          onClick={submitRequest}
                          disabled={sendingRequest || !requestReason.trim()}
-                         className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg flex items-center justify-center gap-2 mt-4"
+                         className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg flex items-center justify-center gap-2 mt-4 text-sm sm:text-base"
                        >
                            {sendingRequest ? <Loader2 className="w-4 h-4 animate-spin"/> : <Send className="w-4 h-4"/>}
                            Send Request to Partner
@@ -532,10 +529,10 @@ export default function EmployeeDashboard() {
        )}
 
        {showFutureModal && (
-           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-               <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
-                   <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
-                       <h3 className="font-semibold text-white">Future Request</h3>
+           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4">
+               <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+                   <div className="p-3 sm:p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
+                       <h3 className="font-semibold text-white text-sm sm:text-base">Future Request</h3>
                        <button onClick={() => {
                          setShowFutureModal(false);
                          setFutureStartDate('');
@@ -546,7 +543,7 @@ export default function EmployeeDashboard() {
                          setCalendarSelectionStart(null);
                        }} className="text-slate-500 hover:text-white"><X className="w-5 h-5"/></button>
                    </div>
-                   <div className="p-6 space-y-4">
+                   <div className="p-4 sm:p-6 space-y-4">
                        <div className="p-3 bg-indigo-900/20 border border-indigo-500/30 rounded-lg text-indigo-200 text-sm">
                            {futureStartDate === futureEndDate 
                              ? `Selected date: ${futureStartDate}`
@@ -557,8 +554,8 @@ export default function EmployeeDashboard() {
                            </div>
                        </div>
 
-                       <div className="grid grid-cols-2 gap-4">
-                           <div className={TIMED_CATEGORIES.includes(futureType) ? "col-span-2 space-y-2" : "space-y-2"}>
+                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                           <div className={TIMED_CATEGORIES.includes(futureType) ? "col-span-1 sm:col-span-2 space-y-2" : "space-y-2"}>
                                <label className="text-sm font-medium text-slate-300">
                                    {TIMED_CATEGORIES.includes(futureType) ? "Date" : "Start Date"}
                                </label>
@@ -566,7 +563,7 @@ export default function EmployeeDashboard() {
                                  type="date" 
                                  value={futureStartDate}
                                  readOnly
-                                 className="w-full bg-slate-800 border border-slate-600 rounded-lg p-2.5 text-slate-300 cursor-not-allowed"
+                                 className="w-full bg-slate-800 border border-slate-600 rounded-lg p-2.5 text-slate-300 cursor-not-allowed text-sm sm:text-base"
                                />
                            </div>
                            {!TIMED_CATEGORIES.includes(futureType) && (
@@ -576,7 +573,7 @@ export default function EmployeeDashboard() {
                                      type="date" 
                                      value={futureEndDate}
                                      readOnly
-                                     className="w-full bg-slate-800 border border-slate-600 rounded-lg p-2.5 text-slate-300 cursor-not-allowed"
+                                     className="w-full bg-slate-800 border border-slate-600 rounded-lg p-2.5 text-slate-300 cursor-not-allowed text-sm sm:text-base"
                                    />
                                </div>
                            )}
@@ -595,14 +592,14 @@ export default function EmployeeDashboard() {
                                      setFutureEndTime('');
                                  }
                              }}
-                             className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-indigo-500"
+                             className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-indigo-500 text-sm sm:text-base"
                            >
                               {futureStatusOptions.map(s => <option key={s} value={s}>{s}</option>)}
                            </select>
                        </div>
 
                        {TIMED_CATEGORIES.includes(futureType) && (
-                           <div className="grid grid-cols-2 gap-4">
+                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                <div className="space-y-2">
                                    <label className="text-sm font-medium text-slate-300">Start Time *</label>
                                    <input 
@@ -610,7 +607,7 @@ export default function EmployeeDashboard() {
                                      value={futureStartTime}
                                      onChange={(e) => setFutureStartTime(e.target.value)}
                                      required
-                                     className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-indigo-500"
+                                     className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-indigo-500 text-sm sm:text-base"
                                    />
                                </div>
                                <div className="space-y-2">
@@ -620,7 +617,7 @@ export default function EmployeeDashboard() {
                                      value={futureEndTime}
                                      onChange={(e) => setFutureEndTime(e.target.value)}
                                      required
-                                     className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-indigo-500"
+                                     className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-indigo-500 text-sm sm:text-base"
                                    />
                                </div>
                            </div>
@@ -632,7 +629,7 @@ export default function EmployeeDashboard() {
                              value={futureReason}
                              onChange={(e) => setFutureReason(e.target.value)}
                              placeholder="Reason for future absence..."
-                             className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-slate-200 outline-none focus:border-indigo-500 min-h-20"
+                             className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-slate-200 outline-none focus:border-indigo-500 min-h-20 text-sm sm:text-base"
                              required
                            />
                        </div>
@@ -640,7 +637,7 @@ export default function EmployeeDashboard() {
                        <button 
                          onClick={submitFutureRequest}
                          disabled={sendingFutureRequest || !futureReason.trim()}
-                         className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg flex items-center justify-center gap-2 mt-4"
+                         className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg flex items-center justify-center gap-2 mt-4 text-sm sm:text-base"
                        >
                            {sendingFutureRequest ? <Loader2 className="w-4 h-4 animate-spin"/> : <Send className="w-4 h-4"/>}
                            Send Request

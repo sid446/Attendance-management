@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
   try {
     await dbConnect();
 
-    const { requestId, action, remarks, value, approvedBy } = await request.json();
+    const { requestId, action, remarks, value, approvedBy, approvedByEmail } = await request.json();
 
     if (!requestId || !action || !approvedBy) {
       return NextResponse.json({
@@ -42,6 +42,7 @@ export async function POST(request: NextRequest) {
 
     if (action === 'approve') {
       updateData.approvedBy = approvedBy;
+      updateData.approvedByEmail = approvedByEmail || null;
       updateData.approvedAt = new Date();
       if (approvedBy === 'HR') {
         if (remarks) updateData.hrRemarks = remarks;
@@ -51,6 +52,7 @@ export async function POST(request: NextRequest) {
       }
     } else {
       updateData.rejectedBy = approvedBy;
+      updateData.rejectedByEmail = approvedByEmail || null;
       updateData.rejectedAt = new Date();
       if (approvedBy === 'HR') {
         if (remarks) updateData.hrRemarks = remarks;

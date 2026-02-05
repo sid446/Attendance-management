@@ -16,8 +16,10 @@ export interface IAttendanceRequest extends Document {
   hrRemarks?: string; // HR remarks when approved by HR
   hrValue?: string; // HR value when approved by HR
   approvedBy?: string; // 'HR' or partner name
+  approvedByEmail?: string; // Email of the person who approved (for historical tracking)
   approvedAt?: Date;
   rejectedBy?: string; // 'HR' or partner name
+  rejectedByEmail?: string; // Email of the person who rejected (for historical tracking)
   rejectedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -44,8 +46,10 @@ const AttendanceRequestSchema: Schema = new Schema(
     hrRemarks: { type: String },
     hrValue: { type: String },
     approvedBy: { type: String },
+    approvedByEmail: { type: String },
     approvedAt: { type: Date },
     rejectedBy: { type: String },
+    rejectedByEmail: { type: String },
     rejectedAt: { type: Date }
   },
   {

@@ -26,6 +26,7 @@ interface RequestGroup {
 function ReviewAllPageContent() {
   const searchParams = useSearchParams();
   const partnerName = searchParams.get('partnerName');
+  const partnerEmail = searchParams.get('partnerEmail');
   const [requestGroups, setRequestGroups] = useState<RequestGroup[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,6 +42,51 @@ function ReviewAllPageContent() {
   const [processing, setProcessing] = useState(false);
   const [leaveTypeFilter, setLeaveTypeFilter] = useState<string>('all');
   const [personFilter, setPersonFilter] = useState<string>('all');
+
+  // Helper function to get max value based on request type
+  const getMaxValueForType = (requestedStatus: string): number => {
+    const status = requestedStatus.toLowerCase();
+    if (status.includes('half')) {
+      return 0.5; // Fixed value for half-day
+    }
+    if (status.includes('wfh')) {
+      return 0.75;
+    }
+    if (status.includes('outstation')) {
+      return 1.2;
+    }
+    return 1;
+  };
+
+  // Helper function to get default value based on request type
+  const getDefaultValueForType = (requestedStatus: string): string => {
+    const status = requestedStatus.toLowerCase();
+    if (status.includes('half')) {
+      return '0.5'; // Fixed value for half-day
+    }
+    if (status.includes('wfh')) {
+      return '0.75';
+    }
+    if (status.includes('outstation')) {
+      return '1';
+    }
+    return '1';
+  };
+
+  // Helper function to check if request type has fixed value (no editing allowed)
+  const isFixedValueType = (requestedStatus: string): boolean => {
+    const status = requestedStatus.toLowerCase();
+    return status.includes('half') || status.includes('leave') || requestedStatus === 'On leave';
+  };
+
+  // Get max value for all selected groups (use the highest max among them)
+  const getMaxValueForSelected = (): number => {
+    if (selectedGroupIds.length === 0) return 1;
+    return Math.max(...selectedGroupIds.map(id => {
+      const group = requestGroups[parseInt(id)];
+      return getMaxValueForType(group?.requestedStatus || '');
+    }));
+  };
 
   useEffect(() => {
     if (!partnerName) {
@@ -171,13 +217,20 @@ function ReviewAllPageContent() {
       const selectedGroups = selectedGroupIds.map(id => requestGroups[parseInt(id)]);
       if (same) {
         setRemarks({ all: '' });
-        if (modalAction === 'approve') setValues({ all: '1' });
+        if (modalAction === 'approve') {
+          // Use the default value for the selected groups
+          const defaultVal = getMaxValueForSelected() === 0.75 ? '0.75' : '1';
+          setValues({ all: defaultVal });
+        }
       } else {
         const initialRemarks: { [key: string]: string } = {};
         const initialValues: { [key: string]: string } = {};
         selectedGroupIds.forEach(id => {
+          const group = requestGroups[parseInt(id)];
           initialRemarks[id] = '';
-          if (modalAction === 'approve') initialValues[id] = '1';
+          if (modalAction === 'approve') {
+            initialValues[id] = getDefaultValueForType(group?.requestedStatus || '');
+          }
         });
         setRemarks(initialRemarks);
         setValues(initialValues);
@@ -192,11 +245,14 @@ function ReviewAllPageContent() {
     // Initialize remarks and values
     setRemarks({ all: '' });
     if (same) {
-      setValues({ all: '1' });
+      // Use the default value for the selected groups
+      const defaultVal = getMaxValueForSelected() === 0.75 ? '0.75' : '1';
+      setValues({ all: defaultVal });
     } else {
       const initialValues: { [key: string]: string } = {};
       selectedGroupIds.forEach(id => {
-        initialValues[id] = '1';
+        const group = requestGroups[parseInt(id)];
+        initialValues[id] = getDefaultValueForType(group?.requestedStatus || '');
       });
       setValues(initialValues);
     }
@@ -222,7 +278,9 @@ function ReviewAllPageContent() {
                 action: modalAction,
                 ids: group.requestIds,
                 remark,
-                value
+                value,
+                approvedBy: partnerName,
+                approvedByEmail: partnerEmail
               })
             });
             if (!res.ok) {
@@ -245,7 +303,9 @@ function ReviewAllPageContent() {
               action: modalAction,
               ids: allRequestIds,
               remark,
-              ...(value !== undefined && { value })
+              ...(value !== undefined && { value }),
+              approvedBy: partnerName,
+              approvedByEmail: partnerEmail
             })
           });
           if (res.ok) {
@@ -269,7 +329,9 @@ function ReviewAllPageContent() {
               action: modalAction,
               ids: group.requestIds,
               remark,
-              ...(value !== undefined && { value })
+              ...(value !== undefined && { value }),
+              approvedBy: partnerName,
+              approvedByEmail: partnerEmail
             })
           });
           if (!res.ok) {
@@ -292,10 +354,10 @@ function ReviewAllPageContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-slate-950">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading requests...</p>
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-slate-700 border-t-emerald-500 mx-auto"></div>
+          <p className="mt-4 text-slate-400 text-sm">Loading requests...</p>
         </div>
       </div>
     );
@@ -303,184 +365,229 @@ function ReviewAllPageContent() {
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="bg-white p-8 rounded-lg shadow-md text-center max-w-md">
-          <div className="text-red-600 mb-4">⚠️</div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Error</h2>
-          <p className="text-gray-600">{error}</p>
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4">
+        <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl text-center max-w-sm w-full">
+          <div className="w-12 h-12 bg-rose-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-6 h-6 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h2 className="text-lg font-semibold text-white mb-2">Something went wrong</h2>
+          <p className="text-slate-400 text-sm">{error}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-4 px-2 sm:px-4">
-      <div className="max-w-6xl mx-auto">
-        <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-4 sm:mb-6">
-          <h1 className="text-xl sm:text-2xl font-semibold text-gray-900 mb-2">Review All Pending Requests</h1>
-          <p className="text-gray-600 text-sm leading-relaxed">Select the requests you want to approve or reject from your employees.</p>
+    <div className="min-h-screen bg-slate-950">
+      {/* Sticky Header */}
+      <header className="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-xl border-b border-slate-800/50">
+        <div className="max-w-6xl mx-auto px-4 py-4">
+          <h1 className="text-lg sm:text-xl font-semibold text-white">Review Requests</h1>
+          <p className="text-slate-400 text-xs sm:text-sm mt-0.5">Approve or reject pending employee requests</p>
         </div>
+      </header>
 
+      <main className="max-w-6xl mx-auto px-3 sm:px-4 py-4 sm:py-6 pb-24">
         {requestGroups.length === 0 ? (
-          <div className="bg-white rounded-lg shadow-sm p-8 text-center">
-            <p className="text-gray-500">No pending requests found.</p>
+          <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-8 text-center">
+            <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+              </svg>
+            </div>
+            <p className="text-slate-400 text-sm">No pending requests</p>
           </div>
         ) : (
           <>
             {/* Filters Section */}
-            <div className="bg-white rounded-lg shadow-sm p-4 sm:p-6 mb-6 border border-gray-100">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-0">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4 sm:mb-0">Filters</h2>
-                <div className="flex flex-col sm:flex-row sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
-                    <label className="text-sm font-medium text-gray-700">Leave Type:</label>
-                    <select
-                      value={leaveTypeFilter}
-                      onChange={(e) => setLeaveTypeFilter(e.target.value)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 text-black focus:ring-blue-500 focus:border-blue-500 w-full sm:w-auto"
-                    >
-                      <option value="all">All Leave Types</option>
-                      {getUniqueLeaveTypes().map(type => (
-                        <option key={type} value={type}>{type}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
-                    <label className="text-sm font-medium text-gray-700">Person:</label>
-                    <select
-                      value={personFilter}
-                      onChange={(e) => setPersonFilter(e.target.value)}
-                      className="px-3 py-2 border text-black border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full sm:w-auto"
-                    >
-                      <option value="all">All Persons</option>
-                      {getUniquePersons().map(person => (
-                        <option key={person} value={person}>{person}</option>
-                      ))}
-                    </select>
-                  </div>
+            <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4 mb-4">
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">Filters</span>
                   {(leaveTypeFilter !== 'all' || personFilter !== 'all') && (
                     <button
                       onClick={() => {
                         setLeaveTypeFilter('all');
                         setPersonFilter('all');
                       }}
-                      className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors w-full sm:w-auto"
+                      className="text-xs text-emerald-400 hover:text-emerald-300 font-medium touch-manipulation active:scale-95"
                     >
-                      Clear Filters
+                      Clear All
                     </button>
                   )}
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:gap-3">
+                  <select
+                    value={leaveTypeFilter}
+                    onChange={(e) => setLeaveTypeFilter(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 touch-manipulation"
+                  >
+                    <option value="all">All Types</option>
+                    {getUniqueLeaveTypes().map(type => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={personFilter}
+                    onChange={(e) => setPersonFilter(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 touch-manipulation"
+                  >
+                    <option value="all">All Employees</option>
+                    {getUniquePersons().map(person => (
+                      <option key={person} value={person}>{person}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
             </div>
 
-            <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-gray-100">
-              <table className="w-full">
-                <thead className="bg-gray-50/50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-6 py-4 text-left">
-                      <label className="flex items-center space-x-3 cursor-pointer group">
-                        <input
-                          type="checkbox"
-                          checked={getFilteredRequestGroups().length > 0 && getFilteredRequestGroups().every(group => {
-                            const originalIndex = requestGroups.indexOf(group);
-                            return selectedGroupIds.includes(originalIndex.toString());
-                          })}
-                          onChange={(e) => handleSelectAll(e.target.checked)}
-                          className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-                        />
-                        <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900 transition-colors">
-                          Select All
-                        </span>
-                      </label>
-                    </th>
-                    <th className="px-6 py-4 text-left text-sm font-medium text-gray-700">Employee Name</th>
-                    <th className="px-6 py-4 text-left text-sm font-medium text-gray-700">Leave Type</th>
-                    <th className="px-6 py-4 text-left text-sm font-medium text-gray-700">Dates</th>
-                    <th className="px-6 py-4 text-left text-sm font-medium text-gray-700">Reason</th>
-                    <th className="px-6 py-4 text-left text-sm font-medium text-gray-700">Time</th>
-                    <th className="px-6 py-4 text-left text-sm font-medium text-gray-700">Details</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {getFilteredRequestGroups().map((group, filteredIndex) => {
-                    // Find the original index in requestGroups
-                    const originalIndex = requestGroups.findIndex(rg => rg === group);
-                    return (
-                      <tr key={originalIndex} className="hover:bg-gray-50/50 transition-colors">
-                        <td className="px-6 py-4">
-                          <input
-                            type="checkbox"
-                            checked={selectedGroupIds.includes(originalIndex.toString())}
-                            onChange={(e) => handleSelectGroup(originalIndex.toString(), e.target.checked)}
-                            className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-                          />
-                        </td>
-                        <td className="px-6 py-4 text-sm font-semibold text-gray-900">{group.userName}</td>
-                        <td className="px-6 py-4">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
-                            {group.requestedStatus}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-600">{group.dateDisplay}</td>
-                        <td className="px-6 py-4 text-sm text-gray-600">{group.reason || '-'}</td>
-                        <td className="px-6 py-4 text-sm text-gray-600">{group.timeRange}</td>
-                        <td className="px-6 py-4 text-sm text-gray-500">
-                          {group.dates.length} request{group.dates.length > 1 ? 's' : ''} • {group.requestIds.length} record{group.requestIds.length > 1 ? 's' : ''}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            {/* Select All Header */}
+            <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-3 mb-3 flex items-center justify-between">
+              <label className="flex items-center gap-3 cursor-pointer touch-manipulation">
+                <div className="relative">
+                  <input
+                    type="checkbox"
+                    checked={getFilteredRequestGroups().length > 0 && getFilteredRequestGroups().every(group => {
+                      const originalIndex = requestGroups.indexOf(group);
+                      return selectedGroupIds.includes(originalIndex.toString());
+                    })}
+                    onChange={(e) => handleSelectAll(e.target.checked)}
+                    className="w-5 h-5 rounded-lg border-2 border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-0 focus:ring-2"
+                  />
+                </div>
+                <span className="text-sm font-medium text-white">Select All</span>
+              </label>
+              <span className="text-xs text-slate-500">
+                {getFilteredRequestGroups().length} request{getFilteredRequestGroups().length !== 1 ? 's' : ''}
+              </span>
             </div>
 
-            <div className="mt-8 flex flex-col sm:flex-row sm:justify-end space-y-4 sm:space-y-0 sm:space-x-4">
-              <button
-                onClick={() => openModal('reject')}
-                disabled={selectedGroupIds.length === 0}
-                className="inline-flex items-center justify-center px-6 py-3 border border-red-300 text-sm font-medium rounded-lg text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white transition-all duration-200 shadow-sm w-full sm:w-auto"
-              >
-                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-                Reject Selected ({selectedGroupIds.length})
-              </button>
-              <button
-                onClick={() => openModal('approve')}
-                disabled={selectedGroupIds.length === 0}
-                className="inline-flex items-center justify-center px-6 py-3 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600 transition-all duration-200 shadow-sm w-full sm:w-auto"
-              >
-                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                Approve Selected ({selectedGroupIds.length})
-              </button>
+            {/* Request Cards - Mobile Optimized */}
+            <div className="space-y-3 mb-24">
+              {getFilteredRequestGroups().map((group) => {
+                const originalIndex = requestGroups.findIndex(rg => rg === group);
+                const isSelected = selectedGroupIds.includes(originalIndex.toString());
+                return (
+                  <div 
+                    key={originalIndex} 
+                    onClick={() => handleSelectGroup(originalIndex.toString(), !isSelected)}
+                    className={`bg-slate-900/50 border rounded-2xl p-4 transition-all duration-200 touch-manipulation active:scale-[0.98] cursor-pointer ${
+                      isSelected 
+                        ? 'border-emerald-500/50 bg-emerald-500/5' 
+                        : 'border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      {/* Checkbox */}
+                      <div className="pt-0.5">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            handleSelectGroup(originalIndex.toString(), e.target.checked);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-5 h-5 rounded-lg border-2 border-slate-600 bg-slate-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-0 focus:ring-2"
+                        />
+                      </div>
+                      
+                      {/* Content */}
+                      <div className="flex-1 min-w-0">
+                        {/* Header Row */}
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <span className="font-semibold text-white text-sm truncate">{group.userName}</span>
+                          <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium ${
+                            group.requestedStatus.toLowerCase().includes('leave') || group.requestedStatus === 'On leave'
+                              ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                              : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                          }`}>
+                            {group.requestedStatus}
+                          </span>
+                        </div>
+                        
+                        {/* Dates */}
+                        <p className="text-slate-300 text-sm mb-2">{group.dateDisplay}</p>
+                        
+                        {/* Reason - Full display */}
+                        {group.reason && (
+                          <p className="text-slate-400 text-sm mb-2 bg-slate-800/50 rounded-lg px-3 py-2 border border-slate-700/50">
+                            {group.reason}
+                          </p>
+                        )}
+                        
+                        {/* Time and Days - Prominent display */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          {group.timeRange !== '-' && (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800/50 rounded-lg border border-slate-700/50 text-sm text-slate-300">
+                              <span className="text-slate-500">🕐</span> {group.timeRange}
+                            </span>
+                          )}
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800/50 rounded-lg border border-slate-700/50 text-sm text-slate-300">
+                            <span className="text-slate-500">📅</span> {group.dates.length} day{group.dates.length > 1 ? 's' : ''}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </>
         )}
-      </div>
+      </main>
+
+      {/* Fixed Bottom Action Bar */}
+      {requestGroups.length > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-xl border-t border-slate-800/50 p-4 safe-area-bottom z-50">
+          <div className="max-w-6xl mx-auto flex gap-3">
+            <button
+              onClick={() => openModal('reject')}
+              disabled={selectedGroupIds.length === 0}
+              className="flex-1 inline-flex items-center justify-center px-4 py-3 bg-slate-800 border border-slate-700 text-sm font-medium rounded-xl text-rose-400 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all touch-manipulation active:scale-[0.98]"
+            >
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Reject{selectedGroupIds.length > 0 && ` (${selectedGroupIds.length})`}
+            </button>
+            <button
+              onClick={() => openModal('approve')}
+              disabled={selectedGroupIds.length === 0}
+              className="flex-1 inline-flex items-center justify-center px-4 py-3 bg-emerald-600 text-sm font-medium rounded-xl text-white hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all touch-manipulation active:scale-[0.98]"
+            >
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              Approve{selectedGroupIds.length > 0 && ` (${selectedGroupIds.length})`}
+            </button>
+          </div>
+        </div>
+      )}
 
       {showSameRemarkModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4">
-            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50/50 rounded-t-xl">
-              <h3 className="text-lg font-semibold text-gray-900">Apply Same Remark?</h3>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 z-50">
+          <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md animate-slide-up">
+            <div className="px-6 py-5 border-b border-slate-800">
+              <h3 className="text-lg font-semibold text-white">Apply Same Remark?</h3>
             </div>
             <div className="px-6 py-6">
-              <p className="text-sm text-gray-600 leading-relaxed">
-                Do you want to apply the same remark to all selected requests, or provide individual remarks for each request?
+              <p className="text-sm text-slate-400 leading-relaxed">
+                Do you want to apply the same remark to all selected requests, or provide individual remarks for each?
               </p>
             </div>
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3 bg-gray-50/50 rounded-b-xl">
+            <div className="px-6 py-4 border-t border-slate-800 flex flex-col-reverse sm:flex-row gap-3 sm:justify-end">
               <button
                 onClick={() => handleSameRemarkChoice(false)}
-                className="inline-flex items-center px-4 py-2.5 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200 shadow-sm"
+                className="w-full sm:w-auto px-5 py-3 bg-slate-800 border border-slate-700 text-sm font-medium rounded-xl text-white hover:bg-slate-700 transition-all touch-manipulation active:scale-[0.98]"
               >
                 Individual Remarks
               </button>
               <button
                 onClick={() => handleSameRemarkChoice(true)}
-                className="inline-flex items-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 shadow-sm"
+                className="w-full sm:w-auto px-5 py-3 bg-emerald-600 text-sm font-medium rounded-xl text-white hover:bg-emerald-500 transition-all touch-manipulation active:scale-[0.98]"
               >
                 Same Remark
               </button>
@@ -490,26 +597,26 @@ function ReviewAllPageContent() {
       )}
 
       {showSameValueModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4">
-            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50/50 rounded-t-xl">
-              <h3 className="text-lg font-semibold text-gray-900">Apply Same Value?</h3>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 z-50">
+          <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-md animate-slide-up">
+            <div className="px-6 py-5 border-b border-slate-800">
+              <h3 className="text-lg font-semibold text-white">Apply Same Value?</h3>
             </div>
             <div className="px-6 py-6">
-              <p className="text-sm text-gray-600 leading-relaxed">
-                Do you want to apply the same attendance value to all selected requests, or provide individual values for each request?
+              <p className="text-sm text-slate-400 leading-relaxed">
+                Do you want to apply the same attendance value to all selected requests, or provide individual values for each?
               </p>
             </div>
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3 bg-gray-50/50 rounded-b-xl">
+            <div className="px-6 py-4 border-t border-slate-800 flex flex-col-reverse sm:flex-row gap-3 sm:justify-end">
               <button
                 onClick={() => handleSameValueChoice(false)}
-                className="inline-flex items-center px-4 py-2.5 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200 shadow-sm"
+                className="w-full sm:w-auto px-5 py-3 bg-slate-800 border border-slate-700 text-sm font-medium rounded-xl text-white hover:bg-slate-700 transition-all touch-manipulation active:scale-[0.98]"
               >
                 Individual Values
               </button>
               <button
                 onClick={() => handleSameValueChoice(true)}
-                className="inline-flex items-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-lg text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-all duration-200 shadow-sm"
+                className="w-full sm:w-auto px-5 py-3 bg-emerald-600 text-sm font-medium rounded-xl text-white hover:bg-emerald-500 transition-all touch-manipulation active:scale-[0.98]"
               >
                 Same Value
               </button>
@@ -519,156 +626,298 @@ function ReviewAllPageContent() {
       )}
 
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50/50 rounded-t-xl">
-              <h3 className="text-lg font-semibold text-gray-900">
-                {modalAction === 'approve' ? 'Approve' : 'Reject'} Selected Requests
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 z-50">
+          <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-xl max-h-[85vh] sm:max-h-[90vh] overflow-hidden flex flex-col animate-slide-up">
+            <div className="px-6 py-5 border-b border-slate-800 shrink-0">
+              <h3 className="text-lg font-semibold text-white">
+                {modalAction === 'approve' ? 'Approve' : 'Reject'} Requests
               </h3>
-              <p className="text-sm text-gray-600 mt-1">
+              <p className="text-sm text-slate-400 mt-1">
                 {selectedGroupIds.length} group{selectedGroupIds.length > 1 ? 's' : ''} selected
               </p>
             </div>
-            <div className="px-6 py-6 space-y-6">
+            <div className="px-6 py-6 space-y-5 overflow-y-auto flex-1">
               {applySameRemark ? (
                 <>
                   {/* Same Remark Section */}
-                  <div className="space-y-3">
-                    <label className="block text-sm font-medium text-black">
-                      Remark <span className="text-red-500">*</span>
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-slate-300">
+                      Remark
                     </label>
                     <textarea
                       value={remarks.all || ''}
                       onChange={(e) => setRemarks({ ...remarks, all: e.target.value })}
-                      rows={4}
-                      className="w-full px-4 py-3 border text-black border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-none"
+                      rows={3}
+                      className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all resize-none"
                       placeholder="Enter remark for all selected requests..."
                     />
                   </div>
 
-                  {/* Same Value Section - Only for approve and non-leave requests */}
-                  {modalAction === 'approve' && !selectedGroupIds.some(id => {
-                    const group = requestGroups[parseInt(id)];
-                    return group.requestedStatus.toLowerCase().includes('leave') || group.requestedStatus === 'On leave';
-                  }) && (
-                    applySameValue ? (
-                      <div className="space-y-3">
-                        <label className="block text-sm font-medium text-black">
-                          Attendance Value <span className="text-red-500">*</span>
+                  {/* Same Value Section - Only for approve */}
+                  {modalAction === 'approve' && (
+                    applySameValue && !selectedGroupIds.some(id => {
+                      const group = requestGroups[parseInt(id)];
+                      return isFixedValueType(group.requestedStatus);
+                    }) ? (
+                      <div className="space-y-2">
+                        <label className="block text-sm font-medium text-slate-300">
+                          Attendance Value <span className="text-slate-500">(max: {getMaxValueForSelected()})</span>
                         </label>
                         <div className="relative">
                           <input
                             type="number"
                             step="0.01"
                             min="0"
-                            max="1"
-                            value={values.all || '1'}
-                            onChange={(e) => setValues({ ...values, all: e.target.value })}
-                            className="w-full px-4 py-3 text-black border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 pr-12"
-                            placeholder="0.00 - 1.00"
+                            max={getMaxValueForSelected()}
+                            value={values.all ?? (getMaxValueForSelected() === 0.75 ? '0.75' : '1')}
+                            onChange={(e) => {
+                              const maxVal = getMaxValueForSelected();
+                              const val = Math.min(parseFloat(e.target.value) || 0, maxVal);
+                              setValues({ ...values, all: val.toString() });
+                            }}
+                            className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all pr-14"
+                            placeholder={`0.00 - ${getMaxValueForSelected()}`}
                           />
-                          <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-sm text-black">
+                          <div className="absolute right-4 top-1/2 transform -translate-y-1/2 text-sm text-slate-400">
                             days
                           </div>
                         </div>
-                        <p className="text-xs text-black">Applied to all selected requests</p>
+                        <p className="text-xs text-slate-500">Applied to all selected requests</p>
                       </div>
-                    ) : (
-                      <div className="space-y-4">
-                        <label className="block text-sm font-medium text-black">
-                          Attendance Values <span className="text-red-500">*</span>
+                    ) : !applySameValue && (
+                      <div className="space-y-3">
+                        <label className="block text-sm font-medium text-slate-300">
+                          Individual Attendance Values
                         </label>
                         {selectedGroupIds.map(groupId => {
                           const group = requestGroups[parseInt(groupId)];
-                          return (
-                            <div key={groupId} className="p-4 border border-gray-200 rounded-lg bg-gray-50/50">
-                              <div className="flex items-center space-x-3 mb-3">
-                                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                                  <span className="text-xs font-medium text-blue-700">
-                                    {group.userName.charAt(0).toUpperCase()}
+                          // Skip fixed value types (leave/half-day)
+                          if (isFixedValueType(group.requestedStatus)) {
+                            return (
+                              <div key={groupId} className="p-4 bg-slate-800/50 border border-slate-700 rounded-xl space-y-3">
+                                {/* Header with name and type badge */}
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <div className="w-8 h-8 bg-emerald-500/20 rounded-full flex items-center justify-center shrink-0">
+                                      <span className="text-xs font-semibold text-emerald-400">
+                                        {group.userName.charAt(0).toUpperCase()}
+                                      </span>
+                                    </div>
+                                    <p className="text-sm font-medium text-white truncate">{group.userName}</p>
+                                  </div>
+                                  <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium ${
+                                    group.requestedStatus.toLowerCase().includes('leave') || group.requestedStatus === 'On leave'
+                                      ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                      : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                                  }`}>
+                                    {group.requestedStatus}
                                   </span>
                                 </div>
-                                <div>
-                                  <p className="text-sm font-medium text-gray-900">{group.userName}</p>
-                                  <p className="text-xs text-gray-500">{group.dateDisplay}</p>
+
+                                {/* Date and time info */}
+                                <div className="flex flex-wrap items-center gap-2 text-sm">
+                                  <span className="text-slate-300">{group.dateDisplay}</span>
+                                  {group.timeRange !== '-' && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-700/50 rounded text-xs text-slate-400">
+                                      🕐 {group.timeRange}
+                                    </span>
+                                  )}
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-700/50 rounded text-xs text-slate-400">
+                                    📅 {group.dates.length} day{group.dates.length > 1 ? 's' : ''}
+                                  </span>
+                                </div>
+
+                                {/* Fixed value display */}
+                                <div className="flex items-center gap-2 p-3 bg-slate-700/30 rounded-lg border border-slate-600/50">
+                                  <span className="text-xs text-slate-400">Attendance Value:</span>
+                                  <span className="text-sm font-medium text-white">
+                                    {group.requestedStatus.toLowerCase().includes('half') ? '0.5 days' : 'Auto'}
+                                  </span>
+                                  <span className="text-xs text-slate-500">
+                                    ({group.requestedStatus.toLowerCase().includes('half') 
+                                      ? 'fixed for half-day' 
+                                      : 'determined automatically'})
+                                  </span>
                                 </div>
                               </div>
-                              <div className="relative">
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  min="0"
-                                  max="1"
-                                  value={values[groupId] || '1'}
-                                  onChange={(e) => setValues({ ...values, [groupId]: e.target.value })}
-                                  className="w-full px-4 text-black py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 pr-12"
-                                  placeholder="0.00 - 1.00"
-                                />
-                                <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-sm text-black">
-                                  days
+                            );
+                          }
+                          return (
+                            <div key={groupId} className="p-4 bg-slate-800/50 border border-slate-700 rounded-xl space-y-3">
+                              {/* Header with name and type badge */}
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className="w-8 h-8 bg-emerald-500/20 rounded-full flex items-center justify-center shrink-0">
+                                    <span className="text-xs font-semibold text-emerald-400">
+                                      {group.userName.charAt(0).toUpperCase()}
+                                    </span>
+                                  </div>
+                                  <p className="text-sm font-medium text-white truncate">{group.userName}</p>
+                                </div>
+                                <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium ${
+                                  group.requestedStatus.toLowerCase().includes('leave') || group.requestedStatus === 'On leave'
+                                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                    : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                                }`}>
+                                  {group.requestedStatus}
+                                </span>
+                              </div>
+
+                              {/* Date and time info */}
+                              <div className="flex flex-wrap items-center gap-2 text-sm">
+                                <span className="text-slate-300">{group.dateDisplay}</span>
+                                {group.timeRange !== '-' && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-700/50 rounded text-xs text-slate-400">
+                                    🕐 {group.timeRange}
+                                  </span>
+                                )}
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-700/50 rounded text-xs text-slate-400">
+                                  📅 {group.dates.length} day{group.dates.length > 1 ? 's' : ''}
+                                </span>
+                              </div>
+
+                              {/* Value input */}
+                              <div>
+                                <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                                  Attendance Value <span className="text-slate-500">(max: {getMaxValueForType(group.requestedStatus)})</span>
+                                </label>
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    max={getMaxValueForType(group.requestedStatus)}
+                                    value={values[groupId] ?? getDefaultValueForType(group.requestedStatus)}
+                                    onChange={(e) => {
+                                      const maxVal = getMaxValueForType(group.requestedStatus);
+                                      const val = Math.min(parseFloat(e.target.value) || 0, maxVal);
+                                      setValues({ ...values, [groupId]: val.toString() });
+                                    }}
+                                    className="w-full px-4 py-2.5 bg-slate-800 border border-slate-600 rounded-lg text-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all pr-14"
+                                    placeholder={`0.00 - ${getMaxValueForType(group.requestedStatus)}`}
+                                  />
+                                  <div className="absolute right-4 top-1/2 transform -translate-y-1/2 text-sm text-slate-400">
+                                    max {getMaxValueForType(group.requestedStatus)}
+                                  </div>
                                 </div>
                               </div>
                             </div>
                           );
                         })}
+
+                        {/* Info for leave requests */}
+                        {selectedGroupIds.some(id => {
+                          const group = requestGroups[parseInt(id)];
+                          return group.requestedStatus.toLowerCase().includes('leave') || group.requestedStatus === 'On leave';
+                        }) && (
+                          <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl">
+                            <p className="text-blue-400 text-sm">
+                              For leave requests, the system will automatically determine if it's paid or unpaid based on earned leave balance.
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Info for half-day requests */}
+                        {selectedGroupIds.some(id => {
+                          const group = requestGroups[parseInt(id)];
+                          return group.requestedStatus.toLowerCase().includes('half');
+                        }) && (
+                          <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl">
+                            <p className="text-amber-400 text-sm">
+                              Half-day requests are automatically set to 0.5 attendance value.
+                            </p>
+                          </div>
+                        )}
                       </div>
                     )
                   )}
                 </>
               ) : (
                 <div className="space-y-4">
-                  <label className="block text-sm font-medium text-black">
-                    Individual Settings <span className="text-red-500">*</span>
+                  <label className="block text-sm font-medium text-slate-300">
+                    Individual Settings
                   </label>
                   {selectedGroupIds.map(groupId => {
                     const group = requestGroups[parseInt(groupId)];
                     return (
-                      <div key={groupId} className="p-4 border border-gray-200 rounded-lg bg-gray-50/50">
-                        <div className="flex items-center space-x-3 mb-4">
-                          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                            <span className="text-xs font-medium text-blue-700">
-                              {group.userName.charAt(0).toUpperCase()}
+                      <div key={groupId} className="p-4 bg-slate-800/50 border border-slate-700 rounded-xl space-y-4">
+                        {/* Header with name and type badge */}
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-8 h-8 bg-emerald-500/20 rounded-full flex items-center justify-center shrink-0">
+                              <span className="text-xs font-semibold text-emerald-400">
+                                {group.userName.charAt(0).toUpperCase()}
+                              </span>
+                            </div>
+                            <p className="text-sm font-medium text-white truncate">{group.userName}</p>
+                          </div>
+                          <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium ${
+                            group.requestedStatus.toLowerCase().includes('leave') || group.requestedStatus === 'On leave'
+                              ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                              : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                          }`}>
+                            {group.requestedStatus}
+                          </span>
+                        </div>
+
+                        {/* Date and time info */}
+                        <div className="flex flex-wrap items-center gap-2 text-sm">
+                          <span className="text-slate-300">{group.dateDisplay}</span>
+                          {group.timeRange !== '-' && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-700/50 rounded text-xs text-slate-400">
+                              🕐 {group.timeRange}
                             </span>
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">{group.userName}</p>
-                            <p className="text-xs text-gray-500">{group.dateDisplay}</p>
-                          </div>
+                          )}
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-700/50 rounded text-xs text-slate-400">
+                            📅 {group.dates.length} day{group.dates.length > 1 ? 's' : ''}
+                          </span>
                         </div>
 
                         {modalAction === 'approve' && (
-                          <div className="mb-4">
-                            <label className="block text-sm font-medium text-black mb-2">
-                              Attendance Value
-                            </label>
-                            <div className="relative">
-                              <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                max="1"
-                                value={values[groupId] || '1'}
-                                onChange={(e) => setValues({ ...values, [groupId]: e.target.value })}
-                                className="w-full px-4 py-2 text-black border border-gray-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 pr-12"
-                                placeholder="0.00 - 1.00"
-                              />
-                              <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-sm text-black">
-                                days
+                          group.requestedStatus.toLowerCase().includes('half') ? (
+                            <div className="flex items-center gap-2 p-3 bg-slate-700/30 rounded-lg border border-slate-600/50">
+                              <span className="text-xs text-slate-400">Attendance Value:</span>
+                              <span className="text-sm font-medium text-white">0.5 days</span>
+                              <span className="text-xs text-slate-500">(fixed for half-day)</span>
+                            </div>
+                          ) : !isFixedValueType(group.requestedStatus) && (
+                            <div>
+                              <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                                Attendance Value <span className="text-slate-500">(max: {getMaxValueForType(group.requestedStatus)})</span>
+                              </label>
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  max={getMaxValueForType(group.requestedStatus)}
+                                  value={values[groupId] ?? getDefaultValueForType(group.requestedStatus)}
+                                  onChange={(e) => {
+                                    const maxVal = getMaxValueForType(group.requestedStatus);
+                                    const val = Math.min(parseFloat(e.target.value) || 0, maxVal);
+                                    setValues({ ...values, [groupId]: val.toString() });
+                                  }}
+                                  className="w-full px-4 py-2.5 bg-slate-800 border border-slate-600 rounded-lg text-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all pr-14"
+                                  placeholder={`0.00 - ${getMaxValueForType(group.requestedStatus)}`}
+                                />
+                                <div className="absolute right-4 top-1/2 transform -translate-y-1/2 text-sm text-slate-400">
+                                  max {getMaxValueForType(group.requestedStatus)}
+                                </div>
                               </div>
                             </div>
-                          </div>
+                          )
                         )}
 
                         <div>
-                          <label className="block text-sm font-medium text-black mb-2">
+                          <label className="block text-xs font-medium text-slate-400 mb-1.5">
                             Remark
                           </label>
                           <textarea
                             value={remarks[groupId] || ''}
                             onChange={(e) => setRemarks({ ...remarks, [groupId]: e.target.value })}
-                            rows={3}
-                            className="w-full px-4 py-3 border text-black  border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-none"
-                            placeholder="Enter remark for this request..."
+                            rows={2}
+                            className="w-full px-4 py-2.5 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all resize-none"
+                            placeholder="Enter remark..."
                           />
                         </div>
                       </div>
@@ -680,30 +929,42 @@ function ReviewAllPageContent() {
                     const group = requestGroups[parseInt(id)];
                     return group.requestedStatus.toLowerCase().includes('leave') || group.requestedStatus === 'On leave';
                   }) && (
-                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                      <p className="text-blue-800 text-sm">
-                        For leave requests, the system will automatically determine if it's paid or unpaid leave based on available earned leave balance.
+                    <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-xl">
+                      <p className="text-blue-400 text-sm">
+                        For leave requests, the system will automatically determine if it's paid or unpaid based on earned leave balance.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Info for half-day requests */}
+                  {modalAction === 'approve' && selectedGroupIds.some(id => {
+                    const group = requestGroups[parseInt(id)];
+                    return group.requestedStatus.toLowerCase().includes('half');
+                  }) && (
+                    <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl">
+                      <p className="text-amber-400 text-sm">
+                        Half-day requests are automatically set to 0.5 attendance value.
                       </p>
                     </div>
                   )}
                 </div>
               )}
             </div>
-            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50/50 rounded-b-xl flex justify-end space-x-3">
+            <div className="px-6 py-4 border-t border-slate-800 flex flex-col-reverse sm:flex-row gap-3 sm:justify-end shrink-0 bg-slate-900">
               <button
                 onClick={() => setShowModal(false)}
-                className="inline-flex items-center px-6 py-2.5 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-all duration-200 shadow-sm"
+                className="w-full sm:w-auto px-5 py-3 bg-slate-800 border border-slate-700 text-sm font-medium rounded-xl text-white hover:bg-slate-700 transition-all touch-manipulation active:scale-[0.98]"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSubmit}
                 disabled={processing}
-                className={`inline-flex items-center px-6 py-2.5 border border-transparent text-sm font-medium rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-200 shadow-sm ${
+                className={`w-full sm:w-auto px-6 py-3 text-sm font-medium rounded-xl text-white transition-all touch-manipulation active:scale-[0.98] inline-flex items-center justify-center ${
                   modalAction === 'approve'
-                    ? 'bg-green-600 hover:bg-green-700 focus:ring-green-500 disabled:bg-green-400'
-                    : 'bg-red-600 hover:bg-red-700 focus:ring-red-500 disabled:bg-red-400'
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
+                    ? 'bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-600/50'
+                    : 'bg-rose-600 hover:bg-rose-500 disabled:bg-rose-600/50'
+                } disabled:cursor-not-allowed`}
               >
                 {processing ? (
                   <>

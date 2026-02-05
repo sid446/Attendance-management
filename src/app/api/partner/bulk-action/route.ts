@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ success: false, error: 'Invalid JSON body' }, { status: 400 });
         }
 
-        const { action, ids, remark, value } = body;
+        const { action, ids, remark, value, approvedBy, approvedByEmail } = body;
 
         if (!action || !['approve', 'reject'].includes(action)) {
             return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 });
@@ -71,6 +71,8 @@ export async function POST(request: NextRequest) {
         }
 
         const appliedRemark = remark || (action === 'approve' ? 'Bulk Approved' : 'Bulk Rejected');
+        const appliedApprovedBy = approvedBy || 'HR';
+        const appliedApprovedByEmail = approvedByEmail || 'hr@asija.in';
         let appliedValue: number | undefined;
         if (action === 'approve') {
             appliedValue = typeof value === 'number' ? value : 1;
@@ -83,7 +85,18 @@ export async function POST(request: NextRequest) {
             if (!reqRecord || reqRecord.status !== 'Pending') continue;
 
             reqRecord.status = action === 'approve' ? 'Approved' : 'Rejected';
-            reqRecord.partnerRemarks = appliedRemark;
+            if (action === 'approve') {
+                reqRecord.approvedBy = appliedApprovedBy;
+                reqRecord.approvedByEmail = appliedApprovedByEmail;
+                reqRecord.approvedAt = new Date();
+                reqRecord.hrRemarks = appliedRemark;
+                if (appliedValue !== undefined) reqRecord.hrValue = String(appliedValue);
+            } else {
+                reqRecord.rejectedBy = appliedApprovedBy;
+                reqRecord.rejectedByEmail = appliedApprovedByEmail;
+                reqRecord.rejectedAt = new Date();
+                reqRecord.hrRemarks = appliedRemark;
+            }
             await reqRecord.save();
 
             if (action === 'approve') {

@@ -44,6 +44,7 @@ export default function AttendanceUpload() {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [selectedEmployeeMonth, setSelectedEmployeeMonth] = useState<string>('');
   const [employeeDays, setEmployeeDays] = useState<AttendanceRecord[]>([]);
+  const [employeeApprovedRequests, setEmployeeApprovedRequests] = useState<any[]>([]);
   const [employeeLoading, setEmployeeLoading] = useState<boolean>(false);
   const [employeeError, setEmployeeError] = useState<string | null>(null);
   const [loadingSummaries, setLoadingSummaries] = useState<boolean>(false);
@@ -853,17 +854,32 @@ export default function AttendanceUpload() {
     setEmployeeLoading(true);
     setEmployeeError(null);
     setEmployeeDays([]);
+    setEmployeeApprovedRequests([]);
 
     try {
-      const url = `/api/attendance?userId=${encodeURIComponent(userId)}&monthYear=${encodeURIComponent(monthYear)}`;
-      const response = await fetch(url);
-      const result = await response.json();
+      // Fetch attendance and requests in parallel
+      const [attendanceResponse, requestsResponse] = await Promise.all([
+        fetch(`/api/attendance?userId=${encodeURIComponent(userId)}&monthYear=${encodeURIComponent(monthYear)}`),
+        fetch(`/api/employee/request-correction?userId=${encodeURIComponent(userId)}`)
+      ]);
+      
+      const attendanceResult = await attendanceResponse.json();
+      const requestsResult = await requestsResponse.json();
 
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || 'Failed to fetch employee attendance');
+      // Process requests - filter by month and approved status
+      if (requestsResult.success && requestsResult.data) {
+        const filteredRequests = requestsResult.data.filter((req: any) => {
+          const reqMonthYear = req.monthYear || (req.date ? req.date.substring(0, 7) : '');
+          return reqMonthYear === monthYear && req.status === 'Approved';
+        });
+        setEmployeeApprovedRequests(filteredRequests);
       }
 
-      const docs: any[] = Array.isArray(result.data) ? result.data : [];
+      if (!attendanceResponse.ok || !attendanceResult.success) {
+        throw new Error(attendanceResult.error || 'Failed to fetch employee attendance');
+      }
+
+      const docs: any[] = Array.isArray(attendanceResult.data) ? attendanceResult.data : [];
       if (!docs.length) {
         setEmployeeDays([]);
         return;
@@ -1146,6 +1162,8 @@ export default function AttendanceUpload() {
                 isLoading={employeeLoading}
                 error={employeeError}
                 onLoadAttendance={fetchEmployeeMonthly}
+                showEmployeeSelector={true}
+                approvedRequests={employeeApprovedRequests}
               />
             )}
 

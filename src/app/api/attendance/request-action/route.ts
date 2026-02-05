@@ -238,7 +238,7 @@ export async function POST(request: NextRequest) {
   try {
     await dbConnect();
 
-    const { id, action, remarks, attendanceValue } = await request.json();
+    const { id, action, remarks, attendanceValue, approvedBy, approvedByEmail } = await request.json();
 
     if (!id || !action) {
       return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
@@ -257,9 +257,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: `Request already ${reqRecord.status}` }, { status: 400 });
     }
 
-    // Update request status and remarks
+    // Update request status, remarks, and who took the action
     reqRecord.status = action === 'approve' ? 'Approved' : 'Rejected';
     reqRecord.partnerRemarks = remarks || null;
+    
+    if (action === 'approve') {
+      reqRecord.approvedBy = approvedBy || 'Partner';
+      reqRecord.approvedByEmail = approvedByEmail || null;
+      reqRecord.approvedAt = new Date();
+    } else {
+      reqRecord.rejectedBy = approvedBy || 'Partner';
+      reqRecord.rejectedByEmail = approvedByEmail || null;
+      reqRecord.rejectedAt = new Date();
+    }
+    
     await reqRecord.save();
 
     // If approved, update the actual attendance record

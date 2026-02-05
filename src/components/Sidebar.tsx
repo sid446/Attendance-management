@@ -33,15 +33,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <nav className="flex-1 px-3 py-4 space-y-1 text-sm">
         <button
           type="button"
-          onClick={() => setActiveSection('upload')}
+          onClick={() => setActiveSection('employees')}
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
-            activeSection === 'upload'
+            activeSection === 'employees'
               ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
               : 'text-slate-300 hover:bg-slate-800/60'
           }`}
         >
-          <Upload className="w-4 h-4" />
-          <span>Attendance Upload</span>
+          <Users className="w-4 h-4" />
+          <span>Employees</span>
         </button>
 
         <button
@@ -72,19 +72,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         <button
           type="button"
-          onClick={() => setActiveSection('employees')}
-          className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
-            activeSection === 'employees'
-              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
-              : 'text-slate-300 hover:bg-slate-800/60'
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          <span>Employees</span>
-        </button>
-
-        <button
-          type="button"
           onClick={() => setActiveSection('requests')}
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'requests'
@@ -94,6 +81,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
         >
           <Clock className="w-4 h-4" />
           <span>Requests</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSection('leave')}
+          className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
+            activeSection === 'leave'
+              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
+              : 'text-slate-300 hover:bg-slate-800/60'
+          }`}
+        >
+          <TrendingUp className="w-4 h-4" />
+          <span>Leave Management</span>
         </button>
 
         <button
@@ -111,6 +111,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         <button
           type="button"
+          onClick={() => setActiveSection('upload')}
+          className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
+            activeSection === 'upload'
+              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
+              : 'text-slate-300 hover:bg-slate-800/60'
+          }`}
+        >
+          <Upload className="w-4 h-4" />
+          <span>Attendance Upload</span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveSection('backup')}
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'backup'
@@ -120,19 +133,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         >
           <Database className="w-4 h-4" />
           <span>Database Backup</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveSection('leave')}
-          className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
-            activeSection === 'leave'
-              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
-              : 'text-slate-300 hover:bg-slate-800/60'
-          }`}
-        >
-          <TrendingUp className="w-4 h-4" />
-          <span>Leave Management</span>
         </button>
       </nav>
 
