@@ -43,6 +43,11 @@ export default function EmployeeLoginPage() {
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl shadow-2xl overflow-hidden">
         <div className="bg-slate-950 p-6 border-b border-slate-800 text-center">
+           {/* Logo and Company Name */}
+           <div className="flex flex-col items-center mb-4">
+             <img src="/lg.png" alt="Asija Logo" className="w-20 h-20 object-contain mb-3" />
+             <h2 className="text-lg font-semibold text-emerald-400">Asija and Associates LLP</h2>
+           </div>
            <h1 className="text-2xl font-bold text-white mb-2">Employee Portal</h1>
            <p className="text-slate-400 text-sm">Access your attendance and profile</p>
         </div>

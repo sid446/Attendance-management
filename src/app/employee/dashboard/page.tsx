@@ -393,11 +393,14 @@ export default function EmployeeDashboard() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
        {/* Header */}
-       <header className="bg-slate-900 border-b border-slate-800 p-3 px-4 sm:px-6 sticky top-0 z-40">
-           <div className="flex items-center justify-between gap-3">
-               <div className="min-w-0 flex-1">
-                   <h1 className="text-base sm:text-xl font-bold text-white truncate">My Attendance</h1>
-                   <p className="text-[11px] sm:text-xs text-slate-400 truncate">Welcome, {user.name}</p>
+       <header className="bg-slate-900 border-b border-slate-800 p-2 px-3 sm:px-4 sticky top-0 z-40">
+           <div className="flex items-center justify-between gap-2">
+               <div className="min-w-0 flex-1 flex items-center gap-2">
+                   <img src="/lg.png" alt="Logo" className="w-12 h-12 object-contain flex-shrink-0" />
+                   <div>
+                       <h1 className="text-base sm:text-xl font-bold text-white truncate">My Attendance</h1>
+                       <p className="text-[11px] sm:text-xs text-slate-400 truncate"><span className="hidden sm:inline">Asija and Associates LLP • </span>Welcome, {user.name}</p>
+                   </div>
                </div>
 
                <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">

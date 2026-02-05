@@ -30,6 +30,11 @@ export const LoginView: React.FC<LoginViewProps> = ({
     <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center p-6">
       <div className="w-full max-w-md">
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl shadow-lg p-8">
+          {/* Logo and Company Name */}
+          <div className="flex flex-col items-center mb-6">
+            <img src="/lg.png" alt="Asija Logo" className="w-20 h-20 object-contain mb-3" />
+            <h2 className="text-lg font-semibold text-emerald-400">Asija and Associates LLP</h2>
+          </div>
           <div className="flex items-center justify-center gap-3 mb-6">
             <FileSpreadsheet className="w-10 h-10 text-emerald-400" />
             <div>

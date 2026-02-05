@@ -658,6 +658,69 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       return total;
   };
 
+  // Calculate scheduled hours WITHOUT lunch deduction (for Scheduled column)
+  const calculateScheduledHoursNoLunch = (item: AttendanceSummaryView): number => {
+      let total = 0;
+
+      // Get applicable schedule for this month
+      const applicableSchedule = getApplicableSchedule(item);
+      if (!applicableSchedule) return 0;
+
+      // Helper for diff
+      const timeToHours = (t?: string) => {
+          if (!t) return 0;
+          const [h, m] = t.split(':').map(Number);
+          return h + (m / 60);
+      };
+
+      // Calculate scheduled hours for each day that has attendance data
+      const records = item.recordDetails || {};
+      for (const dateStr of Object.keys(records)) {
+        const d = new Date(dateStr);
+        const rec = records[dateStr];
+
+        // Skip holidays
+        if (rec.typeOfPresence === 'Holiday') continue;
+
+        const dow = d.getDay();
+        const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        const dayName = dayNames[dow] as keyof DailySchedule;
+
+        // Get the day's schedule, or fall back to monday's schedule if day is empty
+        let daySchedule: ScheduleTime | undefined = applicableSchedule?.daily?.[dayName];
+
+        // If this day's schedule is empty (no inTime) or doesn't exist, use monday as default for weekdays
+        if ((!daySchedule || !daySchedule.inTime) && dow >= 1 && dow <= 5) {
+          daySchedule = applicableSchedule?.daily?.monday;
+        }
+
+        // Skip if no schedule or marked as holiday
+        if (!daySchedule || daySchedule.isHoliday) {
+          continue;
+        }
+
+        const startTime = timeToHours(daySchedule.inTime);
+        const endTime = timeToHours(daySchedule.outTime);
+        let hours = 0;
+
+        if (startTime && endTime && endTime > startTime) {
+          hours = endTime - startTime;
+        } else {
+          // Default hours if no schedule defined
+          hours = dow === 6 ? 4 : 9; // Saturday: 4 hours, weekdays: 9 hours
+        }
+
+        if (daySchedule.isHalfDay) {
+          hours = hours / 2;
+        }
+
+        total += hours;
+      }
+
+      // Return total scheduled hours WITHOUT lunch deduction
+      return total;
+  };
+
   // Helper function to calculate scheduled working days (expected working days)
   const calculateScheduledWorkingDays = (item: AttendanceSummaryView): number => {
     // Get applicable schedule for this month
@@ -1030,7 +1093,8 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     
     // Enrich with calculations
     const enriched = list.map(item => {
-        const sched = item.calcScheduled !== undefined ? item.calcScheduled : calculateTotalScheduledHours(item);
+        // Use calculateScheduledHoursNoLunch for scheduled (no lunch deduction)
+        const sched = calculateScheduledHoursNoLunch(item);
         const actual = item.summary.totalHour;
         const diff = actual === 0 ? 0 : actual - sched;
         // Calculate Late on frontend based on toggle

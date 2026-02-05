@@ -22,11 +22,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   return (
     <aside className="w-64 border-r border-slate-800 bg-slate-900/60 flex flex-col">
-      <div className="px-6 py-4 border-b border-slate-800 flex items-center gap-2">
-        <FileSpreadsheet className="w-6 h-6 text-emerald-400" />
+      <div className="px-4 py-3 border-b border-slate-800 flex items-center gap-2">
+        <img src="/lg.png" alt="Logo" className="w-12 h-12 object-contain flex-shrink-0" />
         <div>
-          <div className="text-sm font-semibold tracking-wide text-slate-100">Attendance Console</div>
-          <div className="text-xs text-slate-400">Excel import & analytics</div>
+          <div className="text-sm font-semibold tracking-wide text-slate-100">Asija and Associates</div>
+          <div className="text-xs text-slate-400">Attendance Console</div>
         </div>
       </div>
 

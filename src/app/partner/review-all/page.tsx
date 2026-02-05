@@ -384,8 +384,16 @@ function ReviewAllPageContent() {
       {/* Sticky Header */}
       <header className="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-xl border-b border-slate-800/50">
         <div className="max-w-6xl mx-auto px-4 py-4">
-          <h1 className="text-lg sm:text-xl font-semibold text-white">Review Requests</h1>
-          <p className="text-slate-400 text-xs sm:text-sm mt-0.5">Approve or reject pending employee requests</p>
+          <div className="flex items-center gap-3">
+            <img src="/lg.png" alt="Asija Logo" className="w-10 h-10 object-contain" />
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-lg sm:text-xl font-semibold text-white">Review Requests</h1>
+                <span className="text-emerald-400 text-xs font-medium hidden sm:inline">Asija and Associates LLP</span>
+              </div>
+              <p className="text-slate-400 text-xs sm:text-sm mt-0.5">Approve or reject pending employee requests</p>
+            </div>
+          </div>
         </div>
       </header>
 
