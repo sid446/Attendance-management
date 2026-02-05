@@ -25,7 +25,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="px-4 py-3 border-b border-slate-800 flex items-center gap-2">
         <img src="/lg.png" alt="Logo" className="w-12 h-12 object-contain flex-shrink-0" />
         <div>
-          <div className="text-sm font-semibold tracking-wide text-slate-100">Asija and Associates</div>
+          <div className="text-sm font-semibold tracking-wide text-slate-100">Asija and Associates LLP</div>
           <div className="text-xs text-slate-400">Attendance Console</div>
         </div>
       </div>
