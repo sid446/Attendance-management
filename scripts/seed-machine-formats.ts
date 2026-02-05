@@ -16,14 +16,14 @@ async function seedMachineFormats() {
       {
         machineId: 'machine1',
         name: 'BioMax Attendance Machine',
-        description: 'BioMax biometric machine with EMP Code, Emp Name, In Time, Out Time, Date columns. In Time and Out Time may contain date-time strings like "01-12-2025 10:56:00".',
+        description: 'BioMax biometric machine with EMP Code, Emp Name, In Time, Out Time, Date columns. In Time and Out Time may contain date-time strings like "01-12-2025 10:56:00". Edited times are set automatically during upload and can be modified later through employee correction requests.',
         headers: ['EMP Code', 'Emp Name', 'In Time', 'Out Time', 'Date']
       },
       {
         machineId: 'machine2',
         name: 'TimeClock Pro System',
-        description: 'Standard time clock system with ID, Name, Date, In, Out columns. Uses standard Excel date/time formats.',
-        headers: ['ID', 'Name', 'Date', 'In', 'Out']
+        description: 'Standard time clock system with ID, Name, Date, In, Out columns. Uses standard Excel date/time formats. Edited times are set automatically during upload and can be modified later through employee correction requests.',
+        headers: ['ID', 'Name', 'Date', 'In', 'Out', 'Edited In', 'Edited Out']
       }
     ];
 

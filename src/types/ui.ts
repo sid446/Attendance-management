@@ -32,6 +32,8 @@ export interface AttendanceSummaryView {
   recordDetails?: Record<string, { // Map of date -> details
       checkin: string;
       checkout: string;
+      editedCheckin?: string;
+      editedCheckout?: string;
       totalHour: number;
       typeOfPresence: string;
       halfDay: boolean;

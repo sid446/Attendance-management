@@ -748,7 +748,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         aadhaarNumber: findCol(['Aadhar No.', 'Aadhaar Number']),
         panNumber: findCol(['PAN', 'PAN Number']),
         basicSalary: findCol(['Basis Salary/Stipend/Fees', 'Basic Salary']),
-        laptopAllowance: findCol(['Laptop Allowance']),
+        laptopAllowance: findCol(['Laptop Allowance', 'Laptop Allowence']),
         totalSalaryPerMonth: findCol(['Total Salary (P/M)', 'Total Salary Per Month']),
         totalSalaryPerAnnum: findCol(['Per Annum', 'Total Salary Per Annum']),
         joinDate: findCol(['Date of Joining -in Asija', 'Date of Joining', 'Joining Date']),
@@ -762,7 +762,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         nextAttempt: findCol(['Next Attempt Due Date', 'Next Attempt']),
         regPartner: findCol(['Registered Under Partner', 'Reg Partner']),
         workPartner: findCol(['Working Under Partner', 'Work Partner']),
-        timing: findCol(['Work Timings', 'Timings', 'Schedule'])
+        timingMonFri: findCol(['Work Timings (Mon to Fri)', 'Work Timings Mon-Fri', 'Mon-Fri Timings']),
+        timingSat: findCol(['Work Timings (Sat)', 'Saturday Timings', 'Sat Timings']),
+        leavesBF: findCol(['Leaves B/F', 'Leaves Brought Forward', 'Balance Leaves'])
       };
 
       if (idx.name === -1) {
@@ -777,17 +779,43 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         // Helper to get val
         const getVal = (i: number) => i !== -1 ? row[i] : undefined;
         
-        // Parse Work Timings "10:00-19:00"
-        let schIn = '09:00';
-        let schOut = '18:00';
-        const timingRaw = getVal(idx.timing);
-        if (timingRaw && typeof timingRaw === 'string') {
-            const parts = timingRaw.split('-');
+        // Parse Work Timings for Mon-Fri "10:00-19:00"
+        let weekdayIn = '09:00';
+        let weekdayOut = '18:00';
+        const timingMonFriRaw = getVal(idx.timingMonFri);
+        if (timingMonFriRaw && typeof timingMonFriRaw === 'string') {
+            const parts = timingMonFriRaw.split('-');
             if (parts.length >= 2) {
-                schIn = parts[0].trim();
-                schOut = parts[1].trim();
+                weekdayIn = parts[0].trim();
+                weekdayOut = parts[1].trim();
             }
         }
+
+        // Parse Work Timings for Saturday "10:00-18:00"
+        let saturdayIn = '09:00';
+        let saturdayOut = '18:00';
+        const timingSatRaw = getVal(idx.timingSat);
+        if (timingSatRaw && typeof timingSatRaw === 'string') {
+            const parts = timingSatRaw.split('-');
+            if (parts.length >= 2) {
+                saturdayIn = parts[0].trim();
+                saturdayOut = parts[1].trim();
+            }
+        }
+
+        // Create schedule structure
+        const scheduleEntry = {
+          effectiveFrom: '2026-01-01', // January 1, 2026
+          daily: {
+            monday: { inTime: weekdayIn, outTime: weekdayOut },
+            tuesday: { inTime: weekdayIn, outTime: weekdayOut },
+            wednesday: { inTime: weekdayIn, outTime: weekdayOut },
+            thursday: { inTime: weekdayIn, outTime: weekdayOut },
+            friday: { inTime: weekdayIn, outTime: weekdayOut },
+            saturday: { inTime: saturdayIn, outTime: saturdayOut },
+            sunday: { inTime: '', outTime: '', isHoliday: true }
+          }
+        };
 
         return {
           name: String(name),
@@ -798,9 +826,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           category: getVal(idx.category),
           tallyName: getVal(idx.tallyName),
           gender: getVal(idx.gender),
-            // Use Asija Mail ID as email logic or fallback
-          email: getVal(idx.email), 
-          attendanceEmail: getVal(idx.attendanceEmail),
+          // Save email from Excel to email section
+          email: getVal(idx.email),
+          attendanceEmail: getVal(idx.email), // Set attendance email same as email
           parentName: getVal(idx.parentName),
           parentOccupation: getVal(idx.parentOcc),
           mobileNumber: getVal(idx.mobile),
@@ -834,10 +862,16 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           nextAttemptDueDate: formatExcelDate(row[idx.nextAttempt]),
           registeredUnderPartner: getVal(idx.regPartner),
           workingUnderPartner: getVal(idx.workPartner),
-          workingTiming: timingRaw,
+          // Remove old timing fields
+          // workingTiming: timingRaw,
+          leaveBalance: idx.leavesBF !== -1 ? { remaining: Number(getVal(idx.leavesBF)) || 0 } : undefined,
           
-          schIn,
-          schOut,
+          // Add schedule structure
+          schedules: [scheduleEntry],
+          
+          // Remove old schedule fields
+          // schIn,
+          // schOut,
           extraInfo: allExtraLabels.map(label => {
             const colIndex = headers.findIndex(h => String(h).trim().toLowerCase() === label.toLowerCase());
             const value = colIndex !== -1 ? getVal(colIndex) : '';

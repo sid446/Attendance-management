@@ -2,6 +2,8 @@
 export interface DailyRecord {
   checkin: string;
   checkout: string;
+  editedCheckin?: string;
+  editedCheckout?: string;
   totalHour: number;
   excessHour: number;
   typeOfPresence: 'ThumbMachine' | 'Manual' | 'Remote' | 'On leave' | 'Holiday' | 'Absent' | 'Weekly Off - Present (WO-Present)' | 'Half Day (HD)' | 'Work From Home (WFH)' | 'Weekly Off - Work From Home (WO-WFH)' | 'Onsite Presence (OS-P)';

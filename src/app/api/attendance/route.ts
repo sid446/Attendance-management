@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
           const odId = String(rec.id || rec.employeeCode || 'UNKNOWN');
           const recName = rec.name ? String(rec.name).trim() : '';
 
-          // 1. Match by Name first, then fallback to Employee Code (from OD-ID column)
+          // 1. Match by Name only
           let user = null;
 
           if (recName) {
@@ -85,32 +85,13 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          // D. If still not found by name, try matching by Employee Code or OD-ID
-          if (!user && odId && odId !== 'UNKNOWN') {
-            user = allUsers.find(u => u.employeeCode === odId || u.odId === odId);
-            
-            // Try case-insensitive match
-            if (!user) {
-              user = allUsers.find(u => 
-                (u.employeeCode && u.employeeCode.toLowerCase() === odId.toLowerCase()) ||
-                (u.odId && u.odId.toLowerCase() === odId.toLowerCase())
-              );
-            }
-          }
-
           // 2. If still not found, skip this record
           if (!user) {
-             errors.push({ odId, reason: `User not found by Name "${recName}" or Employee ID "${odId}"` });
+             errors.push({ odId, reason: `User not found by Name "${recName}"` });
              continue;
           }
 
-          // 3. Update user's OD-ID if it's different from what's in Excel
-          if (odId && odId !== 'UNKNOWN' && user.odId !== odId) {
-            await User.findByIdAndUpdate(user._id, { odId });
-            // Update the user in our local array too
-            user.odId = odId;
-          }
-
+          // 3. Process attendance record
           let createdUser = false; // logic changed: we never create user here now
 
           const { isoDate, isoMonthYear } = normalizeExcelDate(rec.date);
@@ -141,7 +122,15 @@ export async function POST(request: NextRequest) {
           const checkin = normalizeTimeToHHmm(rec.inTime);
           const checkout = normalizeTimeToHHmm(rec.outTime);
 
-          const totalHour = calculateTotalHours(checkin, checkout);
+          // For Excel uploads, edited times are initially set to same as original times
+          // They can be modified later through employee correction requests
+          const editedCheckin = checkin;
+          const editedCheckout = checkout;
+
+          // Use edited times for calculations (which are initially same as original)
+          const calculationCheckin = editedCheckin;
+          const calculationCheckout = editedCheckout;
+          const totalHour = calculateTotalHours(calculationCheckin, calculationCheckout);
 
           // Check for Approved Requests (Future/Correction) that override Excel data
           const approvedRequest = await AttendanceRequest.findOne({
@@ -156,6 +145,8 @@ export async function POST(request: NextRequest) {
           let typeOfPresence = 'ThumbMachine';
           let finalCheckin = checkin;
           let finalCheckout = checkout;
+          let finalEditedCheckin = editedCheckin; // Initially same as original
+          let finalEditedCheckout = editedCheckout; // Initially same as original
           let finalTotalHour = totalHour;
           let finalValue = totalHour > 0 ? 1 : 0;
           let finalHalfDay = false;
@@ -194,6 +185,8 @@ export async function POST(request: NextRequest) {
                  if (approvedRequest.startTime && approvedRequest.endTime) {
                      finalCheckin = approvedRequest.startTime;
                      finalCheckout = approvedRequest.endTime;
+                     finalEditedCheckin = approvedRequest.startTime;
+                     finalEditedCheckout = approvedRequest.endTime;
                      finalTotalHour = requestTotalHour;
                  } else {
                      // If it's a leave type and no times (or times resulted in 0), ensure cleared
@@ -244,11 +237,13 @@ export async function POST(request: NextRequest) {
           attendance.records.set(isoDate, {
             checkin: finalCheckin,
             checkout: finalCheckout,
+            editedCheckin: finalEditedCheckin,
+            editedCheckout: finalEditedCheckout,
             totalHour: finalTotalHour,
             excessHour: 0,
             typeOfPresence: typeOfPresence as any,
             halfDay: finalHalfDay,
-            value: finalValue, 
+            value: finalValue,
             remarks: remarksStr,
           });
 
@@ -592,6 +587,8 @@ function calculateSummary(
   records: Map<string, {
     checkin: string;
     checkout: string;
+    editedCheckin?: string;
+    editedCheckout?: string;
     totalHour: number;
     excessHour: number;
     typeOfPresence: string;
@@ -609,10 +606,10 @@ function calculateSummary(
   let totalLeave = 0;
 
   records.forEach((record, dateStr) => {
-    // Recalculate totalHour and excessHour
+    // Recalculate totalHour and excessHour using edited times if available
     const scheduled = getScheduledTimes(user, dateStr);
-    const checkin = record.checkin;
-    const checkout = record.checkout;
+    const checkin = record.editedCheckin || record.checkin;
+    const checkout = record.editedCheckout || record.checkout;
 
     let calculatedTotalHour = calculateTotalHours(checkin, checkout);
     let calculatedExcessHour = 0;
@@ -647,7 +644,8 @@ function calculateSummary(
     let isHalfDay = record.halfDay || false; // Use existing halfDay flag if already set
     if (!record.halfDay) { // Only recalculate if not already set
       // Special case: if in time and out time is 00:00, halfDay must be false
-      if (checkin === '00:00' && checkout === '00:00') {
+      if ((checkin === '00:00' && checkout === '00:00') ||
+          (record.editedCheckin === '' && record.editedCheckout === '')) {
         isHalfDay = false;
       } else {
         const employmentType = user?.employmentType || 'fulltime';

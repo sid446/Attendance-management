@@ -151,7 +151,11 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       const dates: { date: string; info: string; subInfo?: string }[] = [];
       
       Object.entries(records).forEach(([date, rec]) => {
-          if (!rec.checkin) return;
+          // Use edited times for display if available, otherwise use original times
+          const effectiveCheckin = rec.editedCheckin || rec.checkin;
+          const effectiveCheckout = rec.editedCheckout || rec.checkout;
+          
+          if (!effectiveCheckin) return;
           
           const d = new Date(date);
           const day = d.getDay();
@@ -173,12 +177,12 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           const scheduledIn = daySchedule?.inTime || '09:00';
           
           // Debug logging
-          console.log(`Date: ${date}, Day: ${dayName}, Applicable Schedule:`, applicableSchedule, `Scheduled In: ${scheduledIn}, Checkin: ${rec.checkin}`);
+          console.log(`Date: ${date}, Day: ${dayName}, Applicable Schedule:`, applicableSchedule, `Scheduled In: ${scheduledIn}, Checkin: ${effectiveCheckin}`);
 
-          if (rec.checkin > scheduledIn) {
+          if (effectiveCheckin > scheduledIn) {
               dates.push({ 
                   date, 
-                  info: `${rec.checkin}`,
+                  info: `${effectiveCheckin}`,
                   subInfo: `Sch: ${scheduledIn}`
               });
           }
@@ -216,9 +220,12 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       const records = item.recordDetails || {};
       const dates: { date: string; info: string; subInfo?: string }[] = [];
       Object.entries(records).forEach(([date, rec]) => {
+          // Use edited times for display if available, otherwise use original times
+          const effectiveCheckin = rec.editedCheckin || rec.checkin;
+          
           // Present logic: has valid checkin or halfDay
-          if ((rec.checkin && rec.checkin !== "00:00") || rec.halfDay) {
-               const info = rec.halfDay ? 'Half Day' : `Present (${rec.checkin})`;
+          if ((effectiveCheckin && effectiveCheckin !== "00:00") || rec.halfDay) {
+               const info = rec.halfDay ? 'Half Day' : `Present (${effectiveCheckin})`;
                dates.push({ date, info, subInfo: rec.halfDay ? 'Half Day' : undefined });
           }
       });
@@ -230,8 +237,11 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       const records = item.recordDetails || {};
       const dates: { date: string; info: string; subInfo?: string }[] = [];
       Object.entries(records).forEach(([date, rec]) => {
+          // Use edited times for display if available, otherwise use original times
+          const effectiveCheckin = rec.editedCheckin || rec.checkin;
+          
           if (rec.halfDay && rec.typeOfPresence !== 'Holiday') {
-               dates.push({ date, info: 'Half Day', subInfo: rec.checkin ? `In: ${rec.checkin}` : undefined });
+               dates.push({ date, info: 'Half Day', subInfo: effectiveCheckin ? `In: ${effectiveCheckin}` : undefined });
           }
       });
       return dates.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -242,8 +252,11 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       const records = item.recordDetails || {};
       const dates: { date: string; info: string; subInfo?: string }[] = [];
       Object.entries(records).forEach(([date, rec]) => {
+          // Use edited times for display if available, otherwise use original times
+          const effectiveCheckin = rec.editedCheckin || rec.checkin;
+          
           if (rec.totalHour > 0 && rec.typeOfPresence !== 'Holiday') {
-               dates.push({ date, info: `${formatHoursMinutes(rec.totalHour)}`, subInfo: rec.checkin ? `In: ${rec.checkin}` : undefined });
+               dates.push({ date, info: `${formatHoursMinutes(rec.totalHour)}`, subInfo: effectiveCheckin ? `In: ${effectiveCheckin}` : undefined });
           }
       });
       return dates.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -697,6 +710,37 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     return fullLeaveDays;
   };
 
+  // Helper function to count total Sundays in the selected period
+  const countTotalSundaysInPeriod = () => {
+    let startDate: Date;
+    let endDate: Date;
+
+    if (filterType === 'month') {
+      startDate = new Date(selectedYear, selectedMonth - 1, 1);
+      endDate = new Date(selectedYear, selectedMonth, 0); // Last day of month
+    } else if (filterType === 'week') {
+      startDate = new Date(currentWeekStart);
+      endDate = new Date(startDate);
+      endDate.setDate(startDate.getDate() + 6); // End of week
+    } else {
+      // Range
+      startDate = new Date(rangeStart);
+      endDate = new Date(rangeEnd);
+    }
+
+    let sundayCount = 0;
+    const currentDate = new Date(startDate);
+
+    while (currentDate <= endDate) {
+      if (currentDate.getDay() === 0) { // 0 = Sunday
+        sundayCount++;
+      }
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    return sundayCount;
+  };
+
   // Helper function to calculate detailed attendance metrics
   const calculateDetailedAttendanceMetrics = (item: AttendanceSummaryView) => {
     const records = item.recordDetails || {};
@@ -728,8 +772,12 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       const value = rec.value || 0;
       const type = rec.typeOfPresence || '';
 
+      // Use edited times for calculations if available, otherwise use original times
+      const effectiveCheckin = rec.editedCheckin || rec.checkin;
+      const effectiveCheckout = rec.editedCheckout || rec.checkout;
+
       // Special case: ThumbMachine with 00:00 checkin/checkout should be counted as Absent but not added to totals
-      if (type === 'ThumbMachine' && rec.checkin === '00:00' && rec.checkout === '00:00') {
+      if (type === 'ThumbMachine' && effectiveCheckin === '00:00' && effectiveCheckout === '00:00') {
         absent += 1; // Count as absent for informational purposes
         return; // Don't add to any other totals since value is zero
       }
@@ -856,7 +904,10 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
       
       Object.entries(records).forEach(([dateStr, rec]) => {
-          if (!rec.checkin) return;
+          // Use edited times for calculations if available, otherwise use original times
+          const effectiveCheckin = rec.editedCheckin || rec.checkin;
+          
+          if (!effectiveCheckin) return;
           const d = new Date(dateStr);
           const day = d.getDay();
           const dayName = dayNames[day] as keyof DailySchedule;
@@ -875,7 +926,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
             scheduledIn = daySchedule.inTime || '09:00';
           }
           
-          if (rec.checkin > scheduledIn) count++;
+          if (effectiveCheckin > scheduledIn) count++;
       });
       return count;
   };
@@ -1175,7 +1226,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         absent: metrics.absent,
         hd: metrics.hd,
         maxHd: 0.5,
-        sun: metrics.sun,
+        sun: countTotalSundaysInPeriod(),
         weekoffHd: metrics.weekoffHd,
         ohd: metrics.ohd,
         wfhWeekoff: metrics.wfhWeekoff,
@@ -1206,8 +1257,23 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
       cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
 
-      // Special highlighting for "Net Weekdays Working" column (column 25)
-      if (colNumber === 25) {
+      // Special highlighting for calculated columns
+      if (colNumber === 24) {
+        // Paid Leave - Yellow
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFFFD700' } // Yellow highlight
+        };
+      } else if (colNumber === 25) {
+        // Net Weekdays Working - Blue
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF1E90FF' } // Blue highlight
+        };
+      } else if (colNumber === 26) {
+        // Office Working Days - Orange
         cell.fill = {
           type: 'pattern',
           pattern: 'solid',
@@ -1217,7 +1283,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         cell.fill = {
           type: 'pattern',
           pattern: 'solid',
-          fgColor: { argb: 'FF2C5F2D' } // Dark green
+          fgColor: { argb: 'FF2C5F2D' } // Dark green for other headers
         };
       }
 
@@ -1236,11 +1302,39 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       const isEvenRow = rowNumber % 2 === 0;
       row.eachCell((cell, colNumber) => {
         cell.font = { size: 10 };
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: isEvenRow ? 'FFF8F9FA' : 'FFFFFFFF' }
-        };
+
+        // Special highlighting for calculated columns
+        if (colNumber === 24) {
+          // Paid Leave - Light Yellow background
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFFFF8DC' } // Light yellow
+          };
+          cell.font = { size: 10, color: { argb: 'FF8B4513' } }; // Dark brown text
+        } else if (colNumber === 25) {
+          // Net Weekdays Working - Light Blue background
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFE6F3FF' } // Light blue
+          };
+          cell.font = { size: 10, color: { argb: 'FF000080' } }; // Dark blue text
+        } else if (colNumber === 26) {
+          // Office Working Days - Light Orange background
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFFFF0E6' } // Light orange
+          };
+          cell.font = { size: 10, color: { argb: 'FF8B4513' } }; // Dark brown text
+        } else {
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: isEvenRow ? 'FFF8F9FA' : 'FFFFFFFF' }
+          };
+        }
 
         // Left align employee names, center align everything else
         cell.alignment = {
@@ -1438,22 +1532,29 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
 
       // Define columns with widths
       worksheet.columns = [
-        { key: 'employeeName', header: 'Employee Name', width: 20 },
-        { key: 'employeeId', header: 'Employee ID', width: 15 },
-        { key: 'team', header: 'Team', width: 15 },
-        { key: 'department', header: 'Department', width: 15 },
-        { key: 'date', header: 'Date', width: 12 },
-        { key: 'day', header: 'Day', width: 12 },
-        { key: 'status', header: 'Status', width: 12 },
-        { key: 'inTime', header: 'In Time', width: 10 },
-        { key: 'outTime', header: 'Out Time', width: 10 },
-        { key: 'totalHours', header: 'Total Hours', width: 12 },
-        { key: 'typeOfPresence', header: 'Type of Presence', width: 20 },
-        { key: 'lateArrival', header: 'Late Arrival', width: 12 },
-        { key: 'halfDay', header: 'Half Day', width: 10 },
-        { key: 'remarks', header: 'Remarks', width: 20 },
-        { key: 'scheduledHours', header: 'Scheduled Hours', width: 15 },
-        { key: 'excessDeficitHours', header: 'Excess/Deficit Hours', width: 18 }
+        { key: 'Employee Name', header: 'Employee Name', width: 20 },
+        { key: 'Designation', header: 'Designation', width: 15 },
+        { key: 'Day', header: 'Day', width: 12 },
+        { key: 'Date', header: 'Date', width: 12 },
+        { key: 'Present / Absent', header: 'Present / Absent', width: 15 },
+        { key: 'Actual InTime Original Data', header: 'Actual InTime Original Data', width: 20 },
+        { key: 'Actual OutTime Original Data', header: 'Actual OutTime Original Data', width: 20 },
+        { key: 'Actual InTime Editable Data', header: 'Actual InTime Editable Data', width: 20 },
+        { key: 'True/False In Time', header: 'True/False In Time', width: 15 },
+        { key: 'True/False Out Time', header: 'True/False Out Time', width: 15 },
+        { key: 'Scheduled In Time', header: 'Scheduled In Time', width: 15 },
+        { key: 'Scheduled Out Time', header: 'Scheduled Out Time', width: 15 },
+        { key: 'MAX - WFH', header: 'MAX - WFH', width: 12 },
+        { key: 'Actual WFH', header: 'Actual WFH', width: 12 },
+        { key: 'MAX - Outstation', header: 'MAX - Outstation', width: 15 },
+        { key: 'Actual Outstation', header: 'Actual Outstation', width: 15 },
+        { key: 'Working Hrs', header: 'Working Hrs', width: 12 },
+        { key: 'Scheduled Hrs', header: 'Scheduled Hrs', width: 12 },
+        { key: 'Excess/Short Hrs', header: 'Excess/Short Hrs', width: 15 },
+        { key: 'Type of Presence', header: 'Type of Presence', width: 20 },
+        { key: 'Late Arrival', header: 'Late Arrival', width: 12 },
+        { key: 'Half Day', header: 'Half Day', width: 10 },
+        { key: 'Remarks', header: 'Remarks', width: 20 }
       ];
 
       // Add data rows
@@ -1463,6 +1564,8 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
 
       // Style the header row
       const headerRow = worksheet.getRow(1);
+      headerRow.height = 60; // Increased height for better text wrapping
+
       headerRow.eachCell((cell) => {
         cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
         cell.fill = {
@@ -1470,7 +1573,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           pattern: 'solid',
           fgColor: { argb: 'FF2C5F2D' }
         };
-        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
         cell.border = {
           top: { style: 'thin', color: { argb: 'FF000000' } },
           bottom: { style: 'thin', color: { argb: 'FF000000' } },
@@ -1499,6 +1602,21 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
             right: { style: 'thin', color: { argb: 'FFE0E0E0' } }
           };
         });
+      });
+
+      // Apply conditional formatting for "Absent" text in red
+      worksheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) return; // Skip header row
+
+        // Find the "Present / Absent" column (index 5, since arrays are 0-based)
+        const presentAbsentCell = row.getCell(5); // Column E (Present / Absent)
+        if (presentAbsentCell.value === 'Absent') {
+          presentAbsentCell.font = {
+            size: 10,
+            color: { argb: 'FFFF0000' }, // Red color
+            bold: true // Make it bold for better visibility
+          };
+        }
       });
 
       // Generate filename

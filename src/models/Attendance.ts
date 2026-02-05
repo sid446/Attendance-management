@@ -4,6 +4,8 @@ import mongoose, { Schema, Document, Model, Types } from 'mongoose';
 export interface IDailyRecord {
   checkin: string;        // Format: "HH:mm" e.g., "10:45"
   checkout: string;       // Format: "HH:mm" e.g., "18:30"
+  editedCheckin?: string; // Edited checkin time for corrections (Format: "HH:mm")
+  editedCheckout?: string; // Edited checkout time for corrections (Format: "HH:mm")
   totalHour: number;      // Total hours worked
   excessHour: number;     // Extra hours beyond standard
   typeOfPresence: 'ThumbMachine' | 'Manual' | 'Remote' | 'On leave' | 'Holiday' | 'Absent' | 'Present - in office' | 'Present - client place' | 'Present - outstation' | 'Present - weekoff' | 'Half Day - weekdays' | 'Half Day - weekoff' | 'WFH - weekdays' | 'WFH - weekoff' | 'Weekoff - special allowance' | 'Weekly Off - Present (WO-Present)' | 'Half Day (HD)' | 'Work From Home (WFH)' | 'Weekly Off - Work From Home (WO-WFH)' | 'Onsite Presence (OS-P)';
@@ -39,6 +41,14 @@ const DailyRecordSchema: Schema = new Schema(
       default: '',
     },
     checkout: {
+      type: String,
+      default: '',
+    },
+    editedCheckin: {
+      type: String,
+      default: '',
+    },
+    editedCheckout: {
       type: String,
       default: '',
     },

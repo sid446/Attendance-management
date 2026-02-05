@@ -9,9 +9,18 @@ export async function GET() {
 
     const users = await User.find({ isActive: true }).sort({ name: 1 });
 
+    // Ensure attendanceEmail is set for backward compatibility
+    const usersData = users.map(user => {
+      const userData = user.toObject();
+      if (!userData.attendanceEmail && userData.email) {
+        userData.attendanceEmail = userData.email;
+      }
+      return userData;
+    });
+
     return NextResponse.json({
       success: true,
-      data: users,
+      data: usersData,
     });
   } catch (error) {
     console.error('Error fetching users:', error);

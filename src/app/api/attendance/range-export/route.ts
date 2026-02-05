@@ -71,11 +71,12 @@ export async function POST(request: NextRequest) {
 
     for (const { user, records } of userRecordsMap.values()) {
       // Loop from start to end for all days in the period
-      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      for (let currentDate = new Date(start); currentDate <= end; currentDate.setDate(currentDate.getDate() + 1)) {
+        const d = new Date(currentDate); // Create a fresh date object to avoid mutation issues
         const dateStr = d.toISOString().split('T')[0];
         const dayRecord = records.get(dateStr);
 
-        if (!dayRecord) continue; // Only export days with attendance records
+        // Include ALL dates in the range, even without attendance records
 
         let status = 'Absent';
         let inTime = '';
@@ -86,62 +87,133 @@ export async function POST(request: NextRequest) {
         let isLate = false;
         let isHalfDay = false;
 
+        // Check if it's Sunday and set typeOfPresence to 'SUN'
+        if (d.getDay() === 0) { // 0 = Sunday
+          typeOfPresence = 'SUN';
+        }
+
+        // Check if it's a holiday or Sunday
+        const isHoliday = typeOfPresence === 'Holiday' || typeOfPresence === 'Official Holiday Duty (OHD)' || typeOfPresence === 'SUN';
+        if (isHoliday) {
+          status = typeOfPresence === 'SUN' ? 'Sun' : 'Holiday';
+        }
+
         if (dayRecord) {
-          inTime = dayRecord.checkin || '';
-          outTime = dayRecord.checkout || '';
+          inTime = dayRecord.editedCheckin || dayRecord.checkin || '';
+          outTime = dayRecord.editedCheckout || dayRecord.checkout || '';
           totalHours = dayRecord.totalHour || 0;
           typeOfPresence = dayRecord.typeOfPresence || '';
           remarks = dayRecord.remarks || '';
           isHalfDay = dayRecord.halfDay || false;
 
-          // Determine status
-          if (typeOfPresence === 'On leave') {
-            status = 'On leave';
-          } else if (typeOfPresence === 'Holiday') {
-            status = typeOfPresence;
-          } else if (isHalfDay || typeOfPresence === 'Half Day (HD)') {
-            status = 'Half Day';
-          } else if (inTime && outTime && (inTime !== '00:00' || outTime !== '00:00')) {
-            status = 'Present';
+          // Get original times for export
+          let originalInTime = dayRecord.checkin || '';
+          let originalOutTime = dayRecord.checkout || '';
+          let editedInTime = dayRecord.editedCheckin || '';
+          let editedOutTime = dayRecord.editedCheckout || '';
 
-            // Check if late
-            const dateObj = d;
-            const dow = dateObj.getDay();
+          // Determine if times were edited
+          let inTimeEdited = editedInTime !== '' && editedInTime !== originalInTime;
+          let outTimeEdited = editedOutTime !== '' && editedOutTime !== originalOutTime;
 
-            let scheduledInTime = user.scheduleInOutTime?.inTime; // Default regular
+          // Get scheduled times
+          const scheduledTimes = getScheduledTimesForDate(user, d);
+          let scheduledInTime = scheduledTimes.inTime;
+          let scheduledOutTime = scheduledTimes.outTime;
 
-            if (dow === 6 && user.scheduleInOutTimeSat?.inTime) {
-              scheduledInTime = user.scheduleInOutTimeSat.inTime;
+          // Determine status based on user's requirements
+          const machineTypes = ['ThumbMachine', 'PIO', 'Thumb machine - not working'];
+          const isMachineType = machineTypes.includes(typeOfPresence);
+
+          if (isMachineType) {
+            // For machine types: if 00:00 times then Absent, otherwise Present
+            if (inTime === '00:00' && outTime === '00:00') {
+              status = 'Absent';
+            } else {
+              status = 'Present';
             }
+          } else {
+            // For other types, use the type of presence as status
+            status = typeOfPresence || 'Absent';
+          }
 
-            if (scheduledInTime && inTime) {
+          // Check if late (only for Present status)
+          if (status === 'Present') {
+            if (scheduledInTime && inTime && inTime !== '00:00') {
               const scheduledMins = timeToMinutes(scheduledInTime);
               const actualMins = timeToMinutes(inTime);
               isLate = actualMins > scheduledMins;
             }
-          } else {
-            status = 'Absent';
           }
-        }
 
-        exportData.push({
-          'Employee Name': user.name,
-          'Employee ID': user.employeeCode || user.employeeId || user.odId || '',
-          'Team': user.workingUnderPartner || user.team || '',
-          'Designation': user.designation || '',
-          'Date': dateStr,
-          'Day': d.toLocaleDateString('en-US', { weekday: 'long' }),
-          'Status': status,
-          'In Time': inTime,
-          'Out Time': outTime,
-          'Total Hours': formatHoursMinutes(totalHours),
-          'Type of Presence': typeOfPresence,
-          'Late Arrival': isLate ? 'Yes' : 'No',
-          'Half Day': isHalfDay ? 'Yes' : 'No',
-          'Remarks': remarks,
-          'Scheduled Hours': formatHoursMinutes(calculateScheduledHours(user, d)),
-          'Excess/Deficit Hours': (status === 'Present' && inTime !== '00:00' && outTime !== '00:00') ? formatHoursMinutes(totalHours - calculateScheduledHours(user, d)) : '0'
-        });
+          // Calculate WFH and Outstation values
+          let maxWfh = 0.75;
+          let actualWfh = 0;
+          let maxOutstation = 1.2;
+          let actualOutstation = 0;
+          let scheduledHours = calculateScheduledHours(user, d);
+
+          // Check if it's WFH type
+          if (typeOfPresence === 'WFH-weekdays' || typeOfPresence === 'WFH-weekoff') {
+            actualWfh = totalHours || 0; // Use the actual hours worked for WFH
+          }
+
+          // Check if it's Outstation type
+          if (typeOfPresence === 'Present- outstation') {
+            actualOutstation = totalHours || 0; // Use the actual hours worked for Outstation
+          }
+
+          // Check if this is Sunday, Holiday, or On Leave - zero out all metrics
+          const isHolidayOrSunday = typeOfPresence === 'Holiday' || typeOfPresence === 'Official Holiday Duty (OHD)' || typeOfPresence === 'SUN';
+          const isOnLeave = typeOfPresence === 'Leave' || typeOfPresence === 'On leave';
+
+          if (isHolidayOrSunday || isOnLeave) {
+            // Zero out all metrics for Sundays, holidays, and leave days
+            totalHours = 0;
+            scheduledHours = 0;
+            actualWfh = 0;
+            actualOutstation = 0;
+            isLate = false;
+            isHalfDay = false;
+            inTime = '';
+            outTime = '';
+            originalInTime = '';
+            originalOutTime = '';
+            editedInTime = '';
+            editedOutTime = '';
+            inTimeEdited = false;
+            outTimeEdited = false;
+            scheduledInTime = '';
+            scheduledOutTime = '';
+            remarks = (isHolidayOrSunday || isOnLeave) ? typeOfPresence : remarks;
+          }
+
+          exportData.push({
+            'Employee Name': user.name,
+            'Designation': user.designation || '',
+            'Day': getDayName(d),
+            'Date': dateStr,
+            'Present / Absent': status,
+            'Actual InTime Original Data': originalInTime,
+            'Actual OutTime Original Data': originalOutTime,
+            'Actual InTime Editable Data': editedInTime,
+            'True/False In Time': inTimeEdited ? 'True' : 'False',
+            'True/False Out Time': outTimeEdited ? 'True' : 'False',
+            'Scheduled In Time': scheduledInTime,
+            'Scheduled Out Time': scheduledOutTime,
+            'MAX - WFH': maxWfh,
+            'Actual WFH': actualWfh,
+            'MAX - Outstation': maxOutstation,
+            'Actual Outstation': actualOutstation,
+            'Working Hrs': formatHoursMinutes(totalHours),
+            'Scheduled Hrs': formatHoursMinutes(scheduledHours),
+            'Excess/Short Hrs': formatHoursMinutes(totalHours - scheduledHours),
+            'Type of Presence': typeOfPresence,
+            'Late Arrival': isLate ? 'Yes' : 'No',
+            'Half Day': isHalfDay ? 'Yes' : 'No',
+            'Remarks': remarks
+          });
+        }
       }
     }
 
@@ -158,9 +230,28 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function timeToMinutes(timeStr: string): number {
-  const [hours, minutes] = timeStr.split(':').map(Number);
-  return hours * 60 + minutes;
+function getScheduledTimesForDate(user: any, date: Date): { inTime: string; outTime: string } {
+  const dow = date.getDay();
+
+  let schedule = user.scheduleInOutTime; // Default regular
+
+  // Check for day-specific schedules first
+  if (dow === 6 && user.scheduleInOutTimeSat) {
+    schedule = user.scheduleInOutTimeSat;
+  }
+
+  // Monthly schedule should only override if no day-specific schedule exists
+  if (user.scheduleInOutTimeMonth && !((dow === 6 && user.scheduleInOutTimeSat))) {
+    schedule = user.scheduleInOutTimeMonth;
+  }
+
+  if (dow === 0) return { inTime: '', outTime: '' }; // Sunday
+
+  if (!schedule || !schedule.inTime || !schedule.outTime) {
+    return { inTime: '09:00', outTime: '18:00' }; // Default schedule
+  }
+
+  return { inTime: schedule.inTime, outTime: schedule.outTime };
 }
 
 function calculateScheduledHours(user: any, date: Date): number {
@@ -168,12 +259,13 @@ function calculateScheduledHours(user: any, date: Date): number {
 
   let schedule = user.scheduleInOutTime; // Default regular
 
+  // Check for day-specific schedules first
   if (dow === 6 && user.scheduleInOutTimeSat) {
     schedule = user.scheduleInOutTimeSat;
   }
 
-  // Prefer monthly if available
-  if (user.scheduleInOutTimeMonth) {
+  // Monthly schedule should only override if no day-specific schedule exists
+  if (user.scheduleInOutTimeMonth && !((dow === 6 && user.scheduleInOutTimeSat))) {
     schedule = user.scheduleInOutTimeMonth;
   }
 
@@ -198,4 +290,15 @@ function formatHoursMinutes(hours: number): string {
     return `${sign}${m}m`;
   }
   return `${sign}${h}h ${m}m`;
+}
+
+function timeToMinutes(timeStr: string): number {
+  if (!timeStr || timeStr === '00:00') return 0;
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+function getDayName(date: Date): string {
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  return days[date.getDay()];
 }

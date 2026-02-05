@@ -83,6 +83,7 @@ export async function POST(request: NextRequest) {
             mobileNumber: emp.mobileNumber,
             alternateMobileNumber: emp.alternateMobileNumber,
             alternateEmail: emp.alternateEmail,
+            attendanceEmail: emp.attendanceEmail,
             address1: emp.address1,
             address2: emp.address2,
           emergencyContactNo: emp.emergencyContactNo,
@@ -116,20 +117,11 @@ export async function POST(request: NextRequest) {
             nextAttemptDueDate: emp.nextAttemptDueDate,
             registeredUnderPartner: emp.registeredUnderPartner,
             workingUnderPartner: emp.workingUnderPartner,
-            workingTiming: emp.workingTiming,
+            // Remove old workingTiming field
+            // workingTiming: emp.workingTiming,
             
-            scheduleInOutTime: {
-                inTime: emp.schIn ?? '09:00',
-                outTime: emp.schOut ?? '18:00'
-            },
-            scheduleInOutTimeSat: {
-                inTime: emp.schIn ?? '09:00', // Defaulting to same start
-                outTime: '13:00' // Default Sat end, unless "10:00-19:00" logic overrides it which we should handle if needed, but for now defaulting
-            },
-            scheduleInOutTimeMonth: {
-                inTime: emp.schIn ?? '09:00',
-                outTime: emp.schOut ?? '18:00'
-            }
+            // Handle new schedules structure
+            ...(emp.schedules && emp.schedules.length > 0 && { schedules: emp.schedules })
         };
 
         if (matchedUser) {
@@ -144,13 +136,14 @@ export async function POST(request: NextRequest) {
             if (updateData.nextAttemptDueDate) matchedUser.nextAttemptDueDate = new Date(updateData.nextAttemptDueDate);
             if (updateData.anniversaryDate) matchedUser.anniversaryDate = new Date(updateData.anniversaryDate);
             
-            // Careful with schedule overwrites - only if provided
-            if (emp.schIn && emp.schOut) {
-                 matchedUser.scheduleInOutTime = updateData.scheduleInOutTime;
-                 // Also update others if we rely on single Work Timing
-                 matchedUser.scheduleInOutTimeMonth = updateData.scheduleInOutTimeMonth;
-                 // Keep Sat default or derive? Let's leave Sat as default 13:00 out unless logic changes
-                 matchedUser.scheduleInOutTimeSat = { inTime: emp.schIn, outTime: '13:00' };
+            // Handle schedules update
+            if (emp.schedules && emp.schedules.length > 0) {
+                matchedUser.schedules = emp.schedules;
+            }
+
+            // Update leave balance if provided
+            if (emp.leaveBalance) {
+              matchedUser.leaveBalance = { ...matchedUser.leaveBalance, ...emp.leaveBalance };
             }
 
             // Update timestamp
@@ -177,6 +170,7 @@ export async function POST(request: NextRequest) {
                 email: email, 
                 joiningDate: emp.joiningDate ? new Date(emp.joiningDate) : new Date(),
                 isActive: true,
+                leaveBalance: emp.leaveBalance,
                 ...updateData
             });
             stats.created++;

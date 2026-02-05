@@ -98,21 +98,25 @@ export default function EmployeeDashboard() {
              // Transform Records
              const recordsObj = doc.records || {};
              const days: AttendanceRecord[] = Object.entries(recordsObj).map(([dateKey, value]: [string, any]) => {
+                // Use edited times for display if available, otherwise use original times
+                const effectiveCheckin = value.editedCheckin || value.checkin;
+                const effectiveCheckout = value.editedCheckout || value.checkout;
+                
                 let status: any = 'Present';
                 if (value.typeOfPresence === 'Leave' || value.typeOfPresence === 'On leave') status = 'On leave';
                 else if (value.typeOfPresence === 'Holiday') status = 'Holiday';
                 else if (value.halfDay) status = 'HalfDay';
-                else if (!value.checkin && !value.checkout && value.typeOfPresence !== 'Leave' && value.typeOfPresence !== 'On leave') status = 'Absent';
+                else if (!effectiveCheckin && !effectiveCheckout && value.typeOfPresence !== 'Leave' && value.typeOfPresence !== 'On leave') status = 'Absent';
                 
                 // Fallback
-                if (status === 'Present' && !value.checkin && !value.checkout) status = 'Absent';
+                if (status === 'Present' && !effectiveCheckin && !effectiveCheckout) status = 'Absent';
 
                 return {
                   id: doc.userId._id,
                   name: doc.userId.name,
                   date: dateKey,
-                  inTime: value.checkin ?? '',
-                  outTime: value.checkout ?? '',
+                  inTime: effectiveCheckin ?? '',
+                  outTime: effectiveCheckout ?? '',
                   status: status,
                   typeOfPresence: value.typeOfPresence,
                   value: value.value

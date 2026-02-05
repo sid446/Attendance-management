@@ -22,9 +22,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // Ensure attendanceEmail is set for backward compatibility
+    const userData = user.toObject();
+    if (!userData.attendanceEmail && userData.email) {
+      userData.attendanceEmail = userData.email;
+    }
+
     return NextResponse.json({
       success: true,
-      data: user,
+      data: userData,
     });
   } catch (error) {
     console.error('Error fetching user:', error);

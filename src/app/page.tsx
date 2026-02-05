@@ -873,6 +873,10 @@ export default function AttendanceUpload() {
       const recordsObj = doc.records || {};
 
       const days: AttendanceRecord[] = Object.entries(recordsObj).map(([dateKey, value]: [string, any]) => {
+        // Use edited times for display if available, otherwise use original times
+        const effectiveCheckin = value.editedCheckin || value.checkin;
+        const effectiveCheckout = value.editedCheckout || value.checkout;
+        
         let status: any = 'Present';
         
         // Determine status based on typeOfPresence
@@ -886,7 +890,7 @@ export default function AttendanceUpload() {
           status = 'HalfDay';
         } else if (value.typeOfPresence && value.typeOfPresence.includes('Present')) {
           status = 'Present';
-        } else if (!value.checkin && !value.checkout) {
+        } else if (!effectiveCheckin && !effectiveCheckout) {
           status = 'Absent';
         } else {
           status = 'Present'; // Default for any other case with times
@@ -896,8 +900,8 @@ export default function AttendanceUpload() {
           id: doc.userId?._id ? String(doc.userId._id) : '',
           name: doc.userId?.name ?? 'Unknown',
           date: dateKey,
-          inTime: value.checkin ?? '',
-          outTime: value.checkout ?? '',
+          inTime: effectiveCheckin ?? '',
+          outTime: effectiveCheckout ?? '',
           status: status,
           typeOfPresence: value.typeOfPresence,
           value: value.value
