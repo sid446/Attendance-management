@@ -144,16 +144,45 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       }
     }
 
+    // Determine attendanceEmail:
+    // 1. If explicitly provided, use it
+    // 2. If workingUnderPartner is changing, look up new partner's email
+    // 3. Keep existing or fall back to email
+    let finalAttendanceEmail: string | undefined = undefined;
+    if (attendanceEmail !== undefined) {
+      // Explicitly provided
+      finalAttendanceEmail = attendanceEmail;
+    } else if (workingUnderPartner !== undefined && workingUnderPartner !== currentUser.workingUnderPartner) {
+      // workingUnderPartner is changing, auto-update attendanceEmail from new partner
+      if (workingUnderPartner) {
+        const cleanName = workingUnderPartner.trim();
+        const dottedName = cleanName.replace(/\s+/g, '.');
+        const partnerUser = await User.findOne({
+          $or: [
+            { name: { $regex: new RegExp(`^${cleanName}$`, 'i') } },
+            { name: { $regex: new RegExp(`^${dottedName}$`, 'i') } }
+          ]
+        });
+        if (partnerUser) {
+          finalAttendanceEmail = partnerUser.attendanceEmail || partnerUser.email;
+        } else {
+          // Partner not found, fall back to employee email
+          finalAttendanceEmail = email || currentUser.email;
+        }
+      } else {
+        // workingUnderPartner is being cleared, fall back to employee email
+        finalAttendanceEmail = email || currentUser.email;
+      }
+    }
+
     const user = await User.findByIdAndUpdate(
       id,
       {
         ...(odId && { odId }),
         ...(name && { name }),
         ...(email && { email }),
-        // Set attendanceEmail: use provided value or default to email
-        ...((attendanceEmail !== undefined || email) && { 
-          attendanceEmail: attendanceEmail !== undefined ? attendanceEmail : email 
-        }),
+        // Set attendanceEmail if determined
+        ...(finalAttendanceEmail !== undefined && { attendanceEmail: finalAttendanceEmail }),
         ...(designation !== undefined && { designation }),
         ...(team !== undefined && { team }),
         ...(joiningDate && { joiningDate: new Date(joiningDate) }),

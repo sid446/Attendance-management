@@ -29,6 +29,7 @@ export async function POST(request: NextRequest) {
     // Create a lookup map by employee code (primary) and name (fallback)
     const userMapByCode = new Map<string, IUser>();
     const userMapByName = new Map<string, IUser>();
+    const userMapByNameForPartner = new Map<string, IUser>(); // For partner email lookup
     existingUsers.forEach(u => {
       if (u.employeeCode) {
         userMapByCode.set(String(u.employeeCode).toLowerCase().trim(), u);
@@ -36,6 +37,8 @@ export async function POST(request: NextRequest) {
       if (u.name) {
         // Keep name matching as fallback for backward compatibility
         userMapByName.set(u.name.toLowerCase().trim(), u);
+        // Also store with dots replaced by spaces for partner lookup
+        userMapByNameForPartner.set(u.name.toLowerCase().trim().replace(/\./g, ' '), u);
       }
     });
 
@@ -83,7 +86,7 @@ export async function POST(request: NextRequest) {
             mobileNumber: emp.mobileNumber,
             alternateMobileNumber: emp.alternateMobileNumber,
             alternateEmail: emp.alternateEmail,
-            attendanceEmail: emp.attendanceEmail,
+            // attendanceEmail: calculated below based on workingUnderPartner
             address1: emp.address1,
             address2: emp.address2,
           emergencyContactNo: emp.emergencyContactNo,
@@ -124,6 +127,37 @@ export async function POST(request: NextRequest) {
             ...(emp.schedules && emp.schedules.length > 0 && { schedules: emp.schedules })
         };
 
+        // Determine attendanceEmail:
+        // 1. If explicitly provided as an email (contains @), use it directly
+        // 2. If provided as a name (Attendance Approver column), look up that person's email
+        // 3. If workingUnderPartner is set, look up partner's email
+        // 4. Fall back to employee's own email
+        if (emp.attendanceEmail) {
+          const approverValue = String(emp.attendanceEmail).trim();
+          if (approverValue.includes('@')) {
+            // It's an email, use directly
+            updateData.attendanceEmail = approverValue;
+          } else {
+            // It's a name, look up the person's email
+            const approverName = approverValue.toLowerCase();
+            const approverUser = userMapByName.get(approverName) || 
+                                userMapByName.get(approverName.replace(/\s+/g, '.')) ||
+                                userMapByNameForPartner.get(approverName.replace(/\./g, ' '));
+            if (approverUser) {
+              updateData.attendanceEmail = approverUser.attendanceEmail || approverUser.email;
+            }
+          }
+        } else if (emp.workingUnderPartner) {
+          const partnerName = emp.workingUnderPartner.trim().toLowerCase();
+          const partnerNameWithSpaces = partnerName.replace(/\./g, ' ');
+          const partnerUser = userMapByName.get(partnerName) || 
+                              userMapByName.get(partnerName.replace(/\s+/g, '.')) ||
+                              userMapByNameForPartner.get(partnerNameWithSpaces);
+          if (partnerUser) {
+            updateData.attendanceEmail = partnerUser.attendanceEmail || partnerUser.email;
+          }
+        }
+
         if (matchedUser) {
             // Update existing
             Object.assign(matchedUser, updateData);
@@ -163,6 +197,11 @@ export async function POST(request: NextRequest) {
             const odId = employeeCode ? String(employeeCode) : `OD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
             const dbName = excelName.trim().replace(/\s+/g, '.');
             const email = emp.email || `${dbName.toLowerCase().replace(/[^a-z0-9.]/g, '')}@asija.com`;
+            
+            // Ensure attendanceEmail falls back to employee email if not set from partner
+            if (!updateData.attendanceEmail) {
+              updateData.attendanceEmail = email;
+            }
             
             await User.create({
                 odId: odId,

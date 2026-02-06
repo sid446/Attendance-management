@@ -19,29 +19,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
     }
 
-    // Partner Email Logic
+    // Partner Email Logic - use employee's attendanceEmail directly
     if (!user.workingUnderPartner) {
         return NextResponse.json({ success: false, error: 'No Partner assigned to this employee' }, { status: 400 });
     }
 
-    let partnerEmail = '';
     const partnerName = user.workingUnderPartner;
-    const cleanName = partnerName.trim();
-    const dottedName = cleanName.replace(/\s+/g, '.');
+    const partnerEmail = user.attendanceEmail;
     
-    const partnerUser = await User.findOne({
-      $or: [
-        { name: { $regex: new RegExp(`^${cleanName}$`, 'i') } },
-        { name: { $regex: new RegExp(`^${dottedName}$`, 'i') } }
-      ]
-    });
-
-    if (partnerUser && partnerUser.email) {
-      partnerEmail = partnerUser.email;
-    } else {
-      // Fallback or Error? 
-      // Current correction route errors out. Let's error out to be consistent and clear why email isn't sent.
-      return NextResponse.json({ success: false, error: `Partner "${partnerName}" email not found in system` }, { status: 400 });
+    if (!partnerEmail) {
+      return NextResponse.json({ success: false, error: 'No attendance email configured for this employee. Please contact admin.' }, { status: 400 });
     }
 
     const start = new Date(startDate);

@@ -104,11 +104,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Determine attendanceEmail:
+    // 1. If explicitly provided, use it
+    // 2. If workingUnderPartner is set, look up partner's email
+    // 3. Fall back to employee's own email
+    let finalAttendanceEmail = attendanceEmail;
+    if (!finalAttendanceEmail && workingUnderPartner) {
+      const cleanName = workingUnderPartner.trim();
+      const dottedName = cleanName.replace(/\s+/g, '.');
+      const partnerUser = await User.findOne({
+        $or: [
+          { name: { $regex: new RegExp(`^${cleanName}$`, 'i') } },
+          { name: { $regex: new RegExp(`^${dottedName}$`, 'i') } }
+        ]
+      });
+      if (partnerUser) {
+        finalAttendanceEmail = partnerUser.attendanceEmail || partnerUser.email;
+      }
+    }
+    if (!finalAttendanceEmail) {
+      finalAttendanceEmail = email;
+    }
+
     const user = await User.create({
       odId,
       name,
       email,
-      attendanceEmail: attendanceEmail || email, // Use provided attendanceEmail or default to email
+      attendanceEmail: finalAttendanceEmail, // Partner's email or provided value or employee's email
       designation,
       team,
       joiningDate: new Date(joiningDate),

@@ -64,26 +64,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'No Partner assigned to this employee' }, { status: 400 });
     }
 
-    // Determine partner email
-    let partnerEmail = '';
+    // Use the employee's attendanceEmail directly (which should be set to partner's email)
     const partnerName = user.workingUnderPartner;
+    const partnerEmail = user.attendanceEmail;
     
-    const cleanName = partnerName.trim();
-    const dottedName = cleanName.replace(/\s+/g, '.');
-    
-    const partnerUser = await User.findOne({
-      $or: [
-        { name: { $regex: new RegExp(`^${cleanName}$`, 'i') } },
-        { name: { $regex: new RegExp(`^${dottedName}$`, 'i') } }
-      ]
-    });
-
-    if (partnerUser && partnerUser.attendanceEmail) {
-      partnerEmail = partnerUser.attendanceEmail;
-    } else if (partnerUser && partnerUser.email) {
-      partnerEmail = partnerUser.email;
-    } else {
-      return NextResponse.json({ success: false, error: `Partner "${partnerName}" email not found in system` }, { status: 400 });
+    if (!partnerEmail) {
+      return NextResponse.json({ success: false, error: 'No attendance email configured for this employee. Please contact admin.' }, { status: 400 });
     }
 
     const monthYear = date.substring(0, 7); // YYYY-MM

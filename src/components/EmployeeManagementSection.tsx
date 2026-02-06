@@ -183,8 +183,21 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
     setFormData(prev => {
       const newData = { ...prev, [field]: value };
       // When workingUnderPartner changes, also update team to the same value
+      // and auto-populate attendanceEmail from partner's email
       if (field === 'workingUnderPartner') {
         newData.team = value;
+        // Look up partner's email in users list
+        if (value) {
+          const partnerName = value.trim().toLowerCase();
+          const partnerUser = users.find(u => 
+            u.name?.toLowerCase().trim() === partnerName ||
+            u.name?.toLowerCase().trim().replace(/\s+/g, '.') === partnerName ||
+            u.name?.toLowerCase().trim().replace(/\./g, ' ') === partnerName
+          );
+          if (partnerUser) {
+            newData.attendanceEmail = partnerUser.attendanceEmail || partnerUser.email || '';
+          }
+        }
       }
       return newData;
     });
@@ -730,7 +743,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         tallyName: findCol(['Tally Name']),
         gender: findCol(['Gender']),
         email: findCol(['Asija Mail ID', 'Email', 'Mail ID']),
-        attendanceEmail: findCol(['Attendance Email', 'Attendance Mail ID']),
+        attendanceEmail: findCol(['Attendance Email', 'Attendance Mail ID', 'Attendance Approver']),
         parentName: findCol(['Parents/Guardians Names', 'Parent / Guardian Name', 'Father Name', 'Parent Name']),
         parentOcc: findCol(['Parents/Guardians Occupation', 'Parent / Guardian Occupation', 'Father Occupation']),
         mobile: findCol(['Cell No.', 'Mobile', 'Phone']),
@@ -830,7 +843,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           gender: getVal(idx.gender),
           // Save email from Excel to email section
           email: getVal(idx.email),
-          attendanceEmail: getVal(idx.email), // Set attendance email same as email
+          // Use Attendance Approver column if available, otherwise fall back to employee email
+          attendanceEmail: getVal(idx.attendanceEmail) || getVal(idx.email),
           parentName: getVal(idx.parentName),
           parentOccupation: getVal(idx.parentOcc),
           mobileNumber: getVal(idx.mobile),
