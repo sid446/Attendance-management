@@ -30,6 +30,7 @@ export default function EmployeeDashboard() {
 
   // Modal State
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedDateStatus, setSelectedDateStatus] = useState<string | null>(null); // Track the status of selected date
   const [requestStatus, setRequestStatus] = useState('Official Holiday Duty (OHD)');
   const [requestReason, setRequestReason] = useState('');
   const [startTime, setStartTime] = useState('');
@@ -41,6 +42,7 @@ export default function EmployeeDashboard() {
   const [futureStartDate, setFutureStartDate] = useState('');
   const [futureEndDate, setFutureEndDate] = useState('');
   const [futureType, setFutureType] = useState('On leave');
+  const [futureCustomType, setFutureCustomType] = useState(''); // For "Other" option
   const [futureReason, setFutureReason] = useState('');
   const [futureStartTime, setFutureStartTime] = useState('');
   const [futureEndTime, setFutureEndTime] = useState('');
@@ -48,6 +50,18 @@ export default function EmployeeDashboard() {
 
   // Calendar selection state
   const [calendarSelectionStart, setCalendarSelectionStart] = useState<string | null>(null);
+
+  // Employee requests state
+  const [employeeRequests, setEmployeeRequests] = useState<Array<{
+    _id: string;
+    date: string;
+    requestedStatus: string;
+    status: 'Pending' | 'Approved' | 'Rejected';
+    approvedBy?: string;
+    approvedByEmail?: string;
+    approvedAt?: string;
+    updatedAt?: string;
+  }>>([]);
 
   useEffect(() => {
     const stored = localStorage.getItem('employeeUser');
@@ -67,9 +81,26 @@ export default function EmployeeDashboard() {
     setFetchLoading(true);
     setFetchError(null);
     try {
-        // Fetch Summary
-        const resSum = await fetch(`/api/attendance?userId=${userId}&monthYear=${my}`);
+        // Fetch Summary and Employee Requests in parallel
+        const [resSum, resRequests] = await Promise.all([
+          fetch(`/api/attendance?userId=${userId}&monthYear=${my}`),
+          fetch(`/api/employee/request-correction?userId=${userId}`)
+        ]);
+        
         const jsonSum = await resSum.json();
+        const jsonRequests = await resRequests.json();
+
+        // Process employee requests
+        if (jsonRequests.success && jsonRequests.data) {
+          // Filter requests for the selected month
+          const filteredRequests = jsonRequests.data.filter((req: any) => {
+            const reqDate = req.date.split('T')[0];
+            return reqDate.startsWith(my);
+          });
+          setEmployeeRequests(filteredRequests);
+        } else {
+          setEmployeeRequests([]);
+        }
         
         if (jsonSum.success && jsonSum.data && jsonSum.data.length > 0) {
              const doc = jsonSum.data[0];
@@ -145,6 +176,7 @@ export default function EmployeeDashboard() {
       setFutureReason('');
       setFutureStartTime('');
       setFutureEndTime('');
+      setFutureCustomType('');
   };
 
   const handleDayClick = (date: string) => {
@@ -185,8 +217,41 @@ export default function EmployeeDashboard() {
       }
     } else {
       // Past date - handle correction request
+      // Find the attendance record for this date
+      const dayRecord = employeeDays.find(d => d.date === date);
+      
+      // Check if correction request is allowed
+      // Allowed when: Absent, Half Day, Holiday/Week Off, or in/out time is missing
+      const status = dayRecord?.status;
+      const inTime = dayRecord?.inTime;
+      const outTime = dayRecord?.outTime;
+      const typeOfPresence = dayRecord?.typeOfPresence;
+      
+      const isAbsent = status === 'Absent' || !dayRecord;
+      const isHalfDay = status === 'HalfDay' || typeOfPresence?.toLowerCase().includes('half');
+      const isHoliday = status === 'Holiday' || typeOfPresence === 'Holiday' || typeOfPresence === 'Week Off';
+      const isMissingPunch = !inTime || !outTime || inTime === '00:00' || outTime === '00:00';
+      
+      // Check if there's already a pending request for this date
+      const existingRequest = employeeRequests.find(r => r.date.split('T')[0] === date);
+      if (existingRequest && existingRequest.status === 'Pending') {
+        alert('You already have a pending request for this date. Please wait for it to be processed.');
+        return;
+      }
+      
+      if (!isAbsent && !isHalfDay && !isHoliday && !isMissingPunch) {
+        alert('Correction requests are only allowed for days marked as Absent, Half Day, Holiday/Week Off, or when attendance in/out is not marked.');
+        return;
+      }
+      
       setSelectedDate(date);
-      setRequestStatus('On leave');
+      setSelectedDateStatus(isHoliday ? 'Holiday' : null);
+      // Set default status based on the day type
+      if (isHoliday) {
+        setRequestStatus('Weekoff - special allowance');
+      } else {
+        setRequestStatus('On leave');
+      }
       setRequestReason('');
       setStartTime('');
       setEndTime('');
@@ -250,6 +315,8 @@ export default function EmployeeDashboard() {
           if (json.success) {
               alert(`Request sent successfully to ${json.sentTo}!`);
               setSelectedDate(null);
+              // Refresh data to show updated request status
+              fetchAttendance(user._id, monthYear);
           } else {
               alert(json.error || 'Failed to send request');
           }
@@ -283,6 +350,15 @@ export default function EmployeeDashboard() {
           alert('Please provide a reason.');
           return;
       }
+
+      // Validate custom type if "Other" is selected
+      if (futureType === 'Other' && !futureCustomType.trim()) {
+          alert('Please specify the request type.');
+          return;
+      }
+
+      // Get the actual request type
+      const actualRequestType = futureType === 'Other' ? futureCustomType.trim() : futureType;
 
       // Determine time values
       let reqStartTime: string | undefined = undefined;
@@ -318,7 +394,7 @@ export default function EmployeeDashboard() {
                   userId: user._id,
                   startDate: futureStartDate,
                   endDate: futureEndDate,
-                  requestType: futureType,
+                  requestType: actualRequestType,
                   reason: futureReason,
                   startTime: reqStartTime,
                   endTime: reqEndTime
@@ -339,7 +415,10 @@ export default function EmployeeDashboard() {
               setFutureReason('');
               setFutureStartTime('');
               setFutureEndTime('');
+              setFutureCustomType('');
               setCalendarSelectionStart(null);
+              // Refresh data to show updated request status
+              fetchAttendance(user._id, monthYear);
           } else {
               alert(json.error || 'Failed to send request');
           }
@@ -357,7 +436,7 @@ export default function EmployeeDashboard() {
 
   if (loading || !user) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white">Loading...</div>;
 
-  const statusOptions = [
+  const statusOptions = [  
     // Keep original leave and weekoff
     'On leave',
     
@@ -380,6 +459,22 @@ export default function EmployeeDashboard() {
     'Thumb machine - not working'
   ];
 
+  // Week off options for Holiday/Week Off days
+  const weekOffStatusOptions = [
+    'Weekoff - special allowance',
+    'Present - weekoff',
+    'Half Day - weekoff',
+    'WFH - weekoff'
+  ];
+
+  // Get the appropriate options based on selected date status
+  const getCorrectionStatusOptions = () => {
+    if (selectedDateStatus === 'Holiday') {
+      return weekOffStatusOptions;
+    }
+    return statusOptions;
+  };
+
   // Limited options for future requests
   const futureStatusOptions = [
     'On leave',
@@ -387,7 +482,8 @@ export default function EmployeeDashboard() {
     'Half Day - weekoff',
     'WFH - weekdays',
     'WFH - weekoff',
-    'Weekoff - special allowance'
+    'Weekoff - special allowance',
+    'Other'
   ];
 
   return (
@@ -457,6 +553,7 @@ export default function EmployeeDashboard() {
               selectionStart={calendarSelectionStart}
               onSelectionStartChange={setCalendarSelectionStart}
               onApplyFutureRequest={() => setShowFutureModal(true)}
+              approvedRequests={employeeRequests}
            />
        </main>
 
@@ -480,7 +577,7 @@ export default function EmployeeDashboard() {
                              onChange={(e) => setRequestStatus(e.target.value)}
                              className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-emerald-500 text-sm sm:text-base"
                            >
-                              {statusOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                              {getCorrectionStatusOptions().map(s => <option key={s} value={s}>{s}</option>)}
                            </select>
                        </div>
 
@@ -543,6 +640,7 @@ export default function EmployeeDashboard() {
                          setFutureReason('');
                          setFutureStartTime('');
                          setFutureEndTime('');
+                         setFutureCustomType('');
                          setCalendarSelectionStart(null);
                        }} className="text-slate-500 hover:text-white"><X className="w-5 h-5"/></button>
                    </div>
@@ -594,12 +692,29 @@ export default function EmployeeDashboard() {
                                      setFutureStartTime('');
                                      setFutureEndTime('');
                                  }
+                                 if (val !== 'Other') {
+                                     setFutureCustomType('');
+                                 }
                              }}
                              className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-indigo-500 text-sm sm:text-base"
                            >
                               {futureStatusOptions.map(s => <option key={s} value={s}>{s}</option>)}
                            </select>
                        </div>
+
+                       {futureType === 'Other' && (
+                           <div className="space-y-2">
+                               <label className="text-sm font-medium text-slate-300">Specify Request Type *</label>
+                               <input 
+                                 type="text"
+                                 value={futureCustomType}
+                                 onChange={(e) => setFutureCustomType(e.target.value)}
+                                 placeholder="Enter your request type..."
+                                 className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-indigo-500 text-sm sm:text-base"
+                                 required
+                               />
+                           </div>
+                       )}
 
                        {TIMED_CATEGORIES.includes(futureType) && (
                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

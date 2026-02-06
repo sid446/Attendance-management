@@ -458,6 +458,16 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                 const dateObj = new Date(selectedYear, selectedMonth - 1, day);
                 const isLate = rec ? isLateArrival(dateObj, rec.inTime) : false;
 
+                // Check if request is a custom/other type (not standard)
+                const STANDARD_REQUEST_TYPES = [
+                  'On leave', 'Present - in office', 'Present - client place', 'Present - outstation',
+                  'Present - weekoff', 'Half Day - weekdays', 'Half Day - weekoff', 'WFH - weekdays',
+                  'WFH - weekoff', 'Weekoff - special allowance', 'Thumb machine - not working',
+                  'Leave', 'Holiday', 'Absent', 'Present'
+                ];
+                const isCustomRequestType = approvedReq && approvedReq.requestedStatus && 
+                  !STANDARD_REQUEST_TYPES.includes(approvedReq.requestedStatus);
+
                 // Selection highlighting logic
                 const currentDateStr = `${selectedYear}-${String(selectedMonth).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
                 const isFutureDate = dateObj >= new Date();
@@ -480,6 +490,18 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                 } else if (isInRange && isFutureDate) {
                   borderClass = 'border-blue-300/50';
                   bgClass = 'bg-blue-500/5';
+                } else if (isCustomRequestType) {
+                  // Custom/Other request type - use teal color for the whole cell
+                  if (approvedReq.status === 'Approved') {
+                    borderClass = 'border-teal-500/50';
+                    bgClass = 'bg-teal-500/15';
+                  } else if (approvedReq.status === 'Pending') {
+                    borderClass = 'border-teal-400/40';
+                    bgClass = 'bg-teal-500/10';
+                  } else {
+                    borderClass = 'border-teal-500/30';
+                    bgClass = 'bg-teal-500/5';
+                  }
                 } else {
                   // Original status-based styling
                   if (status === 'Present') {
@@ -508,9 +530,9 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                         badgeClass = 'border-rose-500/60 bg-rose-500/15 text-rose-100';
                       }
                   } else if (status === 'Holiday' || status === 'Week Off') {
-                      borderClass = 'border-amber-500/50';
-                      bgClass = 'bg-amber-500/5';
-                      badgeClass = 'border-amber-500/60 bg-amber-500/15 text-amber-100';
+                      borderClass = 'border-cyan-500/50';
+                      bgClass = 'bg-cyan-500/5';
+                      badgeClass = 'border-cyan-500/60 bg-cyan-500/15 text-cyan-100';
                       Icon = Briefcase;
                   } else if (status === 'HalfDay' || status === 'Half Day (HD)') {
                       borderClass = 'border-orange-500/50';
@@ -556,30 +578,57 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                         </span>
                       </div>
                       <div className="flex items-center gap-1">
-                        {/* Approved/Edited indicator for admin view */}
+                        {/* Request status indicator - shows Pending, Approved, or Rejected */}
                         {approvedReq && (
                           <span 
-                            className="inline-flex items-center px-1 py-0.5 rounded bg-purple-500/20 text-purple-400 text-[9px] font-bold border border-purple-500/30 cursor-pointer hover:bg-purple-500/30 active:bg-purple-500/40"
-                            title={`Edited by ${approvedReq.approvedBy || 'Unknown'}${approvedReq.approvedByEmail ? ` (${approvedReq.approvedByEmail})` : ''} on ${approvedReq.approvedAt ? new Date(approvedReq.approvedAt).toLocaleDateString() : 'N/A'}`}
+                            className={`inline-flex items-center px-1 py-0.5 rounded text-[9px] font-bold cursor-pointer ${
+                              isCustomRequestType
+                                ? approvedReq.status === 'Pending' 
+                                  ? 'bg-teal-500/20 text-teal-400 border border-teal-500/30 hover:bg-teal-500/30 active:bg-teal-500/40'
+                                  : approvedReq.status === 'Rejected'
+                                    ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:bg-rose-500/30 active:bg-rose-500/40'
+                                    : 'bg-teal-500/20 text-teal-400 border border-teal-500/30 hover:bg-teal-500/30 active:bg-teal-500/40'
+                                : approvedReq.status === 'Pending' 
+                                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 active:bg-amber-500/40'
+                                  : approvedReq.status === 'Rejected'
+                                    ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:bg-rose-500/30 active:bg-rose-500/40'
+                                    : 'bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30 active:bg-purple-500/40'
+                            }`}
+                            title={`Request: ${approvedReq.status}${isCustomRequestType ? ` (${approvedReq.requestedStatus})` : ''}${approvedReq.status === 'Approved' ? ` by ${approvedReq.approvedBy || 'Unknown'}` : ''}${approvedReq.approvedByEmail ? ` (${approvedReq.approvedByEmail})` : ''}${approvedReq.approvedAt ? ` on ${new Date(approvedReq.approvedAt).toLocaleDateString()}` : ''}`}
                             onClick={(e) => {
                               e.stopPropagation();
-                              const approver = approvedReq.approvedBy || 'Unknown';
-                              const email = approvedReq.approvedByEmail || 'No email';
-                              const date = approvedReq.approvedAt 
-                                ? new Date(approvedReq.approvedAt).toLocaleDateString('en-US', {
-                                    year: 'numeric',
-                                    month: 'short',
-                                    day: 'numeric',
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                  })
-                                : 'N/A';
-                              const status = approvedReq.requestedStatus || 'Unknown';
-                              alert(`Approved/Edited Details:\n\nStatus Changed To: ${status}\nApproved By: ${approver}\nEmail: ${email}\nDate: ${date}`);
+                              const requestStatus = approvedReq.status || 'Unknown';
+                              const requestedStatus = approvedReq.requestedStatus || 'Unknown';
+                              let message = `Request Details:\n\nStatus: ${requestStatus}\nRequested: ${requestedStatus}`;
+                              
+                              if (approvedReq.status === 'Approved') {
+                                const approver = approvedReq.approvedBy || 'Unknown';
+                                const email = approvedReq.approvedByEmail || 'No email';
+                                const date = approvedReq.approvedAt 
+                                  ? new Date(approvedReq.approvedAt).toLocaleDateString('en-US', {
+                                      year: 'numeric',
+                                      month: 'short',
+                                      day: 'numeric',
+                                      hour: '2-digit',
+                                      minute: '2-digit'
+                                    })
+                                  : 'N/A';
+                                message += `\nApproved By: ${approver}\nEmail: ${email}\nDate: ${date}`;
+                              } else if (approvedReq.status === 'Pending') {
+                                message += `\n\nAwaiting approval from partner/HR.`;
+                              } else if (approvedReq.status === 'Rejected') {
+                                message += `\n\nThis request was rejected.`;
+                              }
+                              alert(message);
                             }}
                           >
                             <FileCheck className="w-2.5 h-2.5 sm:mr-0.5" />
-                            <span className="hidden sm:inline">EDITED</span>
+                            <span className="hidden sm:inline">
+                              {isCustomRequestType 
+                                ? approvedReq.requestedStatus.toUpperCase().slice(0, 8)
+                                : approvedReq.status === 'Pending' ? 'PENDING' : approvedReq.status === 'Rejected' ? 'REJECTED' : 'APPROVED'
+                              }
+                            </span>
                           </span>
                         )}
                         {isLate && (
@@ -655,7 +704,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
             <span className="text-slate-300">Unpaid Leave</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded border border-indigo-500/60 bg-indigo-500/15"></div>
+            <div className="w-4 h-4 rounded border border-cyan-500/60 bg-cyan-500/15"></div>
             <span className="text-slate-300">Holiday</span>
           </div>
           <div className="flex items-center gap-2">
@@ -667,12 +716,32 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
             <span className="text-slate-300">No Record</span>
           </div>
           {approvedRequests.length > 0 && (
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded border border-purple-500/60 bg-purple-500/15 flex items-center justify-center">
-                <FileCheck className="w-2.5 h-2.5 text-purple-400" />
+            <>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded border border-amber-500/60 bg-amber-500/15 flex items-center justify-center">
+                  <FileCheck className="w-2.5 h-2.5 text-amber-400" />
+                </div>
+                <span className="text-slate-300">Pending Request</span>
               </div>
-              <span className="text-slate-300">Edited/Approved</span>
-            </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded border border-purple-500/60 bg-purple-500/15 flex items-center justify-center">
+                  <FileCheck className="w-2.5 h-2.5 text-purple-400" />
+                </div>
+                <span className="text-slate-300">Approved</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded border border-rose-500/60 bg-rose-500/15 flex items-center justify-center">
+                  <FileCheck className="w-2.5 h-2.5 text-rose-400" />
+                </div>
+                <span className="text-slate-300">Rejected</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded border border-teal-500/60 bg-teal-500/15 flex items-center justify-center">
+                  <FileCheck className="w-2.5 h-2.5 text-teal-400" />
+                </div>
+                <span className="text-slate-300">Custom/Other</span>
+              </div>
+            </>
           )}
         </div>
       </div>

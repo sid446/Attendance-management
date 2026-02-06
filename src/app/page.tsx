@@ -418,28 +418,28 @@ export default function AttendanceUpload() {
       const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true, defval: '' });//converts the worksheet into a 2D array (array of arrays) where each inner array represents a row in the sheet. header: 1 indicates that the first row should be treated as data, raw: true ensures raw cell values are returned, defval: '' fills empty cells with an empty string instead of undefined
 
 
-      // Find header row (contains 'EMP Code', 'Emp Name', etc.)
+      // Find header row (contains 'User ID', 'Full Name', etc.)
       const headerRowIndex = jsonData.findIndex(row => 
-        row.some(cell => cell === 'EMP Code' || cell === 'Emp Name')
-      );//seraches the excel for the header row index value as it is saved like this [['EMP Code', 'Emp Name', 'In Time', 'Out Time', 'Date'],[...],[...]]
+        row.some(cell => cell === 'User ID' || cell === 'Full Name')
+      );//searches the excel for the header row index value as it is saved like this [['User ID', 'Full Name', 'Date', 'Out', 'In'],[...],[...]]
 
 
       if (headerRowIndex === -1) {
-        throw new Error('Could not find header row in Excel file. Expected columns: EMP Code, Emp Name, In Time, Out Time, Date');
+        throw new Error('Could not find header row in Excel file. Expected columns: User ID, Full Name, Date, Out, In');
       }
 
       const headers: any[] = jsonData[headerRowIndex];//extracts the header row based on the found index
       const dataRows = jsonData.slice(headerRowIndex + 1);//select the data after the header row
 
       // Find column indices
-      const empCodeIndex = headers.findIndex(h => h === 'EMP Code'); //finds the index of EMP Code example in this {'EMP Code', 'Emp Name', 'In Time', 'Out Time', 'Date'} we get 0
-      const empNameIndex = headers.findIndex(h => h === 'Emp Name');//finds the index of Emp Name example in this {'EMP Code', 'Emp Name', 'In Time', 'Out Time', 'Date'} we get 1
-      const inTimeIndex = headers.findIndex(h => h === 'In Time');//we get 2
-      const outTimeIndex = headers.findIndex(h => h === 'Out Time');//we get 3
-      const dateIndex = headers.findIndex(h => h === 'Date');//we get 4
+      const empCodeIndex = headers.findIndex(h => h === 'User ID'); //finds the index of User ID example in this {'User ID', 'Full Name', 'Date', 'Out', 'In'} we get 0
+      const empNameIndex = headers.findIndex(h => h === 'Full Name');//finds the index of Full Name example in this {'User ID', 'Full Name', 'Date', 'Out', 'In'} we get 1
+      const dateIndex = headers.findIndex(h => h === 'Date');//we get 2
+      const outTimeIndex = headers.findIndex(h => h === 'Out');//we get 3
+      const inTimeIndex = headers.findIndex(h => h === 'In');//we get 4
 
       if (empCodeIndex === -1 || empNameIndex === -1 || inTimeIndex === -1 || outTimeIndex === -1 || dateIndex === -1) {
-        throw new Error('Missing required columns. Expected: EMP Code, Emp Name, In Time, Out Time, Date');
+        throw new Error('Missing required columns. Expected: User ID, Full Name, Date, Out, In');
       }
 
       const processed: AttendanceRecord[] = [];//created a array of type AttendanceRecord

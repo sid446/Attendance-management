@@ -6,8 +6,8 @@ This system allows you to define and manage different attendance machine formats
 
 ### BioMax Attendance Machine (machine1)
 
-- **Headers**: EMP Code, Emp Name, In Time, Out Time, Date
-- **Description**: BioMax biometric machine with EMP Code, Emp Name, In Time, Out Time, Date columns. In Time and Out Time may contain date-time strings like "01-12-2025 10:56:00". The system will automatically extract the time portion. Date column should be in DD-MM-YYYY format.
+- **Headers**: User ID, Full Name, Date, Out, In
+- **Description**: BioMax biometric machine with User ID, Full Name, Date, Out, In columns. The system will parse date and time values automatically.
 
 ### TimeClock Pro System (machine2)
 

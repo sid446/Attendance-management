@@ -16,8 +16,8 @@ async function seedMachineFormats() {
       {
         machineId: 'machine1',
         name: 'BioMax Attendance Machine',
-        description: 'BioMax biometric machine with EMP Code, Emp Name, In Time, Out Time, Date columns. In Time and Out Time may contain date-time strings like "01-12-2025 10:56:00". Edited times are set automatically during upload and can be modified later through employee correction requests.',
-        headers: ['EMP Code', 'Emp Name', 'In Time', 'Out Time', 'Date']
+        description: 'BioMax biometric machine with User ID, Full Name, Date, Out, In columns. Edited times are set automatically during upload and can be modified later through employee correction requests.',
+        headers: ['User ID', 'Full Name', 'Date', 'Out', 'In']
       },
       {
         machineId: 'machine2',

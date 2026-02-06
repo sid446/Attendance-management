@@ -152,6 +152,27 @@ export async function POST(request: NextRequest) {
           let finalHalfDay = false;
           let remarksStr = '';
 
+          // Check if date is a Sunday or Holiday when there's no working hours
+          if (totalHour === 0 && !approvedRequest) {
+            const recordDate = new Date(isoDate);
+            const dayOfWeek = recordDate.getDay(); // 0 = Sunday
+            
+            // Check if it's a Sunday (Weekly Off)
+            if (dayOfWeek === 0) {
+              typeOfPresence = 'Holiday';
+              finalValue = 0;
+              remarksStr = 'Weekly Off (Sunday)';
+            } else {
+              // Check if it's a Holiday
+              const holiday = await Holiday.findOne({ date: isoDate, isActive: true });
+              if (holiday) {
+                typeOfPresence = 'Holiday';
+                finalValue = 0;
+                remarksStr = holiday.name;
+              }
+            }
+          }
+
           // Override if Approved Request Exists
           if (approvedRequest) {
              // Calculate Request Duration
@@ -215,7 +236,8 @@ export async function POST(request: NextRequest) {
           if (isArticleEmployee) {
             // Article employees are treated as full-time
             // Even with 00:00 times, they should be marked as present (not absent)
-            if (finalTotalHour === 0) {
+            // But preserve Holiday status for Sundays/holidays
+            if (finalTotalHour === 0 && typeOfPresence !== 'Holiday') {
               finalValue = 0; // Treat as present
               typeOfPresence = 'ThumbMachine';
             }
@@ -228,9 +250,12 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          // Special case: if in time and out time is 00:00, halfDay must be false and typeOfPresence must be ThumbMachine
+          // Special case: if in time and out time is 00:00, halfDay must be false
+          // Preserve 'Holiday' type for Sundays/holidays, otherwise set to 'ThumbMachine'
           if (finalCheckin === '00:00' && finalCheckout === '00:00') {
-            typeOfPresence = 'ThumbMachine';
+            if (typeOfPresence !== 'Holiday') {
+              typeOfPresence = 'ThumbMachine';
+            }
             finalHalfDay = false;
           }
 
