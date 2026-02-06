@@ -144,12 +144,19 @@ export async function POST(request: NextRequest) {
                 }
 
                 if (startTime && endTime) {
-                    rec.checkin = startTime;
-                    rec.checkout = endTime;
+                    // Use editedCheckin/editedCheckout for corrections
+                    rec.editedCheckin = startTime;
+                    rec.editedCheckout = endTime;
+                    // Also set regular checkin/checkout if not set
+                    if (!rec.checkin) rec.checkin = startTime;
+                    if (!rec.checkout) rec.checkout = endTime;
                     rec.totalHour = calculateDuration(startTime, endTime);
                 }
 
                 attendance.records.set(date, rec);
+                
+                // Mark records as modified so Mongoose saves changes to existing Map entries
+                attendance.markModified('records');
                 
                 const user = await User.findById(userId);
                 attendance.summary = calculateSummary(attendance.records, user);

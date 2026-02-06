@@ -89,22 +89,37 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      // Get existing record for the date or create new
-      const existingRecord = attendanceRecord.records.get(attendanceRequest.date) || {};
+      // Get existing record for the date or create new (matching bulk-action pattern)
+      let rec = attendanceRecord.records.get(attendanceRequest.date);
+      if (!rec) {
+        rec = {
+          checkin: '',
+          checkout: '',
+          totalHour: 0,
+          excessHour: 0,
+          typeOfPresence: 'Absent',
+          halfDay: false,
+          value: 0
+        } as any;
+      }
 
       // Update the attendance record with the requested status
-      const updateFields: any = {
-        ...existingRecord,
-        typeOfPresence: attendanceRequest.requestedStatus,
-        updatedAt: new Date()
-      };
+      rec.typeOfPresence = attendanceRequest.requestedStatus;
 
-      // Update times if provided
+      // Update times if provided - use editedCheckin/editedCheckout for corrections
       if (attendanceRequest.startTime) {
-        updateFields.checkin = attendanceRequest.startTime;
+        rec.editedCheckin = attendanceRequest.startTime;
+        // Also set regular checkin if not already set
+        if (!rec.checkin) {
+          rec.checkin = attendanceRequest.startTime;
+        }
       }
       if (attendanceRequest.endTime) {
-        updateFields.checkout = attendanceRequest.endTime;
+        rec.editedCheckout = attendanceRequest.endTime;
+        // Also set regular checkout if not already set
+        if (!rec.checkout) {
+          rec.checkout = attendanceRequest.endTime;
+        }
       }
 
       // Calculate total hours if both times are provided
@@ -113,7 +128,7 @@ export async function POST(request: NextRequest) {
         const end = new Date(`2000-01-01T${attendanceRequest.endTime}`);
         const diffMs = end.getTime() - start.getTime();
         const diffHours = diffMs / (1000 * 60 * 60);
-        updateFields.totalHour = Math.max(0, diffHours);
+        rec.totalHour = Math.max(0, diffHours);
       }
 
       // Set value and halfDay based on approver and request type
@@ -125,19 +140,23 @@ export async function POST(request: NextRequest) {
         // For leave requests, determine paid/unpaid based on available balance
         const { calculateLeaveUsage } = await import('@/lib/leaveManagement');
         const leaveUsage = await calculateLeaveUsage(attendanceRequest.userId, attendanceRequest.date, attendanceRequest.requestedStatus);
-        updateFields.value = leaveUsage.value; // 1 for paid, 0 for unpaid
-        updateFields.halfDay = false; // Leave is either full day paid or unpaid
-      } else if (approvedBy === 'HR' && value) {
-        updateFields.value = parseFloat(value);
-        updateFields.halfDay = parseFloat(value) > 0 && parseFloat(value) < 1;
-      } else if (approvedBy !== 'HR') {
-        // For partner approval, default to 1 for non-leave requests
-        updateFields.value = 1;
-        updateFields.halfDay = false;
+        rec.value = leaveUsage.value; // 1 for paid, 0 for unpaid
+        rec.halfDay = false; // Leave is either full day paid or unpaid
+      } else if (value !== undefined && value !== null && value !== '') {
+        // Use provided value (from HR or partner)
+        rec.value = parseFloat(value);
+        rec.halfDay = parseFloat(value) > 0 && parseFloat(value) < 1;
+      } else {
+        // Default to 1 for non-leave requests when no value specified
+        rec.value = 1;
+        rec.halfDay = false;
       }
 
       // Update the records map
-      attendanceRecord.records.set(attendanceRequest.date, updateFields);
+      attendanceRecord.records.set(attendanceRequest.date, rec);
+      
+      // Mark records as modified so Mongoose saves changes to existing Map entries
+      attendanceRecord.markModified('records');
       
       // Recalculate summary
       const user = await User.findById(attendanceRequest.userId);

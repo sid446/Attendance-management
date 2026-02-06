@@ -246,7 +246,8 @@ const groupRequestsIntoRanges = (requests: AttendanceRequest[]): {
   const groupedByCriteria = new Map<string, AttendanceRequest[]>();
 
   requests.forEach(request => {
-    const key = `${request.userId._id}-${request.requestedStatus}-${request.reason || ''}-${request.partnerName}`;
+    // Include request.status (Pending/Approved/Rejected) in the key to avoid mixing them
+    const key = `${request.userId._id}-${request.requestedStatus}-${request.status}-${request.reason || ''}-${request.partnerName}`;
     if (!groupedByCriteria.has(key)) {
       groupedByCriteria.set(key, []);
     }

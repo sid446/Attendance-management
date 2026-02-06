@@ -192,10 +192,13 @@ export async function GET(request: NextRequest) {
       }
 
 
-        // Update times if provided
+        // Update times if provided - use editedCheckin/editedCheckout for corrections
         if (startTime && endTime) {
-                rec.checkin = startTime;
-                rec.checkout = endTime;
+                rec.editedCheckin = startTime;
+                rec.editedCheckout = endTime;
+                // Also set regular checkin/checkout if not set
+                if (!rec.checkin) rec.checkin = startTime;
+                if (!rec.checkout) rec.checkout = endTime;
                 rec.totalHour = calculateDuration(startTime, endTime);
                 // Assuming 9 hours standard for excess calculation logic roughly
                 rec.excessHour = rec.totalHour > 9 ? parseFloat((rec.totalHour - 9).toFixed(2)) : 0;
@@ -335,10 +338,13 @@ export async function POST(request: NextRequest) {
         rec.halfDay = true;
       }
 
-      // Update times if provided
+      // Update times if provided - use editedCheckin/editedCheckout for corrections
       if (startTime && endTime) {
-        rec.checkin = startTime;
-        rec.checkout = endTime;
+        rec.editedCheckin = startTime;
+        rec.editedCheckout = endTime;
+        // Also set regular checkin/checkout if not set
+        if (!rec.checkin) rec.checkin = startTime;
+        if (!rec.checkout) rec.checkout = endTime;
         rec.totalHour = calculateDuration(startTime, endTime);
         // Assuming 9 hours standard for excess calculation logic roughly
         rec.excessHour = rec.totalHour > 9 ? parseFloat((rec.totalHour - 9).toFixed(2)) : 0;
