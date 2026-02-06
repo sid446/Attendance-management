@@ -90,18 +90,16 @@ export async function POST(request: NextRequest) {
       }
 
       // Get existing record for the date or create new (matching bulk-action pattern)
-      let rec = attendanceRecord.records.get(attendanceRequest.date);
-      if (!rec) {
-        rec = {
-          checkin: '',
-          checkout: '',
-          totalHour: 0,
-          excessHour: 0,
-          typeOfPresence: 'Absent',
-          halfDay: false,
-          value: 0
-        } as any;
-      }
+      const existingRec = attendanceRecord.records.get(attendanceRequest.date);
+      const rec: any = existingRec || {
+        checkin: '',
+        checkout: '',
+        totalHour: 0,
+        excessHour: 0,
+        typeOfPresence: 'Absent',
+        halfDay: false,
+        value: 0
+      };
 
       // Update the attendance record with the requested status
       rec.typeOfPresence = attendanceRequest.requestedStatus;
