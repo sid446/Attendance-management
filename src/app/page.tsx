@@ -324,61 +324,135 @@ export default function AttendanceUpload() {
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true, defval: '' });
 
-      // Find header row (contains 'ID', 'Name', etc.)
-      const headerRowIndex = jsonData.findIndex(row => 
-        row.some(cell => cell === 'ID' || cell === 'Name')
-      );
-
-      if (headerRowIndex === -1) {
-        throw new Error('Could not find header row in Excel file');
-      }
-
-      const headers: any[] = jsonData[headerRowIndex];
-      const dataRows = jsonData.slice(headerRowIndex + 1);
-
-      // Find column indices
-      const idIndex = headers.findIndex(h => h === 'ID');
-      const nameIndex = headers.findIndex(h => h === 'Name');
-      const dateIndex = headers.findIndex(h => h === 'Date');
-      const inIndex = headers.findIndex(h => h === 'In');
-      const outIndex = headers.findIndex(h => h === 'Out');
-
-      // Support sheets where only the first row for a user has ID/Name
+      /**
+       * Machine 2 Complex Format:
+       * Row 1: "Date wise Daily Attendance Report (Detailed)"
+       * Row 2: "For Period : 30/12/2025 To 30/01/2026"
+       * Row 3: "Company Name : Demo Company"
+       * Then repeating pattern for each date:
+       *   - Column A: "Date :", Column B: date value (e.g., "30-12-2025")
+       *   - NEXT ROW: Header row with "Emp Name", "In Time", "Out Time"
+       *   - Following rows: Attendance data until next "Date :" marker
+       * Time format is: "01-01-1900 10:00:00" (date-time combined, extract time only)
+       */
+      
       const processed: AttendanceRecord[] = [];
-      let currentId: string | number | null = null;
-      let currentName: string | null = null;
+      let currentDate: string | null = null;
+      let headerIndices: { empName: number; inTime: number; outTime: number } | null = null;
+      let expectHeaderRow = false;
 
-      for (const row of dataRows) {
-        const rawId = row[idIndex];
-        const rawName = row[nameIndex];
-
-        if (rawId !== undefined && rawId !== null && rawId !== '') {
-          currentId = rawId;
+      // Helper to parse date from "Date :" row - date is in second column (index 1)
+      const parseDateFromRow = (row: any[]): string | null => {
+        const dateValue = row[1];
+        if (!dateValue) return null;
+        
+        const dateStr = String(dateValue).trim();
+        
+        // Handle format like "30-12-2025" or "30/12/2025"
+        const match = dateStr.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+        if (match) {
+          const day = match[1].padStart(2, '0');
+          const month = match[2].padStart(2, '0');
+          const year = match[3];
+          return `${day}-${month}-${year}`;
         }
-        if (rawName !== undefined && rawName !== null && rawName !== '') {
-          currentName = String(rawName);
+        
+        // Handle Excel date number
+        if (typeof dateValue === 'number') {
+          return formatExcelDate(dateValue);
         }
+        
+        return null;
+      };
 
-        // Skip rows that don't have a carried-over ID/name or any date/time info
-        const hasDateOrTime = row[dateIndex] || row[inIndex] || row[outIndex];
-        if (!currentId || !currentName || !hasDateOrTime) {
+      // Helper to check if row is a "Date :" marker row (Date: in column A)
+      const isDateMarkerRow = (row: any[]): boolean => {
+        const firstCell = String(row[0] || '').trim().toLowerCase();
+        return firstCell === 'date :' || firstCell === 'date:' || firstCell === 'date';
+      };
+
+      // Helper to find column indices from header row
+      const findHeaderIndices = (row: any[]): { empName: number; inTime: number; outTime: number } | null => {
+        const lowerRow = row.map(cell => String(cell || '').trim().toLowerCase());
+        
+        let empNameIdx = lowerRow.findIndex(h => 
+          h === 'emp name' || h === 'employee name' || h === 'name' || h === 'emp. name'
+        );
+        let inTimeIdx = lowerRow.findIndex(h => 
+          h === 'in time' || h === 'intime' || h === 'in' || h === 'check in' || h === 'checkin'
+        );
+        let outTimeIdx = lowerRow.findIndex(h => 
+          h === 'out time' || h === 'outtime' || h === 'out' || h === 'check out' || h === 'checkout'
+        );
+        
+        if (empNameIdx === -1 || inTimeIdx === -1 || outTimeIdx === -1) {
+          return null;
+        }
+        
+        return { empName: empNameIdx, inTime: inTimeIdx, outTime: outTimeIdx };
+      };
+
+      // Process rows
+      for (let i = 0; i < jsonData.length; i++) {
+        const row = jsonData[i];
+        
+        // Skip empty rows
+        if (!row || row.every(cell => !cell || String(cell).trim() === '')) {
           continue;
         }
 
-        const inTime = formatExcelTime(row[inIndex]);
-        const outTime = formatExcelTime(row[outIndex]);
-        const date = formatExcelDate(row[dateIndex]);
+        // Check if this is a "Date :" marker row
+        if (isDateMarkerRow(row)) {
+          currentDate = parseDateFromRow(row);
+          headerIndices = null; // Reset header indices
+          expectHeaderRow = true; // Next non-empty row should be the header
+          continue;
+        }
 
-        const isAbsent = inTime === '00:00:00' && outTime === '00:00:00';
+        // If we expect a header row (immediately after Date: row)
+        if (expectHeaderRow && currentDate) {
+          headerIndices = findHeaderIndices(row);
+          expectHeaderRow = false;
+          if (!headerIndices) {
+            console.warn(`Could not find header columns in row ${i + 1} for date ${currentDate}`);
+          }
+          continue;
+        }
 
-        processed.push({
-          id: currentId,
-          name: currentName,
-          date,
-          inTime,
-          outTime,
-          status: isAbsent ? 'Absent' : 'Present',
-        });
+        // If we have both currentDate and headerIndices, this is a data row
+        if (currentDate && headerIndices) {
+          const empName = String(row[headerIndices.empName] || '').trim();
+          const inTimeRaw = row[headerIndices.inTime];
+          const outTimeRaw = row[headerIndices.outTime];
+          
+          // Skip rows without employee name (might be subtotals or empty rows)
+          if (!empName || empName.toLowerCase().includes('total') || empName.toLowerCase().includes('grand')) {
+            continue;
+          }
+
+          // Parse time using parseMachine1DateTime since format is "01-01-1900 10:00:00"
+          // This extracts just the time portion from the date-time string
+          const inTimeParsed = parseMachine1DateTime(inTimeRaw);
+          const outTimeParsed = parseMachine1DateTime(outTimeRaw);
+          
+          const inTime = inTimeParsed.time;
+          const outTime = outTimeParsed.time;
+          
+          const isAbsent = inTime === '00:00:00' && outTime === '00:00:00';
+
+          processed.push({
+            id: empName, // Using employee name as ID since format doesn't have ID column
+            name: empName,
+            date: currentDate,
+            inTime,
+            outTime,
+            status: isAbsent ? 'Absent' : 'Present',
+          });
+        }
+      }
+
+      if (processed.length === 0) {
+        throw new Error('No attendance records found. Please ensure the file follows the expected format with "Date :" in column A, date in column B, followed by header row and attendance data.');
       }
 
       setAttendanceData(processed);
@@ -831,7 +905,7 @@ export default function AttendanceUpload() {
             totalPresent: Object.values(item.recordDetails).filter((rec: any) => 
               rec.typeOfPresence !== 'Holiday' && ((rec.checkin && rec.checkin !== "00:00") || rec.halfDay)).length,
             totalAbsent: Object.values(item.recordDetails).filter((rec: any) => 
-              rec.totalHour === 0 && rec.typeOfPresence !== 'Leave' && rec.typeOfPresence !== 'Holiday').length,
+              rec.totalHour === 0 && !rec.halfDay && rec.typeOfPresence !== 'Leave' && rec.typeOfPresence !== 'Holiday' && (!rec.checkin || rec.checkin === "00:00")).length,
             totalLeave: item.summary?.totalLeave ?? 0,
           },
           recordDetails: item.recordDetails || {},
@@ -986,7 +1060,9 @@ export default function AttendanceUpload() {
                 onProcessFile={() => {
                   if (machineFormat === 'machine1') {
                     processMachine1File();
-                  } else if (machineFormat === 'machine2') {
+                  } else if (machineFormat === 'machine2' || machineFormat === 'machine3') {
+                    // Machine 2 and Machine 3 share the same parsing logic
+                    // (Date: marker, header row, datetime format for times)
                     processMachine2File();
                   } else {
                     setError('Unknown machine format selected');

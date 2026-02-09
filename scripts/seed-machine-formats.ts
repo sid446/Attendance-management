@@ -22,8 +22,14 @@ async function seedMachineFormats() {
       {
         machineId: 'machine2',
         name: 'TimeClock Pro System',
-        description: 'Standard time clock system with ID, Name, Date, In, Out columns. Uses standard Excel date/time formats. Edited times are set automatically during upload and can be modified later through employee correction requests.',
-        headers: ['ID', 'Name', 'Date', 'In', 'Out', 'Edited In', 'Edited Out']
+        description: 'Complex multi-date format: Report header rows, then repeating "Date :" markers followed by header row (Emp Name, In Time, Out Time) and attendance records for each date. Time format: 01-01-1900 HH:MM:SS',
+        headers: ['Emp Name', 'In Time', 'Out Time']
+      },
+      {
+        machineId: 'machine3',
+        name: 'Asija Attendance System',
+        description: 'Multi-date format with Location row. Similar to Machine 2 but with actual dates in time fields (DD-MM-YYYY HH:MM:SS). Headers: Emp Name, In Time, Out Time.',
+        headers: ['Emp Name', 'In Time', 'Out Time']
       }
     ];
 

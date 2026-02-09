@@ -40,10 +40,13 @@ function calculateSummary(records: Map<string, any>, user?: any) {
             case 'Work From Home (WFH)':
             case 'Weekly Off - Work From Home (WO-WFH)':
             case 'Onsite Presence (OS-P)':
-                if (record.totalHour > 0) totalPresent++;
+                if (record.totalHour > 0 || record.halfDay || (record.checkin && record.checkin !== '00:00')) totalPresent++;
                 else totalAbsent++;
                 break;
-            default: totalAbsent++;
+            default:
+                // Only count as absent if not a half-day and no checkin
+                if (!record.halfDay && (!record.checkin || record.checkin === '00:00')) totalAbsent++;
+                else totalPresent++;
         }
     });
 

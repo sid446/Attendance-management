@@ -370,21 +370,81 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                 Your Excel file should have these columns in the first row. The system will automatically detect the header row and process attendance records.
               </p>
             </div>
-            <div className="max-h-64 overflow-y-auto bg-slate-900/30 p-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                {expectedColumns.map((column, index) => (
-                  <div
-                    key={index}
-                    className="text-xs text-slate-300 bg-slate-800/40 px-3 py-2 rounded border border-slate-700/50"
-                  >
-                    {column}
+            <div className="max-h-80 overflow-y-auto bg-slate-900/30 p-4">
+              {machineFormat === 'machine2' ? (
+                /* Special format preview for Machine 2 complex format */
+                <div className="space-y-3">
+                  <div className="text-xs text-slate-400 mb-2">Excel file structure:</div>
+                  <div className="space-y-1 font-mono text-[11px]">
+                    <div className="text-slate-500 bg-slate-800/30 px-2 py-1 rounded">Row 1: Date wise Daily Attendance Report (Detailed) For Period : ...</div>
+                    <div className="text-slate-500 bg-slate-800/30 px-2 py-1 rounded">Row 2: Company Name : [Company]</div>
+                    <div className="text-slate-300 bg-emerald-900/30 px-2 py-1 rounded border-l-2 border-emerald-500 flex gap-4">
+                      <span className="text-slate-400">Col A:</span> Date :
+                      <span className="text-slate-400">Col B:</span> 30-12-2025
+                    </div>
+                    <div className="text-slate-300 bg-slate-800/50 px-2 py-1 rounded flex gap-4">
+                      <span className="text-slate-400">Col A:</span> Emp Name
+                      <span className="text-slate-400">Col B:</span> In Time
+                      <span className="text-slate-400">Col C:</span> Out Time
+                    </div>
+                    <div className="text-slate-400 bg-slate-800/40 px-2 py-1 rounded">John Doe | 01-01-1900 09:00:00 | 01-01-1900 18:00:00</div>
+                    <div className="text-slate-400 bg-slate-800/40 px-2 py-1 rounded">Jane Smith | 01-01-1900 09:30:00 | 01-01-1900 17:30:00</div>
+                    <div className="text-slate-300 bg-emerald-900/30 px-2 py-1 rounded border-l-2 border-emerald-500 mt-2 flex gap-4">
+                      <span className="text-slate-400">Col A:</span> Date :
+                      <span className="text-slate-400">Col B:</span> 31-12-2025
+                    </div>
+                    <div className="text-slate-400 bg-slate-800/40 px-2 py-1 rounded">... attendance data continues ...</div>
                   </div>
-                ))}
-              </div>
+                  <div className="mt-2 p-2 bg-amber-900/20 border border-amber-700/30 rounded text-[11px] text-amber-300">
+                    <strong>Time Format:</strong> Times appear as &quot;01-01-1900 HH:MM:SS&quot; - only the time portion is extracted.
+                  </div>
+                </div>
+              ) : machineFormat === 'machine3' ? (
+                /* Special format preview for Machine 3 - Asija format */
+                <div className="space-y-3">
+                  <div className="text-xs text-slate-400 mb-2">Excel file structure:</div>
+                  <div className="space-y-1 font-mono text-[11px]">
+                    <div className="text-slate-500 bg-slate-800/30 px-2 py-1 rounded">Row 1: Date wise Daily Attendance Report (Detailed) For Period : ...</div>
+                    <div className="text-slate-500 bg-slate-800/30 px-2 py-1 rounded">Row 2: Company Name : Asija and Associates LLP</div>
+                    <div className="text-slate-500 bg-slate-800/30 px-2 py-1 rounded">Row 3: Location : Delhi</div>
+                    <div className="text-slate-300 bg-emerald-900/30 px-2 py-1 rounded border-l-2 border-emerald-500 flex gap-4">
+                      <span className="text-slate-400">Col A:</span> Date :
+                      <span className="text-slate-400">Col B:</span> 30-12-2025
+                    </div>
+                    <div className="text-slate-300 bg-slate-800/50 px-2 py-1 rounded flex gap-4">
+                      <span className="text-slate-400">Col A:</span> Emp Name
+                      <span className="text-slate-400">Col B:</span> In Time
+                      <span className="text-slate-400">Col C:</span> Out Time
+                    </div>
+                    <div className="text-slate-400 bg-slate-800/40 px-2 py-1 rounded">John Doe | 30-12-2025 08:42:00 | 30-12-2025 18:00:00</div>
+                    <div className="text-slate-400 bg-slate-800/40 px-2 py-1 rounded">Jane Smith | 30-12-2025 09:30:00 | 30-12-2025 17:30:00</div>
+                    <div className="text-slate-300 bg-emerald-900/30 px-2 py-1 rounded border-l-2 border-emerald-500 mt-2 flex gap-4">
+                      <span className="text-slate-400">Col A:</span> Date :
+                      <span className="text-slate-400">Col B:</span> 31-12-2025
+                    </div>
+                    <div className="text-slate-400 bg-slate-800/40 px-2 py-1 rounded">... attendance data continues ...</div>
+                  </div>
+                  <div className="mt-2 p-2 bg-amber-900/20 border border-amber-700/30 rounded text-[11px] text-amber-300">
+                    <strong>Time Format:</strong> Times appear as &quot;DD-MM-YYYY HH:MM:SS&quot; - only the time portion is extracted.
+                  </div>
+                </div>
+              ) : (
+                /* Standard column-based format preview */
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {expectedColumns.map((column, index) => (
+                    <div
+                      key={index}
+                      className="text-xs text-slate-300 bg-slate-800/40 px-3 py-2 rounded border border-slate-700/50"
+                    >
+                      {column}
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="mt-4 p-3 bg-slate-800/20 rounded border border-slate-700/30">
                 <p className="text-xs text-slate-400">
                   <strong>Note:</strong> {currentFormat?.description || 'Please select a machine format to see specific requirements.'}
-                  {currentFormat && ' The system will automatically create user accounts if they don\'t exist.'}
+                  {currentFormat && ' The system will match employees by name.'}
                 </p>
               </div>
             </div>

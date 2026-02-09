@@ -320,6 +320,94 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       return dates.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   };
 
+  // Helper function to get working days calculation breakdown
+  const getWorkingDaysDetails = (item: AttendanceSummaryView) => {
+      const details: { date: string; info: string; subInfo?: string }[] = [];
+      
+      // Calculate each component
+      const presentDays = item.summary.totalPresent || 0;
+      const absentDays = item.summary.totalAbsent || 0;
+      const leaveDays = calculateLeaveConsumed(item);
+      const totalWorkingDays = presentDays + absentDays + leaveDays;
+      
+      // Add summary breakdown at the top
+      details.push({
+          date: 'CALCULATION',
+          info: `Present + Absent + Leave = Total`,
+          subInfo: 'Formula'
+      });
+      
+      details.push({
+          date: 'Present Days',
+          info: `${presentDays} days`,
+          subInfo: 'Days with attendance'
+      });
+      
+      details.push({
+          date: 'Absent Days',
+          info: `${absentDays} days`,
+          subInfo: 'No attendance (not holiday/leave)'
+      });
+      
+      details.push({
+          date: 'Leave Days',
+          info: `${leaveDays} days`,
+          subInfo: 'Full leave days consumed'
+      });
+      
+      details.push({
+          date: 'TOTAL',
+          info: `${totalWorkingDays} Working Days`,
+          subInfo: `${presentDays} + ${absentDays} + ${leaveDays}`
+      });
+      
+      // Add individual day breakdown
+      details.push({
+          date: '---',
+          info: 'Daily Breakdown',
+          subInfo: '---'
+      });
+      
+      const records = item.recordDetails || {};
+      Object.entries(records)
+          .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
+          .forEach(([date, rec]) => {
+              // Skip holidays - they don't count as working days
+              if (rec.typeOfPresence === 'Holiday') {
+                  return;
+              }
+              
+              let status = '';
+              let category = '';
+              
+              if (rec.typeOfPresence === 'Leave' || rec.typeOfPresence === 'On leave') {
+                  if (!rec.halfDay) {
+                      status = 'Leave (Full)';
+                      category = 'Leave';
+                  } else {
+                      status = 'Leave (Half)';
+                      category = 'Leave';
+                  }
+              } else if (rec.totalHour > 0 || (rec.checkin && rec.checkin !== '00:00') || rec.halfDay) {
+                  status = rec.halfDay ? 'Present (Half)' : 'Present';
+                  category = 'Present';
+              } else {
+                  status = 'Absent';
+                  category = 'Absent';
+              }
+              
+              if (status) {
+                  details.push({
+                      date: date,
+                      info: status,
+                      subInfo: category
+                  });
+              }
+          });
+      
+      return details;
+  };
+
   const getDefinedScheduleDetails = (item: AttendanceSummaryView) => {
       const details: { date: string; info: string; subInfo?: string }[] = [];
 
@@ -437,7 +525,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       return details;
   };
 
-  const openDetail = (e: React.MouseEvent, type: 'Late' | 'Absent' | 'Leave' | 'Present' | 'WorkHours' | 'ScheduledHours' | 'HalfDay' | 'DefinedSchedule', item: AttendanceSummaryView) => {
+  const openDetail = (e: React.MouseEvent, type: 'Late' | 'Absent' | 'Leave' | 'Present' | 'WorkHours' | 'ScheduledHours' | 'HalfDay' | 'DefinedSchedule' | 'WorkingDays', item: AttendanceSummaryView) => {
       e.stopPropagation();
       let data: any[] = [];
       if (type === 'Late') data = getLateDetails(item);
@@ -448,6 +536,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       if (type === 'ScheduledHours') data = getScheduledHoursDetails(item);
       if (type === 'HalfDay') data = getHalfDayDetails(item);
       if (type === 'DefinedSchedule') data = getDefinedScheduleDetails(item);
+      if (type === 'WorkingDays') data = getWorkingDaysDetails(item);
 
       setDetailModal({
           isOpen: true,
@@ -2490,7 +2579,14 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                            <span className="hover:underline" title="Click to view details">{item.summary.totalAbsent}</span>
                         ) : '-'}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-400">{item.summary.totalPresent + item.summary.totalAbsent + calculateLeaveConsumed(item)}</td>
+                    <td className="px-4 py-3 text-right font-mono text-slate-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => openDetail(e, 'WorkingDays', item)}>
+                        {(() => {
+                          const totalWorkingDays = item.summary.totalPresent + item.summary.totalAbsent + calculateLeaveConsumed(item);
+                          return totalWorkingDays > 0 ? (
+                            <span className="hover:underline" title="Click to view calculation breakdown">{totalWorkingDays}</span>
+                          ) : '-';
+                        })()}
+                    </td>
                     <td className="px-4 py-3 text-right font-mono text-sky-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => calculateLeaveConsumed(item) > 0 && openDetail(e, 'Leave', item)}>
                         {calculateLeaveConsumed(item) > 0 ? (
                            <span className="hover:underline" title="Click to view details">{calculateLeaveConsumed(item)}</span>
