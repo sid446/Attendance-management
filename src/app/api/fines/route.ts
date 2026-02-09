@@ -37,6 +37,68 @@ function isLateArrival(checkin: string, scheduledIn: string): boolean {
   return checkin > scheduledIn;
 }
 
+// Helper function to get scheduled in time for a user on a specific date
+function getScheduledInTime(user: any, dateStr: string): string {
+  const date = new Date(dateStr);
+  const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase(); // 'monday', 'tuesday', etc.
+
+  // Check new schedules array first
+  if (user.schedules && user.schedules.length > 0) {
+    // Find the most recent schedule entry where effectiveFrom <= date
+    const applicableSchedules = user.schedules
+      .filter((s: any) => new Date(s.effectiveFrom) <= date)
+      .sort((a: any, b: any) => new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime());
+
+    if (applicableSchedules.length > 0) {
+      const schedule = applicableSchedules[0].daily[dayOfWeek];
+      if (schedule && schedule.inTime) {
+        return schedule.inTime;
+      }
+    }
+  }
+
+  // Fallback to legacy schedule fields
+  if (dayOfWeek === 'saturday' && user.scheduleInOutTimeSat && user.scheduleInOutTimeSat.inTime) {
+    return user.scheduleInOutTimeSat.inTime;
+  }
+  if (user.scheduleInOutTime && user.scheduleInOutTime.inTime) {
+    return user.scheduleInOutTime.inTime;
+  }
+
+  // Default fallback
+  return '09:00';
+}
+
+// Helper function to check if a date is a holiday for the user
+function isScheduledHoliday(user: any, dateStr: string): boolean {
+  const date = new Date(dateStr);
+  const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+
+  // Check new schedules array
+  if (user.schedules && user.schedules.length > 0) {
+    const applicableSchedules = user.schedules
+      .filter((s: any) => new Date(s.effectiveFrom) <= date)
+      .sort((a: any, b: any) => new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime());
+
+    if (applicableSchedules.length > 0) {
+      const schedule = applicableSchedules[0].daily[dayOfWeek];
+      if (schedule && schedule.isHoliday) {
+        return true;
+      }
+    }
+  }
+
+  // Fallback to legacy
+  if (dayOfWeek === 'saturday' && user.scheduleInOutTimeSat && user.scheduleInOutTimeSat.isHoliday) {
+    return true;
+  }
+  if (dayOfWeek === 'sunday' && user.scheduleInOutTime && user.scheduleInOutTime.isHoliday) {
+    return true;
+  }
+
+  return false;
+}
+
 // Generate initials from name (e.g., "Naim Khan" -> "NK")
 function getInitials(name: string): string {
   if (!name) return 'XX';
@@ -119,8 +181,8 @@ export async function POST(request: NextRequest) {
         category = 'Article';
       }
 
-      // Get user's schedule (simplified - using default 9:00 AM)
-      const defaultScheduledIn = '09:00';
+      // Get user's schedule (using helper function)
+      // No default scheduled in needed anymore
 
       // Get all dates sorted
       const records = attendance.records instanceof Map 
@@ -155,9 +217,9 @@ export async function POST(request: NextRequest) {
       for (const dateStr of dates) {
         const rec = records[dateStr];
         
-        // Skip holidays and leaves
+        // Skip holidays and leaves, and also scheduled holidays
         const presenceType = rec.typeOfPresence as string;
-        if (presenceType === 'Holiday' || presenceType === 'On leave' || presenceType === 'Leave') {
+        if (presenceType === 'Holiday' || presenceType === 'On leave' || presenceType === 'Leave' || isScheduledHoliday(user, dateStr)) {
           // Don't reset consecutive count for holidays/leaves - they break the work streak
           // But we also don't count them as late
           continue;
@@ -165,8 +227,11 @@ export async function POST(request: NextRequest) {
 
         const effectiveCheckin = rec.editedCheckin || rec.checkin;
         
+        // Get the scheduled in time for this user on this date
+        const scheduledIn = getScheduledInTime(user, dateStr);
+        
         // Check if late
-        if (isLateArrival(effectiveCheckin, defaultScheduledIn)) {
+        if (isLateArrival(effectiveCheckin, scheduledIn)) {
           consecutiveLateDays++;
 
           // Calculate fine based on category
@@ -195,7 +260,7 @@ export async function POST(request: NextRequest) {
             isWarning: rule.isWarning,
             status: 'pending',
             penaltyImposedBy: '',
-            reason: `In Time-${effectiveCheckin}`,
+            reason: `In Time-${effectiveCheckin} (Scheduled: ${scheduledIn})`,
             remark: rule.isWarning 
               ? `Warning ${consecutiveLateDays}` 
               : `Fine for ${consecutiveLateDays} consecutive late day(s)`,
