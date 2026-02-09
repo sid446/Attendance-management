@@ -512,7 +512,9 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
     doc.setFont('helvetica', 'bold');
     doc.text('Reason', margin + 2, row4Y + 6);
     doc.setFont('helvetica', 'normal');
-    doc.text(record.reason || '-', margin + col1Width + 2, row4Y + 6);
+    const reasonText = record.reason || '-';
+    // Truncate reason text to fit within available space (approximately 80 characters for the combined columns)
+    doc.text(reasonText.substring(0, 80), margin + col1Width + 2, row4Y + 6);
 
     // Row 5: Remark (full width)
     const row5Y = tableTop + rowHeight * 4;
@@ -672,7 +674,11 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
             reasonParts.push(`Day ${record.consecutiveDay} Late`);
           }
           if (record.reason) {
-            reasonParts.push(`In Time-${record.reason.replace(/^In Time-/, '')}`);
+            // Extract just the check-in time from the reason
+            const inTimeMatch = record.reason.match(/In Time-([^(\s]+)/);
+            if (inTimeMatch) {
+              reasonParts.push(`In: ${inTimeMatch[1]}`);
+            }
           }
           reasonText = reasonParts.join(' ');
           if (!reasonText && record.remark) {
@@ -681,7 +687,8 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
             reasonText = '-';
           }
         }
-        doc.text(reasonText.substring(0, 40), xPos + 2, rowY + 5.5);
+        // Truncate to fit in 40mm column (approximately 25-30 characters)
+        doc.text(reasonText.substring(0, 25), xPos + 2, rowY + 5.5);
         xPos += col4Width;
         // Amount
         doc.rect(xPos, rowY, col5Width, rowHeight);
