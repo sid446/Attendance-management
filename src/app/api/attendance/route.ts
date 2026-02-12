@@ -152,6 +152,13 @@ export async function POST(request: NextRequest) {
           let finalHalfDay = false;
           let remarksStr = '';
 
+          // Special case: if checkin is 00:00 but checkout is valid, mark as half day
+          if (finalCheckin === '00:00' && finalCheckout !== '00:00' && finalCheckout !== '' && finalTotalHour > 0) {
+            finalHalfDay = true;
+            finalValue = 0.5;
+            remarksStr = 'Marked as Half Day (no check-in time)';
+          }
+
           // Check if date is a Sunday or Holiday when there's no working hours
           if (totalHour === 0 && !approvedRequest) {
             const recordDate = new Date(isoDate);
@@ -248,15 +255,6 @@ export async function POST(request: NextRequest) {
               const isAfter1PM = finalCheckin ? finalCheckin >= '13:00' : false;
               finalHalfDay = isAfter1PM || finalTotalHour < 3.5;
             }
-          }
-
-          // Special case: if in time and out time is 00:00, halfDay must be false
-          // Preserve 'Holiday' type for Sundays/holidays, otherwise set to 'ThumbMachine'
-          if (finalCheckin === '00:00' && finalCheckout === '00:00') {
-            if (typeOfPresence !== 'Holiday') {
-              typeOfPresence = 'ThumbMachine';
-            }
-            finalHalfDay = false;
           }
 
           attendance.records.set(isoDate, {
@@ -668,8 +666,10 @@ function calculateSummary(
     // Determine half-day based on employmentType (only for summary calculation, don't override individual record flags)
     let isHalfDay = record.halfDay || false; // Use existing halfDay flag if already set
     if (!record.halfDay) { // Only recalculate if not already set
-      // Special case: if in time and out time is 00:00, halfDay must be false
-      if ((checkin === '00:00' && checkout === '00:00') ||
+      // Special case: if checkin is 00:00 but checkout is valid, mark as half day
+      if (checkin === '00:00' && checkout !== '00:00' && checkout !== '' && record.totalHour > 0) {
+        isHalfDay = true;
+      } else if ((checkin === '00:00' && checkout === '00:00') ||
           (record.editedCheckin === '' && record.editedCheckout === '')) {
         isHalfDay = false;
       } else {

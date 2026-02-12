@@ -210,7 +210,11 @@ function calculateSummary(records: Map<string, {
 
     // Calculate halfDay based on user type
     let halfDay = false;
-    if (record.checkin) {
+    
+    // Special case: if checkin is 00:00 but checkout is valid, mark as half day
+    if (record.checkin === '00:00' && record.checkout !== '00:00' && record.checkout !== '' && record.totalHour > 0) {
+      halfDay = true;
+    } else if (record.checkin) {
       const checkinTime = record.checkin;
       const checkinMinutes = timeToMinutes(checkinTime);
       const onePMMinutes = timeToMinutes('13:00');

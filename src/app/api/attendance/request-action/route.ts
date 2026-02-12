@@ -33,7 +33,11 @@ function calculateSummary(
 
       // Determine half-day based on user type and check-in time
       let isHalfDay = false;
-      if (record.checkin) {
+      
+      // Special case: if checkin is 00:00 but checkout is valid, mark as half day
+      if (record.checkin === '00:00' && record.checkout !== '00:00' && record.checkout !== '' && record.totalHour > 0) {
+        isHalfDay = true;
+      } else if (record.checkin) {
         const checkinTime = record.checkin;
         const isAfter1PM = checkinTime >= '13:00';
         
