@@ -85,7 +85,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       if (setScheduledTime && user) {
         // Prefer per-day schedule from user.schedules (like EmployeeMonthView)
         let scheduleEntry = Array.isArray(user.schedules)
-          ? user.schedules.filter(s => new Date(s.effectiveFrom) <= new Date(date)).sort((a, b) => new Date(b.effectiveFrom) - new Date(a.effectiveFrom))[0]
+           ? user.schedules.filter(s => new Date(s.effectiveFrom) <= new Date(date)).sort((a, b) => new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime())[0]
           : undefined;
         let dayName = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'][new Date(date).getDay()];
         let daySchedule = scheduleEntry?.daily?.[dayName];
