@@ -136,8 +136,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       }
 
       // Recalculate summary
-      const user = await User.findById(attendance.userId);
-      attendance.summary = calculateSummary(attendance.records, user);
+      const attendanceUser = await User.findById(attendance.userId);
+      attendance.summary = calculateSummary(attendance.records, attendanceUser);
     }
 
     // Directly update summary if provided (for manual adjustments)
