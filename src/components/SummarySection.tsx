@@ -110,6 +110,15 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
   const [rangeEnd, setRangeEnd] = useState<string>('');
   const [rangeModalOpen, setRangeModalOpen] = useState(false);
   const [currentWeekStart, setCurrentWeekStart] = useState<string>('');
+
+  // When switching to week view, set currentWeekStart to first day of selected month
+  useEffect(() => {
+    if (filterType === 'week') {
+      // Always start week from the 1st of the selected month
+      const firstDay = new Date(selectedYear, selectedMonth - 1, 1);
+      setCurrentWeekStart(firstDay.toISOString().split('T')[0]);
+    }
+  }, [filterType, selectedYear, selectedMonth]);
   
   // Advanced Filtering State
   const [teamFilter, setTeamFilter] = useState<string>('all');
@@ -574,7 +583,9 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
 
   const currentMonthYear = filterType === 'month' ? `${selectedYear}-${String(selectedMonth).padStart(2, '0')}` : 
     filterType === 'week' ? (() => {
+      if (!currentWeekStart) return '';
       const end = new Date(currentWeekStart);
+      if (isNaN(end.getTime())) return '';
       end.setDate(end.getDate() + 6);
       return end.toISOString().split('T')[0];
     })() : rangeEnd;
@@ -623,14 +634,27 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
   };
 
   const handlePrevWeek = () => {
+    if (!currentWeekStart) return;
     const current = new Date(currentWeekStart);
+    const firstDay = new Date(selectedYear, selectedMonth - 1, 1);
+    // If already at the first week, do nothing
+    if (current.getTime() === firstDay.getTime()) return;
     current.setDate(current.getDate() - 7);
-    setCurrentWeekStart(current.toISOString().split('T')[0]);
+    // Clamp to first day if we go before
+    if (current < firstDay) {
+      setCurrentWeekStart(firstDay.toISOString().split('T')[0]);
+    } else {
+      setCurrentWeekStart(current.toISOString().split('T')[0]);
+    }
   };
 
   const handleNextWeek = () => {
+    if (!currentWeekStart) return;
     const current = new Date(currentWeekStart);
     current.setDate(current.getDate() + 7);
+    // Prevent going past the last day of the month
+    const lastDay = new Date(selectedYear, selectedMonth, 0);
+    if (current > lastDay) return;
     setCurrentWeekStart(current.toISOString().split('T')[0]);
   };
 
@@ -1229,8 +1253,40 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
             };
           });
         }
-        // Excess/short calculation removed as per requirements
-        const diff = 0;
+        // Calculate excess for week/range by summing daily excessHour for selected days
+        let calcExcessDeficit = 0;
+        if (filterType === 'week' && currentWeekStart) {
+          // Calculate week range, but do not include days before the 1st of the selected month
+          const weekStartDate = new Date(currentWeekStart);
+          const selectedMonth = weekStartDate.getMonth();
+          const selectedYear = weekStartDate.getFullYear();
+          const weekDates = [];
+          for (let i = 0; i < 7; i++) {
+            const d = new Date(weekStartDate);
+            d.setDate(weekStartDate.getDate() + i);
+            // Only include if in the selected month
+            if (d.getMonth() === selectedMonth && d.getFullYear() === selectedYear) {
+              weekDates.push(d.toISOString().split('T')[0]);
+            }
+          }
+          calcExcessDeficit = weekDates.reduce((sum, date) => {
+            const rec = item.recordDetails?.[date];
+            return sum + (rec?.excessHour || 0);
+          }, 0);
+        } else if (filterType === 'range' && rangeStart && rangeEnd) {
+          // Calculate range
+          const start = new Date(rangeStart);
+          const end = new Date(rangeEnd);
+          let d = new Date(start);
+          while (d <= end) {
+            const dateStr = d.toISOString().split('T')[0];
+            calcExcessDeficit += item.recordDetails?.[dateStr]?.excessHour || 0;
+            d.setDate(d.getDate() + 1);
+          }
+        } else {
+          // Default to monthly summary
+          calcExcessDeficit = item.summary.excessHour || 0;
+        }
         // Calculate Late on frontend based on toggle
         const lateDetails = getLateDetails(item);
         const calcLate = lateDetails.length;
@@ -1246,7 +1302,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
             totalLate: calcLate,
           },
           calcScheduled: sched,
-          // calcExcessDeficit removed
+          calcExcessDeficit,
           calcLate: calcLate // Override summary late
         };
       });
@@ -1590,7 +1646,19 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Attendance Summary');
 
-    // Define columns with widths - matching summary page display exactly
+
+    // Add date range at the top (row 1)
+    let dateRangeText = '';
+    if (filterType === 'month') {
+      dateRangeText = `Date Range: ${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
+    } else if (filterType === 'week') {
+      const weekEnd = new Date(currentWeekStart);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      dateRangeText = `Date Range: ${currentWeekStart} to ${weekEnd.toISOString().split('T')[0]}`;
+    } else if (filterType === 'range') {
+      dateRangeText = `Date Range: ${rangeStart} to ${rangeEnd}`;
+    }
+    // Now add the header row (row 1)
     worksheet.columns = [
       { key: 'paidFrom', header: 'Paid From', width: 12 },
       { key: 'employeeName', header: 'Employee Name', width: 25 },
@@ -1610,12 +1678,18 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       { key: 'definedSchedule', header: 'Defined Work Hour', width: 15 },
       { key: 'workHours', header: 'Work Hours', width: 12 },
       { key: 'excess', header: 'Excess', width: 10 }
+
     ];
 
-    // Add data rows - using summary data from the database
+    // Insert date range row above the header (row 1)
+    worksheet.spliceRows(1, 0, [dateRangeText]);
+    worksheet.mergeCells(1, 1, 1, worksheet.columns.length);
+    worksheet.getRow(1).font = { bold: true, size: 13 };
+    worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+
+    // Add data rows - using summary data from the database, start from row 3
     filteredSummaries.forEach((item) => {
       const user = allUsers?.find(u => u._id === item.userId);
-
       worksheet.addRow({
         paidFrom: user?.paidFrom || 'N/A',
         employeeName: user?.name || item.userName,
@@ -1640,8 +1714,8 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       });
     });
 
-    // Style the header row
-    const headerRow = worksheet.getRow(1);
+    // Style the header row (now row 2)
+    const headerRow = worksheet.getRow(2);
     headerRow.eachCell((cell) => {
       cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
       cell.fill = {
@@ -1658,9 +1732,10 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       };
     });
 
-    // Style data rows
+    // Style data rows (start from row 3)
     worksheet.eachRow((row, rowNumber) => {
-      if (rowNumber === 1) return; // Skip header row
+      if (rowNumber === 1) return; // Skip date range row
+      if (rowNumber === 2) return; // Skip header row
 
       const isEvenRow = rowNumber % 2 === 0;
       row.eachCell((cell, colNumber) => {
@@ -2863,7 +2938,53 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                            <span className="hover:underline" title="Click to view daily breakdown">{formatHoursMinutes(item.summary.totalHour)}</span>
                         ) : '0h 0m'}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono">
+                    <td className="px-4 py-3 text-right font-mono cursor-pointer hover:bg-slate-800/60"
+                        onClick={() => {
+                          // Prepare breakdown for modal
+                          let breakdown = [];
+                          if (filterType === 'week' && currentWeekStart) {
+                            const weekStartDate = new Date(currentWeekStart);
+                            for (let i = 0; i < 7; i++) {
+                              const d = new Date(weekStartDate);
+                              d.setDate(weekStartDate.getDate() + i);
+                              const dateStr = d.toISOString().split('T')[0];
+                              const rec = item.recordDetails?.[dateStr];
+                              if (rec) {
+                                breakdown.push({ date: dateStr, info: `Excess: ${rec.excessHour ?? 0} hr`, subInfo: rec.remarks || '' });
+                              }
+                            }
+                          } else if (filterType === 'range' && rangeStart && rangeEnd) {
+                            const start = new Date(rangeStart);
+                            const end = new Date(rangeEnd);
+                            let d = new Date(start);
+                            while (d <= end) {
+                              const dateStr = d.toISOString().split('T')[0];
+                              const rec = item.recordDetails?.[dateStr];
+                              if (rec) {
+                                breakdown.push({ date: dateStr, info: `Excess: ${rec.excessHour ?? 0} hr`, subInfo: rec.remarks || '' });
+                              }
+                              d.setDate(d.getDate() + 1);
+                            }
+                          } else {
+                            // Month view: show all days in month
+                            const month = selectedMonth;
+                            const year = selectedYear;
+                            const daysInMonth = new Date(year, month, 0).getDate();
+                            for (let day = 1; day <= daysInMonth; day++) {
+                              const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                              const rec = item.recordDetails?.[dateStr];
+                              if (rec) {
+                                breakdown.push({ date: dateStr, info: `Excess: ${rec.excessHour ?? 0} hr`, subInfo: rec.remarks || '' });
+                              }
+                            }
+                          }
+                          setDetailModal({
+                            isOpen: true,
+                            title: `Excess Calculation Details for ${item.userName}`,
+                            data: breakdown
+                          });
+                        }}
+                    >
                        {item.calcExcessDeficit !== undefined ? (
                          <span className={item.calcExcessDeficit >= 0 ? "text-emerald-400" : "text-rose-400"}>
                            {/* Always use backend decimal value, format as H:MM */}
