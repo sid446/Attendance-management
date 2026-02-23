@@ -2083,8 +2083,8 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
             ? `${Math.floor(workingHrs)}:${Math.round((workingHrs % 1) * 60).toString().padStart(2, '0')}`
             : formatTime(workingHrs),
           scheduledTime: scheduledTime,
-          scheduledHrsMonth: scheduledHrsMonth ? formatHoursToHM(scheduledHrsMonth) : '',
-          workingHrsMonth: workingHrsMonth ? formatHoursToHM(workingHrsMonth) : '',
+          scheduledHrsMonth: scheduledHrsMonth ? formatHoursMinutes(scheduledHrsMonth) : '',
+          workingHrsMonth: workingHrsMonth ? formatHoursMinutes(workingHrsMonth) : '',
           excessShortHrsMonth: '',
           excessShortHrsDay: formatSecondsToHMS(daySeconds),
           halfDays,
@@ -3007,7 +3007,5 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     </div>
   );
 };
-function formatHoursToHM(scheduledHrsMonth: number) {
-  throw new Error('Function not implemented.');
-}
+
 
