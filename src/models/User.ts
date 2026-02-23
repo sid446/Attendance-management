@@ -17,6 +17,7 @@ export interface IDailySchedule {
   friday?: IScheduleTime;
   saturday?: IScheduleTime;
   sunday?: IScheduleTime;
+  [key: string]: IScheduleTime | undefined;
 }
 
 // Schedule entry with effective date
