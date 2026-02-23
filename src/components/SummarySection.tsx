@@ -1599,15 +1599,17 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       { key: 'employeeCode', header: 'Employee Code', width: 15 },
       { key: 'team', header: 'Team', width: 12 },
       { key: 'designation', header: 'Designation', width: 15 },
-      { key: 'scheduled', header: 'Scheduled', width: 12 },
-      { key: 'definedSchedule', header: 'Defined Schedule', width: 15 },
-      { key: 'workHours', header: 'Work Hours', width: 12 },
-      { key: 'excess', header: 'Excess', width: 10 },
-      { key: 'late', header: 'Late', width: 8 },
-      { key: 'halfDays', header: 'Half Days', width: 10 },
+      { key: 'totalDays', header: 'Total Days', width: 10 },
+      { key: 'holidays', header: 'Holidays', width: 10 },
+      { key: 'workingDays', header: 'Working Days', width: 12 },
       { key: 'present', header: 'Present', width: 8 },
+      { key: 'halfDays', header: 'Half Days', width: 10 },
       { key: 'absent', header: 'Absent', width: 8 },
-      { key: 'workingDays', header: 'Working Days', width: 12 }
+      { key: 'late', header: 'Late', width: 8 },
+      { key: 'scheduled', header: 'Scheduled', width: 12 },
+      { key: 'definedSchedule', header: 'Defined Work Hour', width: 15 },
+      { key: 'excess', header: 'Excess', width: 10 },
+      { key: 'workHours', header: 'Work Hours', width: 12 }
     ];
 
     // Add data rows - using summary data from the database
@@ -1622,15 +1624,17 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         employeeCode: item.employeeCode || item.odId || item.userId || '-',
         team: item.team || '-',
         designation: item.designation || '-',
+        totalDays: Object.keys(item.recordDetails || {}).length,
+        holidays: Object.values(item.recordDetails || {}).filter((r: any) => r.typeOfPresence === 'Holiday').length,
+        workingDays: item.summary.totalPresent + item.summary.totalAbsent + calculateLeaveConsumed(item),
+        present: item.summary.totalPresent,
+        halfDays: item.summary.totalHalfDay,
+        absent: item.summary.totalAbsent,
+        late: item.calcLate || 0,
         scheduled: item.calcScheduled || 0,
         definedSchedule: calculateDefinedScheduleHours(item),
-        workHours: item.summary.totalHour,
         excess: item.calcExcessDeficit || 0,
-        late: item.calcLate || 0,
-        halfDays: item.summary.totalHalfDay,
-        present: item.summary.totalPresent,
-        absent: item.summary.totalAbsent,
-        workingDays: item.summary.totalPresent + item.summary.totalAbsent + calculateLeaveConsumed(item)
+        workHours: item.summary.totalHour
       });
     });
 
@@ -2719,162 +2723,48 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                       className="rounded border-slate-600 text-emerald-600 focus:ring-emerald-500"
                     />
                   </th>
-                  <th className="px-2 py-3 text-center font-semibold text-slate-400">
-                    View
+                  <th className="px-2 py-3 text-center font-semibold text-slate-400">View</th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-300 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('userName')}>
+                    <div className="flex items-center gap-1">Employee{sortField === 'userName' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
-                  <th 
-                    className="px-4 py-3 text-left font-semibold text-slate-300 cursor-pointer hover:bg-slate-800/60 select-none"
-                    onClick={() => handleSort('userName')}
-                  >
-                    <div className="flex items-center gap-1">
-                      Employee
-                      {sortField === 'userName' && (
-                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
-                      )}
-                    </div>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-400 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('employeeCode')}>
+                    <div className="flex items-center gap-1">Emp Code{sortField === 'employeeCode' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
-                  <th 
-                    className="px-4 py-3 text-left font-semibold text-slate-400 cursor-pointer hover:bg-slate-800/60 select-none"
-                    onClick={() => handleSort('employeeCode')}
-                  >
-                    <div className="flex items-center gap-1">
-                      Emp Code
-                      {sortField === 'employeeCode' && (
-                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
-                      )}
-                    </div>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-400 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('team')}>
+                    <div className="flex items-center gap-1">Team{sortField === 'team' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
-                  <th 
-                    className="px-4 py-3 text-left font-semibold text-slate-400 cursor-pointer hover:bg-slate-800/60 select-none"
-                    onClick={() => handleSort('team')}
-                  >
-                    <div className="flex items-center gap-1">
-                      Team
-                      {sortField === 'team' && (
-                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
-                      )}
-                    </div>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-400 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('designation')}>
+                    <div className="flex items-center gap-1">Designation{sortField === 'designation' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
-                  <th 
-                    className="px-4 py-3 text-left font-semibold text-slate-400 cursor-pointer hover:bg-slate-800/60 select-none"
-                    onClick={() => handleSort('designation')}
-                  >
-                    <div className="flex items-center gap-1">
-                      Designation
-                      {sortField === 'designation' && (
-                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
-                      )}
-                    </div>
+                  <th className="px-4 py-3 text-right font-semibold text-slate-400">Total Days</th>
+                  <th className="px-4 py-3 text-right font-semibold text-slate-400">Holidays</th>
+                  <th className="px-4 py-3 text-right font-semibold text-slate-400">Working Days</th>
+                  <th className="px-4 py-3 text-right font-semibold text-emerald-300 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('totalPresent')}>
+                    <div className="flex items-center gap-1 justify-end">Present{sortField === 'totalPresent' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
-                  <th 
-                    className="px-4 py-3 text-right font-semibold text-slate-400 cursor-pointer hover:bg-slate-800/60 select-none"
-                    onClick={() => handleSort('calcScheduled')}
-                  >
-                    <div className="flex items-center gap-1 justify-end">
-                      Scheduled
-                      {sortField === 'calcScheduled' && (
-                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
-                      )}
-                    </div>
+                  <th className="px-4 py-3 text-right font-semibold text-slate-300 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('totalHalfDay')}>
+                    <div className="flex items-center gap-1 justify-end">Half Days{sortField === 'totalHalfDay' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
-                  <th 
-                    className="px-4 py-3 text-right font-semibold text-blue-300/90 cursor-pointer hover:bg-slate-800/60 select-none"
-                    onClick={() => handleSort('definedSchedule')}
-                  >
-                    <div className="flex items-center gap-1 justify-end">
-                      Defined Schedule
-                      {sortField === 'definedSchedule' && (
-                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
-                      )}
-                    </div>
+                  <th className="px-4 py-3 text-right font-semibold text-rose-300 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('totalAbsent')}>
+                    <div className="flex items-center gap-1 justify-end">Absent{sortField === 'totalAbsent' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
-                  <th 
-                    className="px-4 py-3 text-right font-semibold text-slate-300 cursor-pointer hover:bg-slate-800/60 select-none"
-                    onClick={() => handleSort('totalHour')}
-                  >
-                    <div className="flex items-center gap-1 justify-end">
-                      Work Hours
-                      {sortField === 'totalHour' && (
-                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
-                      )}
-                    </div>
+                  <th className="px-4 py-3 text-right font-semibold text-amber-300/90 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('calcLate')}>
+                    <div className="flex items-center gap-1 justify-end">Late{sortField === 'calcLate' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
-                  <th 
-                    className="px-4 py-3 text-right font-semibold text-emerald-300/90 cursor-pointer hover:bg-slate-800/60 select-none"
-                    onClick={() => handleSort('calcExcessDeficit')}
-                  >
-                    <div className="flex items-center gap-1 justify-end">
-                      Excess
-                      {sortField === 'calcExcessDeficit' && (
-                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
-                      )}
-                    </div>
+                  <th className="px-4 py-3 text-right font-semibold text-sky-400 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('totalLeave')}>
+                    <div className="flex items-center gap-1 justify-end">Leave{sortField === 'totalLeave' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
-                  <th 
-                    className="px-4 py-3 text-right font-semibold text-amber-300/90 cursor-pointer hover:bg-slate-800/60 select-none"
-                    onClick={() => handleSort('calcLate')}
-                  >
-                    <div className="flex items-center gap-1 justify-end">
-                      Late
-                      {sortField === 'calcLate' && (
-                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
-                      )}
-                    </div>
+                  <th className="px-4 py-3 text-right font-semibold text-slate-400 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('calcScheduled')}>
+                    <div className="flex items-center gap-1 justify-end">Scheduled{sortField === 'calcScheduled' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
-                  <th 
-                    className="px-4 py-3 text-right font-semibold text-slate-300 cursor-pointer hover:bg-slate-800/60 select-none"
-                    onClick={() => handleSort('totalHalfDay')}
-                  >
-                    <div className="flex items-center gap-1 justify-end">
-                      Half Days
-                      {sortField === 'totalHalfDay' && (
-                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
-                      )}
-                    </div>
+                  <th className="px-4 py-3 text-right font-semibold text-blue-300/90 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('definedSchedule')}>
+                    <div className="flex items-center gap-1 justify-end">Defined Work Hour{sortField === 'definedSchedule' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
-                  <th 
-                    className="px-4 py-3 text-right font-semibold text-emerald-300 cursor-pointer hover:bg-slate-800/60 select-none"
-                    onClick={() => handleSort('totalPresent')}
-                  >
-                    <div className="flex items-center gap-1 justify-end">
-                      Present
-                      {sortField === 'totalPresent' && (
-                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
-                      )}
-                    </div>
+                  <th className="px-4 py-3 text-right font-semibold text-slate-300 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('totalHour')}>
+                    <div className="flex items-center gap-1 justify-end">Work Hours{sortField === 'totalHour' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
-                  <th 
-                    className="px-4 py-3 text-right font-semibold text-rose-300 cursor-pointer hover:bg-slate-800/60 select-none"
-                    onClick={() => handleSort('totalAbsent')}
-                  >
-                    <div className="flex items-center gap-1 justify-end">
-                      Absent
-                      {sortField === 'totalAbsent' && (
-                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
-                      )}
-                    </div>
-                  </th>
-                  <th 
-                    className="px-4 py-3 text-right font-semibold text-slate-400 cursor-pointer hover:bg-slate-800/60 select-none"
-                    onClick={() => handleSort('totalWorkingDays')}
-                  >
-                    <div className="flex items-center gap-1 justify-end">
-                      Working Days
-                      {sortField === 'totalWorkingDays' && (
-                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
-                      )}
-                    </div>
-                  </th>
-                  <th 
-                    className="px-4 py-3 text-right font-semibold text-slate-400 cursor-pointer hover:bg-slate-800/60 select-none"
-                    onClick={() => handleSort('totalLeave')}
-                  >
-                    <div className="flex items-center gap-1 justify-end">
-                      Leave
-                      {sortField === 'totalLeave' && (
-                        sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
-                      )}
-                    </div>
+                  <th className="px-4 py-3 text-right font-semibold text-emerald-300/90 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('calcExcessDeficit')}>
+                    <div className="flex items-center gap-1 justify-end">Excess{sortField === 'calcExcessDeficit' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
                 </tr>
               </thead>
@@ -2908,6 +2798,45 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                     <td className="px-4 py-3 text-left font-mono text-slate-400">{item.employeeCode || item.odId || '-'}</td>
                     <td className="px-4 py-3 text-left text-slate-400">{item.team || '-'}</td>
                     <td className="px-4 py-3 text-left text-slate-400">{item.designation || '-'}</td>
+                    <td className="px-4 py-3 text-right font-mono text-slate-400">{Object.keys(item.recordDetails || {}).length}</td>
+                    <td className="px-4 py-3 text-right font-mono text-slate-400">{Object.values(item.recordDetails || {}).filter((r: any) => r.typeOfPresence === 'Holiday').length}</td>
+                    <td className="px-4 py-3 text-right font-mono text-slate-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => openDetail(e, 'WorkingDays', item)}>
+                        {(() => {
+                          // Count all days in recordDetails that are not holidays
+                          const records = item.recordDetails || {};
+                          const workingDays = Object.values(records).filter((rec: any) => rec.typeOfPresence !== 'Holiday').length;
+                          return workingDays > 0 ? (
+                            <span className="hover:underline" title="Click to view calculation breakdown">{workingDays}</span>
+                          ) : '-';
+                        })()}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-emerald-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => item.summary.totalPresent > 0 && openDetail(e, 'Present', item)}>
+                        {item.summary.totalPresent > 0 ? (
+                           <span className="hover:underline" title="Click to view details">{item.summary.totalPresent}</span>
+                        ) : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-slate-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => item.summary.totalHalfDay > 0 && openDetail(e, 'HalfDay', item)}>
+                        {item.summary.totalHalfDay > 0 ? (
+                           <span className="hover:underline" title="Click to view details">{item.summary.totalHalfDay}</span>
+                        ) : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-rose-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => item.summary.totalAbsent > 0 && openDetail(e, 'Absent', item)}>
+                        {item.summary.totalAbsent > 0 ? (
+                           <span className="hover:underline" title="Click to view details">{item.summary.totalAbsent}</span>
+                        ) : '-'}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono" onClick={(e) => item.calcLate > 0 && openDetail(e, 'Late', item)}>
+                      {item.calcLate > 0 ? (
+                        <span className="text-amber-400 font-bold bg-amber-400/10 px-1.5 py-0.5 rounded cursor-pointer hover:bg-amber-400/20" title="Click to view details">{item.calcLate}</span>
+                      ) : (
+                        <span className="text-slate-600">-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-sky-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => calculateLeaveConsumed(item) > 0 && openDetail(e, 'Leave', item)}>
+                        {calculateLeaveConsumed(item) > 0 ? (
+                           <span className="hover:underline" title="Click to view details">{calculateLeaveConsumed(item)}</span>
+                        ) : '-'}
+                    </td>
                     <td className="px-4 py-3 text-right font-mono text-slate-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => item.calcScheduled > 0 && openDetail(e, 'ScheduledHours', item)}>
                         {item.calcScheduled > 0 ? (
                            <span className="hover:underline" title="Click to view daily breakdown">{formatHoursMinutes(item.calcScheduled)}</span>
@@ -2940,43 +2869,6 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                            {formatHoursMinutes(Math.abs(item.calcExcessDeficit))}
                          </span>
                        ) : '-'}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono" onClick={(e) => item.calcLate > 0 && openDetail(e, 'Late', item)}>
-                      {item.calcLate > 0 ? (
-                        <span className="text-amber-400 font-bold bg-amber-400/10 px-1.5 py-0.5 rounded cursor-pointer hover:bg-amber-400/20" title="Click to view details">{item.calcLate}</span>
-                      ) : (
-                        <span className="text-slate-600">-</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => item.summary.totalHalfDay > 0 && openDetail(e, 'HalfDay', item)}>
-                        {item.summary.totalHalfDay > 0 ? (
-                           <span className="hover:underline" title="Click to view details">{item.summary.totalHalfDay}</span>
-                        ) : '-'}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-emerald-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => item.summary.totalPresent > 0 && openDetail(e, 'Present', item)}>
-                        {item.summary.totalPresent > 0 ? (
-                           <span className="hover:underline" title="Click to view details">{item.summary.totalPresent}</span>
-                        ) : '-'}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-rose-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => item.summary.totalAbsent > 0 && openDetail(e, 'Absent', item)}>
-                        {item.summary.totalAbsent > 0 ? (
-                           <span className="hover:underline" title="Click to view details">{item.summary.totalAbsent}</span>
-                        ) : '-'}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => openDetail(e, 'WorkingDays', item)}>
-                        {(() => {
-                          // Count all days in recordDetails that are not holidays
-                          const records = item.recordDetails || {};
-                          const workingDays = Object.values(records).filter((rec: any) => rec.typeOfPresence !== 'Holiday').length;
-                          return workingDays > 0 ? (
-                            <span className="hover:underline" title="Click to view calculation breakdown">{workingDays}</span>
-                          ) : '-';
-                        })()}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-sky-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => calculateLeaveConsumed(item) > 0 && openDetail(e, 'Leave', item)}>
-                        {calculateLeaveConsumed(item) > 0 ? (
-                           <span className="hover:underline" title="Click to view details">{calculateLeaveConsumed(item)}</span>
-                        ) : '-'}
                     </td>
                   </tr>
                 ))}
