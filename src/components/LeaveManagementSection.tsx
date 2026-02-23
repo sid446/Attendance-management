@@ -187,10 +187,10 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Employee</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Team</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Earned</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Used</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Remaining</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Opening as of 1 Jan</th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Monthly Rate</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Used</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Balance</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Last Updated</th>
               </tr>
             </thead>
@@ -222,10 +222,11 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-300">{balance.team || '-'}</td>
                     <td className="px-4 py-3 text-center">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        {balance.earned}
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                        {balance.remaining + balance.used}
                       </span>
                     </td>
+                    <td className="px-4 py-3 text-center text-sm text-slate-300">{balance.monthlyEarned}</td>
                     <td className="px-4 py-3 text-center">
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20">
                         {balance.used}
@@ -240,7 +241,6 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
                         {balance.remaining}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-center text-sm text-slate-300">{balance.monthlyEarned}</td>
                     <td className="px-4 py-3 text-sm text-slate-400">
                       {new Date(balance.lastUpdated).toLocaleDateString()}
                     </td>
