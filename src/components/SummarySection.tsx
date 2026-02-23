@@ -1608,8 +1608,8 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       { key: 'late', header: 'Late', width: 8 },
       { key: 'scheduled', header: 'Scheduled', width: 12 },
       { key: 'definedSchedule', header: 'Defined Work Hour', width: 15 },
-      { key: 'excess', header: 'Excess', width: 10 },
-      { key: 'workHours', header: 'Work Hours', width: 12 }
+      { key: 'workHours', header: 'Work Hours', width: 12 },
+      { key: 'excess', header: 'Excess', width: 10 }
     ];
 
     // Add data rows - using summary data from the database
@@ -1631,10 +1631,12 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         halfDays: item.summary.totalHalfDay,
         absent: item.summary.totalAbsent,
         late: item.calcLate || 0,
-        scheduled: item.calcScheduled || 0,
-        definedSchedule: calculateDefinedScheduleHours(item),
-        excess: item.calcExcessDeficit || 0,
-        workHours: item.summary.totalHour
+        scheduled: formatHoursMinutes(item.calcScheduled || 0),
+        definedSchedule: formatHoursMinutes(calculateDefinedScheduleHours(item)),
+        workHours: formatHoursMinutes(item.summary.totalHour),
+        excess: (item.calcExcessDeficit !== undefined && item.calcExcessDeficit !== 0)
+          ? `${item.calcExcessDeficit > 0 ? '+' : item.calcExcessDeficit < 0 ? '-' : ''}${formatHoursMinutes(Math.abs(item.calcExcessDeficit))}`
+          : formatHoursMinutes(0)
       });
     });
 
@@ -2724,11 +2726,11 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                     />
                   </th>
                   <th className="px-2 py-3 text-center font-semibold text-slate-400">View</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-300 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('userName')}>
-                    <div className="flex items-center gap-1">Employee{sortField === 'userName' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
-                  </th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-400 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('employeeCode')}>
                     <div className="flex items-center gap-1">Emp Code{sortField === 'employeeCode' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
+                  </th>
+                  <th className="px-4 py-3 text-left font-semibold text-slate-300 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('userName')}>
+                    <div className="flex items-center gap-1">Employee{sortField === 'userName' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-400 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('team')}>
                     <div className="flex items-center gap-1">Team{sortField === 'team' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
@@ -2791,11 +2793,11 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                         <Eye className="w-4 h-4" />
                       </button>
                     </td>
+                    <td className="px-4 py-3 text-left font-mono text-slate-400">{item.employeeCode || item.odId || '-'}</td>
                     <td className="px-4 py-3">
                       <div className="font-medium text-slate-200 group-hover:text-white cursor-pointer" onClick={() => onEmployeeDetailClick?.(item.userId)}>{item.userName}</div>
                       <div className="text-[10px] text-slate-500 font-mono hidden md:block">{item.employeeCode || item.odId || item.userId}</div>
                     </td>
-                    <td className="px-4 py-3 text-left font-mono text-slate-400">{item.employeeCode || item.odId || '-'}</td>
                     <td className="px-4 py-3 text-left text-slate-400">{item.team || '-'}</td>
                     <td className="px-4 py-3 text-left text-slate-400">{item.designation || '-'}</td>
                     <td className="px-4 py-3 text-right font-mono text-slate-400">{Object.keys(item.recordDetails || {}).length}</td>
