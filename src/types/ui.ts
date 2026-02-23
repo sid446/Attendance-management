@@ -1,7 +1,6 @@
 export interface AttendanceRecord {
   schedule: any;
   [x: string]: any;
-  schedule: AttendanceRecord | undefined;
   id: string | number;
   name: string;
   date: string;
@@ -35,16 +34,7 @@ export interface AttendanceSummaryView {
     totalLeave: number;
   };
   calcLate?: number; // Calculated on frontend
-  recordDetails?: Record<string, {
-      [x: string]: string;
-      [x: string]: string;
-      [x: string]: string;
-      [x: string]: string;
-      [x: string]: string;
-      [x: string]: any;
-      [x: string]: string;
-      [x: string]: any;
-      [x: string]: any;
+    recordDetails?: Record<string, {
       updatedByEmail: any;
       updatedBy: any;
       originalInTime: string;
@@ -69,7 +59,8 @@ export interface AttendanceSummaryView {
       totalHour: number;
       typeOfPresence: string;
       halfDay: boolean;
-  }>;
+      [x: string]: any;
+    }>;
   calcScheduled?: number; // Total scheduled hours for the period
   calcExcessDeficit?: number; // Calculated excess/deficit hours
 }
