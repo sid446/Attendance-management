@@ -214,7 +214,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   // Add new employment type history entry
   const handleDeleteEmploymentTypeHistory = (index: number) => {
     setFormData(prev => {
-      const history = Array.isArray(prev.employmentTypeHistory) ? [...prev.employmentTypeHistory] : [];
+      const history = Array.isArray(prev.employmentType) ? [...prev.employmentType] : [];
       history.splice(index, 1);
       return {
         ...prev,
@@ -227,7 +227,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   const handleAddEmploymentTypeHistory = () => {
     if (!newEmploymentType || !newEmploymentTypeDate) return;
     setFormData(prev => {
-      const history = Array.isArray(prev.employmentTypeHistory) ? [...prev.employmentTypeHistory] : [];
+      const history = Array.isArray(prev.employmentType) ? [...prev.employmentType] : [];
       history.push({ employmentType: newEmploymentType, effectiveFrom: new Date(newEmploymentTypeDate) });
       // Sort by date ascending
       history.sort((a, b) => new Date(a.effectiveFrom).getTime() - new Date(b.effectiveFrom).getTime());
@@ -1578,20 +1578,22 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">Employment Type History</label>
                   <div className="space-y-2 mb-2">
-                    {(formData.employmentTypeHistory || []).map((entry: { employmentType: string | number | bigint | boolean | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | React.ReactPortal | Promise<string | number | bigint | boolean | React.ReactPortal | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | null | undefined> | null | undefined; effectiveFrom: string | number | Date; }, idx: React.Key | null | undefined) => (
-                      <div key={idx} className="flex items-center gap-2 text-xs">
-                        <span className="px-2 py-1 bg-slate-700 rounded text-slate-200">{entry.employmentType}</span>
-                        <span className="px-2 py-1 bg-slate-800 rounded text-slate-400">From: {new Date(entry.effectiveFrom).toLocaleDateString()}</span>
-                        <button
-                          type="button"
-                          className="px-2 py-1 bg-red-600 text-white rounded"
-                          title="Delete this entry"
-                          onClick={() => handleDeleteEmploymentTypeHistory(idx)}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    ))}
+                    {Array.isArray(formData.employmentType)
+                          ? formData.employmentType.map((entry: { employmentType: string | number | bigint | boolean | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | React.ReactPortal | Promise<string | number | bigint | boolean | React.ReactPortal | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | null | undefined> | null | undefined; effectiveFrom: string | number | Date; }, idx: number) => (
+                            <div key={String(idx)} className="flex items-center gap-2 text-xs">
+                            <span className="px-2 py-1 bg-slate-700 rounded text-slate-200">{entry.employmentType}</span>
+                            <span className="px-2 py-1 bg-slate-800 rounded text-slate-400">From: {new Date(entry.effectiveFrom).toLocaleDateString()}</span>
+                            <button
+                              type="button"
+                              className="px-2 py-1 bg-red-600 text-white rounded"
+                              title="Delete this entry"
+                              onClick={() => handleDeleteEmploymentTypeHistory(idx)}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        ))
+                      : null}
                   </div>
                   <div className="flex gap-2 mt-1">
                     <select

@@ -974,9 +974,9 @@ export default function AttendanceUpload() {
         // Use edited times for display if available, otherwise use original times
         const effectiveCheckin = value.editedCheckin || value.checkin;
         const effectiveCheckout = value.editedCheckout || value.checkout;
-        
+
         let status: any = 'Present';
-        
+
         // Determine status based on typeOfPresence
         if (value.typeOfPresence === 'Leave' || value.typeOfPresence === 'On leave') {
           status = 'Leave';
@@ -994,6 +994,7 @@ export default function AttendanceUpload() {
           status = 'Present'; // Default for any other case with times
         }
 
+        // Ensure AttendanceRecord structure
         return {
           id: doc.userId?._id ? String(doc.userId._id) : '',
           name: doc.userId?.name ?? 'Unknown',
@@ -1001,9 +1002,12 @@ export default function AttendanceUpload() {
           inTime: effectiveCheckin ?? '',
           outTime: effectiveCheckout ?? '',
           status: status,
-          typeOfPresence: value.typeOfPresence,
-          value: value.value
-        };
+          typeOfPresence: value.typeOfPresence ?? '',
+          value: value.value ?? undefined,
+          // Add missing properties if AttendanceRecord expects them
+          ...(value.totalHour !== undefined ? { totalHour: value.totalHour } : {}),
+          ...(value.halfDay !== undefined ? { halfDay: value.halfDay } : {}),
+        } as AttendanceRecord;
       });
 
       days.sort((a, b) => {
