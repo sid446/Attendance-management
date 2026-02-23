@@ -104,56 +104,105 @@ export default function EmployeeDashboard() {
         
         if (jsonSum.success && jsonSum.data && jsonSum.data.length > 0) {
              const doc = jsonSum.data[0];
-             // Transform Summary
-             const mappedSum: AttendanceSummaryView = {
-                id: doc._id,
-                userId: doc.userId._id,
-                userName: doc.userId.name,
-                monthYear: doc.monthYear,
-                schedules: {
-                   effectiveFrom: new Date().toISOString(), // Default effective date for display
-                   daily: {
-                      monday: doc.userId.scheduleInOutTime ? { inTime: doc.userId.scheduleInOutTime.inTime, outTime: doc.userId.scheduleInOutTime.outTime, isHoliday: false, isHalfDay: false } : undefined,
-                      tuesday: doc.userId.scheduleInOutTime ? { inTime: doc.userId.scheduleInOutTime.inTime, outTime: doc.userId.scheduleInOutTime.outTime, isHoliday: false, isHalfDay: false } : undefined,
-                      wednesday: doc.userId.scheduleInOutTime ? { inTime: doc.userId.scheduleInOutTime.inTime, outTime: doc.userId.scheduleInOutTime.outTime, isHoliday: false, isHalfDay: false } : undefined,
-                      thursday: doc.userId.scheduleInOutTime ? { inTime: doc.userId.scheduleInOutTime.inTime, outTime: doc.userId.scheduleInOutTime.outTime, isHoliday: false, isHalfDay: false } : undefined,
-                      friday: doc.userId.scheduleInOutTime ? { inTime: doc.userId.scheduleInOutTime.inTime, outTime: doc.userId.scheduleInOutTime.outTime, isHoliday: false, isHalfDay: false } : undefined,
-                      saturday: doc.userId.scheduleInOutTimeSat ? { inTime: doc.userId.scheduleInOutTimeSat.inTime, outTime: doc.userId.scheduleInOutTimeSat.outTime, isHoliday: false, isHalfDay: true } : undefined,
-                      sunday: { inTime: '09:00', outTime: '18:00', isHoliday: true, isHalfDay: false },
+             // For each day, fetch the latest user schedule (in case of changes mid-month)
+             const recordsObj = doc.records || {};
+             const days: AttendanceRecord[] = await Promise.all(
+               Object.entries(recordsObj).map(async ([dateKey, value]: [string, any]) => {
+                 const userForDay = doc.userId;
+                 const dateObj = new Date(dateKey);
+                 const dayOfWeek = dateObj.getDay();
+                 const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+                 const dayName = dayNames[dayOfWeek];
+                 let schedule = undefined;
+                 // --- NEW LOGIC: Use schedules array with effective date ---
+                 if (userForDay.schedules && Array.isArray(userForDay.schedules) && userForDay.schedules.length > 0) {
+                   // Find the most recent schedule effective on or before this date
+                   const effSchedules = userForDay.schedules
+                     .filter((s: any) => new Date(s.effectiveFrom) <= dateObj)
+                     .sort((a: any, b: any) => Number(new Date(b.effectiveFrom).getTime()) - Number(new Date(a.effectiveFrom).getTime()));
+                   if (effSchedules.length > 0) {
+                     const eff = effSchedules[0];
+                     if (eff.daily && eff.daily[dayName]) {
+                       schedule = { ...eff.daily[dayName] };
+                     }
                    }
-                },
-                summary: doc.summary
+                 }
+                 // Fallback to legacy fields if no schedule found
+                 if (!schedule) {
+                   if (dayName === 'saturday' && userForDay.scheduleInOutTimeSat) {
+                     schedule = { ...userForDay.scheduleInOutTimeSat, isHoliday: false, isHalfDay: true };
+                   } else if (userForDay.scheduleInOutTime) {
+                     schedule = { ...userForDay.scheduleInOutTime, isHoliday: false, isHalfDay: false };
+                   } else if (dayName === 'sunday') {
+                     schedule = { inTime: '09:00', outTime: '18:00', isHoliday: true, isHalfDay: false };
+                   }
+                 }
+
+                 // Use edited times for display if available, otherwise use original times
+                 const effectiveCheckin = value.editedCheckin || value.checkin;
+                 const effectiveCheckout = value.editedCheckout || value.checkout;
+
+                 let status: any = 'Present';
+                 if (value.typeOfPresence === 'Leave' || value.typeOfPresence === 'On leave') status = 'On leave';
+                 else if (value.typeOfPresence === 'Holiday') status = 'Holiday';
+                 else if (value.halfDay) status = 'HalfDay';
+                 else if (!effectiveCheckin && !effectiveCheckout && value.typeOfPresence !== 'Leave' && value.typeOfPresence !== 'On leave') status = 'Absent';
+
+                 // Fallback
+                 if (status === 'Present' && !effectiveCheckin && !effectiveCheckout) status = 'Absent';
+
+                 return {
+                   id: userForDay._id,
+                   name: userForDay.name,
+                   date: dateKey,
+                   inTime: effectiveCheckin ?? '',
+                   outTime: effectiveCheckout ?? '',
+                   status: status,
+                   typeOfPresence: value.typeOfPresence,
+                   value: value.value,
+                   schedule: schedule // Attach schedule for this day
+                 };
+               })
+             );
+             setEmployeeDays(days);
+
+             // Build summary.schedules.daily using the latest user schedule for each weekday
+             const daily: any = {};
+             const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+             weekdays.forEach((day) => {
+               if (day === 'saturday' && doc.userId.scheduleInOutTimeSat) {
+                 daily[day] = { ...doc.userId.scheduleInOutTimeSat, isHoliday: false, isHalfDay: true };
+               } else if (day === 'sunday') {
+                 daily[day] = { inTime: '09:00', outTime: '18:00', isHoliday: true, isHalfDay: false };
+               } else if (doc.userId.scheduleInOutTime) {
+                 daily[day] = { ...doc.userId.scheduleInOutTime, isHoliday: false, isHalfDay: false };
+               } else {
+                 daily[day] = undefined;
+               }
+             });
+             // Format excessHour as string for legacy UI fields
+             const formatExcessHour = (val: number) => {
+               const sign = val < 0 ? '-' : '';
+               const abs = Math.abs(val);
+               const h = Math.floor(abs);
+               const m = Math.round((abs % 1) * 60);
+               return `${sign}${h}:${m.toString().padStart(2, '0')}`;
+             };
+             const mappedSum: AttendanceSummaryView = {
+               id: doc._id,
+               userId: doc.userId._id,
+               userName: doc.userId.name,
+               monthYear: doc.monthYear,
+               schedules: {
+                 effectiveFrom: new Date().toISOString(),
+                 daily
+               },
+               summary: {
+                 ...doc.summary,
+                 excessHours: formatExcessHour(doc.summary?.excessHour ?? 0),
+               }
              };
              setSummary(mappedSum);
-
-             // Transform Records
-             const recordsObj = doc.records || {};
-             const days: AttendanceRecord[] = Object.entries(recordsObj).map(([dateKey, value]: [string, any]) => {
-                // Use edited times for display if available, otherwise use original times
-                const effectiveCheckin = value.editedCheckin || value.checkin;
-                const effectiveCheckout = value.editedCheckout || value.checkout;
-                
-                let status: any = 'Present';
-                if (value.typeOfPresence === 'Leave' || value.typeOfPresence === 'On leave') status = 'On leave';
-                else if (value.typeOfPresence === 'Holiday') status = 'Holiday';
-                else if (value.halfDay) status = 'HalfDay';
-                else if (!effectiveCheckin && !effectiveCheckout && value.typeOfPresence !== 'Leave' && value.typeOfPresence !== 'On leave') status = 'Absent';
-                
-                // Fallback
-                if (status === 'Present' && !effectiveCheckin && !effectiveCheckout) status = 'Absent';
-
-                return {
-                  id: doc.userId._id,
-                  name: doc.userId.name,
-                  date: dateKey,
-                  inTime: effectiveCheckin ?? '',
-                  outTime: effectiveCheckout ?? '',
-                  status: status,
-                  typeOfPresence: value.typeOfPresence,
-                  value: value.value
-                };
-            });
-            setEmployeeDays(days);
         } else {
             setSummary(null);
             setEmployeeDays([]);
@@ -259,73 +308,77 @@ export default function EmployeeDashboard() {
   };
 
   const submitRequest = async () => {
-      if (!selectedDate || !user) return;
-      
-      // Validate required fields
-      if (!requestReason.trim()) {
+        if (!selectedDate || !user) return;
+
+        // Validate required fields
+        if (!requestReason.trim()) {
           alert('Please provide a reason for your attendance correction request.');
           return;
-      }
-      
-      let finalStartTime = startTime;
-      let finalEndTime = endTime;
-      
-      // For Present - outstation, use scheduled times automatically
-      if (requestStatus === 'Present - outstation' && summary?.schedules) {
-          const date = new Date(selectedDate);
-          const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+        }
 
-          const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-          const dayName = dayNames[dayOfWeek];
+        let finalStartTime = startTime;
+        let finalEndTime = endTime;
 
-          const scheduleToUse = summary?.schedules?.daily?.[dayName as keyof typeof summary.schedules.daily];
+        // For Present - outstation, use the actual schedule attached to the attendance record for that date if available
+        if (requestStatus === 'Present - outstation') {
+            const dayRecord = employeeDays.find(d => d.date === selectedDate);
+            if (dayRecord && dayRecord.schedule && !dayRecord.schedule.isHoliday) {
+              finalStartTime = dayRecord.schedule.inTime;
+              finalEndTime = dayRecord.schedule.outTime;
+            } else if (summary?.schedules) {
+              // fallback to previous logic if not found
+              const dateObj = new Date(selectedDate);
+              const dayOfWeek = dateObj.getDay();
+              const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+              const dayName = dayNames[dayOfWeek];
+              let scheduleToUse = summary?.schedules?.daily?.[dayName];
+              if (scheduleToUse && !scheduleToUse.isHoliday) {
+                finalStartTime = scheduleToUse.inTime;
+                finalEndTime = scheduleToUse.outTime;
+              }
+            }
+        }
 
-          if (scheduleToUse && !scheduleToUse.isHoliday) {
-              finalStartTime = scheduleToUse.inTime;
-              finalEndTime = scheduleToUse.outTime;
-          }
-      }
-      
-      setSendingRequest(true);
-      try {
+        setSendingRequest(true);
+        try {
           const res = await fetch('/api/employee/request-correction', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                  userId: user._id,
-                  date: selectedDate,
-                  requestedStatus: requestStatus,
-                  reason: requestReason,
-                  startTime: finalStartTime || undefined,
-                  endTime: finalEndTime || undefined
-              })
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: user._id,
+              date: selectedDate,
+              requestedStatus: requestStatus,
+              reason: requestReason,
+              startTime: finalStartTime || undefined,
+              endTime: finalEndTime || undefined
+            })
           });
           const json = await res.json();
 
           if (!res.ok) {
-              // Specific handling for duplicate request on same date
-              if (res.status === 400 && typeof json.error === 'string' && json.error.includes('already have a correction request for this date')) {
-                  alert('You have already sent a correction request for this date. Please wait until it is approved or rejected before sending another.');
-              } else {
-                  alert(json.error || 'Failed to send request');
-              }
-              return;
+            // Specific handling for duplicate request on same date
+            if (res.status === 400 && typeof json.error === 'string' && json.error.includes('already have a correction request for this date')) {
+              alert('You have already sent a correction request for this date. Please wait until it is approved or rejected before sending another.');
+            } else {
+              alert(json.error || 'Failed to send request');
+            }
+            return;
           }
 
           if (json.success) {
-              alert(`Request sent successfully to ${json.sentTo}!`);
-              setSelectedDate(null);
-              // Refresh data to show updated request status
-              fetchAttendance(user._id, monthYear);
+            alert(`Request sent successfully to ${json.sentTo}!`);
+            setSelectedDate(null);
+            // Refresh data to show updated request status
+            fetchAttendance(user._id, monthYear);
           } else {
-              alert(json.error || 'Failed to send request');
+            alert(json.error || 'Failed to send request');
           }
-      } catch (e) {
+        } catch (e) {
           alert('Error sending request');
-      } finally {
+        } finally {
           setSendingRequest(false);
-      }
-  };
+        }
+      };
 
   const submitFutureRequest = async () => {
       if (!user) return;
@@ -492,14 +545,14 @@ export default function EmployeeDashboard() {
        <header className="bg-slate-900 border-b border-slate-800 p-2 px-3 sm:px-4 sticky top-0 z-40">
            <div className="flex items-center justify-between gap-2">
                <div className="min-w-0 flex-1 flex items-center gap-2">
-                   <img src="/lg.png" alt="Logo" className="w-12 h-12 object-contain flex-shrink-0" />
+                   <img src="/lg.png" alt="Logo" className="w-12 h-12 object-contain shrink-0" />
                    <div>
                        <h1 className="text-base sm:text-xl font-bold text-white truncate">My Attendance</h1>
                        <p className="text-[11px] sm:text-xs text-slate-400 truncate"><span className="hidden sm:inline">Asija and Associates LLP • </span>Welcome, {user.name}</p>
                    </div>
                </div>
 
-               <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+               <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                    <button onClick={handleLogout} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-rose-400 transition-colors touch-manipulation active:scale-95" title="Sign Out">
                        <LogOut className="w-5 h-5" />
                    </button>

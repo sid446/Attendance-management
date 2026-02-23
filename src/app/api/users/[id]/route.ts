@@ -109,6 +109,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       registeredUnderPartner,
       workingUnderPartner,
       workingTiming,
+      employmentType,
+      employmentTypeHistory,
       changedBy, // Who made the change
       changeReason // Reason for the change
     } = body;
@@ -175,9 +177,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    const user = await User.findByIdAndUpdate(
-      id,
-      {
+    // If employmentTypeHistory is provided, update it
+    const updateObj: any = {
         ...(odId && { odId }),
         ...(name && { name }),
         ...(email && { email }),
@@ -239,9 +240,75 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         ...(registeredUnderPartner !== undefined && { registeredUnderPartner }),
         ...(workingUnderPartner !== undefined && { workingUnderPartner }),
         ...(workingTiming !== undefined && { workingTiming }),
-      },
+        ...(employmentType !== undefined && { employmentType }),
+        ...(employmentTypeHistory && { employmentTypeHistory }),
+      };
+    const user = await User.findByIdAndUpdate(
+      id,
+      updateObj,
       { new: true, runValidators: true }
     );
+
+    // If employmentTypeHistory changed, trigger attendance recalculation from the earliest effectiveFrom
+    if (employmentTypeHistory && Array.isArray(employmentTypeHistory) && employmentTypeHistory.length > 0) {
+      // Find earliest effectiveFrom date
+      const minDate = employmentTypeHistory.reduce((min, entry) => {
+        const d = new Date(entry.effectiveFrom);
+        return (!min || d < min) ? d : min;
+      }, null as Date | null);
+      if (minDate && user) {
+        // Recalculate attendance for all months from minDate to now
+        const startYear = minDate.getFullYear();
+        const startMonth = minDate.getMonth() + 1;
+        const now = new Date();
+        const endYear = now.getFullYear();
+        const endMonth = now.getMonth() + 1;
+        for (let y = startYear; y <= endYear; y++) {
+          const mStart = y === startYear ? startMonth : 1;
+          const mEnd = y === endYear ? endMonth : 12;
+          for (let m = mStart; m <= mEnd; m++) {
+            const monthStr = `${y}-${String(m).padStart(2, '0')}`;
+            const attendance = await (await import('@/models/Attendance')).default.findOne({ userId: user._id, monthYear: monthStr });
+            if (attendance) {
+              // For each day, determine employmentType in effect and recalculate halfDay
+              const records = attendance.records;
+              let changed = false;
+              for (const [date, rec] of records.entries()) {
+                // Find employmentType in effect for this date
+                const eff = employmentTypeHistory.filter(e => new Date(e.effectiveFrom) <= new Date(date));
+                let type = user.employmentType;
+                if (eff.length > 0) {
+                  eff.sort((a, b) => new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime());
+                  type = eff[0].employmentType;
+                }
+                // Recalculate halfDay logic based on type
+                let newHalfDay = false;
+                if (type === 'article') {
+                  // Article: after 13:30 or < half scheduled hours
+                  const isAfter1330 = rec.checkin && rec.checkin >= '13:30';
+                  const halfScheduled = rec.totalHour < 4; // Example: 8h schedule
+                  newHalfDay = isAfter1330 || halfScheduled;
+                } else if (type === 'fulltime') {
+                  // Fulltime: < half scheduled hours
+                  newHalfDay = rec.totalHour < 4;
+                } else if (type === 'halftime') {
+                  // Halftime: < half of halftime schedule (e.g., 2h if 4h schedule)
+                  newHalfDay = rec.totalHour < 2;
+                }
+                if (rec.halfDay !== newHalfDay) {
+                  rec.halfDay = newHalfDay;
+                  changed = true;
+                }
+              }
+              if (changed) {
+                attendance.markModified('records');
+                await attendance.save();
+              }
+            }
+          }
+        }
+      }
+    }
 
     if (!user) {
       return NextResponse.json(

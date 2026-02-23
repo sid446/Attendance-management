@@ -171,36 +171,71 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
     return { daysInMonth, startWeekday, dayRecordMap, approvedRequestMap };
   })();
 
-  // Determine lateness helper
-  const isLateArrival = (date: Date, inTimeStr?: string) => {
-      if (!inTimeStr || !summaryFromList?.schedules) return false;
-      
-      const parseMinutes = (t: string) => {
-          const [h, m] = t.split(':').map(Number);
-          return h * 60 + m;
-      };
+  // Determine lateness helper (use per-day schedule if available)
+  const isLateArrival = (date: Date, inTimeStr?: string, dayRecord?: AttendanceRecord) => {
+    if (!inTimeStr) return false;
 
-      const actualMins = parseMinutes(inTimeStr);
+    const parseMinutes = (t: string) => {
+      const [h, m] = t.split(':').map(Number);
+      return h * 60 + m;
+    };
+
+    const actualMins = parseMinutes(inTimeStr);
+    let scheduledStr: string | undefined = undefined;
+
+    // Prefer per-day schedule from AttendanceRecord
+    if (dayRecord && dayRecord.schedule && dayRecord.schedule.inTime) {
+      scheduledStr = dayRecord.schedule.inTime;
+    } else if (summaryFromList?.schedules) {
       const dow = date.getDay();
-      
-      // Day names mapping
       const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-      const dayName = dayNames[dow] as keyof DailySchedule;
-      
-      // Get scheduled in time from the new schedule format
+      const dayName = dayNames[dow] as keyof typeof summaryFromList.schedules.daily;
       const daySchedule = summaryFromList.schedules.daily?.[dayName];
-      const scheduledStr = daySchedule?.inTime;
-      
+      scheduledStr = daySchedule?.inTime;
       if (dow === 0 || !scheduledStr) return false; // Sunday or no schedule
+    } else {
+      return false;
+    }
 
-      const scheduledMins = parseMinutes(scheduledStr);
-
-      // 15 mins grace period? Or strict? Let's Assume strict > scheduled
-      return actualMins > scheduledMins; 
+    const scheduledMins = parseMinutes(scheduledStr ?? "");
+    return actualMins > scheduledMins;
   };
 
   return (
     <section className="bg-slate-900/60 border border-slate-800 rounded-xl shadow-sm p-4 sm:p-6 space-y-3 sm:space-y-4">
+      {/* Monthly summary row */}
+      {summaryFromList && summaryFromList.summary && (
+        <div className="mb-2 flex flex-wrap gap-4 items-center text-sm text-slate-200">
+          <div>
+            <span className="font-semibold">Total Hours:</span> {summaryFromList.summary.totalHour?.toFixed(2)}
+          </div>
+          <div>
+            <span className="font-semibold">Late Arrivals:</span> {summaryFromList.summary.totalLateArrival}
+          </div>
+          <div>
+            <span className="font-semibold">Half Days:</span> {summaryFromList.summary.totalHalfDay}
+          </div>
+          <div>
+            <span className="font-semibold">Presents:</span> {summaryFromList.summary.totalPresent}
+          </div>
+          <div>
+            <span className="font-semibold">Absents:</span> {summaryFromList.summary.totalAbsent}
+          </div>
+          <div>
+            <span className="font-semibold">Leaves:</span> {summaryFromList.summary.totalLeave}
+          </div>
+          <div>
+            <span className="font-semibold">Excess/Short Hours:</span> {(() => {
+              const val = summaryFromList.summary.excessHour;
+              const sign = val < 0 ? '-' : '';
+              const abs = Math.abs(val);
+              const h = Math.floor(abs);
+              const m = Math.round((abs % 1) * 60);
+              return `${sign}${h}:${m.toString().padStart(2, '0')}`;
+            })()}
+          </div>
+        </div>
+      )}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-4">
         <div>
           <h2 className="text-base sm:text-lg font-semibold text-slate-50 flex items-center gap-2">
@@ -440,6 +475,9 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
               {Array.from({ length: calendarData.daysInMonth }).map((_, idx) => {
                 const day = idx + 1;
                 const rec = calendarData.dayRecordMap.get(day) || null;
+                            // {debugScheduledIn && (
+                            //   <div className="text-[10px] text-amber-400 mt-0.5">Sch: {debugScheduledIn} | In: {debugActualIn}</div>
+                            // )}
                 const approvedReq = approvedRequests.length > 0 ? calendarData.approvedRequestMap.get(day) : null;
                 let status: any = rec?.status;
                 const type = rec?.typeOfPresence;
@@ -456,7 +494,15 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                 
                 // Check lateness
                 const dateObj = new Date(selectedYear, selectedMonth - 1, day);
-                const isLate = rec ? isLateArrival(dateObj, rec.inTime) : false;
+                let isLate = false;
+                if (rec) {
+                  isLate = isLateArrival(dateObj, rec.inTime, rec);
+                  // Debug: log schedule, inTime, and lateness calculation for employee dashboard
+                  if (window && window.location && window.location.pathname.includes('employee/dashboard')) {
+                    // eslint-disable-next-line no-console
+                    console.log('[DEBUG] Date:', rec.date, 'inTime:', rec.inTime, 'schedule:', rec.schedule, 'isLate:', isLate);
+                  }
+                }
 
                 // Check if request is a custom/other type (not standard)
                 const STANDARD_REQUEST_TYPES = [

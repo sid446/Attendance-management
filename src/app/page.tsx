@@ -448,6 +448,7 @@ export default function AttendanceUpload() {
             inTime,
             outTime,
             status: isAbsent ? 'Absent' : 'Present',
+            schedule: undefined
           });
         }
       }
@@ -557,6 +558,7 @@ export default function AttendanceUpload() {
           inTime,
           outTime,
           status: isAbsent ? 'Absent' : 'Present',
+          schedule: undefined
         });
       }
 
@@ -815,14 +817,14 @@ export default function AttendanceUpload() {
           user.recordDetails = filteredRecords;
         }
       } else {
-        // For month ranges, sum the monthly summaries
+        // For month ranges, sum the monthly summaries (but DO NOT sum excessHour, as it is already a total)
         for (const item of allItems) {
           const userId = item.userId?._id ? String(item.userId._id) : '';
           const user = userMap.get(userId);
           if (user) {
             user.summary.totalHour += item.summary?.totalHour ?? 0;
             user.summary.totalLateArrival += item.summary?.totalLateArrival ?? 0;
-            user.summary.excessHour += item.summary?.excessHour ?? 0;
+            // DO NOT sum excessHour; leave as 0 or recalculate from daily if needed
             user.summary.totalHalfDay += item.summary?.totalHalfDay ?? 0;
             user.summary.totalPresent += item.summary?.totalPresent ?? 0;
             user.summary.totalAbsent += item.summary?.totalAbsent ?? 0;
@@ -897,6 +899,9 @@ export default function AttendanceUpload() {
           monthYear: monthYear,
           schedules: yearSchedule,
           summary: {
+            scheduledHours: "", // Add calculation if needed
+            shortHours: "",     // Add calculation if needed
+            excessHours: "",    // Add calculation if needed
             totalHour: Object.values(item.recordDetails).reduce((sum: number, rec: any) => 
               rec.typeOfPresence !== 'Holiday' ? sum + (rec.totalHour || 0) : sum, 0),
             totalLateArrival: item.summary?.totalLateArrival ?? 0,
@@ -910,7 +915,9 @@ export default function AttendanceUpload() {
             totalLeave: item.summary?.totalLeave ?? 0,
           },
           recordDetails: item.recordDetails || {},
-          calcScheduled: totalScheduled
+          calcScheduled: totalScheduled,
+          // Patch: Map backend excessHour to calcExcessDeficit for summary table
+          calcExcessDeficit: item.summary?.excessHour ?? 0
         };
       });
 

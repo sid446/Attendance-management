@@ -503,7 +503,7 @@ async function updateAttendanceForDate(date: string, typeOfPresence: string | nu
     }
 
     // Recalculate summary
-    attendance.summary = calculateSummary(attendance.records, attendance.userId as IUser);
+    attendance.summary = calculateSummary(attendance.records, attendance.userId as unknown as IUser);
     await attendance.save();
   }
 }

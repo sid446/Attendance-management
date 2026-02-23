@@ -72,12 +72,44 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         );
       }
 
+      // If approving outstation or by HR, set checkin/checkout to scheduled in/out time for that user/date
+      let checkin = dailyRecord.checkin ?? attendance.records.get(date)?.checkin ?? '';
+      let checkout = dailyRecord.checkout ?? attendance.records.get(date)?.checkout ?? '';
+      let typeOfPresence = dailyRecord.typeOfPresence ?? attendance.records.get(date)?.typeOfPresence ?? 'ThumbMachine';
+      let user = await User.findById(attendance.userId);
+      let setScheduledTime = false;
+      // Outstation or HR approval (hrValue present or typeOfPresence includes 'outstation')
+      if ((typeOfPresence && typeOfPresence.toLowerCase().includes('outstation')) || (dailyRecord.hrValue !== undefined && user)) {
+        setScheduledTime = true;
+      }
+      if (setScheduledTime && user) {
+        // Prefer per-day schedule from user.schedules (like EmployeeMonthView)
+        let scheduleEntry = Array.isArray(user.schedules)
+          ? user.schedules.filter(s => new Date(s.effectiveFrom) <= new Date(date)).sort((a, b) => new Date(b.effectiveFrom) - new Date(a.effectiveFrom))[0]
+          : undefined;
+        let dayName = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'][new Date(date).getDay()];
+        let daySchedule = scheduleEntry?.daily?.[dayName];
+        // Fallback to legacy fields if no per-day schedule
+        if (!daySchedule) {
+          if (dayName === 'saturday' && user.scheduleInOutTimeSat) {
+            daySchedule = user.scheduleInOutTimeSat;
+          } else if (dayName === 'sunday' && user.scheduleInOutTimeMonth) {
+            daySchedule = user.scheduleInOutTimeMonth;
+          } else if (user.scheduleInOutTime) {
+            daySchedule = user.scheduleInOutTime;
+          }
+        }
+        if (daySchedule) {
+          checkin = daySchedule.inTime || checkin;
+          checkout = daySchedule.outTime || checkout;
+        }
+      }
       attendance.records.set(date, {
-        checkin: dailyRecord.checkin ?? attendance.records.get(date)?.checkin ?? '',
-        checkout: dailyRecord.checkout ?? attendance.records.get(date)?.checkout ?? '',
+        checkin,
+        checkout,
         totalHour: dailyRecord.totalHour ?? attendance.records.get(date)?.totalHour ?? 0,
         excessHour: dailyRecord.excessHour ?? attendance.records.get(date)?.excessHour ?? 0,
-        typeOfPresence: dailyRecord.typeOfPresence ?? attendance.records.get(date)?.typeOfPresence ?? 'ThumbMachine',
+        typeOfPresence,
         halfDay: dailyRecord.halfDay ?? attendance.records.get(date)?.halfDay ?? false,
         value: dailyRecord.value ?? attendance.records.get(date)?.value ?? 0,
         remarks: dailyRecord.remarks ?? attendance.records.get(date)?.remarks ?? '',

@@ -179,6 +179,10 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
     setError(null);
   };
 
+  // Employment type history state for UI
+  const [newEmploymentType, setNewEmploymentType] = useState<string>('');
+  const [newEmploymentTypeDate, setNewEmploymentTypeDate] = useState<string>('');
+
   const handleInputChange = (field: keyof User, value: any) => {
     setFormData(prev => {
       const newData = { ...prev, [field]: value };
@@ -199,8 +203,42 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           }
         }
       }
+      // Prevent direct employmentType change, use history
+      if (field === 'employmentType') {
+        return prev;
+      }
       return newData;
     });
+  };
+
+  // Add new employment type history entry
+  const handleDeleteEmploymentTypeHistory = (index: number) => {
+    setFormData(prev => {
+      const history = Array.isArray(prev.employmentTypeHistory) ? [...prev.employmentTypeHistory] : [];
+      history.splice(index, 1);
+      return {
+        ...prev,
+        employmentTypeHistory: history,
+        employmentType: history.length > 0 ? history[history.length - 1].employmentType : '',
+      };
+    });
+  };
+
+  const handleAddEmploymentTypeHistory = () => {
+    if (!newEmploymentType || !newEmploymentTypeDate) return;
+    setFormData(prev => {
+      const history = Array.isArray(prev.employmentTypeHistory) ? [...prev.employmentTypeHistory] : [];
+      history.push({ employmentType: newEmploymentType, effectiveFrom: new Date(newEmploymentTypeDate) });
+      // Sort by date ascending
+      history.sort((a, b) => new Date(a.effectiveFrom).getTime() - new Date(b.effectiveFrom).getTime());
+      return {
+        ...prev,
+        employmentTypeHistory: history,
+        employmentType: newEmploymentType, // Set current type for display
+      };
+    });
+    setNewEmploymentType('');
+    setNewEmploymentTypeDate('');
   };
 
   const handleExtraInfoChange = (index: number, field: 'label' | 'value', value: string) => {
@@ -1104,7 +1142,11 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       { key: 'nextAttemptDueDate', header: 'Next Attempt Due Date', width: 20 },
       { key: 'registeredUnderPartner', header: 'Registered Under Partner', width: 22 },
       { key: 'workingUnderPartner', header: 'Working Under Partner', width: 20 },
-      { key: 'workTimings', header: 'Work Timings', width: 15 },
+      { key: 'workTimingsMonFri', header: 'Work Timings (Mon to Fri)', width: 22 },
+      { key: 'scheduledHoursMonFri', header: 'Scheduled Daily Hours (Mon to Fri)', width: 22 },
+      { key: 'workTimingsSat', header: 'Work Timings (Sat)', width: 18 },
+      { key: 'scheduledHoursSat', header: 'Scheduled Daily Hours (Sat)', width: 18 },
+      { key: 'weeklyScheduledHours', header: 'Weekly Scheduled Hours', width: 22 },
     ];
 
     // Add extra info columns dynamically
@@ -1129,15 +1171,62 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
 
     // Add data rows
     users.forEach((u) => {
-      const regularIn = u.scheduleInOutTime?.inTime || '';
-      const regularOut = u.scheduleInOutTime?.outTime || '';
-      const workTimingText =
-        u.workingTiming && u.workingTiming.trim().length > 0
-          ? u.workingTiming
-          : regularIn && regularOut
-          ? `${regularIn}-${regularOut}`
-          : '';
+      // Schedule export logic
+      const getScheduleExportInfo = (user: User) => {
+        // Use latest schedule entry if available
+        let scheduleEntry = undefined;
+        if (user.schedules && Array.isArray(user.schedules) && user.schedules.length > 0) {
+          scheduleEntry = user.schedules[user.schedules.length - 1];
+        }
+        // Fallback to legacy fields
+        const daily = scheduleEntry ? scheduleEntry.daily : undefined;
+        // Mon-Fri timings
+        let monFriIn = '', monFriOut = '', monFriHours = '';
+        let satIn = '', satOut = '', satHours = '';
+        let weeklyHours = 0;
+        // Monday-Friday
+        const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+        let monFriCount = 0;
+        let monFriTotal = 0;
+        days.forEach(day => {
+          let st = daily && daily[day] ? daily[day] : (user.scheduleInOutTime ? user.scheduleInOutTime : undefined);
+          if (st && st.inTime && st.outTime && !st.isHoliday) {
+            if (!monFriIn) monFriIn = st.inTime;
+            monFriOut = st.outTime;
+            // Calculate hours
+            const [inH, inM] = st.inTime.split(':').map(Number);
+            const [outH, outM] = st.outTime.split(':').map(Number);
+            let hours = (outH * 60 + outM) - (inH * 60 + inM);
+            if (st.isHalfDay) hours /= 2;
+            monFriTotal += hours;
+            monFriCount++;
+          }
+        });
+        if (monFriCount > 0) {
+          monFriHours = (monFriTotal / monFriCount / 60).toFixed(2);
+        }
+        // Saturday
+        let satSt = daily && daily['saturday'] ? daily['saturday'] : (user.scheduleInOutTimeSat ? user.scheduleInOutTimeSat : undefined);
+        if (satSt && satSt.inTime && satSt.outTime && !satSt.isHoliday) {
+          satIn = satSt.inTime;
+          satOut = satSt.outTime;
+          let hours = (Number(satSt.outTime.split(':')[0]) * 60 + Number(satSt.outTime.split(':')[1])) - (Number(satSt.inTime.split(':')[0]) * 60 + Number(satSt.inTime.split(':')[1]));
+          // Do NOT halve for half-day, keep original value
+          satHours = (hours / 60).toFixed(2);
+          weeklyHours = monFriTotal + hours;
+        } else {
+          weeklyHours = monFriTotal;
+        }
+        return {
+          workTimingsMonFri: monFriIn && monFriOut ? `${monFriIn} - ${monFriOut}` : '',
+          scheduledHoursMonFri: monFriHours,
+          workTimingsSat: satIn && satOut ? `${satIn} - ${satOut}` : '',
+          scheduledHoursSat: satHours,
+          weeklyScheduledHours: (weeklyHours / 60).toFixed(2),
+        };
+      };
 
+      const scheduleInfo = getScheduleExportInfo(u);
       const rowData: { [key: string]: any } = {
         name: u.name || '',
         registrationNo: u.registrationNo || '',
@@ -1191,7 +1280,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         nextAttemptDueDate: toDateString(u.nextAttemptDueDate),
         registeredUnderPartner: u.registeredUnderPartner || '',
         workingUnderPartner: u.workingUnderPartner || '',
-        workTimings: workTimingText,
+        ...scheduleInfo,
       };
 
       // Add extra info columns
@@ -1487,17 +1576,48 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Employment Type</label>
-                  <select
-                    value={formData.employmentType || ''}
-                    onChange={(e) => handleInputChange('employmentType', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                  >
-                    <option value="">Select employment type</option>
-                    <option value="fulltime">Full Time</option>
-                    <option value="halftime">Half Time</option>
-                    <option value="article">Article</option>
-                  </select>
+                  <label className="block text-xs text-slate-400 mb-1">Employment Type History</label>
+                  <div className="space-y-2 mb-2">
+                    {(formData.employmentTypeHistory || []).map((entry: { employmentType: string | number | bigint | boolean | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | React.ReactPortal | Promise<string | number | bigint | boolean | React.ReactPortal | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | null | undefined> | null | undefined; effectiveFrom: string | number | Date; }, idx: React.Key | null | undefined) => (
+                      <div key={idx} className="flex items-center gap-2 text-xs">
+                        <span className="px-2 py-1 bg-slate-700 rounded text-slate-200">{entry.employmentType}</span>
+                        <span className="px-2 py-1 bg-slate-800 rounded text-slate-400">From: {new Date(entry.effectiveFrom).toLocaleDateString()}</span>
+                        <button
+                          type="button"
+                          className="px-2 py-1 bg-red-600 text-white rounded"
+                          title="Delete this entry"
+                          onClick={() => handleDeleteEmploymentTypeHistory(idx)}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-2 mt-1">
+                    <select
+                      value={newEmploymentType}
+                      onChange={e => setNewEmploymentType(e.target.value)}
+                      className="px-2 py-1 rounded bg-slate-700 text-slate-200"
+                    >
+                      <option value="">Select Type</option>
+                      <option value="fulltime">Full Time</option>
+                      <option value="halftime">Half Time</option>
+                      <option value="article">Article</option>
+                    </select>
+                    <input
+                      type="date"
+                      value={newEmploymentTypeDate}
+                      onChange={e => setNewEmploymentTypeDate(e.target.value)}
+                      className="px-2 py-1 rounded bg-slate-700 text-slate-200"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddEmploymentTypeHistory}
+                      className="px-3 py-1 bg-emerald-600 text-white rounded"
+                    >
+                      Add
+                    </button>
+                  </div>
                 </div>
 
                 <div>

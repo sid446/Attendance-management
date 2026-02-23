@@ -10,6 +10,7 @@
     "seed:predefined-values": "tsx scripts/seed-predefined-values.ts",
     "update:employment-type": "tsx scripts/update-employment-type.ts",
     "migrate:attendance-email": "tsx scripts/migrate-attendance-email.ts",
+    "migrate:employment-type-history": "tsx --env-file=.env.local scripts/migrate-employment-type-history.ts",
     "test:api": "tsx scripts/test-api.ts",
     "backup": "tsx scripts/backup-database.ts",
     "backup:create": "tsx scripts/backup-database.ts"

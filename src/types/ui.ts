@@ -1,4 +1,7 @@
 export interface AttendanceRecord {
+  schedule: any;
+  [x: string]: any;
+  schedule: AttendanceRecord | undefined;
   id: string | number;
   name: string;
   date: string;
@@ -20,6 +23,9 @@ export interface AttendanceSummaryView {
   monthYear: string;
   schedules?: ScheduleEntry; // Applicable schedule entry for this summary's month/year
   summary: {
+    scheduledHours: string;
+    shortHours: string;
+    excessHours: string;
     totalHour: number;
     totalLateArrival: number;
     excessHour: number;
@@ -29,7 +35,33 @@ export interface AttendanceSummaryView {
     totalLeave: number;
   };
   calcLate?: number; // Calculated on frontend
-  recordDetails?: Record<string, { // Map of date -> details
+  recordDetails?: Record<string, {
+      [x: string]: string;
+      [x: string]: string;
+      [x: string]: string;
+      [x: string]: string;
+      [x: string]: string;
+      [x: string]: any;
+      [x: string]: string;
+      [x: string]: any;
+      [x: string]: any;
+      updatedByEmail: any;
+      updatedBy: any;
+      originalInTime: string;
+      originalOutTime: string;
+      inTime: string;
+      outTime: string;
+      inTimeEdited: any;
+      outTimeEdited: any;
+      maxWFH: string;
+      actualWFH: string;
+      maxOutstation: string;
+      actualOutstation: string;
+      workingHours: string;
+      scheduledTime: string;
+      shortHours: string;
+      excessHours: string;
+      status: any; // Map of date -> details
       checkin: string;
       checkout: string;
       editedCheckin?: string;
@@ -49,15 +81,9 @@ export interface ScheduleTime {
   isHalfDay?: boolean;
 }
 
-export interface DailySchedule {
-  monday?: ScheduleTime;
-  tuesday?: ScheduleTime;
-  wednesday?: ScheduleTime;
-  thursday?: ScheduleTime;
-  friday?: ScheduleTime;
-  saturday?: ScheduleTime;
-  sunday?: ScheduleTime;
-}
+
+// Allow string index for day names
+export type DailySchedule = Record<string, ScheduleTime | undefined>;
 
 // Schedule entry with effective date
 export interface ScheduleEntry {

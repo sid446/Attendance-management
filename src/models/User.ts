@@ -25,6 +25,11 @@ export interface IScheduleEntry {
   daily: IDailySchedule; // Per-day schedules
 }
 
+export interface IEmploymentTypeHistory {
+  employmentType: string;
+  effectiveFrom: Date;
+}
+
 export interface IUser extends Document {
   odId: string;
   name: string;
@@ -40,6 +45,7 @@ export interface IUser extends Document {
   paidFrom?: string;
   category?: string;
   employmentType?: string;
+  employmentTypeHistory?: IEmploymentTypeHistory[];
   tallyName?: string;
   gender?: string;
   parentName?: string;
@@ -219,6 +225,20 @@ const UserSchema = new Schema(
       enum: ['halftime', 'fulltime', 'article'],
       default: 'fulltime',
     },
+    employmentTypeHistory: [
+      {
+        employmentType: {
+          type: String,
+          enum: ['halftime', 'fulltime', 'article'],
+          required: true,
+        },
+        effectiveFrom: {
+          type: Date,
+          required: true,
+        },
+        _id: false,
+      },
+    ],
     tallyName: {
       type: String,
       trim: true,
