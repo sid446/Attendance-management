@@ -781,7 +781,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         tallyName: findCol(['Tally Name']),
         gender: findCol(['Gender']),
         email: findCol(['Asija Mail ID', 'Email', 'Mail ID']),
-        attendanceEmail: findCol(['Attendance Email', 'Attendance Mail ID', 'Attendance Approver']),
+        attendanceApprover: findCol(['Attendance Email', 'Attendance Mail ID', 'Attendance Approver']),
         parentName: findCol(['Parents/Guardians Names', 'Parent / Guardian Name', 'Father Name', 'Parent Name']),
         parentOcc: findCol(['Parents/Guardians Occupation', 'Parent / Guardian Occupation', 'Father Occupation']),
         mobile: findCol(['Cell No.', 'Mobile', 'Phone']),
@@ -881,8 +881,6 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           gender: getVal(idx.gender),
           // Save email from Excel to email section
           email: getVal(idx.email),
-          // Use Attendance Approver column if available, otherwise fall back to employee email
-          attendanceEmail: getVal(idx.attendanceEmail) || getVal(idx.email),
           parentName: getVal(idx.parentName),
           parentOccupation: getVal(idx.parentOcc),
           mobileNumber: getVal(idx.mobile),
@@ -1099,7 +1097,6 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       { key: 'tallyName', header: 'Tally Name', width: 18 },
       { key: 'gender', header: 'Gender', width: 10 },
       { key: 'email', header: 'Asija Mail ID', width: 28 },
-      { key: 'attendanceEmail', header: 'Attendance Email', width: 28 },
       { key: 'attendanceApprover', header: 'Attendance Approver', width: 28 },
       { key: 'parentName', header: 'Parents/Guardians Names', width: 25 },
       { key: 'parentOccupation', header: 'Parents/Guardians Occupation', width: 25 },
@@ -3706,7 +3703,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           <button
             onClick={handleCreateNew}
             disabled={saveLoading || !formData.name || !formData.email || !formData.odId || !formData.joiningDate}
-            className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded text-sm transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Plus className="w-4 h-4" />
             {saveLoading ? 'Creating...' : 'Create Employee'}
@@ -3975,7 +3972,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   type="button"
                   onClick={handleAddGlobalExtraLabel}
                   disabled={isSavingExtraLabel || !newExtraLabel.trim()}
-                  className="px-4 py-2 rounded-lg text-sm bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                  className="px-4 py-2.5 rounded-lg text-sm bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
                 >
                   {isSavingExtraLabel ? 'Adding...' : 'Add Field'}
                 </button>
@@ -4118,6 +4115,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     'Tally Name',
                     'Gender',
                     'Asija Mail ID',
+                    'Attendance Approver',
                     'Parents/Guardians Names',
                     'Parents/Guardians Occupation',
                     'Cell No.',
