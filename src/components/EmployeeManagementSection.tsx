@@ -1238,7 +1238,6 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         tallyName: u.tallyName || '',
         gender: u.gender || '',
         email: u.email || '',
-        attendanceEmail: u.attendanceEmail || '',
         attendanceApprover: u.attendanceEmail || '',
         parentName: u.parentName || '',
         parentOccupation: u.parentOccupation || '',
