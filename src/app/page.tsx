@@ -1069,29 +1069,26 @@ export default function AttendanceUpload() {
         <main className="flex-1 bg-slate-950/80 overflow-y-auto">
           <div className="max-w-6xl mx-auto px-8 py-6 space-y-6">
             {/* Upload Section */}
-            {activeSection === 'upload' && (
-              <UploadSection
-                file={file}
-                onFileChange={handleFileChange}
-                onProcessFile={() => {
-                  if (machineFormat === 'machine1') {
-                    processMachine1File();
-                  } else if (machineFormat === 'machine2' || machineFormat === 'machine3') {
-                    // Machine 2 and Machine 3 share the same parsing logic
-                    // (Date: marker, header row, datetime format for times)
-                    processMachine2File();
-                  } else {
-                    setError('Unknown machine format selected');
-                  }
+            {activeSection === 'employee' && (
+              <EmployeeMonthView
+                summaries={summaries}
+                users={allUsers}
+                selectedEmployeeId={selectedEmployeeId}
+                setSelectedEmployeeId={setSelectedEmployeeId}
+                selectedMonthYear={selectedEmployeeMonth}
+                onMonthYearChange={(val) => {
+                  setSelectedEmployeeMonth(val);
+                  if (selectedEmployeeId && val) fetchEmployeeMonthly(selectedEmployeeId, val);
                 }}
-                processing={processing}
-                error={error}
-                saveMessage={saveMessage}
-                uploadErrors={uploadErrors}
-                machineFormat={machineFormat}
-                onMachineFormatChange={setMachineFormat}
+                employeeDays={employeeDays}
+                isLoading={employeeLoading}
+                error={employeeError}
+                onLoadAttendance={fetchEmployeeMonthly}
+                showEmployeeSelector={true}
+                approvedRequests={employeeApprovedRequests}
               />
             )}
+               
 
             {/* Summary Section */}
             {activeSection === 'summary' && (
@@ -1270,9 +1267,13 @@ export default function AttendanceUpload() {
                       summaries={summaries}
                       users={allUsers}
                       selectedEmployeeId={employeeMonthModal.userId}
-                      setSelectedEmployeeId={() => {}}
+                      setSelectedEmployeeId={setSelectedEmployeeId}
                       selectedMonthYear={employeeMonthModal.monthYear}
-                      onMonthYearChange={() => {}}
+                      onMonthYearChange={(val) => {
+                        setSelectedEmployeeMonth(val);
+                        setEmployeeMonthModal(modal => ({ ...modal, monthYear: val }));
+                        if (employeeMonthModal.userId && val) fetchEmployeeMonthly(employeeMonthModal.userId, val);
+                      }}
                       employeeDays={employeeDays}
                       isLoading={employeeLoading}
                       error={employeeError}
