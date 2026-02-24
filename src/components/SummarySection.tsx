@@ -78,6 +78,7 @@ interface SummarySectionProps {
   allUsers?: User[]; // Optional prop for fuller search context
   isLoading?: boolean;
   onFilterChange: (filter: string | {start: string, end: string} | {startDate: string, endDate: string}) => void;
+  // onEmployeeClick now opens EmployeeMonthView as modal, not via sidebar section
   onEmployeeClick: (userId: string, monthYear: string) => void;
   onEmployeeDetailClick?: (userId: string) => void; // Opens employee management detail
   onRefreshUsers?: () => void; // Optional function to refresh user data

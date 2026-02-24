@@ -44,6 +44,10 @@ export default function AttendanceUpload() {
   const [activeSection, setActiveSection] = useState<'upload' | 'summary' | 'employee' | 'employees' | 'requests' | 'holidays' | 'backup' | 'leave' | 'fines'>('summary');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [selectedEmployeeMonth, setSelectedEmployeeMonth] = useState<string>('');
+  // Modal state for EmployeeMonthView
+  const [employeeMonthModal, setEmployeeMonthModal] = useState<{ open: boolean; userId: string | null; monthYear: string }>({ open: false, userId: null, monthYear: '' });
+  // Modal state for EmployeeManagementSection
+  const [employeeManagementModal, setEmployeeManagementModal] = useState<{ open: boolean; userId: string | null }>({ open: false, userId: null });
   const [employeeDays, setEmployeeDays] = useState<AttendanceRecord[]>([]);
   const [employeeApprovedRequests, setEmployeeApprovedRequests] = useState<any[]>([]);
   const [employeeLoading, setEmployeeLoading] = useState<boolean>(false);
@@ -1101,15 +1105,14 @@ export default function AttendanceUpload() {
                 onFilterChange={fetchSummaries}
                 onRefreshUsers={fetchUsers}
                 onEmployeeClick={(userId, monthYear) => {
+                  setEmployeeMonthModal({ open: true, userId, monthYear });
                   setSelectedEmployeeId(userId);
                   setSelectedEmployeeMonth(monthYear);
-                  setActiveSection('employee');
-                  // Auto-load attendance for this employee/month
                   fetchEmployeeMonthly(userId, monthYear);
                 }}
                 onEmployeeDetailClick={(userId) => {
+                  setEmployeeManagementModal({ open: true, userId });
                   setSelectedEmployeeId(userId);
-                  setActiveSection('employees');
                 }}
               />
             )}
@@ -1244,30 +1247,70 @@ export default function AttendanceUpload() {
               </div>
             )}
 
-            {/* Employee month-wise Section - Standard View (via Sidebar) */}
-            {activeSection === 'employee' && (
-              <EmployeeMonthView
-                summaries={summaries}
-                users={allUsers}
-                selectedEmployeeId={selectedEmployeeId}
-                setSelectedEmployeeId={setSelectedEmployeeId}
-                selectedMonthYear={selectedEmployeeMonth}
-                onMonthYearChange={setSelectedEmployeeMonth}
-                employeeDays={employeeDays}
-                isLoading={employeeLoading}
-                error={employeeError}
-                onLoadAttendance={fetchEmployeeMonthly}
-                showEmployeeSelector={true}
-                approvedRequests={employeeApprovedRequests}
-              />
+            {/* Employee Month View Modal Popup */}
+            {employeeMonthModal.open && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+                <div className="relative w-full max-w-4xl bg-slate-900 border border-slate-800 rounded-xl shadow-2xl overflow-hidden">
+                  <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-950/50">
+                    <h3 className="text-lg font-semibold text-white">
+                      Employee Month View
+                      <span className="ml-2 text-sm font-normal text-slate-400">
+                        {allUsers.find(u => u._id === employeeMonthModal.userId)?.name || employeeMonthModal.userId}
+                      </span>
+                    </h3>
+                    <button
+                      onClick={() => setEmployeeMonthModal({ open: false, userId: null, monthYear: '' })}
+                      className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  <div className="p-0 max-h-[90vh] overflow-y-auto">
+                    <EmployeeMonthView
+                      summaries={summaries}
+                      users={allUsers}
+                      selectedEmployeeId={employeeMonthModal.userId}
+                      setSelectedEmployeeId={() => {}}
+                      selectedMonthYear={employeeMonthModal.monthYear}
+                      onMonthYearChange={() => {}}
+                      employeeDays={employeeDays}
+                      isLoading={employeeLoading}
+                      error={employeeError}
+                      onLoadAttendance={fetchEmployeeMonthly}
+                      showEmployeeSelector={false}
+                      approvedRequests={employeeApprovedRequests}
+                    />
+                  </div>
+                </div>
+              </div>
             )}
 
-            {/* Employee Management Section */}
-            {activeSection === 'employees' && (
-              <EmployeeManagementSection 
-                selectedUserId={selectedEmployeeId}
-                onRefreshUsers={fetchUsers}
-              />
+            {/* Employee Management Section Modal Popup */}
+            {employeeManagementModal.open && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+                <div className="relative w-full max-w-4xl bg-slate-900 border border-slate-800 rounded-xl shadow-2xl overflow-hidden">
+                  <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-950/50">
+                    <h3 className="text-lg font-semibold text-white">
+                      Employee Details
+                      <span className="ml-2 text-sm font-normal text-slate-400">
+                        {allUsers.find(u => u._id === employeeManagementModal.userId)?.name || employeeManagementModal.userId}
+                      </span>
+                    </h3>
+                    <button
+                      onClick={() => setEmployeeManagementModal({ open: false, userId: null })}
+                      className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  <div className="p-0 max-h-[90vh] overflow-y-auto">
+                    <EmployeeManagementSection
+                      selectedUserId={employeeManagementModal.userId}
+                      onRefreshUsers={fetchUsers}
+                    />
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* Attendance Requests Section */}
