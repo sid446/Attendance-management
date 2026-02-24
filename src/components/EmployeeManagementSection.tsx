@@ -16,8 +16,14 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   const [isAddingNew, setIsAddingNew] = useState<boolean>(false);
 
   // Filter State
-  const [filterDesignation, setFilterDesignation] = useState<string>('');
+  const [filterDesignations, setFilterDesignations] = useState<string[]>([]);
+  const [filterTeams, setFilterTeams] = useState<string[]>([]);
+  const [filterUsers, setFilterUsers] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
+  // Dropdown visibility state
+  const [showDesignationDropdown, setShowDesignationDropdown] = useState(false);
+  const [showTeamDropdown, setShowTeamDropdown] = useState(false);
+  const [showUserDropdown, setShowUserDropdown] = useState(false);
 
   // Upload State
   const [isUploading, setIsUploading] = useState<boolean>(false);
@@ -65,6 +71,15 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   const uniqueDesignations = useMemo(() => {
     const list = users.map(u => u.designation).filter(Boolean);
     return Array.from(new Set(list)).sort() as string[];
+  }, [users]);
+  // Unique Teams
+  const uniqueTeams = useMemo(() => {
+    const list = users.map(u => u.team || u.workingUnderPartner).filter(Boolean);
+    return Array.from(new Set(list)).sort() as string[];
+  }, [users]);
+  // Unique User Names
+  const uniqueUserNames = useMemo(() => {
+    return users.map(u => u.name).filter(Boolean).sort();
   }, [users]);
 
   // Fetch users
@@ -1049,11 +1064,18 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   };
 
   const filteredUsers = users.filter((user) => {
-    // Designation filter
-    if (filterDesignation && user.designation !== filterDesignation) {
+    // Multi-select Designation filter
+    if (filterDesignations.length > 0 && !filterDesignations.includes(user.designation || '')) {
       return false;
     }
-
+    // Multi-select Team filter
+    if (filterTeams.length > 0 && !filterTeams.includes(user.team || user.workingUnderPartner || '')) {
+      return false;
+    }
+    // Multi-select User filter
+    if (filterUsers.length > 0 && !filterUsers.includes(user.name || '')) {
+      return false;
+    }
     // Search term filter
     if (searchTerm) {
       const lowerTerm = searchTerm.toLowerCase();
@@ -1061,10 +1083,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       const matchEmail = user.email?.toLowerCase().includes(lowerTerm);
       const matchOdId = user.odId?.toLowerCase().includes(lowerTerm);
       const matchEmpCode = user.employeeCode?.toLowerCase().includes(lowerTerm);
-      
       return matchName || matchEmail || matchOdId || matchEmpCode;
     }
-
     return true;
   });
 
@@ -3703,7 +3723,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           <button
             onClick={handleCreateNew}
             disabled={saveLoading || !formData.name || !formData.email || !formData.odId || !formData.joiningDate}
-            className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus className="w-4 h-4" />
             {saveLoading ? 'Creating...' : 'Create Employee'}
@@ -3717,13 +3737,13 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   return (
     <div className="min-h-screen bg-slate-950">
       {/* Header Section */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-900 to-slate-800 border-b border-slate-800">
+      <div className="bg-linear-to-r from-slate-900 via-slate-900 to-slate-800 border-b border-slate-800">
         <div className="px-6 py-6">
           {/* Title Row */}
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
             <div>
               <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-purple-700 rounded-xl flex items-center justify-center">
+                <div className="w-10 h-10 bg-linear-to-br from-purple-500 to-purple-700 rounded-xl flex items-center justify-center">
                   <Users className="w-5 h-5 text-white" />
                 </div>
                 Employee Management
@@ -3779,16 +3799,126 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 )}
               </div>
 
-              <select
-                value={filterDesignation}
-                onChange={(e) => setFilterDesignation(e.target.value)}
-                className="bg-slate-800/50 border border-slate-700 text-slate-200 text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 cursor-pointer min-w-[180px]"
-              >
-                <option value="">All Designations</option>
-                {uniqueDesignations.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
-              </select>
+              {/* Multi-select Designation Filter */}
+              {/* Designation Dropdown Filter */}
+              <div className="relative min-w-45">
+                <button
+                  type="button"
+                  className="w-full bg-slate-800/50 border border-slate-700 text-slate-200 text-sm rounded-xl px-4 py-2.5 flex justify-between items-center focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50"
+                  onClick={() => setShowDesignationDropdown(v => !v)}
+                >
+                  <span>{filterDesignations.length > 0 ? `${filterDesignations.length} selected` : 'Designations'}</span>
+                  <ChevronDown className="w-4 h-4 ml-2 text-slate-400" />
+                </button>
+                {showDesignationDropdown && (
+                  <div className="absolute z-20 mt-2 w-full bg-slate-900 border border-slate-700 rounded-xl shadow-lg max-h-56 overflow-y-auto">
+                    <div className="p-2">
+                      <label className="flex items-center gap-2 text-slate-300 text-sm mb-1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={filterDesignations.length === 0}
+                          onChange={() => setFilterDesignations([])}
+                        />
+                        All
+                      </label>
+                      {uniqueDesignations.map(opt => (
+                        <label key={opt} className="flex items-center gap-2 text-slate-200 text-sm mb-1 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={filterDesignations.includes(opt)}
+                            onChange={() => {
+                              setFilterDesignations(prev => prev.includes(opt)
+                                ? prev.filter(d => d !== opt)
+                                : [...prev, opt]);
+                            }}
+                          />
+                          {opt}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Team Dropdown Filter */}
+              <div className="relative min-w-45">
+                <button
+                  type="button"
+                  className="w-full bg-slate-800/50 border border-slate-700 text-slate-200 text-sm rounded-xl px-4 py-2.5 flex justify-between items-center focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50"
+                  onClick={() => setShowTeamDropdown(v => !v)}
+                >
+                  <span>{filterTeams.length > 0 ? `${filterTeams.length} selected` : 'Teams'}</span>
+                  <ChevronDown className="w-4 h-4 ml-2 text-slate-400" />
+                </button>
+                {showTeamDropdown && (
+                  <div className="absolute z-20 mt-2 w-full bg-slate-900 border border-slate-700 rounded-xl shadow-lg max-h-56 overflow-y-auto">
+                    <div className="p-2">
+                      <label className="flex items-center gap-2 text-slate-300 text-sm mb-1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={filterTeams.length === 0}
+                          onChange={() => setFilterTeams([])}
+                        />
+                        All
+                      </label>
+                      {uniqueTeams.map(opt => (
+                        <label key={opt} className="flex items-center gap-2 text-slate-200 text-sm mb-1 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={filterTeams.includes(opt)}
+                            onChange={() => {
+                              setFilterTeams(prev => prev.includes(opt)
+                                ? prev.filter(t => t !== opt)
+                                : [...prev, opt]);
+                            }}
+                          />
+                          {opt}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* User Dropdown Filter */}
+              <div className="relative min-w-45">
+                <button
+                  type="button"
+                  className="w-full bg-slate-800/50 border border-slate-700 text-slate-200 text-sm rounded-xl px-4 py-2.5 flex justify-between items-center focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50"
+                  onClick={() => setShowUserDropdown(v => !v)}
+                >
+                  <span>{filterUsers.length > 0 ? `${filterUsers.length} selected` : 'Users'}</span>
+                  <ChevronDown className="w-4 h-4 ml-2 text-slate-400" />
+                </button>
+                {showUserDropdown && (
+                  <div className="absolute z-20 mt-2 w-full bg-slate-900 border border-slate-700 rounded-xl shadow-lg max-h-56 overflow-y-auto">
+                    <div className="p-2">
+                      <label className="flex items-center gap-2 text-slate-300 text-sm mb-1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={filterUsers.length === 0}
+                          onChange={() => setFilterUsers([])}
+                        />
+                        All
+                      </label>
+                      {uniqueUserNames.map(opt => (
+                        <label key={opt} className="flex items-center gap-2 text-slate-200 text-sm mb-1 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={filterUsers.includes(opt)}
+                            onChange={() => {
+                              setFilterUsers(prev => prev.includes(opt)
+                                ? prev.filter(u => u !== opt)
+                                : [...prev, opt]);
+                            }}
+                          />
+                          {opt}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Action Buttons */}
@@ -3799,7 +3929,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   setFormData({ isActive: true });
                   setIsAddingNew(true);
                 }}
-                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-purple-500/20"
+                className="flex items-center gap-2 px-5 py-2.5 bg-linear-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-purple-500/20"
               >
                 <Plus className="w-4 h-4" />
                 Add Employee
@@ -3852,7 +3982,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       </div>
 
       {/* Filter Tags */}
-      {(searchTerm || filterDesignation) && (
+      {(searchTerm || filterDesignations.length > 0 || filterTeams.length > 0 || filterUsers.length > 0) && (
         <div className="px-6 py-3 bg-slate-900/50 border-b border-slate-800 flex items-center gap-2">
           <span className="text-xs text-slate-500">Active filters:</span>
           {searchTerm && (
@@ -3863,16 +3993,32 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               </button>
             </span>
           )}
-          {filterDesignation && (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-500/10 text-blue-400 text-xs rounded-lg border border-blue-500/20">
-              {filterDesignation}
-              <button onClick={() => setFilterDesignation('')} className="hover:text-blue-300">
+          {filterDesignations.map(designation => (
+            <span key={designation} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-500/10 text-blue-400 text-xs rounded-lg border border-blue-500/20">
+              {designation}
+              <button onClick={() => setFilterDesignations(filterDesignations.filter(d => d !== designation))} className="hover:text-blue-300">
                 <X className="w-3 h-3" />
               </button>
             </span>
-          )}
+          ))}
+          {filterTeams.map(team => (
+            <span key={team} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/10 text-emerald-400 text-xs rounded-lg border border-emerald-500/20">
+              {team}
+              <button onClick={() => setFilterTeams(filterTeams.filter(t => t !== team))} className="hover:text-emerald-300">
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
+          {filterUsers.map(user => (
+            <span key={user} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-pink-500/10 text-pink-400 text-xs rounded-lg border border-pink-500/20">
+              {user}
+              <button onClick={() => setFilterUsers(filterUsers.filter(u => u !== user))} className="hover:text-pink-300">
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
           <button
-            onClick={() => { setSearchTerm(''); setFilterDesignation(''); }}
+            onClick={() => { setSearchTerm(''); setFilterDesignations([]); setFilterTeams([]); setFilterUsers([]); }}
             className="text-xs text-slate-500 hover:text-slate-300 ml-2"
           >
             Clear all
@@ -3966,7 +4112,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   placeholder="New field name..."
                   value={newExtraLabel}
                   onChange={(e) => setNewExtraLabel(e.target.value)}
-                  className="bg-slate-800/50 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 min-w-[160px]"
+                  className="bg-slate-800/50 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 min-w-40"
                 />
                 <button
                   type="button"
@@ -4262,7 +4408,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     >
                       <td className="px-4 py-3.5">
                         <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 bg-gradient-to-br from-purple-500/20 to-purple-700/20 rounded-xl flex items-center justify-center border border-purple-500/20">
+                          <div className="w-9 h-9 bg-linear-to-br from-purple-500/20 to-purple-700/20 rounded-xl flex items-center justify-center border border-purple-500/20">
                             <span className="text-sm font-semibold text-purple-400">
                               {user.name?.charAt(0).toUpperCase() || '?'}
                             </span>
