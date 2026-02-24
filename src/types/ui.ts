@@ -159,4 +159,10 @@ export interface User {
   scheduleInOutTimeMonth?: ScheduleTime;
 
   isActive: boolean;
+
+  // Employment type history
+  employmentTypeHistory?: {
+    employmentType: string;
+    effectiveFrom: string | number | Date;
+  }[];
 }

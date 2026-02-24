@@ -1576,8 +1576,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">Employment Type History</label>
                   <div className="space-y-2 mb-2">
-                    {Array.isArray(formData.employmentType)
-                          ? formData.employmentType.map((entry: { employmentType: string | number | bigint | boolean | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | React.ReactPortal | Promise<string | number | bigint | boolean | React.ReactPortal | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | null | undefined> | null | undefined; effectiveFrom: string | number | Date; }, idx: number) => (
+                      {Array.isArray(formData.employmentTypeHistory)
+                        ? formData.employmentTypeHistory.map((entry: { employmentType: string; effectiveFrom: string | number | Date }, idx: number) => (
                             <div key={String(idx)} className="flex items-center gap-2 text-xs">
                             <span className="px-2 py-1 bg-slate-700 rounded text-slate-200">{entry.employmentType}</span>
                             <span className="px-2 py-1 bg-slate-800 rounded text-slate-400">From: {new Date(entry.effectiveFrom).toLocaleDateString()}</span>

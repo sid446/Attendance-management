@@ -1256,16 +1256,14 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         // Calculate excess for week/range by summing daily excessHour for selected days
         let calcExcessDeficit = 0;
         if (filterType === 'week' && currentWeekStart) {
-          // Calculate week range, but do not include days before the 1st of the selected month
+          // Calculate week range, only include days from the selected month
           const weekStartDate = new Date(currentWeekStart);
-          const selectedMonth = weekStartDate.getMonth();
-          const selectedYear = weekStartDate.getFullYear();
+          // Use selectedMonth and selectedYear from component scope
           const weekDates = [];
           for (let i = 0; i < 7; i++) {
             const d = new Date(weekStartDate);
             d.setDate(weekStartDate.getDate() + i);
-            // Only include if in the selected month
-            if (d.getMonth() === selectedMonth && d.getFullYear() === selectedYear) {
+            if (d.getMonth() === (selectedMonth - 1) && d.getFullYear() === selectedYear) {
               weekDates.push(d.toISOString().split('T')[0]);
             }
           }
@@ -1652,9 +1650,17 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     if (filterType === 'month') {
       dateRangeText = `Date Range: ${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
     } else if (filterType === 'week') {
-      const weekEnd = new Date(currentWeekStart);
+      // Clamp weekStart and weekEnd to selected month boundaries
+      const firstDay = new Date(selectedYear, selectedMonth - 1, 1);
+      const lastDay = new Date(selectedYear, selectedMonth, 0);
+      let weekStart = new Date(currentWeekStart);
+      if (weekStart < firstDay) weekStart = new Date(firstDay);
+      let weekEnd = new Date(weekStart);
       weekEnd.setDate(weekEnd.getDate() + 6);
-      dateRangeText = `Date Range: ${currentWeekStart} to ${weekEnd.toISOString().split('T')[0]}`;
+      if (weekEnd > lastDay) weekEnd = new Date(lastDay);
+      const weekStartStr = weekStart.toISOString().split('T')[0];
+      const weekEndStr = weekEnd.toISOString().split('T')[0];
+      dateRangeText = `Date Range: ${weekStartStr} to ${weekEndStr}`;
     } else if (filterType === 'range') {
       dateRangeText = `Date Range: ${rangeStart} to ${rangeEnd}`;
     }
@@ -2341,10 +2347,15 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
 
   const currentPeriodLabel = filterType === 'month' ? new Date(selectedYear, selectedMonth - 1).toLocaleString('default', { month: 'long', year: 'numeric' }) : 
     filterType === 'week' ? (() => {
-      const start = new Date(currentWeekStart);
-      const end = new Date(currentWeekStart);
-      end.setDate(end.getDate() + 6);
-      return `Week of ${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
+      // Clamp weekStart and weekEnd to selected month boundaries
+      const firstDay = new Date(selectedYear, selectedMonth - 1, 1);
+      const lastDay = new Date(selectedYear, selectedMonth, 0);
+      let weekStart = new Date(currentWeekStart);
+      if (weekStart < firstDay) weekStart = new Date(firstDay);
+      let weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      if (weekEnd > lastDay) weekEnd = new Date(lastDay);
+      return `Week of ${weekStart.toLocaleDateString()} - ${weekEnd.toLocaleDateString()}`;
     })() : 
     `From ${rangeStart.length > 7 ? new Date(rangeStart).toLocaleDateString() : new Date(rangeStart + '-01').toLocaleString('default', { month: 'long', year: 'numeric' })} to ${rangeEnd.length > 7 ? new Date(rangeEnd).toLocaleDateString() : new Date(rangeEnd + '-01').toLocaleString('default', { month: 'long', year: 'numeric' })}`;
 
@@ -2947,10 +2958,12 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                             for (let i = 0; i < 7; i++) {
                               const d = new Date(weekStartDate);
                               d.setDate(weekStartDate.getDate() + i);
-                              const dateStr = d.toISOString().split('T')[0];
-                              const rec = item.recordDetails?.[dateStr];
-                              if (rec) {
-                                breakdown.push({ date: dateStr, info: `Excess: ${rec.excessHour ?? 0} hr`, subInfo: rec.remarks || '' });
+                              if (d.getMonth() === (selectedMonth - 1) && d.getFullYear() === selectedYear) {
+                                const dateStr = d.toISOString().split('T')[0];
+                                const rec = item.recordDetails?.[dateStr];
+                                if (rec) {
+                                  breakdown.push({ date: dateStr, info: `Excess: ${rec.excessHour ?? 0} hr`, subInfo: rec.remarks || '' });
+                                }
                               }
                             }
                           } else if (filterType === 'range' && rangeStart && rangeEnd) {
