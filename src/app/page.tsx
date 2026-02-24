@@ -1,3 +1,5 @@
+                      
+           
 "use client";
 import React, { useState, ChangeEvent, useEffect, useCallback } from "react";
 import * as XLSX from 'xlsx';
@@ -1069,6 +1071,9 @@ export default function AttendanceUpload() {
         <main className="flex-1 bg-slate-950/80 overflow-y-auto">
           <div className="max-w-6xl mx-auto px-8 py-6 space-y-6">
             {/* Upload Section */}
+            
+
+                
             {activeSection === 'employee' && (
               <EmployeeMonthView
                 summaries={summaries}
@@ -1088,8 +1093,36 @@ export default function AttendanceUpload() {
                 approvedRequests={employeeApprovedRequests}
               />
             )}
-               
-
+               {/* Upload Section */}
+                      {activeSection === 'upload' && (
+                        <UploadSection
+                          file={file}
+                          onFileChange={handleFileChange}
+                          onProcessFile={() => {
+                            if (machineFormat === 'machine1') {
+                              processMachine1File();
+                            } else if (machineFormat === 'machine2' || machineFormat === 'machine3') {
+                              processMachine2File();
+                            } else {
+                              setError('Unknown machine format selected');
+                            }
+                          }}
+                          processing={processing}
+                          error={error}
+                          saveMessage={saveMessage}
+                          uploadErrors={uploadErrors}
+                          machineFormat={machineFormat}
+                          onMachineFormatChange={setMachineFormat}
+                        />
+                      )}
+                      
+             {/* Employee Management Section */}
+            {activeSection === 'employees' && (
+              <EmployeeManagementSection
+                selectedUserId={selectedEmployeeId}
+                onRefreshUsers={fetchUsers}
+              />
+            )}
             {/* Summary Section */}
             {activeSection === 'summary' && (
               <SummarySection
