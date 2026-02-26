@@ -576,6 +576,8 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
   const [selectedRequestId, setSelectedRequestId] = useState<string | string[] | null>(null);
   const [approvalRemarks, setApprovalRemarks] = useState('');
   const [approvalValue, setApprovalValue] = useState('');
+  // For value cap logic
+  const [approvalValueError, setApprovalValueError] = useState<string | null>(null);
 
   const fetchRequests = async () => {
     try {
@@ -666,6 +668,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
     setApprovalAction(action);
     setApprovalRemarks('');
     setApprovalValue('');
+    setApprovalValueError(null);
     setShowApprovalModal(true);
   };
 
@@ -674,14 +677,141 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
     setSelectedRequestId(null);
     setApprovalRemarks('');
     setApprovalValue('');
+    setApprovalValueError(null);
   };
 
   const handleModalSubmit = async () => {
     if (!selectedRequestId) return;
 
+    // Value cap logic for approval
+    if (approvalAction === 'approve') {
+      // Find the request(s) being approved
+      let reqs: AttendanceRequest[] = [];
+      if (Array.isArray(selectedRequestId)) {
+        reqs = requests.filter(r => selectedRequestId.includes(r._id));
+      } else {
+        const req = requests.find(r => r._id === selectedRequestId);
+        if (req) reqs = [req];
+      }
+      // Only check if value is entered
+      if (approvalValue) {
+        let maxVal = null;
+        let status = reqs[0]?.requestedStatus || '';
+        if (status === 'WFH - weekdays' || status === 'WFH - weekoff') {
+          maxVal = 0.75;
+        } else if (status === 'Present - outstation') {
+          maxVal = 1.2;
+        }
+        if (maxVal !== null) {
+          const valNum = parseFloat(approvalValue);
+          if (isNaN(valNum) || valNum > maxVal) {
+            setApprovalValueError(`Max value for ${status} is ${maxVal}`);
+            return;
+          }
+        }
+      }
+    }
+
+    setApprovalValueError(null);
     await handleApproveReject(selectedRequestId, approvalAction, approvalRemarks, approvalValue);
     setShowApprovalModal(false);
     setSelectedRequestId(null);
+  };
+
+  // Approval Modal UI (improved, always rendered)
+  const renderApprovalModal = () => {
+    if (!showApprovalModal) return null;
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3">
+        <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+          <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
+            <span className="font-semibold text-lg text-slate-100">
+              {approvalAction === 'approve' ? 'Approve Request' : 'Reject Request'}
+            </span>
+            <button onClick={closeApprovalModal} className="text-slate-400 hover:text-red-400 text-xl">&times;</button>
+          </div>
+          <div className="p-4 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-1">Remarks</label>
+              <textarea
+                className="w-full rounded border border-slate-700 bg-slate-800 text-slate-100 p-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                rows={3}
+                value={approvalRemarks}
+                onChange={e => setApprovalRemarks(e.target.value)}
+                placeholder={approvalAction === 'approve' ? 'Approval remarks (optional)' : 'Reason for rejection'}
+              />
+            </div>
+            {approvalAction === 'approve' && (
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Value (if applicable)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  className={`w-full rounded border ${approvalValueError ? 'border-red-500' : 'border-slate-700'} bg-slate-800 text-slate-100 p-2 focus:outline-none focus:ring-2 focus:ring-emerald-500`}
+                  value={approvalValue}
+                  onChange={e => {
+                    setApprovalValue(e.target.value);
+                    setApprovalValueError(null);
+                  }}
+                  placeholder="Enter value (optional)"
+                  max={(() => {
+                    // Show max for relevant statuses
+                    let req: AttendanceRequest | undefined = undefined;
+                    if (selectedRequestId) {
+                      if (Array.isArray(selectedRequestId)) {
+                        req = requests.find(r => r._id === selectedRequestId[0]);
+                      } else {
+                        req = requests.find(r => r._id === selectedRequestId);
+                      }
+                    }
+                    if (!req) return undefined;
+                    if (req.requestedStatus === 'WFH - weekdays' || req.requestedStatus === 'WFH - weekoff') return 0.75;
+                    if (req.requestedStatus === 'Present - outstation') return 1.2;
+                    return undefined;
+                  })()}
+                />
+                {approvalValueError && <div className="text-red-400 text-xs mt-1">{approvalValueError}</div>}
+                {/* Show cap info if relevant */}
+                {(() => {
+                  let req: AttendanceRequest | undefined = undefined;
+                  if (selectedRequestId) {
+                    if (Array.isArray(selectedRequestId)) {
+                      req = requests.find(r => r._id === selectedRequestId[0]);
+                    } else {
+                      req = requests.find(r => r._id === selectedRequestId);
+                    }
+                  }
+                  if (!req) return null;
+                  if (req.requestedStatus === 'WFH - weekdays' || req.requestedStatus === 'WFH - weekoff') {
+                    return <div className="text-xs text-amber-400 mt-1">Max value allowed: 0.75</div>;
+                  }
+                  if (req.requestedStatus === 'Present - outstation') {
+                    return <div className="text-xs text-amber-400 mt-1">Max value allowed: 1.2</div>;
+                  }
+                  return null;
+                })()}
+              </div>
+            )}
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={closeApprovalModal}
+                className="px-4 py-2 rounded bg-slate-700 text-slate-200 hover:bg-slate-800"
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleModalSubmit}
+                className={`px-4 py-2 rounded ${approvalAction === 'approve' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'} text-white font-semibold`}
+                type="button"
+              >
+                {approvalAction === 'approve' ? 'Approve' : 'Reject'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   useEffect(() => {
@@ -1071,96 +1201,8 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
         </div>
       )}
 
-      {/* Approval Modal */}
-      {showApprovalModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-            <h3 className="text-lg text-blackhave a  font-semibold mb-4">
-              {approvalAction === 'approve' ? 'Approve Request' : 'Reject Request'}
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Remarks
-                </label>
-                <textarea
-                  value={approvalRemarks}
-                  onChange={(e) => setApprovalRemarks(e.target.value)}
-                  className="w-full px-3 py-2 border text-black border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  rows={3}
-                  placeholder="Enter remarks for this action..."
-                />
-              </div>
-              {approvalAction === 'approve' && selectedRequestId && !(() => {
-                if (Array.isArray(selectedRequestId)) {
-                  // For range requests, check if any request in the range is a leave request
-                  return selectedRequestId.some(id => {
-                    const request = requests.find(r => r._id === id);
-                    return request && (request.requestedStatus.toLowerCase().includes('leave') || request.requestedStatus === 'On leave');
-                  });
-                } else {
-                  // For single requests
-                  const request = requests.find(r => r._id === selectedRequestId);
-                  return request && (request.requestedStatus.toLowerCase().includes('leave') || request.requestedStatus === 'On leave');
-                }
-              })() && userRole === 'HR' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Value
-                  </label>
-                  <input
-                    type="number"
-                    value={approvalValue}
-                    onChange={(e) => setApprovalValue(e.target.value)}
-                    className="w-full px-3 py-2 border text-black border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Enter value..."
-                    step="0.01"
-                  />
-                </div>
-              )}
-
-              {approvalAction === 'approve' && selectedRequestId && (() => {
-                if (Array.isArray(selectedRequestId)) {
-                  // For range requests, check if any request in the range is a leave request
-                  return selectedRequestId.some(id => {
-                    const request = requests.find(r => r._id === id);
-                    return request && (request.requestedStatus.toLowerCase().includes('leave') || request.requestedStatus === 'On leave');
-                  });
-                } else {
-                  // For single requests
-                  const request = requests.find(r => r._id === selectedRequestId);
-                  return request && (request.requestedStatus.toLowerCase().includes('leave') || request.requestedStatus === 'On leave');
-                }
-              })() && (
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <p className="text-blue-800 text-sm">
-                    For leave requests, the system will automatically determine if it's paid or unpaid leave based on available earned leave balance.
-                  </p>
-                </div>
-              )}
-            </div>
-            <div className="flex justify-end space-x-3 mt-6">
-              <button
-                onClick={closeApprovalModal}
-                className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleModalSubmit}
-                disabled={processingRequest === selectedRequestId}
-                className={`px-4 py-2 text-white rounded-md disabled:opacity-50 ${
-                  approvalAction === 'approve'
-                    ? 'bg-emerald-600 hover:bg-emerald-700'
-                    : 'bg-rose-600 hover:bg-rose-700'
-                }`}
-              >
-                {processingRequest === selectedRequestId ? 'Processing...' : approvalAction === 'approve' ? 'Approve' : 'Reject'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Approval Modal (improved, always rendered) */}
+      {renderApprovalModal()}
     </section>
   );
 };
