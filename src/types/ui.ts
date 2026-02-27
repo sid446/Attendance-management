@@ -144,11 +144,15 @@ export interface User {
   workingUnderPartner?: string;
   workingTiming?: string;
 
+
   // Flexible additional info fields (e.g. PAN, Aadhaar, etc.)
   extraInfo?: {
     label: string;
     value: string;
   }[];
+
+  // Credits for Articles (as on 1st Jan 26)
+  articleCreditsAsOnJan26?: number;
 
   // Schedule entries with effective dates - NEW STRUCTURE
   schedules?: ScheduleEntry[]; // Array of schedule entries, ordered by effectiveFrom ascending

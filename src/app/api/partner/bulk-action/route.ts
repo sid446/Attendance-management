@@ -3,6 +3,7 @@ import dbConnect from '@/lib/mongodb';
 import AttendanceRequest from '@/models/AttendanceRequest';
 import Attendance from '@/models/Attendance';
 import User from '@/models/User';
+import { getScheduledTimes } from '@/lib/scheduleUtils';
 
 function calculateDuration(start: string, end: string): number {
     if (!start || !end) return 0;
@@ -153,7 +154,39 @@ export async function POST(request: NextRequest) {
                     // Also set regular checkin/checkout if not set
                     if (!rec.checkin) rec.checkin = startTime;
                     if (!rec.checkout) rec.checkout = endTime;
+                    // Recalculate totalHour and excessHour using edited times
                     rec.totalHour = calculateDuration(startTime, endTime);
+                    // Recalculate excessHour for this day
+                    // Fetch user schedule for the day
+                    const userObj = await User.findById(userId);
+                    let scheduledInTime = '';
+                    let scheduledOutTime = '';
+                    if (userObj) {
+                        const schedule = getScheduledTimes(userObj, date);
+                        scheduledInTime = schedule.inTime;
+                        scheduledOutTime = schedule.outTime;
+                    }
+                    const inTime = startTime;
+                    const outTime = endTime;
+                    let dayExcess = 0;
+                    if (scheduledInTime && scheduledOutTime && inTime && outTime && inTime !== '00:00' && outTime !== '00:00') {
+                        const [schInH, schInM] = scheduledInTime.split(':').map(Number);
+                        const [schOutH, schOutM] = scheduledOutTime.split(':').map(Number);
+                        const [actInH, actInM] = inTime.split(':').map(Number);
+                        const [actOutH, actOutM] = outTime.split(':').map(Number);
+                        const schInMin = schInH * 60 + schInM;
+                        const schOutMin = schOutH * 60 + schOutM;
+                        const actInMin = actInH * 60 + actInM;
+                        const actOutMin = actOutH * 60 + actOutM;
+                        const scheduledMinutes = schOutMin - schInMin >= 0 ? schOutMin - schInMin : (24 * 60 + schOutMin - schInMin);
+                        const actualMinutes = actOutMin - actInMin >= 0 ? actOutMin - actInMin : (24 * 60 + actOutMin - actInMin);
+                        if (actualMinutes < scheduledMinutes) {
+                            dayExcess = -(scheduledMinutes - actualMinutes) / 60;
+                        } else {
+                            dayExcess = (actualMinutes - scheduledMinutes) / 60;
+                        }
+                    }
+                    rec.excessHour = Number(dayExcess.toFixed(2));
                 }
 
                 attendance.records.set(date, rec);

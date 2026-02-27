@@ -3,6 +3,7 @@ import dbConnect from '@/lib/mongodb';
 import AttendanceRequest from '@/models/AttendanceRequest';
 import Attendance from '@/models/Attendance';
 import User from '@/models/User';
+import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { transporter, mailOptions } from '@/lib/mailer';
 
 export async function POST(request: NextRequest) {
@@ -120,13 +121,44 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Calculate total hours if both times are provided
+      // Calculate totalHour and excessHour using edited times and schedule (like bulk-approve)
       if (attendanceRequest.startTime && attendanceRequest.endTime) {
-        const start = new Date(`2000-01-01T${attendanceRequest.startTime}`);
-        const end = new Date(`2000-01-01T${attendanceRequest.endTime}`);
-        const diffMs = end.getTime() - start.getTime();
-        const diffHours = diffMs / (1000 * 60 * 60);
-        rec.totalHour = Math.max(0, diffHours);
+        rec.editedCheckin = attendanceRequest.startTime;
+        rec.editedCheckout = attendanceRequest.endTime;
+        if (!rec.checkin) rec.checkin = attendanceRequest.startTime;
+        if (!rec.checkout) rec.checkout = attendanceRequest.endTime;
+        // Calculate totalHour
+        const [inH, inM] = attendanceRequest.startTime.split(':').map(Number);
+        const [outH, outM] = attendanceRequest.endTime.split(':').map(Number);
+        const inMin = inH * 60 + inM;
+        const outMin = outH * 60 + outM;
+        let diffMinutes = outMin - inMin;
+        if (diffMinutes < 0) diffMinutes += 24 * 60;
+        rec.totalHour = Math.max(0, diffMinutes / 60);
+        // Calculate excessHour
+        const userObj = await User.findById(attendanceRequest.userId);
+        let scheduledInTime = '';
+        let scheduledOutTime = '';
+        if (userObj) {
+          const schedule = getScheduledTimes(userObj, attendanceRequest.date);
+          scheduledInTime = schedule.inTime;
+          scheduledOutTime = schedule.outTime;
+        }
+        let dayExcess = 0;
+        if (scheduledInTime && scheduledOutTime && attendanceRequest.startTime !== '00:00' && attendanceRequest.endTime !== '00:00') {
+          const [schInH, schInM] = scheduledInTime.split(':').map(Number);
+          const [schOutH, schOutM] = scheduledOutTime.split(':').map(Number);
+          const schInMin = schInH * 60 + schInM;
+          const schOutMin = schOutH * 60 + schOutM;
+          const scheduledMinutes = schOutMin - schInMin >= 0 ? schOutMin - schInMin : (24 * 60 + schOutMin - schInMin);
+          const actualMinutes = outMin - inMin >= 0 ? outMin - inMin : (24 * 60 + outMin - inMin);
+          if (actualMinutes < scheduledMinutes) {
+            dayExcess = -(scheduledMinutes - actualMinutes) / 60;
+          } else {
+            dayExcess = (actualMinutes - scheduledMinutes) / 60;
+          }
+        }
+        rec.excessHour = Number(dayExcess.toFixed(2));
       }
 
       // Set value and halfDay based on approver and request type

@@ -1,6 +1,11 @@
 import React, { useState, useEffect, ChangeEvent, useMemo } from 'react';
 import * as XLSX from 'xlsx';
-import { User, ScheduleTime, DailySchedule } from '@/types/ui';
+import { User as UserBase, ScheduleTime, DailySchedule } from '@/types/ui';
+
+// Extend User type to include articleCreditsAsOnJan26 for local use
+type User = UserBase & {
+  articleCreditsAsOnJan26?: number;
+};
 import { Edit2, Save, X, Plus, Upload, FileUp, Filter, Trash2, Search, Download, ChevronDown, ChevronUp, FileSpreadsheet, Settings, Users, Briefcase, CreditCard, Tag } from 'lucide-react';
 import type { Workbook, Worksheet, Row, Cell } from 'exceljs';
 
@@ -787,6 +792,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       };
 
       const idx = {
+          employmentType: findCol(['Employment Type', 'Emp Type', 'Type of Employment']),
         name: findCol(['Name', 'Employee Name']),
         regNo: findCol(['Registration / Membership No.', 'Registration No', 'Membership No']),
         empCode: findCol(['Employee Code', 'Emp Code']),
@@ -832,7 +838,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         workPartner: findCol(['Working Under Partner', 'Work Partner']),
         timingMonFri: findCol(['Work Timings (Mon to Fri)', 'Work Timings Mon-Fri', 'Mon-Fri Timings']),
         timingSat: findCol(['Work Timings (Sat)', 'Saturday Timings', 'Sat Timings']),
-        leavesBF: findCol(['Leaves B/F', 'Leaves Brought Forward', 'Balance Leaves'])
+        leavesBF: findCol(['Leaves B/F', 'Leaves Brought Forward', 'Balance Leaves']),
+        articleCredits: findCol(['Credits for Articles (as on 1st Jan 26)'])
       };
 
       if (idx.name === -1) {
@@ -885,6 +892,39 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           }
         };
 
+        // Parse article credits (number)
+        let articleCreditsAsOnJan26 = undefined;
+        if (idx.articleCredits !== -1) {
+          const val = row[idx.articleCredits];
+          if (val !== undefined && val !== null && val !== '') {
+            const num = Number(val);
+            if (!isNaN(num)) articleCreditsAsOnJan26 = num;
+          }
+        }
+
+        // Set both earned and remaining from Leaves B/F if present
+        let leaveBalance: any = undefined;
+        if (idx.leavesBF !== -1) {
+          let bfRaw = getVal(idx.leavesBF);
+          let bf = Number(bfRaw);
+          if (isNaN(bf) || bfRaw === '' || bfRaw === null) bf = 0;
+          // Determine if article for monthlyEarned using values from columns
+          let isArticle = false;
+          const designationVal = getVal(idx.designation);
+          const employmentTypeVal = getVal(idx.employmentType);
+          if (designationVal && typeof designationVal === 'string' && designationVal.toLowerCase() === 'article') {
+            isArticle = true;
+          } else if (employmentTypeVal && typeof employmentTypeVal === 'string' && employmentTypeVal.toLowerCase() === 'article') {
+            isArticle = true;
+          }
+          leaveBalance = {
+            earned: bf,
+            remaining: bf,
+            used: 0,
+            lastUpdated: new Date(),
+            monthlyEarned: isArticle ? 1 : 2
+          };
+        }
         return {
           name: String(name),
           registrationNo: getVal(idx.regNo),
@@ -929,16 +969,10 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           nextAttemptDueDate: formatExcelDate(row[idx.nextAttempt]),
           registeredUnderPartner: getVal(idx.regPartner),
           workingUnderPartner: getVal(idx.workPartner),
-          // Remove old timing fields
-          // workingTiming: timingRaw,
-          leaveBalance: idx.leavesBF !== -1 ? { remaining: Number(getVal(idx.leavesBF)) || 0 } : undefined,
-          
+          leaveBalance,
           // Add schedule structure
           schedules: [scheduleEntry],
-          
-          // Remove old schedule fields
-          // schIn,
-          // schOut,
+          articleCreditsAsOnJan26,
           extraInfo: allExtraLabels.map(label => {
             const colIndex = headers.findIndex(h => String(h).trim().toLowerCase() === label.toLowerCase());
             const value = colIndex !== -1 ? getVal(colIndex) : '';
@@ -1149,6 +1183,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       { key: 'leavesEarned', header: 'Total Leaves Due', width: 16 },
       { key: 'leavesTaken', header: 'Total Leaves Taken', width: 18 },
       { key: 'balanceLeaves', header: 'Balance Leaves', width: 14 },
+      { key: 'articleCreditsAsOnJan26', header: 'Credits for Articles (as on 1st Jan 26)', width: 18 },
       { key: 'joiningDate', header: 'Date of Joining -in Asija', width: 22 },
       { key: 'articleshipStartDate', header: 'Articleship Start Date', width: 20 },
       { key: 'transferCase', header: 'Transfer Case', width: 14 },
@@ -1288,6 +1323,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         leavesTaken: u.leaveBalance?.used || 0,
         balanceLeaves: u.leaveBalance?.remaining || 0,
         joiningDate: toDateString(u.joiningDate),
+        articleCreditsAsOnJan26: typeof u.articleCreditsAsOnJan26 === 'number' ? u.articleCreditsAsOnJan26 : '',
         articleshipStartDate: toDateString(u.articleshipStartDate),
         transferCase: u.transferCase || '',
         firstYearArticleship: u.firstYearArticleship || '',
@@ -1550,6 +1586,19 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
                   />
                 </div>
+
+                {formData.category === 'Article' && (
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Credits for Articles (as on 1st Jan 26)</label>
+                    <input
+                      type="number"
+                      value={formData.articleCreditsAsOnJan26 ?? ''}
+                      onChange={(e) => handleInputChange('articleCreditsAsOnJan26', e.target.value === '' ? undefined : Number(e.target.value))}
+                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                      min="0"
+                    />
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">Designation</label>

@@ -90,11 +90,15 @@ export interface IUser extends Document {
   workingUnderPartner?: string;
   workingTiming?: string;
 
+
   // Flexible additional info (e.g. PAN, Aadhaar, etc.)
   extraInfo?: {
     label: string;
     value: string;
   }[];
+
+  // Credits for Articles (as on 1st Jan 26)
+  articleCreditsAsOnJan26?: number;
 
   // Leave balance management
   leaveBalance?: {
@@ -409,6 +413,12 @@ const UserSchema = new Schema(
         _id: false,
       },
     ],
+
+    // Credits for Articles (as on 1st Jan 26)
+    articleCreditsAsOnJan26: {
+      type: Number,
+      default: 0,
+    },
     leaveBalance: {
       earned: { type: Number, default: 0 },
       used: { type: Number, default: 0 },

@@ -118,6 +118,7 @@ export async function POST(request: NextRequest) {
             filledScholarship: emp.filledScholarship,
             qualificationLevel: emp.qualificationLevel,
             nextAttemptDueDate: emp.nextAttemptDueDate,
+            articleCreditsAsOnJan26: emp.articleCreditsAsOnJan26,
             registeredUnderPartner: emp.registeredUnderPartner,
             workingUnderPartner: emp.workingUnderPartner,
             // Remove old workingTiming field
@@ -147,7 +148,7 @@ export async function POST(request: NextRequest) {
               updateData.attendanceEmail = approverUser.attendanceEmail || approverUser.email;
             }
           }
-        } else if (emp.workingUnderPartner) {
+        } else if (typeof emp.workingUnderPartner === 'string' && emp.workingUnderPartner.trim()) {
           const partnerName = emp.workingUnderPartner.trim().toLowerCase();
           const partnerNameWithSpaces = partnerName.replace(/\./g, ' ');
           const partnerUser = userMapByName.get(partnerName) || 
@@ -197,12 +198,19 @@ export async function POST(request: NextRequest) {
             const odId = employeeCode ? String(employeeCode) : `OD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
             const dbName = excelName.trim().replace(/\s+/g, '.');
             const email = emp.email || `${dbName.toLowerCase().replace(/[^a-z0-9.]/g, '')}@asija.com`;
-            
+
             // Ensure attendanceEmail falls back to employee email if not set from partner
             if (!updateData.attendanceEmail) {
               updateData.attendanceEmail = email;
             }
-            
+
+            // Prevent duplicate email error
+            if (existingUsers.some(u => u.email === email)) {
+              stats.failed++;
+              stats.errors.push(`Email "${email}" already exists for another user`);
+              continue;
+            }
+
             await User.create({
                 odId: odId,
                 name: dbName, // Store as "First.Last" or "First Last"? User DB seemed "First.Last"

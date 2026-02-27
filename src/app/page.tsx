@@ -7,6 +7,7 @@ import { X } from 'lucide-react';
 import { AttendanceRecord, AttendanceSummaryView, User, DailySchedule } from '@/types/ui';
 import { LoginView } from '@/components/LoginView';
 import { Sidebar } from '@/components/Sidebar';
+import { ArticleCreditsManager } from '@/components/ArticleCreditsManager';
 import { UploadSection } from '@/components/UploadSection';
 import { SummarySection } from '@/components/SummarySection';
 import { EmployeeMonthView } from '@/components/EmployeeMonthView';
@@ -43,7 +44,7 @@ export default function AttendanceUpload() {
   const [uploadTotal, setUploadTotal] = useState<number>(0);
   const [uploadSaved, setUploadSaved] = useState<number>(0);
   const [uploadFailed, setUploadFailed] = useState<number>(0);
-  const [activeSection, setActiveSection] = useState<'upload' | 'summary' | 'employee' | 'employees' | 'requests' | 'holidays' | 'backup' | 'leave' | 'fines'>('summary');
+  const [activeSection, setActiveSection] = useState<'upload' | 'summary' | 'employee' | 'employees' | 'requests' | 'holidays' | 'backup' | 'leave' | 'fines' | 'articleCredits'>('summary');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [selectedEmployeeMonth, setSelectedEmployeeMonth] = useState<string>('');
   // Modal state for EmployeeMonthView
@@ -1059,7 +1060,7 @@ export default function AttendanceUpload() {
       <div className="flex h-screen max-h-screen">
         <Sidebar
           activeSection={activeSection}
-          setActiveSection={setActiveSection}
+          setActiveSection={(section) => setActiveSection(section)}
           uploadTotal={uploadTotal}
           uploadSaved={uploadSaved}
           uploadFailed={uploadFailed}
@@ -1092,6 +1093,10 @@ export default function AttendanceUpload() {
                 showEmployeeSelector={true}
                 approvedRequests={employeeApprovedRequests}
               />
+            )}
+            {/* Article Credits Manager Section */}
+            {activeSection === 'articleCredits' && (
+              <ArticleCreditsManager />
             )}
                {/* Upload Section */}
                       {activeSection === 'upload' && (

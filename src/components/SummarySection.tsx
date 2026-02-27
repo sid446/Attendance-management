@@ -2906,7 +2906,16 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-slate-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => item.summary.totalHalfDay > 0 && openDetail(e, 'HalfDay', item)}>
                         {item.summary.totalHalfDay > 0 ? (
-                           <span className="hover:underline" title="Click to view details">{item.summary.totalHalfDay}</span>
+                          <span className="hover:underline" title="Click to view details">
+                            {item.summary.totalHalfDay}
+                            {(() => {
+                              // Count 'Half Day - weekdays' in recordDetails
+                              const halfDayWeekdays = Object.values(item.recordDetails || {}).filter((r: any) => r.typeOfPresence === 'Half Day - weekdays').length;
+                              return halfDayWeekdays > 0 ? (
+                                <span className="block text-xs text-slate-500 font-normal">Half Day-weekdays: {halfDayWeekdays}</span>
+                              ) : null;
+                            })()}
+                          </span>
                         ) : '-'}
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-rose-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => item.summary.totalAbsent > 0 && openDetail(e, 'Absent', item)}>

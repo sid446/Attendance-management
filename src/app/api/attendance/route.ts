@@ -223,7 +223,6 @@ export async function POST(request: NextRequest) {
               }
             }
           }
-
           // Override if Approved Request Exists
           if (approvedRequest) {
              // Calculate Request Duration
@@ -423,43 +422,43 @@ export async function POST(request: NextRequest) {
       // Increment leave balance for processed users
       try {
         const now = new Date();
-        // Group processed by monthYear
-        const processedByMonth: Record<string, string[]> = {};
+        // Get unique userIds from processed records
+        const uniqueUserIds = [...new Set(processed.map(p => p.userId))];
+        // Map userId to monthYear for this upload
+        const userMonthMap: Record<string, string> = {};
         for (const p of processed) {
-          if (!processedByMonth[p.monthYear]) processedByMonth[p.monthYear] = [];
-          processedByMonth[p.monthYear].push(p.userId);
+          userMonthMap[p.userId] = p.monthYear;
         }
-
-        for (const [monthYear, userIds] of Object.entries(processedByMonth)) {
-          for (const userId of userIds) {
-            const user = await User.findById(userId);
-            if (!user || !user.isActive) continue;
-
-            const monthlyEarned = user.leaveBalance?.monthlyEarned || 2;
-
-            // Check if leave was already incremented for this month
-            const lastUpdated = user.leaveBalance?.lastUpdated;
-            const currentEarned = user.leaveBalance?.earned || 0;
-            if (lastUpdated) {
-              const lastUpdatedMonth = `${lastUpdated.getFullYear()}-${String(lastUpdated.getMonth() + 1).padStart(2, '0')}`;
-              if (lastUpdatedMonth === monthYear) {
-                continue; // Already incremented for this month
-              }
+        for (const userId of uniqueUserIds) {
+          const user = await User.findById(userId);
+          if (!user || !user.isActive) continue;
+          // Skip leave balance increment for articles
+          const isArticle = user.employmentType === 'article' || (user.designation && user.designation.toLowerCase() === 'article');
+          if (isArticle) continue;
+          const currentEarned = user.leaveBalance?.earned || 0;
+          const currentUsed = user.leaveBalance?.used || 0;
+          const lastUpdated = user.leaveBalance?.lastUpdated;
+          const thisMonth = userMonthMap[userId];
+          let alreadyIncremented = false;
+          if (lastUpdated) {
+            const lastUpdatedMonth = `${lastUpdated.getFullYear()}-${String(lastUpdated.getMonth() + 1).padStart(2, '0')}`;
+            if (lastUpdatedMonth === thisMonth) {
+              alreadyIncremented = true;
             }
-
-            // Increment earned leave
-            const newEarned = currentEarned + monthlyEarned;
-            const currentUsed = user.leaveBalance?.used || 0;
-            const newRemaining = newEarned - currentUsed;
-
-            await User.findByIdAndUpdate(user._id, {
-              'leaveBalance.earned': newEarned,
-              'leaveBalance.remaining': Math.max(0, newRemaining),
-              'leaveBalance.lastUpdated': now,
-            });
           }
-          console.log(`Leave balance incremented for ${userIds.length} users in month ${monthYear}`);
+          if (alreadyIncremented) continue;
+          // Only increment for non-articles
+          const increment = 2;
+          const newEarned = currentEarned + increment;
+          const newRemaining = newEarned - currentUsed;
+          await User.findByIdAndUpdate(user._id, {
+            'leaveBalance.earned': newEarned,
+            'leaveBalance.remaining': Math.max(0, newRemaining),
+            'leaveBalance.lastUpdated': now,
+            'leaveBalance.monthlyEarned': 2,
+          });
         }
+        console.log(`Leave balance incremented for ${uniqueUserIds.length} users (attendance upload)`);
       } catch (leaveError) {
         console.error('Error incrementing leave balance:', leaveError);
         // Don't fail the upload if leave increment fails
