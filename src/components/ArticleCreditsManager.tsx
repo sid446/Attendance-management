@@ -8,6 +8,7 @@ interface ArticleCreditRow {
   leaveTakenBeforeJan26: number; // From leaveBalance.used
   leaveTakenAfterJan26: number; // From leaveBalance.usedAfterJan26
   totalExcessHours: number; // Sum of excessHour from summary of each month from Jan 2026
+  totalExcessDays: number; // Excess hours converted to days
   finalCredit: number;
 }
 
@@ -44,8 +45,26 @@ const calculateArticleCredit = (user: User, attendanceRecords: any[]): ArticleCr
     }
   });
 
-  // Final credit calculation: creditAsOnJan26 - leaveTakenAfterJan26 + totalExcessHours
-  const finalCredit = creditAsOnJan26 - leaveTakenAfterJan26 + totalExcessHours;
+  // Calculate weekday hours from user's schedule (Monday)
+  let weekdayHours = 8; // Default to 8 hours
+  const schedules = (user as any).schedules;
+  if (schedules && Array.isArray(schedules) && schedules.length > 0) {
+    // Get the most recent schedule
+    const sortedSchedules = schedules.slice().sort((a: any, b: any) => 
+      new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime()
+    );
+    const mondaySchedule = sortedSchedules[0]?.daily?.monday;
+    if (mondaySchedule?.inTime && mondaySchedule?.outTime) {
+      const [inH, inM] = mondaySchedule.inTime.split(':').map(Number);
+      const [outH, outM] = mondaySchedule.outTime.split(':').map(Number);
+      weekdayHours = (outH + outM / 60) - (inH + inM / 60);
+      if (weekdayHours <= 0) weekdayHours = 8; // Fallback if invalid
+    }
+  }
+  const totalExcessDays = totalExcessHours / weekdayHours;
+
+  // Final credit calculation: creditAsOnJan26 - leaveTakenAfterJan26 + totalExcessDays
+  const finalCredit = creditAsOnJan26 - leaveTakenAfterJan26 + totalExcessDays;
 
   return {
     empId: user.employeeCode || user.odId || '',
@@ -54,6 +73,7 @@ const calculateArticleCredit = (user: User, attendanceRecords: any[]): ArticleCr
     leaveTakenBeforeJan26,
     leaveTakenAfterJan26,
     totalExcessHours: Number(totalExcessHours.toFixed(2)),
+    totalExcessDays: Number(totalExcessDays.toFixed(2)),
     finalCredit: Number(finalCredit.toFixed(2)),
   };
 };
@@ -127,6 +147,7 @@ export const ArticleCreditsManager: React.FC = () => {
       { key: 'leaveTakenBeforeJan26', header: 'Leave Taken Before 1 Jan 2026', width: 24 },
       { key: 'leaveTakenAfterJan26', header: 'Leave Taken On/After 1 Jan 2026', width: 28 },
       { key: 'totalExcessHours', header: 'Excess Hours (from Jan 2026)', width: 22 },
+      { key: 'totalExcessDays', header: 'Excess Days (from Jan 2026)', width: 22 },
       { key: 'finalCredit', header: 'Final Credit', width: 14 },
     ];
     rows.forEach(row => worksheet.addRow(row));
@@ -240,6 +261,7 @@ export const ArticleCreditsManager: React.FC = () => {
     const base = row.creditAsOnJan26;
     const leaveAfter = row.leaveTakenAfterJan26;
     const excess = row.totalExcessHours;
+    const excessDays = row.totalExcessDays;
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
         <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
@@ -251,9 +273,10 @@ export const ArticleCreditsManager: React.FC = () => {
             <div><span className="font-semibold">Base Credit (as on 1 Jan 26):</span> <span className="font-mono">{base}</span></div>
             <div><span className="font-semibold">Leave Taken After 1 Jan 2026:</span> <span className="font-mono text-rose-400">- {leaveAfter}</span></div>
             <div><span className="font-semibold">Excess Hours (from Jan 2026):</span> <span className={`font-mono ${excess >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{excess >= 0 ? '+' : ''}{excess}</span></div>
+            <div><span className="font-semibold">Excess Days (from Jan 2026):</span> <span className={`font-mono ${excessDays >= 0 ? 'text-orange-400' : 'text-rose-400'}`}>{excessDays >= 0 ? '+' : ''}{excessDays}</span></div>
             <hr className="my-2 border-slate-700" />
             <div className="font-bold text-lg">Final Credit: <span className="font-mono text-emerald-300">{row.finalCredit}</span></div>
-            <div className="text-xs text-slate-400 mt-2">Formula: Credit (Jan 26) - Leave After Jan 26 + Excess Hours</div>
+            <div className="text-xs text-slate-400 mt-2">Formula: Credit (Jan 26) - Leave After Jan 26 + Excess Days</div>
           </div>
           <div className="bg-slate-950 px-4 py-2 border-t border-slate-800 text-right">
             <button onClick={onClose} className="text-xs text-slate-400 hover:text-white px-3 py-1.5 rounded-md hover:bg-slate-800 transition-colors">Close</button>
@@ -374,6 +397,7 @@ export const ArticleCreditsManager: React.FC = () => {
                   <th className="px-4 py-3 text-right font-semibold text-rose-400 cursor-pointer" onClick={() => { setSortField('leaveTakenBeforeJan26'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>Leave Taken Before 1 Jan 2026</th>
                   <th className="px-4 py-3 text-right font-semibold text-sky-400 cursor-pointer" onClick={() => { setSortField('leaveTakenAfterJan26'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>Leave Taken On/After 1 Jan 2026</th>
                   <th className="px-4 py-3 text-right font-semibold text-amber-400 cursor-pointer" onClick={() => { setSortField('totalExcessHours'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>Excess Hours (from Jan 2026)</th>
+                  <th className="px-4 py-3 text-right font-semibold text-orange-400 cursor-pointer" onClick={() => { setSortField('totalExcessDays'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>Excess Days (from Jan 2026)</th>
                   <th className="px-4 py-3 text-right font-semibold text-emerald-300 cursor-pointer" onClick={() => { setSortField('finalCredit'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>Final Credit</th>
                 </tr>
               </thead>
@@ -386,6 +410,7 @@ export const ArticleCreditsManager: React.FC = () => {
                     <td className="px-4 py-3 text-right font-mono text-rose-400">{row.leaveTakenBeforeJan26}</td>
                     <td className="px-4 py-3 text-right font-mono text-sky-400">{row.leaveTakenAfterJan26}</td>
                     <td className="px-4 py-3 text-right font-mono text-amber-400">{row.totalExcessHours}</td>
+                    <td className="px-4 py-3 text-right font-mono text-orange-400">{row.totalExcessDays}</td>
                     <td
                       className="px-4 py-3 text-right font-mono text-emerald-300 font-bold cursor-pointer underline decoration-dotted hover:bg-slate-800/60"
                       title="Show calculation"

@@ -1520,6 +1520,8 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       { key: 'leavesConsumed', header: 'Leaves Consumed This Month', width: 15 },
       { key: 'leavesCF', header: 'C/F Leaves', width: 10 },
       { key: 'paidLeave', header: 'Paid Leave', width: 10 },
+      { key: 'excess', header: 'Excess (Hours)', width: 10 },
+      { key: 'excessDays', header: 'Excess (Days)', width: 10 },
       { key: 'netWorking', header: 'Net Weekdays Working', width: 12 },
       { key: 'officeWorkingDays', header: 'Office Working Days', width: 12 }
     ];
@@ -1528,6 +1530,21 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     filteredSummaries.forEach((item) => {
       const user = allUsers?.find(u => u._id === item.userId);
       const metrics = calculateDetailedAttendanceMetrics(item);
+
+      // Calculate Net Working Days = PIO + (excess hours / weekday hours)
+      // Get the user's schedule to determine weekday hours
+      const applicableSchedule = getApplicableSchedule(item);
+      const mondaySchedule = applicableSchedule?.daily?.monday;
+      let weekdayHours = 8; // Default to 8 hours if schedule not available
+      if (mondaySchedule?.inTime && mondaySchedule?.outTime) {
+        const [inH, inM] = mondaySchedule.inTime.split(':').map(Number);
+        const [outH, outM] = mondaySchedule.outTime.split(':').map(Number);
+        weekdayHours = (outH + outM / 60) - (inH + inM / 60);
+        if (weekdayHours <= 0) weekdayHours = 8; // Fallback if invalid
+      }
+      const excessHours = item.summary?.excessHour || 0;
+      const excessDays = excessHours / weekdayHours;
+      const netWorkingDays = Number((metrics.pio + excessDays).toFixed(2));
 
       worksheet.addRow({
         paidFrom: user?.paidFrom || 'N/A',
@@ -1560,7 +1577,9 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           return bf + earned - consumed;
         })(), // Carried forward: B/F + Earned - Consumed
         paidLeave: calculateLeaveConsumed(item), // Paid leave days
-        netWorking: metrics.netWeekdaysWorking + calculateLeaveConsumed(item), // Net includes paid leave
+        excess: excessHours, // Excess hours from summary
+        excessDays: Number(excessDays.toFixed(2)), // Excess hours converted to days
+        netWorking: netWorkingDays, // PIO + (excess hours / weekday hours)
         officeWorkingDays: calculateScheduledWorkingDays(item) // Expected working days
       });
     });
@@ -1574,21 +1593,35 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
 
       // Special highlighting for calculated columns
-      if (colNumber === 24) {
+      if (colNumber === 25) {
         // Paid Leave - Yellow
         cell.fill = {
           type: 'pattern',
           pattern: 'solid',
           fgColor: { argb: 'FFFFD700' } // Yellow highlight
         };
-      } else if (colNumber === 25) {
+      } else if (colNumber === 26) {
+        // Excess Hours - Purple
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF9370DB' } // Purple highlight
+        };
+      } else if (colNumber === 27) {
+        // Excess Days - Purple
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF9370DB' } // Purple highlight
+        };
+      } else if (colNumber === 28) {
         // Net Weekdays Working - Blue
         cell.fill = {
           type: 'pattern',
           pattern: 'solid',
           fgColor: { argb: 'FF1E90FF' } // Blue highlight
         };
-      } else if (colNumber === 26) {
+      } else if (colNumber === 29) {
         // Office Working Days - Orange
         cell.fill = {
           type: 'pattern',
@@ -1620,7 +1653,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         cell.font = { size: 10 };
 
         // Special highlighting for calculated columns
-        if (colNumber === 24) {
+        if (colNumber === 25) {
           // Paid Leave - Light Yellow background
           cell.fill = {
             type: 'pattern',
@@ -1628,7 +1661,23 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
             fgColor: { argb: 'FFFFF8DC' } // Light yellow
           };
           cell.font = { size: 10, color: { argb: 'FF8B4513' } }; // Dark brown text
-        } else if (colNumber === 25) {
+        } else if (colNumber === 26) {
+          // Excess Hours - Light Purple background
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFE6E6FA' } // Light purple
+          };
+          cell.font = { size: 10, color: { argb: 'FF4B0082' } }; // Indigo text
+        } else if (colNumber === 27) {
+          // Excess Days - Light Purple background
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FFE6E6FA' } // Light purple
+          };
+          cell.font = { size: 10, color: { argb: 'FF4B0082' } }; // Indigo text
+        } else if (colNumber === 28) {
           // Net Weekdays Working - Light Blue background
           cell.fill = {
             type: 'pattern',
@@ -1636,7 +1685,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
             fgColor: { argb: 'FFE6F3FF' } // Light blue
           };
           cell.font = { size: 10, color: { argb: 'FF000080' } }; // Dark blue text
-        } else if (colNumber === 26) {
+        } else if (colNumber === 29) {
           // Office Working Days - Light Orange background
           cell.fill = {
             type: 'pattern',
