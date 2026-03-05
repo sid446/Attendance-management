@@ -262,6 +262,12 @@ function calculateSummary(records: Map<string, {
       }
     }
 
+    // Ensure half-day is NOT set when both check-in and check-out are invalid/00:00
+    const bothTimesInvalid = (!record.checkin || record.checkin === '00:00') && (!record.checkout || record.checkout === '00:00');
+    if (bothTimesInvalid) {
+      halfDay = false;
+    }
+
     // Update the record's halfDay flag
     record.halfDay = halfDay;
 

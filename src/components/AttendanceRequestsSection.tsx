@@ -579,6 +579,42 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
   // For value cap logic
   const [approvalValueError, setApprovalValueError] = useState<string | null>(null);
 
+  // Helper function to check if request type has fixed value (no editing allowed)
+  const isFixedValueType = (requestedStatus: string): boolean => {
+    const status = requestedStatus.toLowerCase();
+    return status.includes('half') || status.includes('leave') || requestedStatus === 'On leave';
+  };
+
+  // Helper function to get default value based on request type
+  const getDefaultValueForType = (requestedStatus: string): string => {
+    const status = requestedStatus.toLowerCase();
+    if (status.includes('half')) {
+      return '0.5';
+    }
+    if (status.includes('leave') || requestedStatus === 'On leave') {
+      return ''; // No value needed for leave
+    }
+    if (status.includes('wfh')) {
+      return '0.75';
+    }
+    if (status.includes('outstation')) {
+      return '1.2';
+    }
+    return '1';
+  };
+
+  // Helper function to get max value for a request type
+  const getMaxValueForType = (requestedStatus: string): number | null => {
+    const status = requestedStatus.toLowerCase();
+    if (status.includes('wfh')) {
+      return 0.75;
+    }
+    if (status.includes('outstation')) {
+      return 1.2;
+    }
+    return null;
+  };
+
   const fetchRequests = async () => {
     try {
       setLoading(true);
@@ -667,8 +703,21 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
     setSelectedRequestId(requestId);
     setApprovalAction(action);
     setApprovalRemarks('');
-    setApprovalValue('');
     setApprovalValueError(null);
+    
+    // Pre-set default value based on request type
+    if (action === 'approve') {
+      const reqIds = Array.isArray(requestId) ? requestId : [requestId];
+      const req = requests.find(r => r._id === reqIds[0]);
+      if (req) {
+        setApprovalValue(getDefaultValueForType(req.requestedStatus));
+      } else {
+        setApprovalValue('');
+      }
+    } else {
+      setApprovalValue('');
+    }
+    
     setShowApprovalModal(true);
   };
 
@@ -713,7 +762,25 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
     }
 
     setApprovalValueError(null);
-    await handleApproveReject(selectedRequestId, approvalAction, approvalRemarks, approvalValue);
+    
+    // Determine the value to send
+    let valueToSend = approvalValue;
+    if (approvalAction === 'approve') {
+      const reqIds = Array.isArray(selectedRequestId) ? selectedRequestId : [selectedRequestId];
+      const req = requests.find(r => r._id === reqIds[0]);
+      if (req) {
+        // For half-day, always use 0.5
+        if (req.requestedStatus.toLowerCase().includes('half')) {
+          valueToSend = '0.5';
+        }
+        // For leave, don't send value
+        else if (isFixedValueType(req.requestedStatus)) {
+          valueToSend = '';
+        }
+      }
+    }
+    
+    await handleApproveReject(selectedRequestId, approvalAction, approvalRemarks, valueToSend);
     setShowApprovalModal(false);
     setSelectedRequestId(null);
   };
@@ -741,57 +808,70 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
                 placeholder={approvalAction === 'approve' ? 'Approval remarks (optional)' : 'Reason for rejection'}
               />
             </div>
-            {approvalAction === 'approve' && (
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Value (if applicable)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  className={`w-full rounded border ${approvalValueError ? 'border-red-500' : 'border-slate-700'} bg-slate-800 text-slate-100 p-2 focus:outline-none focus:ring-2 focus:ring-emerald-500`}
-                  value={approvalValue}
-                  onChange={e => {
-                    setApprovalValue(e.target.value);
-                    setApprovalValueError(null);
-                  }}
-                  placeholder="Enter value (optional)"
-                  max={(() => {
-                    // Show max for relevant statuses
-                    let req: AttendanceRequest | undefined = undefined;
-                    if (selectedRequestId) {
-                      if (Array.isArray(selectedRequestId)) {
-                        req = requests.find(r => r._id === selectedRequestId[0]);
-                      } else {
-                        req = requests.find(r => r._id === selectedRequestId);
+            {approvalAction === 'approve' && (() => {
+              // Get the current request to check its type
+              let req: AttendanceRequest | undefined = undefined;
+              if (selectedRequestId) {
+                if (Array.isArray(selectedRequestId)) {
+                  req = requests.find(r => r._id === selectedRequestId[0]);
+                } else {
+                  req = requests.find(r => r._id === selectedRequestId);
+                }
+              }
+              
+              // Don't show value input for On leave
+              if (req && isFixedValueType(req.requestedStatus)) {
+                // For half-day, show fixed value display
+                if (req.requestedStatus.toLowerCase().includes('half')) {
+                  return (
+                    <div className="p-3 bg-slate-800/50 rounded-lg border border-slate-700">
+                      <span className="text-sm text-slate-300">Attendance Value: </span>
+                      <span className="text-sm font-medium text-white">0.5 days</span>
+                      <span className="text-xs text-slate-500 ml-2">(fixed for half-day)</span>
+                    </div>
+                  );
+                }
+                // For On leave, no value needed
+                return (
+                  <div className="p-3 bg-slate-800/50 rounded-lg border border-slate-700">
+                    <span className="text-sm text-slate-400">No attendance value required for leave requests</span>
+                  </div>
+                );
+              }
+              
+              // Show value input for WFH and outstation
+              const maxVal = req ? getMaxValueForType(req.requestedStatus) : null;
+              
+              return (
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">
+                    Value {maxVal ? <span className="text-slate-500">(max: {maxVal})</span> : '(if applicable)'}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max={maxVal || undefined}
+                    className={`w-full rounded border ${approvalValueError ? 'border-red-500' : 'border-slate-700'} bg-slate-800 text-slate-100 p-2 focus:outline-none focus:ring-2 focus:ring-emerald-500`}
+                    value={approvalValue}
+                    onChange={e => {
+                      let val = e.target.value;
+                      // Enforce max value
+                      if (maxVal && parseFloat(val) > maxVal) {
+                        val = maxVal.toString();
                       }
-                    }
-                    if (!req) return undefined;
-                    if (req.requestedStatus === 'WFH - weekdays' || req.requestedStatus === 'WFH - weekoff') return 0.75;
-                    if (req.requestedStatus === 'Present - outstation') return 1.2;
-                    return undefined;
-                  })()}
-                />
-                {approvalValueError && <div className="text-red-400 text-xs mt-1">{approvalValueError}</div>}
-                {/* Show cap info if relevant */}
-                {(() => {
-                  let req: AttendanceRequest | undefined = undefined;
-                  if (selectedRequestId) {
-                    if (Array.isArray(selectedRequestId)) {
-                      req = requests.find(r => r._id === selectedRequestId[0]);
-                    } else {
-                      req = requests.find(r => r._id === selectedRequestId);
-                    }
-                  }
-                  if (!req) return null;
-                  if (req.requestedStatus === 'WFH - weekdays' || req.requestedStatus === 'WFH - weekoff') {
-                    return <div className="text-xs text-amber-400 mt-1">Max value allowed: 0.75</div>;
-                  }
-                  if (req.requestedStatus === 'Present - outstation') {
-                    return <div className="text-xs text-amber-400 mt-1">Max value allowed: 1.2</div>;
-                  }
-                  return null;
-                })()}
-              </div>
-            )}
+                      setApprovalValue(val);
+                      setApprovalValueError(null);
+                    }}
+                    placeholder={maxVal ? `0.00 - ${maxVal}` : 'Enter value (optional)'}
+                  />
+                  {approvalValueError && <div className="text-red-400 text-xs mt-1">{approvalValueError}</div>}
+                  {maxVal && (
+                    <div className="text-xs text-amber-400 mt-1">Max value allowed: {maxVal}</div>
+                  )}
+                </div>
+              );
+            })()}
             <div className="flex justify-end gap-2 mt-4">
               <button
                 onClick={closeApprovalModal}

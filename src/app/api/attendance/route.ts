@@ -163,8 +163,21 @@ export async function POST(request: NextRequest) {
             });
           }
 
-          const checkin = normalizeTimeToHHmm(rec.inTime);
-          const checkout = normalizeTimeToHHmm(rec.outTime);
+          let checkin = normalizeTimeToHHmm(rec.inTime);
+          let checkout = normalizeTimeToHHmm(rec.outTime);
+
+          // Anomaly Detection: If checkin is late (>= 16:00) AND checkout is 00:00/empty,
+          // person likely only punched OUT, so the checkin value is actually the exit time.
+          // Swap: move checkin to checkout, set checkin to 00:00
+          const isCheckinLate = checkin >= '16:00';
+          const isCheckoutMissing = checkout === '00:00' || checkout === '';
+          let exitOnlyPunchDetected = false;
+          if (isCheckinLate && isCheckoutMissing) {
+            // Swap: the "checkin" is actually the checkout time
+            checkout = checkin;
+            checkin = '00:00';
+            exitOnlyPunchDetected = true;
+          }
 
           // For Excel uploads, edited times are initially set to same as original times
           // They can be modified later through employee correction requests
@@ -200,7 +213,9 @@ export async function POST(request: NextRequest) {
           if (finalCheckin === '00:00' && finalCheckout !== '00:00' && finalCheckout !== '' && finalTotalHour > 0) {
             finalHalfDay = true;
             finalValue = 0.5;
-            remarksStr = 'Marked as Half Day (no check-in time)';
+            remarksStr = exitOnlyPunchDetected 
+              ? 'Exit-only punch detected, marked as Half Day' 
+              : 'Marked as Half Day (no check-in time)';
           }
 
           // Check if date is a Sunday or Holiday when there's no working hours
@@ -298,6 +313,12 @@ export async function POST(request: NextRequest) {
               const isAfter1PM = finalCheckin ? finalCheckin >= '13:00' : false;
               finalHalfDay = isAfter1PM || finalTotalHour < 3.5;
             }
+          }
+
+          // Ensure half-day is NOT set when both check-in and check-out are invalid/00:00
+          const bothTimesInvalid = (!finalCheckin || finalCheckin === '00:00') && (!finalCheckout || finalCheckout === '00:00');
+          if (bothTimesInvalid) {
+            finalHalfDay = false;
           }
 
           attendance.records.set(isoDate, {
@@ -432,8 +453,10 @@ export async function POST(request: NextRequest) {
         for (const userId of uniqueUserIds) {
           const user = await User.findById(userId);
           if (!user || !user.isActive) continue;
-          // Skip leave balance increment for articles
-          const isArticle = user.employmentType === 'article' || (user.designation && user.designation.toLowerCase() === 'article');
+          // Skip leave balance increment for articles - check both employmentType and designation
+          const designationLower = (user.designation || '').toLowerCase();
+          const employmentTypeLower = (user.employmentType || '').toLowerCase();
+          const isArticle = employmentTypeLower.includes('article') || designationLower.includes('article');
           if (isArticle) continue;
           const currentEarned = user.leaveBalance?.earned || 0;
           const currentUsed = user.leaveBalance?.used || 0;
@@ -450,10 +473,10 @@ export async function POST(request: NextRequest) {
           // Only increment for non-articles
           const increment = 2;
           const newEarned = currentEarned + increment;
-          const newRemaining = newEarned - currentUsed;
+          const newRemaining = newEarned - currentUsed; // Can be negative if used > earned
           await User.findByIdAndUpdate(user._id, {
             'leaveBalance.earned': newEarned,
-            'leaveBalance.remaining': Math.max(0, newRemaining),
+            'leaveBalance.remaining': newRemaining,
             'leaveBalance.lastUpdated': now,
             'leaveBalance.monthlyEarned': 2,
           });

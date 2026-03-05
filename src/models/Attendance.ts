@@ -83,7 +83,11 @@ const DailyRecordSchema: Schema = new Schema(
         'Work From Home (WFH)',
         'Weekly Off - Work From Home (WO-WFH)',
         'Onsite Presence (OS-P)',
-        'Thumb machine - not working'
+        'Thumb machine - not working',
+        'Present - Outstation (Weekoff)',
+        'Present - ClientPlace (Weekoff)',
+        'Present - Outstation (Weekdays)',
+        'Present - ClientPlace (Weekdays)'
       ],
       default: 'ThumbMachine',
     },

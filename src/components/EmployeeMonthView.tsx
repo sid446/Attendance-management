@@ -509,7 +509,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                   'On leave', 'Present - in office', 'Present - client place', 'Present - outstation',
                   'Present - weekoff', 'Half Day - weekdays', 'Half Day - weekoff', 'WFH - weekdays',
                   'WFH - weekoff', 'Weekoff - special allowance', 'Thumb machine - not working',
-                  'Leave', 'Holiday', 'Absent', 'Present'
+                  'Leave', 'Holiday', 'Absent', 'Present','Present- Outstation (Weekoff)', 'Present - ClientPlace (Weekoff)', 'Present - Outstation (Weekdays)', 'Present - ClientPlace (Weekdays)'
                 ];
                 const isCustomRequestType = approvedReq && approvedReq.requestedStatus && 
                   !STANDARD_REQUEST_TYPES.includes(approvedReq.requestedStatus);

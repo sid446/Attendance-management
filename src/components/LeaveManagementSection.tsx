@@ -7,7 +7,8 @@ interface LeaveBalance {
   employeeCode?: string;
   team?: string;
   earned: number;
-  used: number;
+  used: number; // Leaves taken before 1st Jan 2026
+  usedAfterJan26: number; // Leaves taken on or after 1st Jan 2026
   remaining: number;
   lastUpdated: Date;
   monthlyEarned: number;
@@ -80,9 +81,10 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
     (acc, balance) => ({
       totalEarned: acc.totalEarned + balance.earned,
       totalUsed: acc.totalUsed + balance.used,
+      totalUsedAfterJan26: acc.totalUsedAfterJan26 + (balance.usedAfterJan26 || 0),
       totalRemaining: acc.totalRemaining + balance.remaining,
     }),
-    { totalEarned: 0, totalUsed: 0, totalRemaining: 0 }
+    { totalEarned: 0, totalUsed: 0, totalUsedAfterJan26: 0, totalRemaining: 0 }
   );
 
   return (
@@ -108,7 +110,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-slate-800/60 border border-slate-700 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-2">
             <TrendingUp className="w-5 h-5 text-emerald-400" />
@@ -121,10 +123,19 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
         <div className="bg-slate-800/60 border border-slate-700 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-2">
             <TrendingDown className="w-5 h-5 text-rose-400" />
-            <span className="text-sm font-medium text-slate-300">Total Used</span>
+            <span className="text-sm font-medium text-slate-300">Used (before 1 Jan)</span>
           </div>
           <div className="text-2xl font-bold text-rose-400">{totalStats.totalUsed}</div>
-          <div className="text-xs text-slate-500 mt-1">Leave days taken</div>
+          <div className="text-xs text-slate-500 mt-1">Leave before 1st Jan 2026</div>
+        </div>
+
+        <div className="bg-slate-800/60 border border-slate-700 rounded-lg p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <TrendingDown className="w-5 h-5 text-orange-400" />
+            <span className="text-sm font-medium text-slate-300">Used (after 1 Jan)</span>
+          </div>
+          <div className="text-2xl font-bold text-orange-400">{totalStats.totalUsedAfterJan26}</div>
+          <div className="text-xs text-slate-500 mt-1">Leave after 1st Jan 2026</div>
         </div>
 
         <div className="bg-slate-800/60 border border-slate-700 rounded-lg p-4">
@@ -189,7 +200,8 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Team</th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Opening as of 1 Jan</th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Monthly Rate</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Used</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Used (before 1 Jan)</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Used (after 1 Jan)</th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Balance</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Last Updated</th>
               </tr>
@@ -197,14 +209,14 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
             <tbody className="divide-y divide-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                  <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2" />
                     Loading leave balances...
                   </td>
                 </tr>
               ) : filteredAndSortedBalances.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                  <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
                     <AlertCircle className="w-6 h-6 mx-auto mb-2" />
                     No leave balances found
                   </td>
@@ -223,13 +235,18 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
                     <td className="px-4 py-3 text-sm text-slate-300">{balance.team || '-'}</td>
                     <td className="px-4 py-3 text-center">
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                        {balance.remaining + balance.used}
+                        {balance.earned}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center text-sm text-slate-300">{balance.monthlyEarned}</td>
                     <td className="px-4 py-3 text-center">
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20">
                         {balance.used}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                        {balance.usedAfterJan26 || 0}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center">

@@ -102,9 +102,10 @@ export interface IUser extends Document {
 
   // Leave balance management
   leaveBalance?: {
-    earned: number;
-    used: number;
-    remaining: number;
+    earned: number; // Opening balance as of 1st Jan 2026
+    used: number; // Leaves taken before 1st Jan 2026 (from Excel upload)
+    usedAfterJan26?: number; // Leaves taken on or after 1st Jan 2026 (calculated from attendance records)
+    remaining: number; // Calculated dynamically: earned - used - usedAfterJan26
     lastUpdated: Date;
     monthlyEarned: number;
   };
@@ -420,9 +421,10 @@ const UserSchema = new Schema(
       default: 0,
     },
     leaveBalance: {
-      earned: { type: Number, default: 0 },
-      used: { type: Number, default: 0 },
-      remaining: { type: Number, default: 0 },
+      earned: { type: Number, default: 0 }, // Opening balance as of 1st Jan 2026
+      used: { type: Number, default: 0 }, // Leaves taken before 1st Jan 2026 (from Excel upload)
+      usedAfterJan26: { type: Number, default: 0 }, // Leaves taken on or after 1st Jan 2026 (calculated from attendance)
+      remaining: { type: Number, default: 0 }, // Calculated dynamically: earned - used - usedAfterJan26
       lastUpdated: { type: Date, default: Date.now },
       monthlyEarned: { type: Number, default: 2 },
     },

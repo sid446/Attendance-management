@@ -5,15 +5,10 @@ interface ArticleCreditRow {
   empId: string;
   name: string;
   creditAsOnJan26: number;
-  leaveCount: number;
-  wfhWeekdays: number;
-  wfhWeekoff: number;
-  halfDayWeekdays: number;
-  halfDayWeekoff: number;
-  presentOutstationCount: number;
+  leaveTakenBeforeJan26: number; // From leaveBalance.used
+  leaveTakenAfterJan26: number; // From leaveBalance.usedAfterJan26
+  totalExcessHours: number; // Sum of excessHour from summary of each month from Jan 2026
   finalCredit: number;
-  wfhWeekoffValueSum?: number;
-  halfDayWeekoffValueSum?: number;
 }
 
 const fetchUsers = async (): Promise<User[]> => {
@@ -31,65 +26,35 @@ const fetchAttendance = async (userId: string): Promise<any[]> => {
 
 const calculateArticleCredit = (user: User, attendanceRecords: any[]): ArticleCreditRow => {
   const creditAsOnJan26 = user.articleCreditsAsOnJan26 || 0;
-  let leaveCount = 0;
-  let wfhWeekdays = 0;
-  let wfhWeekoff = 0;
-  let halfDayWeekdays = 0;
-  let halfDayWeekoff = 0;
-  let presentOutstationCount = 0;
+  const leaveTakenBeforeJan26 = user.leaveBalance?.used || 0; // Leaves taken before 1st Jan 2026
+  const leaveTakenAfterJan26 = user.leaveBalance?.usedAfterJan26 || 0; // Leaves taken on or after 1st Jan 2026
+  let totalExcessHours = 0; // Sum of excessHour from summary of each month from Jan 2026
 
-  // New: accumulate WFH penalties/bonuses using actual values
-  let wfhWeekdaysPenalty = 0;
-  let wfhWeekoffValueSum = 0;
-  let halfDayWeekoffValueSum = 0;
+  // Reference: "2026-01" for string comparison
+  const jan2026Str = '2026-01';
 
   attendanceRecords.forEach((month: any) => {
-    Object.values(month.records).forEach((rec: any) => {
-      if (rec.typeOfPresence === 'On leave') leaveCount++;
-      if (rec.typeOfPresence === 'WFH - weekdays') {
-        wfhWeekdays++;
-        // Subtract (1 - value) for each day
-        wfhWeekdaysPenalty += (1 - (rec.value ?? 0));
-      }
-      if (rec.typeOfPresence === 'WFH - weekoff') {
-        wfhWeekoff++;
-        // Add the actual value stored for each day
-        wfhWeekoffValueSum += (rec.value ?? 0);
-      }
-      if (rec.typeOfPresence === 'Half Day - weekdays') halfDayWeekdays++;
-      if (rec.typeOfPresence === 'Half Day - weekoff') {
-        halfDayWeekoff++;
-        // Add the actual value stored for each day
-        halfDayWeekoffValueSum += (rec.value ?? 0);
-      }
-      if (rec.typeOfPresence === 'Present - outstation') presentOutstationCount++;
-    });
+    const monthYear = month.monthYear || '';
+    // String comparison: "2026-01" >= "2026-01" is true
+    const isOnOrAfterJan2026 = monthYear >= jan2026Str;
+
+    // Add excess hours from summary if month is on or after Jan 2026
+    if (isOnOrAfterJan2026 && typeof month.summary?.excessHour === 'number') {
+      totalExcessHours += month.summary.excessHour;
+    }
   });
 
-  // Final credit calculation
-  let finalCredit = creditAsOnJan26;
-  if (leaveCount > 24) {
-    finalCredit -= (leaveCount - 24);
-  }
-  finalCredit -= wfhWeekdaysPenalty;
-  finalCredit += wfhWeekoffValueSum;
-  finalCredit -= 0.5 * halfDayWeekdays;
-  finalCredit += halfDayWeekoffValueSum;
-  finalCredit += 0.2 * presentOutstationCount;
+  // Final credit calculation: creditAsOnJan26 - leaveTakenAfterJan26 + totalExcessHours
+  const finalCredit = creditAsOnJan26 - leaveTakenAfterJan26 + totalExcessHours;
 
   return {
     empId: user.employeeCode || user.odId || '',
     name: user.name,
     creditAsOnJan26,
-    leaveCount,
-    wfhWeekdays,
-    wfhWeekoff,
-    halfDayWeekdays,
-    halfDayWeekoff,
-    presentOutstationCount,
+    leaveTakenBeforeJan26,
+    leaveTakenAfterJan26,
+    totalExcessHours: Number(totalExcessHours.toFixed(2)),
     finalCredit: Number(finalCredit.toFixed(2)),
-    wfhWeekoffValueSum: Number(wfhWeekoffValueSum.toFixed(2)),
-    halfDayWeekoffValueSum: Number(halfDayWeekoffValueSum.toFixed(2)),
   };
 };
 
@@ -159,12 +124,9 @@ export const ArticleCreditsManager: React.FC = () => {
       { key: 'empId', header: 'Emp ID', width: 12 },
       { key: 'name', header: 'Name', width: 18 },
       { key: 'creditAsOnJan26', header: 'Credit (as on 1 Jan 26)', width: 18 },
-      { key: 'leaveCount', header: 'Leave', width: 10 },
-      { key: 'wfhWeekdays', header: 'WFH - weekdays', width: 12 },
-      { key: 'wfhWeekoff', header: 'WFH - weekoff', width: 12 },
-      { key: 'halfDayWeekdays', header: 'Half Day - weekdays', width: 14 },
-      { key: 'halfDayWeekoff', header: 'Half Day - weekoff', width: 14 },
-      { key: 'presentOutstationCount', header: 'Present Outstation', width: 16 },
+      { key: 'leaveTakenBeforeJan26', header: 'Leave Taken Before 1 Jan 2026', width: 24 },
+      { key: 'leaveTakenAfterJan26', header: 'Leave Taken On/After 1 Jan 2026', width: 28 },
+      { key: 'totalExcessHours', header: 'Excess Hours (from Jan 2026)', width: 22 },
       { key: 'finalCredit', header: 'Final Credit', width: 14 },
     ];
     rows.forEach(row => worksheet.addRow(row));
@@ -276,12 +238,8 @@ export const ArticleCreditsManager: React.FC = () => {
     if (!isOpen || !row) return null;
     // Recompute the breakdown for display
     const base = row.creditAsOnJan26;
-    const leavePenalty = row.leaveCount > 24 ? row.leaveCount - 24 : 0;
-    const wfhWeekdaysPenalty = 0.25 * row.wfhWeekdays;
-    const wfhWeekoffBonus = typeof row.wfhWeekoffValueSum === 'number' ? row.wfhWeekoffValueSum : 0;
-    const halfDayWeekdaysPenalty = 0.5 * row.halfDayWeekdays;
-    const halfDayWeekoffBonus = typeof row.halfDayWeekoffValueSum === 'number' ? row.halfDayWeekoffValueSum : 0;
-    const outstationBonus = 0.2 * row.presentOutstationCount;
+    const leaveAfter = row.leaveTakenAfterJan26;
+    const excess = row.totalExcessHours;
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
         <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
@@ -291,14 +249,11 @@ export const ArticleCreditsManager: React.FC = () => {
           </div>
           <div className="p-5 text-slate-200 text-sm space-y-2">
             <div><span className="font-semibold">Base Credit (as on 1 Jan 26):</span> <span className="font-mono">{base}</span></div>
-            <div><span className="font-semibold">Leave Penalty:</span> <span className="font-mono">{leavePenalty > 0 ? `- ${leavePenalty}` : '+ 0'}</span> <span className="text-slate-400">({row.leaveCount} leaves{leavePenalty > 0 ? `, only excess above 24 deducted` : ', no penalty'})</span></div>
-            <div><span className="font-semibold">WFH - weekdays:</span> <span className="font-mono">- {wfhWeekdaysPenalty}</span> <span className="text-slate-400">({row.wfhWeekdays} × -0.25)</span></div>
-            <div><span className="font-semibold">WFH - weekoff:</span> <span className="font-mono">+ {wfhWeekoffBonus}</span> <span className="text-slate-400">(Sum of actual values added: {wfhWeekoffBonus})</span></div>
-            <div><span className="font-semibold">Half Day - weekdays:</span> <span className="font-mono">- {halfDayWeekdaysPenalty}</span> <span className="text-slate-400">({row.halfDayWeekdays} × -0.5)</span></div>
-            <div><span className="font-semibold">Half Day - weekoff:</span> <span className="font-mono">+ {halfDayWeekoffBonus}</span> <span className="text-slate-400">(Sum of actual values added: {halfDayWeekoffBonus})</span></div>
-            <div><span className="font-semibold">Present Outstation:</span> <span className="font-mono">+ {outstationBonus}</span> <span className="text-slate-400">({row.presentOutstationCount} × +0.2)</span></div>
+            <div><span className="font-semibold">Leave Taken After 1 Jan 2026:</span> <span className="font-mono text-rose-400">- {leaveAfter}</span></div>
+            <div><span className="font-semibold">Excess Hours (from Jan 2026):</span> <span className={`font-mono ${excess >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{excess >= 0 ? '+' : ''}{excess}</span></div>
             <hr className="my-2 border-slate-700" />
             <div className="font-bold text-lg">Final Credit: <span className="font-mono text-emerald-300">{row.finalCredit}</span></div>
+            <div className="text-xs text-slate-400 mt-2">Formula: Credit (Jan 26) - Leave After Jan 26 + Excess Hours</div>
           </div>
           <div className="bg-slate-950 px-4 py-2 border-t border-slate-800 text-right">
             <button onClick={onClose} className="text-xs text-slate-400 hover:text-white px-3 py-1.5 rounded-md hover:bg-slate-800 transition-colors">Close</button>
@@ -416,12 +371,9 @@ export const ArticleCreditsManager: React.FC = () => {
                   <th className="px-4 py-3 text-left font-semibold text-slate-400 cursor-pointer" onClick={() => { setSortField('empId'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>Emp ID</th>
                   <th className="px-4 py-3 text-left font-semibold text-slate-300 cursor-pointer" onClick={() => { setSortField('name'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>Name</th>
                   <th className="px-4 py-3 text-right font-semibold text-blue-400 cursor-pointer" onClick={() => { setSortField('creditAsOnJan26'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>Credit (as on 1 Jan 26)</th>
-                  <th className="px-4 py-3 text-right font-semibold text-sky-400 cursor-pointer" onClick={() => { setSortField('leaveCount'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>Leave</th>
-                  <th className="px-4 py-3 text-right font-semibold text-emerald-400 cursor-pointer" onClick={() => { setSortField('wfhWeekdays'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>WFH - weekdays</th>
-                  <th className="px-4 py-3 text-right font-semibold text-green-300 cursor-pointer" onClick={() => { setSortField('wfhWeekoff'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>WFH - weekoff</th>
-                  <th className="px-4 py-3 text-right font-semibold text-indigo-400 cursor-pointer" onClick={() => { setSortField('halfDayWeekdays'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>Half Day - weekdays</th>
-                  <th className="px-4 py-3 text-right font-semibold text-indigo-300 cursor-pointer" onClick={() => { setSortField('halfDayWeekoff'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>Half Day - weekoff</th>
-                  <th className="px-4 py-3 text-right font-semibold text-amber-400 cursor-pointer" onClick={() => { setSortField('presentOutstationCount'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>Present Outstation</th>
+                  <th className="px-4 py-3 text-right font-semibold text-rose-400 cursor-pointer" onClick={() => { setSortField('leaveTakenBeforeJan26'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>Leave Taken Before 1 Jan 2026</th>
+                  <th className="px-4 py-3 text-right font-semibold text-sky-400 cursor-pointer" onClick={() => { setSortField('leaveTakenAfterJan26'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>Leave Taken On/After 1 Jan 2026</th>
+                  <th className="px-4 py-3 text-right font-semibold text-amber-400 cursor-pointer" onClick={() => { setSortField('totalExcessHours'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>Excess Hours (from Jan 2026)</th>
                   <th className="px-4 py-3 text-right font-semibold text-emerald-300 cursor-pointer" onClick={() => { setSortField('finalCredit'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>Final Credit</th>
                 </tr>
               </thead>
@@ -431,12 +383,9 @@ export const ArticleCreditsManager: React.FC = () => {
                     <td className="px-4 py-3 text-left font-mono text-slate-400">{row.empId}</td>
                     <td className="px-4 py-3 font-medium text-slate-200">{row.name}</td>
                     <td className="px-4 py-3 text-right font-mono text-blue-400">{row.creditAsOnJan26}</td>
-                    <td className="px-4 py-3 text-right font-mono text-sky-400">{row.leaveCount}</td>
-                    <td className="px-4 py-3 text-right font-mono text-emerald-400">{row.wfhWeekdays}</td>
-                    <td className="px-4 py-3 text-right font-mono text-green-300">{row.wfhWeekoff}</td>
-                    <td className="px-4 py-3 text-right font-mono text-indigo-400">{row.halfDayWeekdays}</td>
-                    <td className="px-4 py-3 text-right font-mono text-indigo-300">{row.halfDayWeekoff}</td>
-                    <td className="px-4 py-3 text-right font-mono text-amber-400">{row.presentOutstationCount}</td>
+                    <td className="px-4 py-3 text-right font-mono text-rose-400">{row.leaveTakenBeforeJan26}</td>
+                    <td className="px-4 py-3 text-right font-mono text-sky-400">{row.leaveTakenAfterJan26}</td>
+                    <td className="px-4 py-3 text-right font-mono text-amber-400">{row.totalExcessHours}</td>
                     <td
                       className="px-4 py-3 text-right font-mono text-emerald-300 font-bold cursor-pointer underline decoration-dotted hover:bg-slate-800/60"
                       title="Show calculation"

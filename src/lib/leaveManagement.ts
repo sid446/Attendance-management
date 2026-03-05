@@ -65,6 +65,12 @@ export async function incrementMonthlyLeave(monthYear?: string): Promise<void> {
       const user = await User.findById(userId);
       if (!user || !user.isActive) continue;
 
+      // Skip leave balance increment for articles
+      const designationLower = (user.designation || '').toLowerCase();
+      const employmentTypeLower = (user.employmentType || '').toLowerCase();
+      const isArticle = employmentTypeLower.includes('article') || designationLower.includes('article');
+      if (isArticle) continue;
+
       const monthlyEarned = user.leaveBalance?.monthlyEarned || 2;
 
       // Check if leave was already incremented for this month
@@ -81,11 +87,11 @@ export async function incrementMonthlyLeave(monthYear?: string): Promise<void> {
       // Increment earned leave
       const newEarned = currentEarned + monthlyEarned;
       const currentUsed = user.leaveBalance?.used || 0;
-      const newRemaining = newEarned - currentUsed;
+      const newRemaining = newEarned - currentUsed; // Can be negative
 
       await User.findByIdAndUpdate(user._id, {
         'leaveBalance.earned': newEarned,
-        'leaveBalance.remaining': Math.max(0, newRemaining),
+        'leaveBalance.remaining': newRemaining,
         'leaveBalance.lastUpdated': now,
       });
     }
@@ -129,7 +135,19 @@ export async function calculateLeaveUsageForMultipleDays(
       return { leaveDetails };
     }
 
-    // For leave requests, calculate how many can be paid vs unpaid
+    // Check if user is an article - articles have no paid leave concept
+    const isArticle = user.employmentType?.toLowerCase() === 'article';
+    if (isArticle) {
+      // Articles always get value 0 for leave (no paid leave)
+      const leaveDetails = dates.map(date => ({
+        date,
+        isPaidLeave: false,
+        value: 0
+      }));
+      return { leaveDetails };
+    }
+
+    // For other employees, calculate how many can be paid vs unpaid based on balance
     const leaveDetails = [];
     let remainingBalance = currentBalance;
 
@@ -190,7 +208,14 @@ export async function calculateLeaveUsage(
       return { isPaidLeave: false, value: 1 }; // Not a leave, full attendance value
     }
 
-    // For leave requests, determine if it's paid or unpaid
+    // Check if user is an article - articles have no paid leave concept
+    const isArticle = user.employmentType?.toLowerCase() === 'article';
+    if (isArticle) {
+      // Articles always get value 0 for leave (no paid leave)
+      return { isPaidLeave: false, value: 0 };
+    }
+
+    // For other employees, determine if it's paid or unpaid based on balance
     if (remainingLeave >= 1) {
       // Has enough leave balance for paid leave
       return { isPaidLeave: true, value: 1 };
@@ -206,6 +231,7 @@ export async function calculateLeaveUsage(
 
 /**
  * Update leave balance when leave is approved
+ * Uses usedAfterJan26 for leaves taken on or after Jan 26, 2026
  */
 export async function updateLeaveBalanceOnApproval(
   userId: mongoose.Types.ObjectId,
@@ -224,11 +250,11 @@ export async function updateLeaveBalanceOnApproval(
         return; // No balance update needed for unpaid leave
       }
 
-      const currentUsed = user.leaveBalance?.used || 0;
+      const currentUsedAfterJan26 = user.leaveBalance?.usedAfterJan26 || 0;
       const currentRemaining = user.leaveBalance?.remaining || 0;
 
       await User.findByIdAndUpdate(userId, {
-        'leaveBalance.used': currentUsed + 1,
+        'leaveBalance.usedAfterJan26': currentUsedAfterJan26 + 1,
         'leaveBalance.remaining': Math.max(0, currentRemaining - 1),
       });
 
@@ -243,11 +269,11 @@ export async function updateLeaveBalanceOnApproval(
       return; // No paid leaves to update
     }
 
-    const currentUsed = user.leaveBalance?.used || 0;
+    const currentUsedAfterJan26 = user.leaveBalance?.usedAfterJan26 || 0;
     const currentRemaining = user.leaveBalance?.remaining || 0;
 
     await User.findByIdAndUpdate(userId, {
-      'leaveBalance.used': currentUsed + paidLeaves.length,
+      'leaveBalance.usedAfterJan26': currentUsedAfterJan26 + paidLeaves.length,
       'leaveBalance.remaining': Math.max(0, currentRemaining - paidLeaves.length),
     });
 

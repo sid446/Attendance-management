@@ -1,13 +1,40 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 
+export type TypeOfPresence =
+  | 'ThumbMachine'
+  | 'Manual'
+  | 'Remote'
+  | 'On leave'
+  | 'Holiday'
+  | 'Absent'
+  | 'Present - in office'
+  | 'Present - client place'
+  | 'Present - outstation'
+  | 'Present - weekoff'
+  | 'Half Day - weekdays'
+  | 'Half Day - weekoff'
+  | 'WFH - weekdays'
+  | 'WFH - weekoff'
+  | 'Weekoff - special allowance'
+  | 'Weekly Off - Present (WO-Present)'
+  | 'Half Day (HD)'
+  | 'Work From Home (WFH)'
+  | 'Weekly Off - Work From Home (WO-WFH)'
+  | 'Onsite Presence (OS-P)'
+  | 'Thumb machine - not working'
+  | 'Present - Outstation (Weekoff)'
+  | 'Present - ClientPlace (Weekoff)'
+  | 'Present - Outstation (Weekdays)'
+  | 'Present - ClientPlace (Weekdays)';
+
 export interface IAttendanceRequest extends Document {
   userId: mongoose.Types.ObjectId;
   userName: string;
   partnerName: string;
   date: string; // YYYY-MM-DD
   monthYear: string; // YYYY-MM
-  requestedStatus: string;
-  originalStatus: string;
+  requestedStatus: TypeOfPresence | string;
+  originalStatus: TypeOfPresence | string;
   reason?: string;
   status: 'Pending' | 'Approved' | 'Rejected';
   startTime?: string;
@@ -32,8 +59,68 @@ const AttendanceRequestSchema: Schema = new Schema(
     partnerName: { type: String, required: true },
     date: { type: String, required: true },
     monthYear: { type: String, required: true },
-    requestedStatus: { type: String, required: true },
-    originalStatus: { type: String, required: true },
+    requestedStatus: {
+      type: String,
+      required: true,
+      enum: [
+        'ThumbMachine',
+        'Manual',
+        'Remote',
+        'On leave',
+        'Holiday',
+        'Absent',
+        'Present - in office',
+        'Present - client place',
+        'Present - outstation',
+        'Present - weekoff',
+        'Half Day - weekdays',
+        'Half Day - weekoff',
+        'WFH - weekdays',
+        'WFH - weekoff',
+        'Weekoff - special allowance',
+        'Weekly Off - Present (WO-Present)',
+        'Half Day (HD)',
+        'Work From Home (WFH)',
+        'Weekly Off - Work From Home (WO-WFH)',
+        'Onsite Presence (OS-P)',
+        'Thumb machine - not working',
+        'Present - Outstation (Weekoff)',
+        'Present - ClientPlace (Weekoff)',
+        'Present - Outstation (Weekdays)',
+        'Present - ClientPlace (Weekdays)'
+      ],
+    },
+    originalStatus: {
+      type: String,
+      required: true,
+      enum: [
+        'ThumbMachine',
+        'Manual',
+        'Remote',
+        'On leave',
+        'Holiday',
+        'Absent',
+        'Present - in office',
+        'Present - client place',
+        'Present - outstation',
+        'Present - weekoff',
+        'Half Day - weekdays',
+        'Half Day - weekoff',
+        'WFH - weekdays',
+        'WFH - weekoff',
+        'Weekoff - special allowance',
+        'Weekly Off - Present (WO-Present)',
+        'Half Day (HD)',
+        'Work From Home (WFH)',
+        'Weekly Off - Work From Home (WO-WFH)',
+        'Onsite Presence (OS-P)',
+        'Thumb machine - not working',
+        'Present - Outstation (Weekoff)',
+        'Present - ClientPlace (Weekoff)',
+        'Present - Outstation (Weekdays)',
+        'Present - ClientPlace (Weekdays)'
+      ],
+    },
     reason: { type: String },
     status: { 
         type: String, 

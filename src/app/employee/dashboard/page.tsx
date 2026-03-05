@@ -1,17 +1,17 @@
 "use client";
 import React, { useEffect, useState } from 'react';
+import { isHolidayDate } from '@/lib/holidaysClient';
 import { useRouter } from 'next/navigation';
 import { EmployeeMonthView } from '@/components/EmployeeMonthView';
 import { AttendanceRecord, AttendanceSummaryView, User } from '@/types/ui';
 import { LogOut, X, Loader2, Send } from 'lucide-react';
 
 const TIMED_CATEGORIES = [
-  'Present - in office',
-  'Present - client place',
-  'Present - weekoff',
-  'Half Day - weekdays',
-  'WFH - weekdays',
-  'Thumb machine - not working'
+  'Present',
+  'Half Day',
+  'WFH',
+  'Present - outstation',
+  'Present - client place'
 ];
 
 export default function EmployeeDashboard() {
@@ -308,178 +308,203 @@ export default function EmployeeDashboard() {
   };
 
   const submitRequest = async () => {
-        if (!selectedDate || !user) return;
-
-        // Validate required fields
-        if (!requestReason.trim()) {
-          alert('Please provide a reason for your attendance correction request.');
-          return;
+    if (!selectedDate || !user) return;
+    if (!requestReason.trim()) {
+      alert('Please provide a reason for your attendance correction request.');
+      return;
+    }
+    let finalStartTime = startTime;
+    let finalEndTime = endTime;
+    // Determine if selectedDate is Sunday or holiday (from DB)
+    let isSunday = false;
+    let isHoliday = false;
+    const dateObj = new Date(selectedDate);
+    isSunday = dateObj.getDay() === 0;
+    isHoliday = await isHolidayDate(selectedDate);
+    // Map requestStatus to correct suffix
+    let mappedStatus = requestStatus;
+    if (
+      requestStatus.startsWith('WFH') ||
+      requestStatus.startsWith('Half Day') ||
+      requestStatus.startsWith('Present - outstation') ||
+      requestStatus.startsWith('Present - client place')
+    ) {
+      if (isSunday || isHoliday) {
+        if (requestStatus.startsWith('WFH')) mappedStatus = 'WFH - weekoff';
+        else if (requestStatus.startsWith('Half Day')) mappedStatus = 'Half Day - weekoff';
+        else if (requestStatus.startsWith('Present - outstation')) mappedStatus = 'Present - Outstation (Weekoff)';
+        else if (requestStatus.startsWith('Present - client place')) mappedStatus = 'Present - ClientPlace (Weekoff)';
+      } else {
+        if (requestStatus.startsWith('WFH')) mappedStatus = 'WFH - weekdays';
+        else if (requestStatus.startsWith('Half Day')) mappedStatus = 'Half Day - weekdays';
+        else if (requestStatus.startsWith('Present - outstation')) mappedStatus = 'Present - Outstation (Weekdays)';
+        else if (requestStatus.startsWith('Present - client place')) mappedStatus = 'Present - ClientPlace (Weekdays)';
+      }
+    }
+    // For Present - outstation, use the actual schedule attached to the attendance record for that date if available
+    const dayRecord = employeeDays.find(d => d.date === selectedDate);
+    if (requestStatus.startsWith('Present - outstation')) {
+      if (dayRecord && dayRecord.schedule && !dayRecord.schedule.isHoliday) {
+        finalStartTime = dayRecord.schedule.inTime;
+        finalEndTime = dayRecord.schedule.outTime;
+      } else if (summary?.schedules) {
+        const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        const dayName = dayNames[dateObj.getDay()];
+        let scheduleToUse = summary?.schedules?.daily?.[dayName];
+        if (scheduleToUse && !scheduleToUse.isHoliday) {
+          finalStartTime = scheduleToUse.inTime;
+          finalEndTime = scheduleToUse.outTime;
         }
-
-        let finalStartTime = startTime;
-        let finalEndTime = endTime;
-
-        // For Present - outstation, use the actual schedule attached to the attendance record for that date if available
-        if (requestStatus === 'Present - outstation') {
-            const dayRecord = employeeDays.find(d => d.date === selectedDate);
-            if (dayRecord && dayRecord.schedule && !dayRecord.schedule.isHoliday) {
-              finalStartTime = dayRecord.schedule.inTime;
-              finalEndTime = dayRecord.schedule.outTime;
-            } else if (summary?.schedules) {
-              // fallback to previous logic if not found
-              const dateObj = new Date(selectedDate);
-              const dayOfWeek = dateObj.getDay();
-              const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-              const dayName = dayNames[dayOfWeek];
-              let scheduleToUse = summary?.schedules?.daily?.[dayName];
-              if (scheduleToUse && !scheduleToUse.isHoliday) {
-                finalStartTime = scheduleToUse.inTime;
-                finalEndTime = scheduleToUse.outTime;
-              }
-            }
+      }
+    }
+    setSendingRequest(true);
+    try {
+      const res = await fetch('/api/employee/request-correction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user._id,
+          date: selectedDate,
+          requestedStatus: mappedStatus,
+          reason: requestReason,
+          startTime: finalStartTime || undefined,
+          endTime: finalEndTime || undefined
+        })
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        if (res.status === 400 && typeof json.error === 'string' && json.error.includes('already have a correction request for this date')) {
+          alert('You have already sent a correction request for this date. Please wait until it is approved or rejected before sending another.');
+        } else {
+          alert(json.error || 'Failed to send request');
         }
-
-        setSendingRequest(true);
-        try {
-          const res = await fetch('/api/employee/request-correction', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userId: user._id,
-              date: selectedDate,
-              requestedStatus: requestStatus,
-              reason: requestReason,
-              startTime: finalStartTime || undefined,
-              endTime: finalEndTime || undefined
-            })
-          });
-          const json = await res.json();
-
-          if (!res.ok) {
-            // Specific handling for duplicate request on same date
-            if (res.status === 400 && typeof json.error === 'string' && json.error.includes('already have a correction request for this date')) {
-              alert('You have already sent a correction request for this date. Please wait until it is approved or rejected before sending another.');
-            } else {
-              alert(json.error || 'Failed to send request');
-            }
-            return;
-          }
-
-          if (json.success) {
-            alert(`Request sent successfully to ${json.sentTo}!`);
-            setSelectedDate(null);
-            // Refresh data to show updated request status
-            fetchAttendance(user._id, monthYear);
-          } else {
-            alert(json.error || 'Failed to send request');
-          }
-        } catch (e) {
-          alert('Error sending request');
-        } finally {
-          setSendingRequest(false);
-        }
-      };
+        return;
+      }
+      if (json.success) {
+        alert(`Request sent successfully to ${json.sentTo}!`);
+        setSelectedDate(null);
+        fetchAttendance(user._id, monthYear);
+      } else {
+        alert(json.error || 'Failed to send request');
+      }
+    } catch (e) {
+      alert('Error sending request');
+    } finally {
+      setSendingRequest(false);
+    }
+  };
 
   const submitFutureRequest = async () => {
-      if (!user) return;
-      if (!futureStartDate || !futureEndDate) {
-          alert('Please select start and end dates.');
-          return;
+    if (!user) return;
+    if (!futureStartDate || !futureEndDate) {
+      alert('Please select start and end dates.');
+      return;
+    }
+    const isTimed = TIMED_CATEGORIES.includes(futureType);
+    if (isTimed) {
+      if (futureStartDate !== futureEndDate) {
+        alert('For this category, only singular date selection is allowed (Start Date must equal End Date).');
+        return;
       }
-      
-      const isTimed = TIMED_CATEGORIES.includes(futureType);
-      if (isTimed) {
-         if (futureStartDate !== futureEndDate) {
-             alert('For this category, only singular date selection is allowed (Start Date must equal End Date).');
-             return;
-         }
-         if (!futureStartTime || !futureEndTime) {
-             alert('Please provide Start Time and End Time.');
-             return;
-         }
+      if (!futureStartTime || !futureEndTime) {
+        alert('Please provide Start Time and End Time.');
+        return;
       }
-
-      if (!futureReason.trim()) {
-          alert('Please provide a reason.');
-          return;
+    }
+    if (!futureReason.trim()) {
+      alert('Please provide a reason.');
+      return;
+    }
+    if (futureType === 'Other' && !futureCustomType.trim()) {
+      alert('Please specify the request type.');
+      return;
+    }
+    // Determine if the chosen date is a Sunday or holiday (from DB)
+    let isSunday = false;
+    let isHoliday = false;
+    const dateObj = new Date(futureStartDate);
+    isSunday = dateObj.getDay() === 0;
+    isHoliday = await isHolidayDate(futureStartDate);
+    // Map requestType to correct suffix
+    let mappedType = futureType;
+    if (
+      futureType.startsWith('WFH') ||
+      futureType.startsWith('Half Day') ||
+      futureType.startsWith('Present - outstation') ||
+      futureType.startsWith('Present - client place')
+    ) {
+      if (isSunday || isHoliday) {
+        if (futureType.startsWith('WFH')) mappedType = 'WFH - weekoff';
+        else if (futureType.startsWith('Half Day')) mappedType = 'Half Day - weekoff';
+        else if (futureType.startsWith('Present - outstation')) mappedType = 'Present - Outstation (Weekoff)';
+        else if (futureType.startsWith('Present - client place')) mappedType = 'Present - ClientPlace (Weekoff)';
+      } else {
+        if (futureType.startsWith('WFH')) mappedType = 'WFH - weekdays';
+        else if (futureType.startsWith('Half Day')) mappedType = 'Half Day - weekdays';
+        else if (futureType.startsWith('Present - outstation')) mappedType = 'Present - Outstation (Weekdays)';
+        else if (futureType.startsWith('Present - client place')) mappedType = 'Present - ClientPlace (Weekdays)';
       }
-
-      // Validate custom type if "Other" is selected
-      if (futureType === 'Other' && !futureCustomType.trim()) {
-          alert('Please specify the request type.');
-          return;
+    }
+    if (futureType === 'Other') mappedType = futureCustomType.trim();
+    // Determine time values
+    let reqStartTime: string | undefined = undefined;
+    let reqEndTime: string | undefined = undefined;
+    const ZERO_TIME_CATEGORIES = [
+      'On leave',
+      'Weekoff - special allowance'
+    ];
+    const SCHEDULED_TIME_CATEGORIES = [
+      'Present - outstation'
+    ];
+    if (isTimed) {
+      reqStartTime = futureStartTime;
+      reqEndTime = futureEndTime;
+    } else if (ZERO_TIME_CATEGORIES.includes(futureType)) {
+      reqStartTime = '00:00';
+      reqEndTime = '00:00';
+    } else if (SCHEDULED_TIME_CATEGORIES.includes(futureType)) {
+      reqStartTime = undefined;
+      reqEndTime = undefined;
+    }
+    setSendingFutureRequest(true);
+    try {
+      const res = await fetch('/api/employee/request-future-leave', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user._id,
+          startDate: futureStartDate,
+          endDate: futureEndDate,
+          requestType: mappedType,
+          reason: futureReason,
+          startTime: reqStartTime,
+          endTime: reqEndTime
+        })
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        alert(json.error || 'Failed to send request');
+        return;
       }
-
-      // Get the actual request type
-      const actualRequestType = futureType === 'Other' ? futureCustomType.trim() : futureType;
-
-      // Determine time values
-      let reqStartTime: string | undefined = undefined;
-      let reqEndTime: string | undefined = undefined;
-      
-      const ZERO_TIME_CATEGORIES = [
-          'On leave',
-          'Weekoff - special allowance'
-      ];
-
-      const SCHEDULED_TIME_CATEGORIES = [
-          'Present - outstation'
-      ];
-
-      if (isTimed) {
-          reqStartTime = futureStartTime;
-          reqEndTime = futureEndTime;
-      } else if (ZERO_TIME_CATEGORIES.includes(futureType)) {
-          reqStartTime = '00:00';
-          reqEndTime = '00:00';
-      } else if (SCHEDULED_TIME_CATEGORIES.includes(futureType)) {
-          // For Present - outstation, scheduled times will be calculated by the API
-          reqStartTime = undefined;
-          reqEndTime = undefined;
+      if (json.success) {
+        alert(`Future request sent successfully! Created ${json.count} requests.`);
+        setShowFutureModal(false);
+        setFutureStartDate('');
+        setFutureEndDate('');
+        setFutureReason('');
+        setFutureStartTime('');
+        setFutureEndTime('');
+        setFutureCustomType('');
+        setCalendarSelectionStart(null);
+        fetchAttendance(user._id, monthYear);
+      } else {
+        alert(json.error || 'Failed to send request');
       }
-      
-      setSendingFutureRequest(true);
-      try {
-          const res = await fetch('/api/employee/request-future-leave', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                  userId: user._id,
-                  startDate: futureStartDate,
-                  endDate: futureEndDate,
-                  requestType: actualRequestType,
-                  reason: futureReason,
-                  startTime: reqStartTime,
-                  endTime: reqEndTime
-              })
-          });
-          const json = await res.json();
-          
-          if (!res.ok) {
-              alert(json.error || 'Failed to send request');
-              return;
-          }
-
-          if (json.success) {
-              alert(`Future request sent successfully! Created ${json.count} requests.`);
-              setShowFutureModal(false);
-              setFutureStartDate('');
-              setFutureEndDate('');
-              setFutureReason('');
-              setFutureStartTime('');
-              setFutureEndTime('');
-              setFutureCustomType('');
-              setCalendarSelectionStart(null);
-              // Refresh data to show updated request status
-              fetchAttendance(user._id, monthYear);
-          } else {
-              alert(json.error || 'Failed to send request');
-          }
-      } catch (e) {
-          alert('Error sending request');
-      } finally {
-          setSendingFutureRequest(false);
-      }
+    } catch (e) {
+      alert('Error sending request');
+    } finally {
+      setSendingFutureRequest(false);
+    }
   };
 
   const handleLogout = () => {
@@ -489,35 +514,28 @@ export default function EmployeeDashboard() {
 
   if (loading || !user) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white">Loading...</div>;
 
-  const statusOptions = [  
-    // Keep original leave and weekoff
-    'On leave',
-    
-    // Present categories
-    'Present - in office',
-    'Present - client place',
+  // Correction request dropdown options (simplified)
+  const statusOptions = [
+    'Present',
+    'Half Day',
+    'WFH',
     'Present - outstation',
-    'Present - weekoff',
-    
-    // Half Day categories
-    'Half Day - weekdays',
-    'Half Day - weekoff',
-    
-    // WFH categories
-    'WFH - weekdays',
-    'WFH - weekoff',
-    
-    // Other categories
+    'Present - client place',
+    'On leave',
+    'Holiday',
+    'Absent',
     'Weekoff - special allowance',
-    'Thumb machine - not working'
+    'Other'
   ];
 
-  // Week off options for Holiday/Week Off days
+  // Week off options for Holiday/Week Off days (simplified)
   const weekOffStatusOptions = [
     'Weekoff - special allowance',
-    'Present - weekoff',
-    'Half Day - weekoff',
-    'WFH - weekoff'
+    'Present',
+    'Half Day',
+    'WFH',
+    'Present - outstation',
+    'Present - client place'
   ];
 
   // Get the appropriate options based on selected date status
@@ -528,13 +546,13 @@ export default function EmployeeDashboard() {
     return statusOptions;
   };
 
-  // Limited options for future requests
+  // Limited options for future requests (simplified)
   const futureStatusOptions = [
     'On leave',
-    'Half Day - weekdays',
-    'Half Day - weekoff',
-    'WFH - weekdays',
-    'WFH - weekoff',
+    'Half Day',
+    'WFH',
+    'Present - outstation',
+    'Present - client place',
     'Weekoff - special allowance',
     'Other'
   ];

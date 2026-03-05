@@ -11,6 +11,8 @@ interface Request {
   reason: string;
   startTime?: string;
   endTime?: string;
+  originalCheckin?: string;
+  originalCheckout?: string;
 }
 
 interface RequestGroup {
@@ -20,12 +22,13 @@ interface RequestGroup {
   dateDisplay: string;
   reason: string;
   timeRange: string;
+  originalTimeRange: string;
   requestIds: string[];
 }
 
 function ReviewAllPageContent() {
   const searchParams = useSearchParams();
-  const partnerName = searchParams.get('partnerName');
+  const partnerName = searchParams.get('partnerName') || searchParams.get('partner');
   const partnerEmail = searchParams.get('partnerEmail');
   const [requestGroups, setRequestGroups] = useState<RequestGroup[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
@@ -68,7 +71,7 @@ function ReviewAllPageContent() {
       return '0.75';
     }
     if (status.includes('outstation')) {
-      return '1';
+      return '1.2'; // Default to max value for outstation
     }
     return '1';
   };
@@ -114,7 +117,10 @@ function ReviewAllPageContent() {
   const groupRequests = (requests: Request[]): RequestGroup[] => {
     const groupMap: { [key: string]: Request[] } = {};
     requests.forEach(req => {
-      const key = `${req.userName}-${req.requestedStatus}`;
+      // For time corrections (requests with startTime/endTime), don't group - each date is separate
+      const hasTimeCorrection = req.startTime && req.endTime;
+      const timeKey = hasTimeCorrection ? `${req.startTime}-${req.endTime}` : 'no-time';
+      const key = `${req.userName}-${req.requestedStatus}-${timeKey}`;
       if (!groupMap[key]) groupMap[key] = [];
       groupMap[key].push(req);
     });
@@ -126,13 +132,24 @@ function ReviewAllPageContent() {
       const dates = requests.map(r => r.date).sort();
       const dateDisplay = getDateDisplay(dates);
       const timeRange = requests[0].startTime && requests[0].endTime ? `${requests[0].startTime} - ${requests[0].endTime}` : '-';
+      const originalTimeRange = requests[0].originalCheckin && requests[0].originalCheckout ? `${requests[0].originalCheckin} - ${requests[0].originalCheckout}` : '-';
       const requestIds = requests.map(r => r._id);
-      return { userName, requestedStatus, dates, dateDisplay, reason, timeRange, requestIds };
+      return { userName, requestedStatus, dates, dateDisplay, reason, timeRange, originalTimeRange, requestIds };
     });
   };
 
+  // Format date from "2026-01-29" to "29 Jan 2026"
+  const formatDate = (dateStr: string): string => {
+    const date = new Date(dateStr);
+    const day = date.getDate();
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = months[date.getMonth()];
+    const year = date.getFullYear();
+    return `${day} ${month} ${year}`;
+  };
+
   const getDateDisplay = (dates: string[]): string => {
-    if (dates.length === 1) return dates[0];
+    if (dates.length === 1) return formatDate(dates[0]);
     const ranges: string[] = [];
     let start = dates[0];
     let prev = dates[0];
@@ -143,18 +160,18 @@ function ReviewAllPageContent() {
       const diff = (currDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24);
       if (diff > 1) {
         if (start === prev) {
-          ranges.push(start);
+          ranges.push(formatDate(start));
         } else {
-          ranges.push(`${start} to ${prev}`);
+          ranges.push(`${formatDate(start)} to ${formatDate(prev)}`);
         }
         start = current;
       }
       prev = current;
     }
     if (start === prev) {
-      ranges.push(start);
+      ranges.push(formatDate(start));
     } else {
-      ranges.push(`${start} to ${prev}`);
+      ranges.push(`${formatDate(start)} to ${formatDate(prev)}`);
     }
     return ranges.join(', ');
   };
@@ -529,9 +546,17 @@ function ReviewAllPageContent() {
                         {/* Time and Days - Prominent display */}
                         <div className="flex flex-wrap items-center gap-2">
                           {group.timeRange !== '-' && (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800/50 rounded-lg border border-slate-700/50 text-sm text-slate-300">
-                              <span className="text-slate-500">🕐</span> {group.timeRange}
-                            </span>
+                            <>
+                              {group.originalTimeRange !== '-' && (
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-900/30 rounded-lg border border-rose-700/50 text-sm text-rose-300 line-through">
+                                  <span className="text-rose-500">🕐</span> {group.originalTimeRange}
+                                </span>
+                              )}
+                              <span className="text-slate-500">→</span>
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-900/30 rounded-lg border border-emerald-700/50 text-sm text-emerald-300">
+                                <span className="text-emerald-500">🕐</span> {group.timeRange}
+                              </span>
+                            </>
                           )}
                           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800/50 rounded-lg border border-slate-700/50 text-sm text-slate-300">
                             <span className="text-slate-500">📅</span> {group.dates.length} day{group.dates.length > 1 ? 's' : ''}
@@ -726,9 +751,17 @@ function ReviewAllPageContent() {
                                 <div className="flex flex-wrap items-center gap-2 text-sm">
                                   <span className="text-slate-300">{group.dateDisplay}</span>
                                   {group.timeRange !== '-' && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-700/50 rounded text-xs text-slate-400">
-                                      🕐 {group.timeRange}
-                                    </span>
+                                    <>
+                                      {group.originalTimeRange !== '-' && (
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-900/30 rounded text-xs text-rose-400 line-through">
+                                          🕐 {group.originalTimeRange}
+                                        </span>
+                                      )}
+                                      <span className="text-slate-500">→</span>
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-900/30 rounded text-xs text-emerald-400">
+                                        🕐 {group.timeRange}
+                                      </span>
+                                    </>
                                   )}
                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-700/50 rounded text-xs text-slate-400">
                                     📅 {group.dates.length} day{group.dates.length > 1 ? 's' : ''}
@@ -775,9 +808,17 @@ function ReviewAllPageContent() {
                               <div className="flex flex-wrap items-center gap-2 text-sm">
                                 <span className="text-slate-300">{group.dateDisplay}</span>
                                 {group.timeRange !== '-' && (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-700/50 rounded text-xs text-slate-400">
-                                    🕐 {group.timeRange}
-                                  </span>
+                                  <>
+                                    {group.originalTimeRange !== '-' && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-900/30 rounded text-xs text-rose-400 line-through">
+                                        🕐 {group.originalTimeRange}
+                                      </span>
+                                    )}
+                                    <span className="text-slate-500">→</span>
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-900/30 rounded text-xs text-emerald-400">
+                                      🕐 {group.timeRange}
+                                    </span>
+                                  </>
                                 )}
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-700/50 rounded text-xs text-slate-400">
                                   📅 {group.dates.length} day{group.dates.length > 1 ? 's' : ''}
@@ -872,9 +913,17 @@ function ReviewAllPageContent() {
                         <div className="flex flex-wrap items-center gap-2 text-sm">
                           <span className="text-slate-300">{group.dateDisplay}</span>
                           {group.timeRange !== '-' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-700/50 rounded text-xs text-slate-400">
-                              🕐 {group.timeRange}
-                            </span>
+                            <>
+                              {group.originalTimeRange !== '-' && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-900/30 rounded text-xs text-rose-400 line-through">
+                                  🕐 {group.originalTimeRange}
+                                </span>
+                              )}
+                              <span className="text-slate-500">→</span>
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-900/30 rounded text-xs text-emerald-400">
+                                🕐 {group.timeRange}
+                              </span>
+                            </>
                           )}
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-700/50 rounded text-xs text-slate-400">
                             📅 {group.dates.length} day{group.dates.length > 1 ? 's' : ''}

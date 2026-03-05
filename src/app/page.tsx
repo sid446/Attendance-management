@@ -17,6 +17,7 @@ import { HolidayManagement } from '@/components/HolidayManagement';
 import { BackupManagementSection } from '@/components/BackupManagementSection';
 import { LeaveManagementSection } from '@/components/LeaveManagementSection';
 import { FineManagementSection } from '@/components/FineManagementSection';
+import { InvalidAttendanceSection } from '@/components/InvalidAttendanceSection';
 import { get } from "http";
 
 export default function AttendanceUpload() {
@@ -44,7 +45,7 @@ export default function AttendanceUpload() {
   const [uploadTotal, setUploadTotal] = useState<number>(0);
   const [uploadSaved, setUploadSaved] = useState<number>(0);
   const [uploadFailed, setUploadFailed] = useState<number>(0);
-  const [activeSection, setActiveSection] = useState<'upload' | 'summary' | 'employee' | 'employees' | 'requests' | 'holidays' | 'backup' | 'leave' | 'fines' | 'articleCredits'>('summary');
+  const [activeSection, setActiveSection] = useState<'upload' | 'summary' | 'employee' | 'employees' | 'requests' | 'holidays' | 'backup' | 'leave' | 'fines' | 'articleCredits' | 'invalid'>('summary');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [selectedEmployeeMonth, setSelectedEmployeeMonth] = useState<string>('');
   // Modal state for EmployeeMonthView
@@ -61,6 +62,9 @@ export default function AttendanceUpload() {
   // New State for "Affected" Modal
   const [showAffectedModal, setShowAffectedModal] = useState<boolean>(false);
 
+  // Holidays state for SummarySection
+  const [holidays, setHolidays] = useState<{date: string; name: string}[]>([]);
+
   // Check for existing auth token on mount
   useEffect(() => {
     const storedToken = localStorage.getItem('attendanceAuthToken');
@@ -74,8 +78,22 @@ export default function AttendanceUpload() {
   useEffect(() => {
     if (isAuthenticated) {
       fetchUsers();
+      fetchHolidays();
     }
   }, [isAuthenticated]);
+
+  // Fetch holidays from database
+  const fetchHolidays = useCallback(async () => {
+    try {
+      const res = await fetch('/api/holidays?activeOnly=true');
+      const result = await res.json();
+      if (result.success && result.data) {
+        setHolidays(result.data.map((h: any) => ({ date: h.date, name: h.name })));
+      }
+    } catch (err) {
+      console.error('Error fetching holidays:', err);
+    }
+  }, []);
 
   // Handle password submission
   const handlePasswordSubmit = async () => {
@@ -915,10 +933,27 @@ export default function AttendanceUpload() {
             excessHour: item.summary?.excessHour ?? 0,
             totalHalfDay: Object.values(item.recordDetails).filter((rec: any) => 
               rec.typeOfPresence !== 'Holiday' && rec.halfDay).length,
-            totalPresent: Object.values(item.recordDetails).filter((rec: any) => 
-              rec.typeOfPresence !== 'Holiday' && ((rec.checkin && rec.checkin !== "00:00") || rec.halfDay)).length,
-            totalAbsent: Object.values(item.recordDetails).filter((rec: any) => 
-              rec.totalHour === 0 && !rec.halfDay && rec.typeOfPresence !== 'Leave' && rec.typeOfPresence !== 'Holiday' && (!rec.checkin || rec.checkin === "00:00")).length,
+            totalPresent: Object.values(item.recordDetails).filter((rec: any) => {
+              if (rec.typeOfPresence === 'Holiday') return false;
+              const effectiveCheckin = rec.editedCheckin || rec.checkin;
+              const effectiveCheckout = rec.editedCheckout || rec.checkout;
+              // Present if both in and out are valid (not 00:00), or halfDay is true
+              return ((effectiveCheckin && effectiveCheckin !== "00:00") && (effectiveCheckout && effectiveCheckout !== "00:00")) || rec.halfDay;
+            }).length,
+            totalAbsent: Object.values(item.recordDetails).filter((rec: any) => {
+              if (rec.totalHour !== 0) return false;
+              if (rec.halfDay) return false;
+              if (rec.typeOfPresence === 'Leave' || rec.typeOfPresence === 'Holiday') return false;
+              if (typeof rec.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff')) return false;
+              // Use edited times if available
+              const effectiveCheckin = rec.editedCheckin || rec.checkin;
+              const effectiveCheckout = rec.editedCheckout || rec.checkout;
+              // Only mark absent if BOTH in and out are missing or '00:00'
+              if ((!(effectiveCheckin && effectiveCheckin !== "00:00")) && (!(effectiveCheckout && effectiveCheckout !== "00:00"))) {
+                return true;
+              }
+              return false;
+            }).length,
             totalLeave: item.summary?.totalLeave ?? 0,
           },
           recordDetails: item.recordDetails || {},
@@ -1133,6 +1168,7 @@ export default function AttendanceUpload() {
               <SummarySection
                 summaries={summaries}
                 allUsers={allUsers}
+                holidays={holidays}
                 uploadTotal={uploadTotal}
                 uploadSaved={uploadSaved}
                 uploadFailed={uploadFailed}
@@ -1382,6 +1418,11 @@ export default function AttendanceUpload() {
             {/* Fine Management Section */}
             {activeSection === 'fines' && (
               <FineManagementSection />
+            )}
+
+            {/* Invalid Attendance Section */}
+            {activeSection === 'invalid' && (
+              <InvalidAttendanceSection onRefresh={fetchUsers} />
             )}
           </div>
         </main>

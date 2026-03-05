@@ -76,6 +76,7 @@ const DetailModal: React.FC<DetailModalProps> = ({ isOpen, onClose, title, data 
 interface SummarySectionProps {
   summaries: AttendanceSummaryView[];
   allUsers?: User[]; // Optional prop for fuller search context
+  holidays?: {date: string; name: string}[]; // Holiday dates from database
   isLoading?: boolean;
   onFilterChange: (filter: string | {start: string, end: string} | {startDate: string, endDate: string}) => void;
   // onEmployeeClick now opens EmployeeMonthView as modal, not via sidebar section
@@ -91,6 +92,7 @@ interface SummarySectionProps {
 export const SummarySection: React.FC<SummarySectionProps> = ({
   summaries,
   allUsers,
+  holidays = [],
   isLoading = false,
   onFilterChange,
   onEmployeeClick,
@@ -183,6 +185,12 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       const effectiveCheckin = rec.editedCheckin || rec.checkin;
       if (!effectiveCheckin) return;
       const d = new Date(date);
+      // Skip Sundays
+      if (d.getDay() === 0) return;
+      // Skip Holidays (check typeOfPresence)
+      if (rec.typeOfPresence === 'Holiday') return;
+      // Skip weekoff (case-insensitive)
+      if (typeof rec.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff')) return;
       const empTypeLate = getEmploymentTypeForDate(user, d);
       if (empTypeLate === 'halftime') {
         // For halftime, do not mark late if checkin is after 1:30 PM
@@ -215,16 +223,27 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
   };
 
   const getAbsentDetails = (item: AttendanceSummaryView) => {
-      if (!item) return [];
-      const records = item.recordDetails || {};
-      const dates: { date: string; info: string; subInfo?: string }[] = [];
-      Object.entries(records).forEach(([date, rec]) => {
-          // Absent logic: 0 hours, not Leave/Holiday
-          if (rec.totalHour === 0 && (rec.typeOfPresence !== 'Leave' && rec.typeOfPresence !== 'On leave') && rec.typeOfPresence !== 'Holiday') {
-               dates.push({ date, info: 'Absent', subInfo: rec.typeOfPresence === 'ThumbMachine' ? '0 Hours' : rec.typeOfPresence });
+    if (!item) return [];
+    const records = item.recordDetails || {};
+    const dates: { date: string; info: string; subInfo?: string }[] = [];
+    Object.entries(records).forEach(([date, rec]) => {
+        // Absent logic: 0 hours, not Leave/Holiday, not weekoff, both in and out invalid
+        if (
+          rec.totalHour === 0 &&
+          rec.typeOfPresence !== 'Leave' &&
+          rec.typeOfPresence !== 'On leave' &&
+          rec.typeOfPresence !== 'Holiday' &&
+          !(typeof rec.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff'))
+        ) {
+          const effectiveCheckin = rec.editedCheckin || rec.checkin;
+          const effectiveCheckout = rec.editedCheckout || rec.checkout;
+          // Only mark absent if BOTH in and out are missing or '00:00'
+          if ((!(effectiveCheckin && effectiveCheckin !== "00:00")) && (!(effectiveCheckout && effectiveCheckout !== "00:00"))) {
+            dates.push({ date, info: 'Absent', subInfo: rec.typeOfPresence === 'ThumbMachine' ? '0 Hours' : rec.typeOfPresence });
           }
-      });
-      return dates.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        }
+    });
+    return dates.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   };
 
   const getLeaveDetails = (item: AttendanceSummaryView) => {
@@ -356,10 +375,37 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
   const getWorkingDaysDetails = (item: AttendanceSummaryView) => {
       const details: { date: string; info: string; subInfo?: string }[] = [];
       
-      // Calculate each component
-      const presentDays = item.summary.totalPresent || 0;
-      const absentDays = item.summary.totalAbsent || 0;
-      const leaveDays = calculateLeaveConsumed(item);
+      // Calculate each component (excluding holidays from DB, Sundays, and weekoff types)
+      const records = item.recordDetails || {};
+      const holidayDates = new Set(holidays.map(h => h.date));
+      let presentDays = 0;
+      let absentDays = 0;
+      let leaveDays = 0;
+      
+      Object.entries(records).forEach(([dateStr, rec]) => {
+        const d = new Date(dateStr);
+        if (d.getDay() === 0) return; // Exclude Sundays
+        if (holidayDates.has(dateStr)) return; // Exclude holidays from DB
+        if (typeof rec.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff')) return;
+        
+        const effectiveCheckin = rec.editedCheckin || rec.checkin;
+        const effectiveCheckout = rec.editedCheckout || rec.checkout;
+        
+        if (rec.typeOfPresence === 'Leave' || rec.typeOfPresence === 'On leave') {
+          if (!rec.halfDay) leaveDays++;
+        } else if (
+          ((effectiveCheckin && effectiveCheckin !== '00:00') && (effectiveCheckout && effectiveCheckout !== '00:00')) ||
+          rec.halfDay
+        ) {
+          presentDays++;
+        } else if (
+          (!(effectiveCheckin && effectiveCheckin !== '00:00')) &&
+          (!(effectiveCheckout && effectiveCheckout !== '00:00'))
+        ) {
+          absentDays++;
+        }
+      });
+      
       const totalWorkingDays = presentDays + absentDays + leaveDays;
       
       // Add summary breakdown at the top
@@ -400,12 +446,20 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           subInfo: '---'
       });
       
-      const records = item.recordDetails || {};
       Object.entries(records)
           .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
           .forEach(([date, rec]) => {
-              // Skip holidays - they don't count as working days
-              if (rec.typeOfPresence === 'Holiday') {
+              // Skip Sundays
+              const d = new Date(date);
+              if (d.getDay() === 0) {
+                  return;
+              }
+              // Skip holidays from database
+              if (holidayDates.has(date)) {
+                  return;
+              }
+              // Skip weekoff types
+              if (typeof rec.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff')) {
                   return;
               }
               
@@ -2888,12 +2942,37 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                     <td className="px-4 py-3 text-left text-slate-400">{item.team || '-'}</td>
                     <td className="px-4 py-3 text-left text-slate-400">{item.designation || '-'}</td>
                     <td className="px-4 py-3 text-right font-mono text-slate-400">{Object.keys(item.recordDetails || {}).length}</td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-400">{Object.values(item.recordDetails || {}).filter((r: any) => r.typeOfPresence === 'Holiday').length}</td>
+                    <td className="px-4 py-3 text-right font-mono text-slate-400">
+                        {(() => {
+                          // Count holidays: Sundays + dates in holiday database
+                          const records = item.recordDetails || {};
+                          const holidayDates = new Set(holidays.map(h => h.date));
+                          let holidayCount = 0;
+                          Object.keys(records).forEach((dateStr) => {
+                            const d = new Date(dateStr);
+                            if (d.getDay() === 0) {
+                              // Sunday
+                              holidayCount++;
+                            } else if (holidayDates.has(dateStr)) {
+                              // Holiday from database
+                              holidayCount++;
+                            }
+                          });
+                          return holidayCount;
+                        })()}
+                    </td>
                     <td className="px-4 py-3 text-right font-mono text-slate-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => openDetail(e, 'WorkingDays', item)}>
                         {(() => {
-                          // Count all days in recordDetails that are not holidays
+                          // Count working days: exclude holidays (from DB), Sundays, and weekoff types
                           const records = item.recordDetails || {};
-                          const workingDays = Object.values(records).filter((rec: any) => rec.typeOfPresence !== 'Holiday').length;
+                          const holidayDates = new Set(holidays.map(h => h.date));
+                          const workingDays = Object.entries(records).filter(([dateStr, rec]: [string, any]) => {
+                            const d = new Date(dateStr);
+                            if (d.getDay() === 0) return false; // Exclude Sundays
+                            if (holidayDates.has(dateStr)) return false; // Exclude holidays from DB
+                            if (typeof rec.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff')) return false;
+                            return true;
+                          }).length;
                           return workingDays > 0 ? (
                             <span className="hover:underline" title="Click to view calculation breakdown">{workingDays}</span>
                           ) : '-';

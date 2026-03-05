@@ -1097,6 +1097,94 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
     }
   };
 
+  const handleLeaveBalanceUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    setUploadStats(null);
+    setError(null);
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { cellDates: false });
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+      if (jsonData.length < 2) {
+        throw new Error('File appears to be empty or missing headers');
+      }
+
+      // Find header row
+      let headerRowIndex = 0;
+      for (let i = 0; i < Math.min(jsonData.length, 10); i++) {
+        const row = jsonData[i] as any[];
+        if (row && Array.isArray(row) && row.some(cell => cell != null && String(cell).toLowerCase().includes('name'))) {
+          headerRowIndex = i;
+          break;
+        }
+      }
+
+      const headerRow = jsonData[headerRowIndex];
+      if (!headerRow || !Array.isArray(headerRow)) {
+        throw new Error('Could not find header row with column names');
+      }
+      const headers = headerRow.map(h => h != null ? String(h).toLowerCase().trim() : '');
+      
+      // Find column indices - using safe string checks
+      const nameIdx = headers.findIndex(h => h && h.includes('name') && !h.includes('tally'));
+      const allowedIdx = headers.findIndex(h => h && (h.includes('allowed') || h.includes('earned') || h.includes('due')));
+      // Look specifically for "Total Leaves Taken" - must include "total" and "taken" to avoid "Transfer (Leaves taken in previous firm)"
+      const takenIdx = headers.findIndex(h => h && h.includes('total') && h.includes('taken'));
+
+      if (nameIdx === -1) {
+        throw new Error('Could not find "Name" column');
+      }
+      if (allowedIdx === -1) {
+        throw new Error('Could not find "Leaves Allowed" column');
+      }
+      if (takenIdx === -1) {
+        throw new Error('Could not find "Total Leaves Taken" column. Make sure the column header contains both "Total" and "Taken".');
+      }
+
+      const leaveData = [];
+      for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
+        const row = jsonData[i] as any[];
+        if (!row || !row[nameIdx]) continue;
+
+        leaveData.push({
+          name: String(row[nameIdx]).trim(),
+          leavesAllowed: row[allowedIdx],
+          leavesTaken: row[takenIdx]
+        });
+      }
+
+      if (leaveData.length === 0) {
+        throw new Error('No leave data found in the file');
+      }
+
+      const response = await fetch('/api/users/bulk-leave-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leaveData })
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        setUploadStats(result.stats);
+        fetchUsers();
+      } else {
+        throw new Error(result.error);
+      }
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Leave balance upload failed');
+    } finally {
+      setIsUploading(false);
+      e.target.value = '';
+    }
+  };
+
   const filteredUsers = users.filter((user) => {
     // Multi-select Designation filter
     if (filterDesignations.length > 0 && !filterDesignations.includes(user.designation || '')) {
@@ -4367,6 +4455,44 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 <p className="text-sm text-blue-300">
                   <strong className="text-blue-400">💡 Pro Tip:</strong> Use the Export button to download a template with all current employees, then modify it and upload the updated data.
                 </p>
+              </div>
+
+              {/* Leave Balance Upload Section */}
+              <div className="mt-4 pt-4 border-t border-slate-700/50">
+                <h4 className="text-sm font-medium text-slate-200 mb-3">Leave Balance Upload</h4>
+                <div className="bg-slate-800/30 rounded-xl p-4 border border-slate-700/30">
+                  <p className="text-xs text-slate-400 mb-3">
+                    Upload an Excel file with leave balance data. Required columns:
+                  </p>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    <span className="text-xs px-3 py-2 rounded-lg text-emerald-300 bg-emerald-500/10 border border-emerald-500/30">
+                      Name <span className="text-emerald-400">*</span>
+                    </span>
+                    <span className="text-xs px-3 py-2 rounded-lg text-emerald-300 bg-emerald-500/10 border border-emerald-500/30">
+                      Leaves Allowed <span className="text-emerald-400">*</span>
+                    </span>
+                    <span className="text-xs px-3 py-2 rounded-lg text-emerald-300 bg-emerald-500/10 border border-emerald-500/30">
+                      Total Leaves Taken (Current+Previous Years) <span className="text-emerald-400">*</span>
+                    </span>
+                  </div>
+                  <label
+                    className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm cursor-pointer transition-all ${
+                      isUploading
+                        ? 'text-slate-500 cursor-not-allowed bg-slate-800/30'
+                        : 'text-white bg-amber-600 hover:bg-amber-500'
+                    }`}
+                  >
+                    <Upload className="w-4 h-4" />
+                    {isUploading ? 'Uploading...' : 'Upload Leave Balance Excel'}
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls"
+                      onChange={handleLeaveBalanceUpload}
+                      className="hidden"
+                      disabled={isUploading}
+                    />
+                  </label>
+                </div>
               </div>
             </div>
           )}

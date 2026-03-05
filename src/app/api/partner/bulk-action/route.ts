@@ -1,3 +1,27 @@
+// Enum for all typeOfPresence values
+export enum TypeOfPresence {
+    ThumbMachine = 'ThumbMachine',
+    Manual = 'Manual',
+    Remote = 'Remote',
+    OnLeave = 'On leave',
+    Holiday = 'Holiday',
+    Absent = 'Absent',
+    PresentInOffice = 'Present - in office',
+    PresentClientPlace = 'Present - client place',
+    PresentOutstation = 'Present - outstation',
+    PresentWeekoff = 'Present - weekoff',
+    HalfDayWeekdays = 'Half Day - weekdays',
+    HalfDayWeekoff = 'Half Day - weekoff',
+    WFHWeekdays = 'WFH - weekdays',
+    WFHWeekoff = 'WFH - weekoff',
+    WeekoffSpecialAllowance = 'Weekoff - special allowance',
+    WeeklyOffPresent = 'Weekly Off - Present (WO-Present)',
+    HalfDayHD = 'Half Day (HD)',
+    WorkFromHome = 'Work From Home (WFH)',
+    WeeklyOffWFH = 'Weekly Off - Work From Home (WO-WFH)',
+    OnsitePresence = 'Onsite Presence (OS-P)',
+    ThumbMachineNotWorking = 'Thumb machine - not working'
+}
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import AttendanceRequest from '@/models/AttendanceRequest';
@@ -125,69 +149,149 @@ export async function POST(request: NextRequest) {
                     };
                 }
 
-                rec.typeOfPresence = requestedStatus as any;
-                
-                // Determine value based on request type
-                const isLeaveRequest = requestedStatus.toLowerCase().includes('leave') ||
-                                      requestedStatus.toLowerCase().includes('absent') ||
-                                      requestedStatus === 'On leave';
-                
-                if (isLeaveRequest) {
-                  // For leave requests, calculate paid/unpaid based on balance
-                  const { calculateLeaveUsage } = await import('@/lib/leaveManagement');
-                  const leaveUsage = await calculateLeaveUsage(userId, date, requestedStatus);
-                  rec.value = leaveUsage.value;
-                  rec.halfDay = false; // Leave is either full day paid or unpaid
-                } else {
-                  rec.value = appliedValue!;
-                  if (rec.value > 0 && rec.value < 1) {
-                      rec.halfDay = true;
-                  } else {
-                      rec.halfDay = false;
-                  }
-                }
 
-                if (startTime && endTime) {
-                    // Use editedCheckin/editedCheckout for corrections
-                    rec.editedCheckin = startTime;
-                    rec.editedCheckout = endTime;
-                    // Also set regular checkin/checkout if not set
-                    if (!rec.checkin) rec.checkin = startTime;
-                    if (!rec.checkout) rec.checkout = endTime;
-                    // Recalculate totalHour and excessHour using edited times
-                    rec.totalHour = calculateDuration(startTime, endTime);
-                    // Recalculate excessHour for this day
-                    // Fetch user schedule for the day
-                    const userObj = await User.findById(userId);
-                    let scheduledInTime = '';
-                    let scheduledOutTime = '';
-                    if (userObj) {
-                        const schedule = getScheduledTimes(userObj, date);
-                        scheduledInTime = schedule.inTime;
-                        scheduledOutTime = schedule.outTime;
-                    }
-                    const inTime = startTime;
-                    const outTime = endTime;
-                    let dayExcess = 0;
-                    if (scheduledInTime && scheduledOutTime && inTime && outTime && inTime !== '00:00' && outTime !== '00:00') {
-                        const [schInH, schInM] = scheduledInTime.split(':').map(Number);
-                        const [schOutH, schOutM] = scheduledOutTime.split(':').map(Number);
-                        const [actInH, actInM] = inTime.split(':').map(Number);
-                        const [actOutH, actOutM] = outTime.split(':').map(Number);
-                        const schInMin = schInH * 60 + schInM;
-                        const schOutMin = schOutH * 60 + schOutM;
-                        const actInMin = actInH * 60 + actInM;
-                        const actOutMin = actOutH * 60 + actOutM;
-                        const scheduledMinutes = schOutMin - schInMin >= 0 ? schOutMin - schInMin : (24 * 60 + schOutMin - schInMin);
-                        const actualMinutes = actOutMin - actInMin >= 0 ? actOutMin - actInMin : (24 * 60 + actOutMin - actInMin);
-                        if (actualMinutes < scheduledMinutes) {
-                            dayExcess = -(scheduledMinutes - actualMinutes) / 60;
-                        } else {
-                            dayExcess = (actualMinutes - scheduledMinutes) / 60;
-                        }
-                    }
-                    rec.excessHour = Number(dayExcess.toFixed(2));
-                }
+                                rec.typeOfPresence = requestedStatus as any;
+
+                                // Determine value based on request type
+                                const isLeaveRequest = requestedStatus.toLowerCase().includes('leave') ||
+                                                                            requestedStatus.toLowerCase().includes('absent') ||
+                                                                            requestedStatus === 'On leave';
+
+                                // Fetch user schedule for the day
+                                const userObj = await User.findById(userId);
+                                let scheduledInTime = '';
+                                let scheduledOutTime = '';
+                                let scheduledMinutes = 0;
+                                if (userObj) {
+                                        const schedule = getScheduledTimes(userObj, date);
+                                        scheduledInTime = schedule.inTime;
+                                        scheduledOutTime = schedule.outTime;
+                                        if (scheduledInTime && scheduledOutTime) {
+                                                const [schInH, schInM] = scheduledInTime.split(':').map(Number);
+                                                const [schOutH, schOutM] = scheduledOutTime.split(':').map(Number);
+                                                const schInMin = schInH * 60 + schInM;
+                                                const schOutMin = schOutH * 60 + schOutM;
+                                                scheduledMinutes = schOutMin - schInMin >= 0 ? schOutMin - schInMin : (24 * 60 + schOutMin - schInMin);
+                                        }
+                                }
+
+                                // Helper to check type
+                                const isType = (type: string) => requestedStatus.toLowerCase().includes(type.toLowerCase());
+
+                                let leaveIsPaid = false; // Track if this is a paid leave
+                                if (isLeaveRequest) {
+                                    // For leave requests, calculate paid/unpaid based on balance
+                                    // Article employees always get value 0 (no paid leave concept)
+                                    // Other employees get value based on their balance
+                                    const { calculateLeaveUsage } = await import('@/lib/leaveManagement');
+                                    const leaveUsage = await calculateLeaveUsage(userId, date, requestedStatus);
+                                    rec.value = leaveUsage.value;
+                                    leaveIsPaid = leaveUsage.isPaidLeave;
+                                    rec.halfDay = false; // Leave is either full day paid or unpaid
+                                } else {
+                                    rec.value = appliedValue!;
+                                    if (rec.value > 0 && rec.value < 1) {
+                                            rec.halfDay = true;
+                                    } else {
+                                            rec.halfDay = false;
+                                    }
+                                }
+
+                                // Recalculation for special types
+                                let isWeekoff = /weekoff|week-off|week off/i.test(requestedStatus);
+                                let isWeekdays = /weekday|weekdays/i.test(requestedStatus);
+                                // WFH
+                                if (isType('WFH - weekdays')) {
+                                    rec.totalHour = Number((rec.value * (scheduledMinutes / 60)).toFixed(2));
+                                    rec.excessHour = Number((rec.totalHour - (scheduledMinutes / 60)).toFixed(2));
+                                } else if (isType('WFH - weekoff')) {
+                                    rec.totalHour = 0;
+                                    rec.excessHour = Number((rec.value * (scheduledMinutes / 60)).toFixed(2));
+                                }
+                                // Half Day
+                                else if (isType('Half Day - weekdays')) {
+                                    rec.totalHour = Number((0.5 * (scheduledMinutes / 60)).toFixed(2));
+                                    rec.excessHour = Number((rec.totalHour - (scheduledMinutes / 60)).toFixed(2));
+                                } else if (isType('Half Day - weekoff')) {
+                                    rec.totalHour = 0;
+                                    rec.excessHour = Number((0.5 * (scheduledMinutes / 60)).toFixed(2));
+                                }
+                                // Present - Outstation
+                                else if (isType('Present - Outstation (Weekdays)')) {
+                                    rec.totalHour = Number((rec.value * (scheduledMinutes / 60)).toFixed(2));
+                                    rec.excessHour = Number((rec.totalHour - (scheduledMinutes / 60)).toFixed(2));
+                                } else if (isType('Present - Outstation (Weekoff)')) {
+                                    rec.totalHour = 0;
+                                    rec.excessHour = Number((rec.value * (scheduledMinutes / 60)).toFixed(2));
+                                }
+                                // Default: use time if provided (time corrections)
+                                else if (startTime && endTime) {
+                                        // Use editedCheckin/editedCheckout for corrections
+                                        rec.editedCheckin = startTime;
+                                        rec.editedCheckout = endTime;
+                                        // Also set regular checkin/checkout if not set
+                                        if (!rec.checkin) rec.checkin = startTime;
+                                        if (!rec.checkout) rec.checkout = endTime;
+                                        // Recalculate totalHour and excessHour using edited times
+                                        rec.totalHour = calculateDuration(startTime, endTime);
+                                        // Recalculate excessHour for this day
+                                        const inTime = startTime;
+                                        const outTime = endTime;
+                                        let dayExcess = 0;
+                                        if (scheduledInTime && scheduledOutTime && inTime && outTime && inTime !== '00:00' && outTime !== '00:00') {
+                                                const [schInH, schInM] = scheduledInTime.split(':').map(Number);
+                                                const [schOutH, schOutM] = scheduledOutTime.split(':').map(Number);
+                                                const [actInH, actInM] = inTime.split(':').map(Number);
+                                                const [actOutH, actOutM] = outTime.split(':').map(Number);
+                                                const schInMin = schInH * 60 + schInM;
+                                                const schOutMin = schOutH * 60 + schOutM;
+                                                const actInMin = actInH * 60 + actInM;
+                                                const actOutMin = actOutH * 60 + actOutM;
+                                                const scheduledMinutes = schOutMin - schInMin >= 0 ? schOutMin - schInMin : (24 * 60 + schOutMin - schInMin);
+                                                const actualMinutes = actOutMin - actInMin >= 0 ? actOutMin - actInMin : (24 * 60 + actOutMin - actInMin);
+                                                if (actualMinutes < scheduledMinutes) {
+                                                        dayExcess = -(scheduledMinutes - actualMinutes) / 60;
+                                                } else {
+                                                        dayExcess = (actualMinutes - scheduledMinutes) / 60;
+                                                }
+                                        }
+                                        rec.excessHour = Number(dayExcess.toFixed(2));
+                                        
+                                        // Recalculate halfDay based on corrected times
+                                        // Default to false, but set true if rules are violated
+                                        rec.halfDay = false;
+                                        rec.value = 1;
+                                        
+                                        // Check halfDay rules:
+                                        // 1. If checkin is 00:00 but checkout is valid - mark as half day
+                                        // 2. For article employees: half-day if arrive after 1 PM
+                                        // 3. For others: half-day if arrive after 1 PM AND less than 6 hours worked
+                                        const checkinTime = startTime;
+                                        const checkoutTime = endTime;
+                                        const isArticleship = userObj && userObj.designation && userObj.designation.toLowerCase() === 'article';
+                                        
+                                        if (checkinTime === '00:00' && checkoutTime !== '00:00' && checkoutTime !== '' && rec.totalHour > 0) {
+                                          // Missing check-in but has valid checkout
+                                          rec.halfDay = true;
+                                          rec.value = 0.5;
+                                        } else if (checkinTime !== '00:00') {
+                                          const isAfter1PM = checkinTime >= '13:00';
+                                          
+                                          if (isArticleship) {
+                                            // For articleship: half-day if arrive after 1 PM
+                                            if (isAfter1PM) {
+                                              rec.halfDay = true;
+                                              rec.value = 0.5;
+                                            }
+                                          } else {
+                                            // For others: half-day if arrive after 1 PM AND less than 6 hours worked
+                                            if (isAfter1PM && rec.totalHour < 6) {
+                                              rec.halfDay = true;
+                                              rec.value = 0.5;
+                                            }
+                                          }
+                                        }
+                                }
 
                 attendance.records.set(date, rec);
                 
@@ -198,8 +302,8 @@ export async function POST(request: NextRequest) {
                 attendance.summary = calculateSummary(attendance.records, user);
                 await attendance.save();
 
-                // Update leave balance if this is a leave request
-                if (isLeaveRequest && rec.value === 1) {
+                // Update leave balance if this is a paid leave request
+                if (isLeaveRequest && leaveIsPaid) {
                   const { updateLeaveBalanceOnApproval } = await import('@/lib/leaveManagement');
                   await updateLeaveBalanceOnApproval(userId, date, true);
                 }
