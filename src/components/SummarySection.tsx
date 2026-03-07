@@ -985,29 +985,28 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
   // Helper function to calculate detailed attendance metrics
   const calculateDetailedAttendanceMetrics = (item: AttendanceSummaryView) => {
     const records = item.recordDetails || {};
-    let pio = 0; // Present in office (ThumbMachine, Present - in office, Thumb machine - not working)
-    let woPio = 0; // Week off present in office (Present - weekoff)
-    let osP = 0; // Outstation present
-    let pcp = 0; // Present - client place
-    let absent = 0; // Absent
-    let hd = 0; // Half day (Half Day - weekdays or if value is 0.5)
-    let sun = 0; // Sundays
-    let weekoffHd = 0; // Week off half days (Half Day - weekoff)
-    let ohd = 0; // Official holiday
-    let wfhWeekoff = 0; // WFH in weekoff (WFH - weekoff)
-    let wfhWeekdays = 0; // WFH weekdays (WFH - weekdays)
+    
+    // New simplified metrics
+    let present = 0; // Total present days
+    let absent = 0; // Total absent days
+    let sunHoliday = 0; // Sundays + Holidays count
+    let hdWeekday = 0; // Half Day - weekdays
+    let hdWeekoff = 0; // Half Day - weekoff
+    let wfhWeekday = 0; // WFH - weekdays
+    let wfhWeekoff = 0; // WFH - weekoff
+    let outstationWeekday = 0; // Present - Outstation (Weekdays)
+    let outstationWeekoff = 0; // Present - Outstation (Weekoff)
+    let clientPlaceWeekday = 0; // Present - ClientPlace (Weekdays)
+    let clientPlaceWeekoff = 0; // Present - ClientPlace (Weekoff)
+    let inOfficeWeekday = 0; // Present - in office - weekdays
+    let inOfficeWeekoff = 0; // Present - in office - weekoff
     let weekoffSpecial = 0; // Weekoff - special allowance
-    let netWeekdaysWorking = 0; // Sum of PIO, WO-PIO, OS-P, HD, WEEKOFF HD, WFH
+    let netWeekdaysWorking = 0;
 
     Object.entries(records).forEach(([date, rec]: [string, any]) => {
       const recordDate = new Date(date);
       const dayOfWeek = recordDate.getDay(); // 0 = Sunday
       const isSunday = dayOfWeek === 0;
-
-      // Count Sundays
-      if (isSunday) {
-        sun += 1;
-      }
 
       // Get the value from the record
       const value = rec.value || 0;
@@ -1017,120 +1016,124 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       const effectiveCheckin = rec.editedCheckin || rec.checkin;
       const effectiveCheckout = rec.editedCheckout || rec.checkout;
 
-      // Special case: ThumbMachine with 00:00 checkin/checkout should be counted as Absent but not added to totals
+      // Count Sundays and Holidays
+      if (isSunday || type === 'Holiday' || type === 'Official Holiday Duty (OHD)') {
+        sunHoliday += 1;
+      }
+
+      // Special case: ThumbMachine with 00:00 checkin/checkout should be counted as Absent
       if (type === 'ThumbMachine' && effectiveCheckin === '00:00' && effectiveCheckout === '00:00') {
-        absent += 1; // Count as absent for informational purposes
-        return; // Don't add to any other totals since value is zero
+        absent += 1;
+        return;
       }
 
       // Categorize based on typeOfPresence
-      if (type === 'ThumbMachine' || type === 'Present - in office' || type === 'Thumb machine - not working') {
-        // Check if this is a half day (either from record or schedule)
-        if (rec.halfDay && value < 1) {
-          // If halfDay flag is set AND value is less than 1, categorize under HD or Weekoff HD (exclude Saturday)
-          if (isSunday) {
-            weekoffHd += value;
-          } else if (recordDate.getDay() >= 1 && recordDate.getDay() <= 5) {
-            // Only weekdays (Mon-Fri) are considered half days
-            hd += value;
-          } else {
-            // Saturday should not be treated as half day, so categorize as PIO
-            pio += value;
-          }
-        } else {
-          // Check if this day was scheduled as a half day
-          const applicableSchedule = getApplicableSchedule(item, date);
-          const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-          const dayName = dayNames[recordDate.getDay()] as keyof DailySchedule;
-          let daySchedule = applicableSchedule?.daily?.[dayName];
-
-          // If this day's schedule is empty (no inTime) or doesn't exist, use monday as default for weekdays
-          if ((!daySchedule || !daySchedule.inTime) && recordDate.getDay() >= 1 && recordDate.getDay() <= 5) {
-            daySchedule = applicableSchedule?.daily?.monday;
-          }
-
-          // If the day was scheduled as half day, categorize under HD or Weekoff HD (exclude Saturday)
-          if (daySchedule?.isHalfDay && value < 1) {
-            if (daySchedule.isHoliday || isSunday) {
-              weekoffHd += value;
-            } else if (recordDate.getDay() >= 1 && recordDate.getDay() <= 5) {
-              // Only weekdays (Mon-Fri) are considered half days
-              hd += value;
-            } else {
-              // Saturday should not be treated as half day, so categorize as PIO
-              pio += value;
-            }
-          } else {
-            pio += value;
-          }
-        }
-      } else if (type === 'Present - weekoff') {
-        woPio += value;
-      } else if (type === 'Present - outstation' || type === 'Onsite Presence (OS-P)') {
-        osP += value;
-      } else if (type === 'Present - client place') {
-        pcp += value;
+      if (type === 'Absent') {
+        absent += 1;
+      } else if (type === 'On leave' || type === 'Leave') {
+        absent += value === 0 ? 1 : 0; // Unpaid leave = absent
       } else if (type === 'Half Day - weekdays') {
-        hd += value;
+        hdWeekday += value;
+        present += 1; // Count as 1 day present
       } else if (type === 'Half Day - weekoff') {
-        weekoffHd += value;
-      } else if (rec.halfDay && value < 1 && type !== 'Half Day - weekdays' && type !== 'Half Day - weekoff' && type !== 'ThumbMachine' && type !== 'Present - in office' && type !== 'Thumb machine - not working') {
-        // Additional check: If halfDay is true AND value < 1 for any other attendance type, categorize under HD or Weekoff HD (exclude Saturday)
+        hdWeekoff += value;
+        present += 1; // Count as 1 day present
+      } else if (type === 'Half Day (HD)') {
+        // Legacy half day - categorize based on day
         if (isSunday) {
-          weekoffHd += value;
-        } else if (recordDate.getDay() >= 1 && recordDate.getDay() <= 5) {
-          // Only weekdays (Mon-Fri) are considered half days
-          hd += value;
+          hdWeekoff += value;
         } else {
-          // Saturday should not be treated as half day, so categorize normally
-          // This will fall through to the normal categorization logic below
+          hdWeekday += value;
         }
-      } else if (type === 'Absent') {
-        absent += value;
-      } else if (type === 'Holiday' || type === 'Official Holiday Duty (OHD)') {
-        ohd += value;
+        present += 1; // Count as 1 day present
       } else if (type === 'WFH - weekdays') {
-        wfhWeekdays += value;
+        wfhWeekday += value;
+        present += 1; // Count as 1 day present
       } else if (type === 'WFH - weekoff' || type === 'Weekly Off - Work From Home (WO-WFH)') {
         wfhWeekoff += value;
-      } else if (type === 'Weekoff - special allowance') {
-        weekoffSpecial += value;
-      } else if (type === 'Weekly Off - Present (WO-Present)') {
-        woPio += value;
-      } else if (type === 'Half Day (HD)') {
-        // Check if it's weekoff based on day or type
-        if (type.includes('weekoff') || isSunday) {
-          weekoffHd += value;
-        } else {
-          hd += value;
-        }
+        present += 1; // Count as 1 day present
       } else if (type === 'Work From Home (WFH)') {
-        // Check if it's weekoff based on day
+        // Legacy WFH - categorize based on day
         if (isSunday) {
           wfhWeekoff += value;
         } else {
-          wfhWeekdays += value;
+          wfhWeekday += value;
         }
+        present += 1; // Count as 1 day present
+      } else if (type === 'Present - Outstation (Weekdays)' || type === 'Onsite Presence (OS-P)') {
+        outstationWeekday += value;
+        present += 1; // Count as 1 day present
+      } else if (type === 'Present - Outstation (Weekoff)') {
+        outstationWeekoff += value;
+        present += 1; // Count as 1 day present
+      } else if (type === 'Present - outstation') {
+        // Legacy outstation - categorize based on day
+        if (isSunday) {
+          outstationWeekoff += value;
+        } else {
+          outstationWeekday += value;
+        }
+        present += 1; // Count as 1 day present
+      } else if (type === 'Present - ClientPlace (Weekdays)') {
+        clientPlaceWeekday += value;
+        present += 1; // Count as 1 day present
+      } else if (type === 'Present - ClientPlace (Weekoff)') {
+        clientPlaceWeekoff += value;
+        present += 1; // Count as 1 day present
+      } else if (type === 'Present - client place') {
+        // Legacy client place - categorize based on day
+        if (isSunday) {
+          clientPlaceWeekoff += value;
+        } else {
+          clientPlaceWeekday += value;
+        }
+        present += 1; // Count as 1 day present
+      } else if (type === 'Present - in office - weekdays') {
+        inOfficeWeekday += value;
+        present += 1; // Count as 1 day present
+      } else if (type === 'Present - in office - weekoff') {
+        inOfficeWeekoff += value;
+        present += 1; // Count as 1 day present
+      } else if (type === 'Present - in office' || type === 'ThumbMachine' || type === 'Thumb machine - not working') {
+        // Legacy present in office - categorize based on day
+        if (isSunday) {
+          inOfficeWeekoff += value;
+        } else {
+          inOfficeWeekday += value;
+        }
+        present += 1; // Count as 1 day present
+      } else if (type === 'Present - weekoff' || type === 'Weekly Off - Present (WO-Present)') {
+        inOfficeWeekoff += value;
+        present += 1; // Count as 1 day present
+      } else if (type === 'Weekoff - special allowance') {
+        weekoffSpecial += value;
+      } else if (type === 'Holiday' || type === 'Official Holiday Duty (OHD)') {
+        // Already counted in sunHoliday
+      } else if (value > 0) {
+        // Any other type with value > 0 counts as present
+        present += 1; // Count as 1 day present
       }
     });
 
     // Calculate net weekdays working
-    netWeekdaysWorking = pio + woPio + osP + hd + weekoffHd + wfhWeekdays;
+    netWeekdaysWorking = present;
 
     return {
-      pio,
-      woPio,
-      osP,
-      pcp,
+      present: Number(present.toFixed(2)),
       absent,
-      hd,
-      sun,
-      weekoffHd,
-      ohd,
-      wfhWeekoff,
-      wfhWeekdays,
-      weekoffSpecial,
-      netWeekdaysWorking
+      sunHoliday,
+      hdWeekday: Number(hdWeekday.toFixed(2)),
+      hdWeekoff: Number(hdWeekoff.toFixed(2)),
+      wfhWeekday: Number(wfhWeekday.toFixed(2)),
+      wfhWeekoff: Number(wfhWeekoff.toFixed(2)),
+      outstationWeekday: Number(outstationWeekday.toFixed(2)),
+      outstationWeekoff: Number(outstationWeekoff.toFixed(2)),
+      clientPlaceWeekday: Number(clientPlaceWeekday.toFixed(2)),
+      clientPlaceWeekoff: Number(clientPlaceWeekoff.toFixed(2)),
+      inOfficeWeekday: Number(inOfficeWeekday.toFixed(2)),
+      inOfficeWeekoff: Number(inOfficeWeekoff.toFixed(2)),
+      weekoffSpecial: Number(weekoffSpecial.toFixed(2)),
+      netWeekdaysWorking: Number(netWeekdaysWorking.toFixed(2))
     };
   };
 
@@ -1495,25 +1498,27 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
 
     // Define columns with widths
     worksheet.columns = [
-      { key: 'paidFrom', header: 'Paid From', width: 10 },
+      { key: 'employeeCode', header: 'Employee Code', width: 12 },
       { key: 'employeeName', header: 'Employee Name', width: 18 },
       { key: 'category', header: 'Category', width: 10 },
       { key: 'verticalHead', header: 'Authorised Vertical Head', width: 18 },
-      { key: 'pio', header: 'PIO', width: 4 },
-      { key: 'woPio', header: 'WO-PIO', width: 4 },
-      { key: 'osP', header: 'OS-P', width: 4 },
-      { key: 'maxOsP', header: 'Max OS-P allowed', width: 8 },
-      { key: 'pcp', header: 'PCP', width: 4 },
-      { key: 'absent', header: 'A', width: 4 },
-      { key: 'hd', header: 'HD', width: 4 },
-      { key: 'maxHd', header: 'Max HD allowed', width: 8 },
-      { key: 'sun', header: 'Sun (Days)', width: 6 },
-      { key: 'weekoffHd', header: 'Weekoff HD (Days)', width: 8 },
-      { key: 'ohd', header: 'OHD', width: 4 },
-      { key: 'wfhWeekoff', header: 'WFH (In Weekoff)', width: 8 },
-      { key: 'wfhWeekdays', header: 'WFH Weekdays', width: 8 },
-      { key: 'maxWfh', header: 'Max WFH allowed', width: 8 },
-      { key: 'woSa', header: 'WO-SA', width: 4 },
+      { key: 'paidFrom', header: 'Paid From', width: 10 },
+      { key: 'present', header: 'P', width: 5 },
+      { key: 'absent', header: 'A', width: 5 },
+      { key: 'sunHoliday', header: 'Sun-Holiday', width: 8 },
+      { key: 'hdWeekday', header: 'HD Weekday', width: 8 },
+      { key: 'hdWeekoff', header: 'HD Weekoff', width: 8 },
+      { key: 'maxHd', header: 'Max HD', width: 6 },
+      { key: 'wfhWeekday', header: 'WFH Weekday', width: 9 },
+      { key: 'wfhWeekoff', header: 'WFH Weekoff', width: 9 },
+      { key: 'maxWfh', header: 'Max WFH', width: 7 },
+      { key: 'outstationWeekday', header: 'Outstation Weekday', width: 12 },
+      { key: 'outstationWeekoff', header: 'Outstation Weekoff', width: 12 },
+      { key: 'maxOutstation', header: 'Max Outstation', width: 10 },
+      { key: 'clientPlaceWeekday', header: 'Client Place Weekday', width: 13 },
+      { key: 'clientPlaceWeekoff', header: 'Client Place Weekoff', width: 13 },
+      { key: 'inOfficeWeekday', header: 'PIO Weekday', width: 9 },
+      { key: 'inOfficeWeekoff', header: 'PIO Weekoff', width: 9 },
       { key: 'leavesTaken', header: 'Leaves Taken By Staff', width: 12 },
       { key: 'leavesBF', header: 'Leaves B/F', width: 10 },
       { key: 'leavesEarned', header: 'Leaves Earned This Month', width: 15 },
@@ -1531,7 +1536,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       const user = allUsers?.find(u => u._id === item.userId);
       const metrics = calculateDetailedAttendanceMetrics(item);
 
-      // Calculate Net Working Days = PIO + (excess hours / weekday hours)
+      // Calculate Net Working Days = Present + (excess hours / weekday hours)
       // Get the user's schedule to determine weekday hours
       const applicableSchedule = getApplicableSchedule(item);
       const mondaySchedule = applicableSchedule?.daily?.monday;
@@ -1544,28 +1549,30 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       }
       const excessHours = item.summary?.excessHour || 0;
       const excessDays = excessHours / weekdayHours;
-      const netWorkingDays = Number((metrics.pio + excessDays).toFixed(2));
+      const netWorkingDays = Number((metrics.present + excessDays).toFixed(2));
 
       worksheet.addRow({
-        paidFrom: user?.paidFrom || 'N/A',
+        employeeCode: user?.employeeCode || 'N/A',
         employeeName: user?.name || item.userName,
         category: user?.category || 'N/A',
         verticalHead: user?.workingUnderPartner || 'N/A',
-        pio: metrics.pio,
-        woPio: metrics.woPio,
-        osP: metrics.osP,
-        maxOsP: 1.2,
-        pcp: metrics.pcp,
+        paidFrom: user?.paidFrom || 'N/A',
+        present: metrics.present,
         absent: metrics.absent,
-        hd: metrics.hd,
+        sunHoliday: metrics.sunHoliday,
+        hdWeekday: metrics.hdWeekday,
+        hdWeekoff: metrics.hdWeekoff,
         maxHd: 0.5,
-        sun: countTotalSundaysInPeriod(),
-        weekoffHd: metrics.weekoffHd,
-        ohd: metrics.ohd,
+        wfhWeekday: metrics.wfhWeekday,
         wfhWeekoff: metrics.wfhWeekoff,
-        wfhWeekdays: metrics.wfhWeekdays,
         maxWfh: 0.75,
-        woSa: metrics.weekoffSpecial,
+        outstationWeekday: metrics.outstationWeekday,
+        outstationWeekoff: metrics.outstationWeekoff,
+        maxOutstation: 1.2,
+        clientPlaceWeekday: metrics.clientPlaceWeekday,
+        clientPlaceWeekoff: metrics.clientPlaceWeekoff,
+        inOfficeWeekday: metrics.inOfficeWeekday,
+        inOfficeWeekoff: metrics.inOfficeWeekoff,
         leavesTaken: user?.leaveBalance?.used || 0, // Total leaves taken till date
         leavesBF: (user?.leaveBalance?.remaining || 0) - (user?.leaveBalance?.monthlyEarned || 0), // Balance brought forward (remaining - earned_this_month)
         leavesEarned: user?.leaveBalance?.monthlyEarned || 0,
@@ -1579,7 +1586,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         paidLeave: calculateLeaveConsumed(item), // Paid leave days
         excess: excessHours, // Excess hours from summary
         excessDays: Number(excessDays.toFixed(2)), // Excess hours converted to days
-        netWorking: netWorkingDays, // PIO + (excess hours / weekday hours)
+        netWorking: netWorkingDays, // present days
         officeWorkingDays: calculateScheduledWorkingDays(item) // Expected working days
       });
     });
@@ -1593,35 +1600,35 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
 
       // Special highlighting for calculated columns
-      if (colNumber === 25) {
+      if (colNumber === 27) {
         // Paid Leave - Yellow
         cell.fill = {
           type: 'pattern',
           pattern: 'solid',
           fgColor: { argb: 'FFFFD700' } // Yellow highlight
         };
-      } else if (colNumber === 26) {
+      } else if (colNumber === 28) {
         // Excess Hours - Purple
         cell.fill = {
           type: 'pattern',
           pattern: 'solid',
           fgColor: { argb: 'FF9370DB' } // Purple highlight
         };
-      } else if (colNumber === 27) {
+      } else if (colNumber === 29) {
         // Excess Days - Purple
         cell.fill = {
           type: 'pattern',
           pattern: 'solid',
           fgColor: { argb: 'FF9370DB' } // Purple highlight
         };
-      } else if (colNumber === 28) {
+      } else if (colNumber === 30) {
         // Net Weekdays Working - Blue
         cell.fill = {
           type: 'pattern',
           pattern: 'solid',
           fgColor: { argb: 'FF1E90FF' } // Blue highlight
         };
-      } else if (colNumber === 29) {
+      } else if (colNumber === 31) {
         // Office Working Days - Orange
         cell.fill = {
           type: 'pattern',

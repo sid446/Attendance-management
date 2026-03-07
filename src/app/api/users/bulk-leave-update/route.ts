@@ -19,7 +19,8 @@ export async function POST(request: NextRequest) {
     const stats = {
       updated: 0,
       failed: 0,
-      errors: [] as string[]
+      errors: [] as string[],
+      message: `Only employees present in the Excel file will be updated. No other employees will be affected.`
     };
 
     // Fetch all existing users
@@ -33,6 +34,8 @@ export async function POST(request: NextRequest) {
       }
     });
 
+    // IMPORTANT: Only process employees present in the Excel file
+    // No other employees will be affected or updated
     for (const item of leaveData) {
       const excelName = item.name;
       if (!excelName) {
@@ -66,12 +69,14 @@ export async function POST(request: NextRequest) {
         const leavesTaken = Math.abs(parseFloat(item.leavesTaken) || 0); // Ensure used is always positive
 
         // Update leave balance
+        // 'balanceAsOfJan26' stores the opening balance as of 1st Jan 2026 (from Excel)
+        // 'earned' is calculated from attendance uploads after Jan 2026
         // 'used' field stores leaves taken BEFORE 1st Jan 2026 (from Excel)
         // 'usedAfterJan26' is calculated dynamically from attendance records
-        // 'remaining' is calculated dynamically: earned - used - usedAfterJan26
+        // 'remaining' is calculated dynamically
         await User.findByIdAndUpdate(matchedUser._id, {
           $set: {
-            'leaveBalance.earned': leavesAllowed,
+            'leaveBalance.balanceAsOfJan26': leavesAllowed,
             'leaveBalance.used': leavesTaken, // Leaves before 1st Jan 2026
             'leaveBalance.lastUpdated': new Date()
           }

@@ -8,6 +8,8 @@ export type TypeOfPresence =
   | 'Holiday'
   | 'Absent'
   | 'Present - in office'
+  | 'Present - in office - weekdays'
+  | 'Present - in office - weekoff'
   | 'Present - client place'
   | 'Present - outstation'
   | 'Present - weekoff'
@@ -70,6 +72,8 @@ const AttendanceRequestSchema: Schema = new Schema(
         'Holiday',
         'Absent',
         'Present - in office',
+        'Present - in office - weekdays',
+        'Present - in office - weekoff',
         'Present - client place',
         'Present - outstation',
         'Present - weekoff',
@@ -101,6 +105,8 @@ const AttendanceRequestSchema: Schema = new Schema(
         'Holiday',
         'Absent',
         'Present - in office',
+        'Present - in office - weekdays',
+        'Present - in office - weekoff',
         'Present - client place',
         'Present - outstation',
         'Present - weekoff',

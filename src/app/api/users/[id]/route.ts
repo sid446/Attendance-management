@@ -342,8 +342,22 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       success: true,
       data: user,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error updating user:', error);
+    
+    // Handle duplicate key error (E11000)
+    if (error.code === 11000) {
+      const duplicateField = Object.keys(error.keyPattern || {})[0] || 'field';
+      const duplicateValue = error.keyValue ? Object.values(error.keyValue)[0] : 'value';
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: `A user with this ${duplicateField} already exists: ${duplicateValue}` 
+        },
+        { status: 409 }
+      );
+    }
+    
     return NextResponse.json(
       { success: false, error: 'Failed to update user' },
       { status: 500 }

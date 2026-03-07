@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch all users with their leave balance information
     const users = await User.find({ isActive: true })
-      .select('name employeeCode team workingUnderPartner leaveBalance joiningDate')
+      .select('name employeeCode team workingUnderPartner leaveBalance joiningDate employmentType')
       .sort({ name: 1 });
 
     // Fetch all attendance records from Jan 2026 onwards to calculate usedAfterJan26
@@ -59,18 +59,29 @@ export async function GET(request: NextRequest) {
     // Transform the data to include user information with leave balances
     const leaveBalances = users.map(user => {
       const usedAfterJan26 = userLeaveCountAfterJan26.get(user._id.toString()) || 0;
-      const usedBeforeJan26 = user.leaveBalance?.used || 0;
+      const balanceAsOfJan26 = user.leaveBalance?.balanceAsOfJan26 || 0;
       const earned = user.leaveBalance?.earned || 0;
+      const used = user.leaveBalance?.used || 0;
+      
+      // Calculate remaining balance
+      // For articles: balanceAsOfJan26 - used - usedAfterJan26
+      // For non-articles: balanceAsOfJan26 + earned - used - usedAfterJan26
+      const isArticle = user.employmentType?.toLowerCase() === 'article';
+      const remaining = isArticle 
+        ? balanceAsOfJan26 - used - usedAfterJan26
+        : balanceAsOfJan26 + earned - used - usedAfterJan26;
       
       return {
         userId: user._id.toString(),
         userName: user.name,
         employeeCode: user.employeeCode,
         team: user.workingUnderPartner || user.team,
+        employmentType: user.employmentType,
+        balanceAsOfJan26: balanceAsOfJan26,
         earned: earned,
-        used: usedBeforeJan26, // Leaves before 1st Jan 2026 (from Excel)
+        used: used, // Leaves before 1st Jan 2026 (from Excel)
         usedAfterJan26: usedAfterJan26, // Leaves on or after 1st Jan 2026 (from attendance)
-        remaining: earned - usedBeforeJan26 - usedAfterJan26, // Total remaining balance
+        remaining: remaining, // Calculated balance
         lastUpdated: user.leaveBalance?.lastUpdated || user.joiningDate || new Date(),
         monthlyEarned: user.leaveBalance?.monthlyEarned || 2,
       };

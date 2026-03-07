@@ -4,6 +4,7 @@ import Attendance from '@/models/Attendance';
 import AttendanceRequest from '@/models/AttendanceRequest';
 
 export interface LeaveBalance {
+  balanceAsOfJan26: number;
   earned: number;
   used: number;
   remaining: number;
@@ -30,12 +31,14 @@ export async function initializeLeaveBalance(userId: mongoose.Types.ObjectId): P
       throw new Error('User not found');
     }
 
-    // Start fresh - no earned leave initially, only earn when attendance is uploaded
-    const initialEarned = 0; // Will earn 2 days per month when attendance is uploaded
+    // Start fresh - balanceAsOfJan26 will be uploaded via Excel
+    const initialBalanceAsOfJan26 = 0; // Will be set via Excel upload
+    const initialEarned = 0; // Will earn when attendance is uploaded
 
     await User.findByIdAndUpdate(userId, {
+      'leaveBalance.balanceAsOfJan26': initialBalanceAsOfJan26,
       'leaveBalance.earned': initialEarned,
-      'leaveBalance.remaining': initialEarned,
+      'leaveBalance.remaining': initialBalanceAsOfJan26 + initialEarned,
       'leaveBalance.lastUpdated': new Date(),
     });
   } catch (error) {
@@ -86,8 +89,10 @@ export async function incrementMonthlyLeave(monthYear?: string): Promise<void> {
 
       // Increment earned leave
       const newEarned = currentEarned + monthlyEarned;
+      const currentBalanceAsOfJan26 = user.leaveBalance?.balanceAsOfJan26 || 0;
       const currentUsed = user.leaveBalance?.used || 0;
-      const newRemaining = newEarned - currentUsed; // Can be negative
+      const currentUsedAfterJan26 = user.leaveBalance?.usedAfterJan26 || 0;
+      const newRemaining = currentBalanceAsOfJan26 + newEarned - currentUsed - currentUsedAfterJan26; // Can be negative
 
       await User.findByIdAndUpdate(user._id, {
         'leaveBalance.earned': newEarned,
@@ -118,7 +123,7 @@ export async function calculateLeaveUsageForMultipleDays(
     }
 
     // Get current leave balance
-    const currentBalance = user.leaveBalance?.remaining || 0;
+    const currentBalance = (user.leaveBalance?.balanceAsOfJan26 || 0) + (user.leaveBalance?.earned || 0) - (user.leaveBalance?.used || 0) - (user.leaveBalance?.usedAfterJan26 || 0);
 
     // Check if this is a leave request
     const isLeaveRequest = requestedStatus.toLowerCase().includes('leave') ||
@@ -197,7 +202,7 @@ export async function calculateLeaveUsage(
       throw new Error('User not found');
     }
 
-    const remainingLeave = user.leaveBalance?.remaining || 0;
+    const remainingLeave = (user.leaveBalance?.balanceAsOfJan26 || 0) + (user.leaveBalance?.earned || 0) - (user.leaveBalance?.used || 0) - (user.leaveBalance?.usedAfterJan26 || 0);
 
     // Check if this is a leave request
     const isLeaveRequest = requestedStatus.toLowerCase().includes('leave') ||
@@ -251,11 +256,13 @@ export async function updateLeaveBalanceOnApproval(
       }
 
       const currentUsedAfterJan26 = user.leaveBalance?.usedAfterJan26 || 0;
-      const currentRemaining = user.leaveBalance?.remaining || 0;
+      const currentBalanceAsOfJan26 = user.leaveBalance?.balanceAsOfJan26 || 0;
+      const currentEarned = user.leaveBalance?.earned || 0;
+      const currentUsed = user.leaveBalance?.used || 0;
 
       await User.findByIdAndUpdate(userId, {
         'leaveBalance.usedAfterJan26': currentUsedAfterJan26 + 1,
-        'leaveBalance.remaining': Math.max(0, currentRemaining - 1),
+        'leaveBalance.remaining': currentBalanceAsOfJan26 + currentEarned - currentUsed - (currentUsedAfterJan26 + 1),
       });
 
       return;
@@ -270,11 +277,13 @@ export async function updateLeaveBalanceOnApproval(
     }
 
     const currentUsedAfterJan26 = user.leaveBalance?.usedAfterJan26 || 0;
-    const currentRemaining = user.leaveBalance?.remaining || 0;
+    const currentBalanceAsOfJan26 = user.leaveBalance?.balanceAsOfJan26 || 0;
+    const currentEarned = user.leaveBalance?.earned || 0;
+    const currentUsed = user.leaveBalance?.used || 0;
 
     await User.findByIdAndUpdate(userId, {
       'leaveBalance.usedAfterJan26': currentUsedAfterJan26 + paidLeaves.length,
-      'leaveBalance.remaining': Math.max(0, currentRemaining - paidLeaves.length),
+      'leaveBalance.remaining': currentBalanceAsOfJan26 + currentEarned - currentUsed - (currentUsedAfterJan26 + paidLeaves.length),
     });
 
   } catch (error) {

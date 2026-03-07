@@ -918,9 +918,11 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
             isArticle = true;
           }
           leaveBalance = {
-            earned: bf,
-            remaining: bf,
+            balanceAsOfJan26: bf,
+            earned: 0,
             used: 0,
+            usedAfterJan26: 0,
+            remaining: bf,
             lastUpdated: new Date(),
             monthlyEarned: isArticle ? 1 : 2
           };
@@ -1101,6 +1103,20 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Show confirmation dialog
+    const confirmed = window.confirm(
+      'This will update leave balances ONLY for employees present in the Excel file.\n\n' +
+      '• Only employees listed in the Excel will be affected\n' +
+      '• No other employees will be modified\n' +
+      '• Existing leave balances will be replaced with Excel data\n\n' +
+      'Do you want to proceed?'
+    );
+
+    if (!confirmed) {
+      e.target.value = ''; // Reset file input
+      return;
+    }
+
     setIsUploading(true);
     setUploadStats(null);
     setError(null);
@@ -1268,7 +1284,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       { key: 'pf', header: 'PF', width: 10 },
       { key: 'esi', header: 'ESI', width: 10 },
       { key: 'gratuity', header: 'Gratuity', width: 10 },
-      { key: 'leavesEarned', header: 'Total Leaves Due', width: 16 },
+      { key: 'leavesBalanceAsOfJan26', header: 'Leaves B/F', width: 20 },
+      { key: 'leavesEarned', header: 'Leaves Earned (after Jan 26)', width: 22 },
       { key: 'leavesTaken', header: 'Total Leaves Taken', width: 18 },
       { key: 'balanceLeaves', header: 'Balance Leaves', width: 14 },
       { key: 'articleCreditsAsOnJan26', header: 'Credits for Articles (as on 1st Jan 26)', width: 18 },
@@ -1407,6 +1424,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         pf: u.pf || '',
         esi: u.esi || '',
         gratuity: u.gratuity || '',
+        leavesBalanceAsOfJan26: u.leaveBalance?.balanceAsOfJan26 || 0,
         leavesEarned: u.leaveBalance?.earned || 0,
         leavesTaken: u.leaveBalance?.used || 0,
         balanceLeaves: u.leaveBalance?.remaining || 0,
@@ -4519,6 +4537,11 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
             <div className="text-sm">
               <strong>Upload Complete:</strong> {uploadStats.updated} updated, {uploadStats.created} created
               {uploadStats.failed > 0 && <span className="text-rose-400 ml-2">, {uploadStats.failed} failed</span>}
+              {uploadStats.message && (
+                <div className="text-xs text-emerald-400/80 mt-1 italic">
+                  {uploadStats.message}
+                </div>
+              )}
             </div>
           </div>
           {uploadStats.errors && uploadStats.errors.length > 0 && (

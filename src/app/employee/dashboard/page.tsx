@@ -4,10 +4,11 @@ import { isHolidayDate } from '@/lib/holidaysClient';
 import { useRouter } from 'next/navigation';
 import { EmployeeMonthView } from '@/components/EmployeeMonthView';
 import { AttendanceRecord, AttendanceSummaryView, User } from '@/types/ui';
+import { LocationAttendanceSection } from '@/components/LocationAttendanceSection';
 import { LogOut, X, Loader2, Send } from 'lucide-react';
 
 const TIMED_CATEGORIES = [
-  'Present',
+  'Present - in office',
   'Half Day',
   'WFH',
   'Present - outstation',
@@ -326,17 +327,20 @@ export default function EmployeeDashboard() {
     if (
       requestStatus.startsWith('WFH') ||
       requestStatus.startsWith('Half Day') ||
+      requestStatus.startsWith('Present - in office') ||
       requestStatus.startsWith('Present - outstation') ||
       requestStatus.startsWith('Present - client place')
     ) {
       if (isSunday || isHoliday) {
         if (requestStatus.startsWith('WFH')) mappedStatus = 'WFH - weekoff';
         else if (requestStatus.startsWith('Half Day')) mappedStatus = 'Half Day - weekoff';
+        else if (requestStatus.startsWith('Present - in office')) mappedStatus = 'Present - in office - weekoff';
         else if (requestStatus.startsWith('Present - outstation')) mappedStatus = 'Present - Outstation (Weekoff)';
         else if (requestStatus.startsWith('Present - client place')) mappedStatus = 'Present - ClientPlace (Weekoff)';
       } else {
         if (requestStatus.startsWith('WFH')) mappedStatus = 'WFH - weekdays';
         else if (requestStatus.startsWith('Half Day')) mappedStatus = 'Half Day - weekdays';
+        else if (requestStatus.startsWith('Present - in office')) mappedStatus = 'Present - in office - weekdays';
         else if (requestStatus.startsWith('Present - outstation')) mappedStatus = 'Present - Outstation (Weekdays)';
         else if (requestStatus.startsWith('Present - client place')) mappedStatus = 'Present - ClientPlace (Weekdays)';
       }
@@ -430,17 +434,20 @@ export default function EmployeeDashboard() {
     if (
       futureType.startsWith('WFH') ||
       futureType.startsWith('Half Day') ||
+      futureType.startsWith('Present - in office') ||
       futureType.startsWith('Present - outstation') ||
       futureType.startsWith('Present - client place')
     ) {
       if (isSunday || isHoliday) {
         if (futureType.startsWith('WFH')) mappedType = 'WFH - weekoff';
         else if (futureType.startsWith('Half Day')) mappedType = 'Half Day - weekoff';
+        else if (futureType.startsWith('Present - in office')) mappedType = 'Present - in office - weekoff';
         else if (futureType.startsWith('Present - outstation')) mappedType = 'Present - Outstation (Weekoff)';
         else if (futureType.startsWith('Present - client place')) mappedType = 'Present - ClientPlace (Weekoff)';
       } else {
         if (futureType.startsWith('WFH')) mappedType = 'WFH - weekdays';
         else if (futureType.startsWith('Half Day')) mappedType = 'Half Day - weekdays';
+        else if (futureType.startsWith('Present - in office')) mappedType = 'Present - in office - weekdays';
         else if (futureType.startsWith('Present - outstation')) mappedType = 'Present - Outstation (Weekdays)';
         else if (futureType.startsWith('Present - client place')) mappedType = 'Present - ClientPlace (Weekdays)';
       }
@@ -516,7 +523,7 @@ export default function EmployeeDashboard() {
 
   // Correction request dropdown options (simplified)
   const statusOptions = [
-    'Present',
+    'Present - in office',
     'Half Day',
     'WFH',
     'Present - outstation',
@@ -531,7 +538,7 @@ export default function EmployeeDashboard() {
   // Week off options for Holiday/Week Off days (simplified)
   const weekOffStatusOptions = [
     'Weekoff - special allowance',
-    'Present',
+    'Present - in office',
     'Half Day',
     'WFH',
     'Present - outstation',
@@ -608,7 +615,10 @@ export default function EmployeeDashboard() {
        </header>
 
        {/* Content */}
-       <main className="flex-1 p-3 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">
+       <main className="flex-1 p-3 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full space-y-6">
+           {/* Location Attendance Section */}
+           <LocationAttendanceSection userId={user._id} />
+
            <EmployeeMonthView 
               summaries={summary ? [summary] : []}
               users={[user]}

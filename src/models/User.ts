@@ -102,12 +102,13 @@ export interface IUser extends Document {
 
   // Leave balance management
   leaveBalance?: {
-    earned: number; // Opening balance as of 1st Jan 2026
+    balanceAsOfJan26: number; // Opening balance as of 1st Jan 2026 (uploaded via Excel)
+    earned: number; // Leave earned after 1st Jan 2026 (calculated from attendance uploads, only for non-articles)
     used: number; // Leaves taken before 1st Jan 2026 (from Excel upload)
     usedAfterJan26?: number; // Leaves taken on or after 1st Jan 2026 (calculated from attendance records)
-    remaining: number; // Calculated dynamically: earned - used - usedAfterJan26
+    remaining: number; // Calculated dynamically
     lastUpdated: Date;
-    monthlyEarned: number;
+    monthlyEarned: number; // Monthly earning rate (default 2)
   };
 
   // Schedule entries with effective dates - NEW STRUCTURE
@@ -421,12 +422,13 @@ const UserSchema = new Schema(
       default: 0,
     },
     leaveBalance: {
-      earned: { type: Number, default: 0 }, // Opening balance as of 1st Jan 2026
+      balanceAsOfJan26: { type: Number, default: 0 }, // Opening balance as of 1st Jan 2026 (uploaded via Excel)
+      earned: { type: Number, default: 0 }, // Leave earned after 1st Jan 2026 (calculated from attendance uploads, only for non-articles)
       used: { type: Number, default: 0 }, // Leaves taken before 1st Jan 2026 (from Excel upload)
-      usedAfterJan26: { type: Number, default: 0 }, // Leaves taken on or after 1st Jan 2026 (calculated from attendance)
-      remaining: { type: Number, default: 0 }, // Calculated dynamically: earned - used - usedAfterJan26
+      usedAfterJan26: { type: Number, default: 0 }, // Leaves taken on or after 1st Jan 2026 (calculated from attendance records)
+      remaining: { type: Number, default: 0 }, // Calculated dynamically
       lastUpdated: { type: Date, default: Date.now },
-      monthlyEarned: { type: Number, default: 2 },
+      monthlyEarned: { type: Number, default: 2 }, // Monthly earning rate (default 2)
     },
     joiningDate: {
       type: Date,

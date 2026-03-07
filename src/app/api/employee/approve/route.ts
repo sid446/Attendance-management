@@ -105,20 +105,12 @@ export async function POST(request: NextRequest) {
       // Update the attendance record with the requested status
       rec.typeOfPresence = attendanceRequest.requestedStatus;
 
-      // Update times if provided - use editedCheckin/editedCheckout for corrections
-      if (attendanceRequest.startTime) {
+      // Update editedCheckin/editedCheckout if times provided (never modify original checkin/checkout)
+      if (attendanceRequest.startTime && attendanceRequest.startTime !== '00:00') {
         rec.editedCheckin = attendanceRequest.startTime;
-        // Also set regular checkin if not already set
-        if (!rec.checkin) {
-          rec.checkin = attendanceRequest.startTime;
-        }
       }
-      if (attendanceRequest.endTime) {
+      if (attendanceRequest.endTime && attendanceRequest.endTime !== '00:00') {
         rec.editedCheckout = attendanceRequest.endTime;
-        // Also set regular checkout if not already set
-        if (!rec.checkout) {
-          rec.checkout = attendanceRequest.endTime;
-        }
       }
 
       // Fetch user schedule for the day
@@ -152,7 +144,8 @@ export async function POST(request: NextRequest) {
       } else if (value !== undefined && value !== null && value !== '') {
         // Use provided value (from HR or partner)
         rec.value = parseFloat(value);
-        rec.halfDay = parseFloat(value) > 0 && parseFloat(value) < 1;
+        // Only Half Day types should have halfDay=true, not based on value
+        rec.halfDay = false;
       } else {
         // Default to 1 for non-leave requests when no value specified
         rec.value = 1;
@@ -163,21 +156,61 @@ export async function POST(request: NextRequest) {
       const isType = (type: string) => attendanceRequest.requestedStatus && attendanceRequest.requestedStatus.toLowerCase().includes(type.toLowerCase());
       let isWeekoff = /weekoff|week-off|week off/i.test(attendanceRequest.requestedStatus || '');
       let isWeekdays = /weekday|weekdays/i.test(attendanceRequest.requestedStatus || '');
+      
+      // For weekoff types, use weekday (Monday) schedule instead of actual day schedule
+      let effectiveScheduledMinutes = scheduledMinutes;
+      let effectiveScheduledInTime = scheduledInTime;
+      let effectiveScheduledOutTime = scheduledOutTime;
+      if (isWeekoff && userObj) {
+        // Get Monday schedule for weekoff calculations
+        const mondayDate = new Date(attendanceRequest.date);
+        const dayOfWeek = mondayDate.getDay();
+        const daysUntilMonday = dayOfWeek === 0 ? 1 : (dayOfWeek === 1 ? 0 : 8 - dayOfWeek);
+        mondayDate.setDate(mondayDate.getDate() + daysUntilMonday);
+        const mondayDateStr = mondayDate.toISOString().split('T')[0];
+        const mondaySchedule = getScheduledTimes(userObj, mondayDateStr);
+        if (mondaySchedule.inTime && mondaySchedule.outTime) {
+          effectiveScheduledInTime = mondaySchedule.inTime;
+          effectiveScheduledOutTime = mondaySchedule.outTime;
+          const [mInH, mInM] = mondaySchedule.inTime.split(':').map(Number);
+          const [mOutH, mOutM] = mondaySchedule.outTime.split(':').map(Number);
+          const mInMin = mInH * 60 + mInM;
+          const mOutMin = mOutH * 60 + mOutM;
+          effectiveScheduledMinutes = mOutMin - mInMin >= 0 ? mOutMin - mInMin : (24 * 60 + mOutMin - mInMin);
+        }
+      }
+      
       // WFH
       if (isType('WFH - weekdays')) {
-        rec.totalHour = Number((rec.value * (scheduledMinutes / 60)).toFixed(2));
-        rec.excessHour = Number((rec.totalHour - (scheduledMinutes / 60)).toFixed(2));
+        rec.totalHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
+        rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
+        // Set editedCheckin/editedCheckout based on schedule if not already set
+        if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
+        if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
       } else if (isType('WFH - weekoff')) {
         rec.totalHour = 0;
-        rec.excessHour = Number((rec.value * (scheduledMinutes / 60)).toFixed(2));
+        rec.excessHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
+        // Set editedCheckin/editedCheckout based on weekday schedule
+        if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
+        if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
       }
       // Half Day
       else if (isType('Half Day - weekdays')) {
-        rec.totalHour = Number((0.5 * (scheduledMinutes / 60)).toFixed(2));
-        rec.excessHour = Number((rec.totalHour - (scheduledMinutes / 60)).toFixed(2));
+        rec.value = 0.5;
+        rec.halfDay = true;
+        rec.totalHour = Number((0.5 * (effectiveScheduledMinutes / 60)).toFixed(2));
+        rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
+        // Set editedCheckin/editedCheckout based on schedule
+        if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
+        if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
       } else if (isType('Half Day - weekoff')) {
+        rec.value = 0.5;
+        rec.halfDay = true;
         rec.totalHour = 0;
-        rec.excessHour = Number((0.5 * (scheduledMinutes / 60)).toFixed(2));
+        rec.excessHour = Number((0.5 * (effectiveScheduledMinutes / 60)).toFixed(2));
+        // Set editedCheckin/editedCheckout based on weekday schedule
+        if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
+        if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
       }
       // Present - Outstation & ClientPlace (Weekdays/Weekoff)
       else if (
@@ -185,21 +218,32 @@ export async function POST(request: NextRequest) {
         isType('Present - ClientPlace (Weekdays)')
       ) {
         // Always use scheduled hour * value for totalHour, ignore edited times
-        rec.totalHour = Number((rec.value * (scheduledMinutes / 60)).toFixed(2));
-        rec.excessHour = Number((rec.totalHour - (scheduledMinutes / 60)).toFixed(2));
+        rec.totalHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
+        rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
       } else if (
         isType('Present - Outstation (Weekoff)') ||
         isType('Present - ClientPlace (Weekoff)')
       ) {
         rec.totalHour = 0;
-        rec.excessHour = Number((rec.value * (scheduledMinutes / 60)).toFixed(2));
+        rec.excessHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
+      }
+      // Present - in office
+      else if (isType('Present - in office - weekdays')) {
+        rec.totalHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
+        rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
+        if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
+        if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
+      } else if (isType('Present - in office - weekoff')) {
+        rec.totalHour = 0;
+        rec.excessHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
+        if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
+        if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
       }
       // Default: use time if provided (time corrections)
       else if (attendanceRequest.startTime && attendanceRequest.endTime) {
+        // Use editedCheckin/editedCheckout for corrections (never modify original checkin/checkout)
         rec.editedCheckin = attendanceRequest.startTime;
         rec.editedCheckout = attendanceRequest.endTime;
-        if (!rec.checkin) rec.checkin = attendanceRequest.startTime;
-        if (!rec.checkout) rec.checkout = attendanceRequest.endTime;
         // Calculate totalHour
         const [inH, inM] = attendanceRequest.startTime.split(':').map(Number);
         const [outH, outM] = attendanceRequest.endTime.split(':').map(Number);

@@ -18,6 +18,7 @@ import { BackupManagementSection } from '@/components/BackupManagementSection';
 import { LeaveManagementSection } from '@/components/LeaveManagementSection';
 import { FineManagementSection } from '@/components/FineManagementSection';
 import { InvalidAttendanceSection } from '@/components/InvalidAttendanceSection';
+import { ClientPlaceManagement } from '@/components/ClientPlaceManagement';
 import { get } from "http";
 
 export default function AttendanceUpload() {
@@ -45,7 +46,7 @@ export default function AttendanceUpload() {
   const [uploadTotal, setUploadTotal] = useState<number>(0);
   const [uploadSaved, setUploadSaved] = useState<number>(0);
   const [uploadFailed, setUploadFailed] = useState<number>(0);
-  const [activeSection, setActiveSection] = useState<'upload' | 'summary' | 'employee' | 'employees' | 'requests' | 'holidays' | 'backup' | 'leave' | 'fines' | 'articleCredits' | 'invalid'>('summary');
+  const [activeSection, setActiveSection] = useState<'upload' | 'summary' | 'employee' | 'employees' | 'requests' | 'holidays' | 'backup' | 'leave' | 'fines' | 'articleCredits' | 'invalid' | 'clientPlaces'>('summary');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [selectedEmployeeMonth, setSelectedEmployeeMonth] = useState<string>('');
   // Modal state for EmployeeMonthView
@@ -1423,6 +1424,11 @@ export default function AttendanceUpload() {
             {/* Invalid Attendance Section */}
             {activeSection === 'invalid' && (
               <InvalidAttendanceSection onRefresh={fetchUsers} />
+            )}
+
+            {/* Client Places Section */}
+            {activeSection === 'clientPlaces' && (
+              <ClientPlaceManagement allUsers={allUsers} />
             )}
           </div>
         </main>

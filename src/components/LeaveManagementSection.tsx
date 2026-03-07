@@ -6,6 +6,8 @@ interface LeaveBalance {
   userName: string;
   employeeCode?: string;
   team?: string;
+  employmentType?: string;
+  balanceAsOfJan26: number;
   earned: number;
   used: number; // Leaves taken before 1st Jan 2026
   usedAfterJan26: number; // Leaves taken on or after 1st Jan 2026
@@ -28,8 +30,9 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
   const [leaveBalances, setLeaveBalances] = useState<LeaveBalance[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [filterTeam, setFilterTeam] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<'name' | 'remaining' | 'earned' | 'used'>('earned');
+  const [sortBy, setSortBy] = useState<'name' | 'balanceAsOfJan26' | 'earned' | 'remaining' | 'used'>('earned');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'all' | 'articles' | 'employees'>('all');
 
   const fetchLeaveBalances = async () => {
     setLoading(true);
@@ -56,17 +59,26 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
   }, []);
 
   const filteredAndSortedBalances = leaveBalances
-    .filter(balance => 
-      (filterTeam === 'all' || balance.team === filterTeam) &&
-      (balance.userName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-       (balance.employeeCode && balance.employeeCode.toLowerCase().includes(searchTerm.toLowerCase())))
-    )
+    .filter(balance => {
+      const matchesTab = activeTab === 'all' || 
+        (activeTab === 'articles' && balance.employmentType?.toLowerCase() === 'article') ||
+        (activeTab === 'employees' && balance.employmentType?.toLowerCase() !== 'article');
+      
+      const matchesTeam = filterTeam === 'all' || balance.team === filterTeam;
+      
+      const matchesSearch = balance.userName.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        (balance.employeeCode && balance.employeeCode.toLowerCase().includes(searchTerm.toLowerCase()));
+      
+      return matchesTab && matchesTeam && matchesSearch;
+    })
     .sort((a, b) => {
       switch (sortBy) {
-        case 'remaining':
-          return b.remaining - a.remaining;
+        case 'balanceAsOfJan26':
+          return b.balanceAsOfJan26 - a.balanceAsOfJan26;
         case 'earned':
           return b.earned - a.earned;
+        case 'remaining':
+          return b.remaining - a.remaining;
         case 'used':
           return b.used - a.used;
         case 'name':
@@ -77,14 +89,15 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
 
   const teams = Array.from(new Set(leaveBalances.map(b => b.team).filter(Boolean)));
 
-  const totalStats = leaveBalances.reduce(
+  const totalStats = filteredAndSortedBalances.reduce(
     (acc, balance) => ({
+      totalBalanceAsOfJan26: acc.totalBalanceAsOfJan26 + balance.balanceAsOfJan26,
       totalEarned: acc.totalEarned + balance.earned,
       totalUsed: acc.totalUsed + balance.used,
       totalUsedAfterJan26: acc.totalUsedAfterJan26 + (balance.usedAfterJan26 || 0),
       totalRemaining: acc.totalRemaining + balance.remaining,
     }),
-    { totalEarned: 0, totalUsed: 0, totalUsedAfterJan26: 0, totalRemaining: 0 }
+    { totalBalanceAsOfJan26: 0, totalEarned: 0, totalUsed: 0, totalUsedAfterJan26: 0, totalRemaining: 0 }
   );
 
   return (
@@ -95,7 +108,11 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
             <Calendar className="w-5 h-5 text-emerald-400" />
             Leave Management
           </h2>
-          <p className="text-sm text-slate-400 mt-1">Track earned, used, and remaining leave balances for all employees</p>
+          <p className="text-sm text-slate-400 mt-1">
+            {activeTab === 'all' && 'Track earned, used, and remaining leave balances for all employees'}
+            {activeTab === 'articles' && 'Track leave balances for articles (no earning after Jan 26)'}
+            {activeTab === 'employees' && 'Track earned, used, and remaining leave balances for regular employees'}
+          </p>
         </div>
         <div className="flex gap-2">
           <button
@@ -109,16 +126,61 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
         </div>
       </div>
 
+      {/* Tab Navigation */}
+      <div className="flex space-x-1 bg-slate-800/40 p-1 rounded-lg border border-slate-700">
+        <button
+          onClick={() => setActiveTab('all')}
+          className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+            activeTab === 'all'
+              ? 'bg-slate-700 text-slate-100'
+              : 'text-slate-400 hover:text-slate-300 hover:bg-slate-700/50'
+          }`}
+        >
+          All Employees ({leaveBalances.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('articles')}
+          className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+            activeTab === 'articles'
+              ? 'bg-slate-700 text-slate-100'
+              : 'text-slate-400 hover:text-slate-300 hover:bg-slate-700/50'
+          }`}
+        >
+          Articles ({leaveBalances.filter(b => b.employmentType?.toLowerCase() === 'article').length})
+        </button>
+        <button
+          onClick={() => setActiveTab('employees')}
+          className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+            activeTab === 'employees'
+              ? 'bg-slate-700 text-slate-100'
+              : 'text-slate-400 hover:text-slate-300 hover:bg-slate-700/50'
+          }`}
+        >
+          Regular Employees ({leaveBalances.filter(b => b.employmentType?.toLowerCase() !== 'article').length})
+        </button>
+      </div>
+
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <div className="bg-slate-800/60 border border-slate-700 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-2">
-            <TrendingUp className="w-5 h-5 text-emerald-400" />
-            <span className="text-sm font-medium text-slate-300">Total Earned</span>
+            <Calendar className="w-5 h-5 text-blue-400" />
+            <span className="text-sm font-medium text-slate-300">Balance as of Jan 26</span>
           </div>
-          <div className="text-2xl font-bold text-emerald-400">{totalStats.totalEarned}</div>
-          <div className="text-xs text-slate-500 mt-1">Across all employees</div>
+          <div className="text-2xl font-bold text-blue-400">{totalStats.totalBalanceAsOfJan26}</div>
+          <div className="text-xs text-slate-500 mt-1">Opening balance</div>
         </div>
+
+        {activeTab !== 'articles' && (
+          <div className="bg-slate-800/60 border border-slate-700 rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <TrendingUp className="w-5 h-5 text-emerald-400" />
+              <span className="text-sm font-medium text-slate-300">Earned (after Jan)</span>
+            </div>
+            <div className="text-2xl font-bold text-emerald-400">{totalStats.totalEarned}</div>
+            <div className="text-xs text-slate-500 mt-1">Earned after 1st Jan 2026</div>
+          </div>
+        )}
 
         <div className="bg-slate-800/60 border border-slate-700 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-2">
@@ -183,8 +245,9 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
             className="px-3 py-1 bg-slate-800 border border-slate-700 rounded-md text-slate-100 text-sm"
           >
             <option value="name">Name</option>
-            <option value="remaining">Remaining</option>
+            <option value="balanceAsOfJan26">Balance as of Jan 26</option>
             <option value="earned">Earned</option>
+            <option value="remaining">Remaining</option>
             <option value="used">Used</option>
           </select>
         </div>
@@ -197,9 +260,10 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
             <thead className="bg-slate-900/60">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Employee</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Type</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Team</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Opening as of 1 Jan</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Monthly Rate</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Balance as of Jan 26</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Earned (after Jan)</th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Used (before 1 Jan)</th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Used (after 1 Jan)</th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Balance</th>
@@ -232,13 +296,30 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-sm text-slate-300">{balance.team || '-'}</td>
-                    <td className="px-4 py-3 text-center">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                        {balance.earned}
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                        balance.employmentType?.toLowerCase() === 'article'
+                          ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                          : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                      }`}>
+                        {balance.employmentType?.toLowerCase() === 'article' ? 'Article' : 'Employee'}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-center text-sm text-slate-300">{balance.monthlyEarned}</td>
+                    <td className="px-4 py-3 text-sm text-slate-300">{balance.team || '-'}</td>
+                    <td className="px-4 py-3 text-center">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                        {balance.balanceAsOfJan26}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {balance.employmentType?.toLowerCase() === 'article' ? (
+                        <span className="text-xs text-slate-500 italic">N/A</span>
+                      ) : (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          {balance.earned}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-center">
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20">
                         {balance.used}
