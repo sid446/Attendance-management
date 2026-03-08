@@ -868,12 +868,12 @@ export default function EmployeeDashboard() {
         )}
         <aside
           className={`
-            fixed md:static top-0 left-0 z-40 h-full md:h-auto w-56 bg-slate-900 border-r border-slate-800 flex flex-col py-8 px-2 gap-2
+            fixed md:static top-0 left-0 z-40 h-full w-56 bg-slate-900 border-r border-slate-800 flex flex-col py-8 px-2 gap-2
             transition-transform duration-200 ease-in-out
             ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
             md:translate-x-0
           `}
-          style={{ minWidth: '0' }}
+          style={{ minWidth: '0', height: '100vh' }}
         >
           <button
             className={`w-full px-4 py-3 rounded-lg text-left font-semibold transition-colors ${activeTab === 'my' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'}`}
@@ -896,7 +896,7 @@ export default function EmployeeDashboard() {
           </button>
         </aside>
         {/* Main Content */}
-        <main className="flex-1 p-3 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full space-y-6 ml-0 md:ml-56 transition-all duration-200">
+        <main className="flex-1 p-3 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full space-y-6 ml-0 transition-all duration-200">
            {activeTab === 'my' && <LocationAttendanceSection userId={user._id} />}
            {activeTab === 'my' && (
              <EmployeeMonthView 
