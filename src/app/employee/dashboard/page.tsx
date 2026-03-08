@@ -4,6 +4,25 @@ import { isHolidayDate } from '@/lib/holidaysClient';
 import { useRouter } from 'next/navigation';
 import { EmployeeMonthView } from '@/components/EmployeeMonthView';
 import { AttendanceRecord, AttendanceSummaryView, User } from '@/types/ui';
+// Helper to fetch users working under a partner
+async function fetchSubordinates(partnerIdOrName: string) {
+  const res = await fetch(`/api/users?workingUnderPartner=${encodeURIComponent(partnerIdOrName)}`);
+  const json = await res.json();
+  if (json.success && Array.isArray(json.data)) {
+    return json.data;
+  }
+  return [];
+}
+
+// Helper to fetch attendance for a user
+async function fetchAttendanceForUser(userId: string, monthYear: string) {
+  const res = await fetch(`/api/attendance?userId=${userId}&monthYear=${monthYear}`);
+  const json = await res.json();
+  if (json.success && json.data && json.data.length > 0) {
+    return json.data[0];
+  }
+  return null;
+}
 import { LocationAttendanceSection } from '@/components/LocationAttendanceSection';
 import { LogOut, X, Loader2, Send } from 'lucide-react';
 
@@ -16,6 +35,20 @@ const TIMED_CATEGORIES = [
 ];
 
 export default function EmployeeDashboard() {
+  // Sidebar tab state
+  const [activeTab, setActiveTab] = useState<'my' | 'employees'>('my');
+  // Collapsible sidebar state
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Selected subordinate for dropdown
+  const [selectedSubordinateId, setSelectedSubordinateId] = useState<string | null>(null);
+  // Search state for filtering subordinates
+  const [searchTerm, setSearchTerm] = useState('');
+  // Sidebar tab state
+
+    // State for subordinates (if any)
+    const [subordinates, setSubordinates] = useState<User[]>([]);
+    const [subordinateAttendance, setSubordinateAttendance] = useState<Record<string, { summary: AttendanceSummaryView | null, employeeDays: AttendanceRecord[] }>>({});
+    const [subLoading, setSubLoading] = useState(false);
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -76,6 +109,108 @@ export default function EmployeeDashboard() {
     
     // Initial Load
     fetchAttendance(userData._id, monthYear);
+
+    // Fetch subordinates if this user is a partner
+    // Try both by _id and by name
+    (async () => {
+      setSubLoading(true);
+      let subs: User[] = [];
+      // Try by _id
+      subs = await fetchSubordinates(userData._id);
+      // If none, try by name
+      if (!subs.length && userData.name) {
+        subs = await fetchSubordinates(userData.name);
+      }
+      setSubordinates(subs);
+      setSubLoading(false);
+      // Fetch attendance for each subordinate
+      const att: Record<string, { summary: AttendanceSummaryView | null, employeeDays: AttendanceRecord[] }> = {};
+      for (const sub of subs) {
+        const attData = await fetchAttendanceForUser(sub._id, monthYear);
+        if (attData) {
+          // Build summary and employeeDays as in main fetchAttendance
+          const recordsObj = attData.records || {};
+          const days: AttendanceRecord[] = Object.entries(recordsObj).map(([dateKey, value]: [string, any]) => {
+            const userForDay = attData.userId;
+            const dateObj = new Date(dateKey);
+            const dayOfWeek = dateObj.getDay();
+            const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+            const dayName = dayNames[dayOfWeek];
+            let schedule = undefined;
+            if (userForDay.schedules && Array.isArray(userForDay.schedules) && userForDay.schedules.length > 0) {
+              const effSchedules = userForDay.schedules
+                .filter((s: any) => new Date(s.effectiveFrom) <= dateObj)
+                .sort((a: any, b: any) => Number(new Date(b.effectiveFrom).getTime()) - Number(new Date(a.effectiveFrom).getTime()));
+              if (effSchedules.length > 0) {
+                const eff = effSchedules[0];
+                if (eff.daily && eff.daily[dayName]) {
+                  schedule = { ...eff.daily[dayName] };
+                }
+              }
+            }
+            if (!schedule) {
+              if (dayName === 'saturday' && userForDay.scheduleInOutTimeSat) {
+                schedule = { ...userForDay.scheduleInOutTimeSat, isHoliday: false, isHalfDay: true };
+              } else if (userForDay.scheduleInOutTime) {
+                schedule = { ...userForDay.scheduleInOutTime, isHoliday: false, isHalfDay: false };
+              } else if (dayName === 'sunday') {
+                schedule = { inTime: '09:00', outTime: '18:00', isHoliday: true, isHalfDay: false };
+              }
+            }
+            const effectiveCheckin = value.editedCheckin || value.checkin;
+            const effectiveCheckout = value.editedCheckout || value.checkout;
+            let status: any = 'Present';
+            if (value.typeOfPresence === 'Leave' || value.typeOfPresence === 'On leave') status = 'On leave';
+            else if (value.typeOfPresence === 'Holiday') status = 'Holiday';
+            else if (value.halfDay) status = 'HalfDay';
+            else if (!effectiveCheckin && !effectiveCheckout && value.typeOfPresence !== 'Leave' && value.typeOfPresence !== 'On leave') status = 'Absent';
+            if (status === 'Present' && !effectiveCheckin && !effectiveCheckout) status = 'Absent';
+            return {
+              id: userForDay._id,
+              name: userForDay.name,
+              date: dateKey,
+              inTime: effectiveCheckin ?? '',
+              outTime: effectiveCheckout ?? '',
+              status: status,
+              typeOfPresence: value.typeOfPresence,
+              value: value.value,
+              schedule: schedule
+            };
+          });
+          const daily: any = {};
+          const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+          weekdays.forEach((day) => {
+            if (day === 'saturday' && attData.userId.scheduleInOutTimeSat) {
+              daily[day] = { ...attData.userId.scheduleInOutTimeSat, isHoliday: false, isHalfDay: true };
+            } else if (day === 'sunday') {
+              daily[day] = { inTime: '09:00', outTime: '18:00', isHoliday: true, isHalfDay: false };
+            } else if (attData.userId.scheduleInOutTime) {
+              daily[day] = { ...attData.userId.scheduleInOutTime, isHoliday: false, isHalfDay: false };
+            } else {
+              daily[day] = undefined;
+            }
+          });
+          const mappedSum: AttendanceSummaryView = {
+            id: attData._id,
+            userId: attData.userId._id,
+            userName: attData.userId.name,
+            monthYear: attData.monthYear,
+            schedules: {
+              effectiveFrom: new Date().toISOString(),
+              daily
+            },
+            summary: {
+              ...attData.summary,
+              excessHours: '' // Not used
+            }
+          };
+          att[sub._id] = { summary: mappedSum, employeeDays: days };
+        } else {
+          att[sub._id] = { summary: null, employeeDays: [] };
+        }
+      }
+      setSubordinateAttendance(att);
+    })();
   }, []);
 
   const fetchAttendance = async (userId: string, my: string) => {
@@ -217,16 +352,111 @@ export default function EmployeeDashboard() {
   };
 
   const handleMonthChange = (val: string) => {
-      setMonthYear(val);
-      if (user) fetchAttendance(user._id, val);
-      // Clear any ongoing selection when changing months
-      setCalendarSelectionStart(null);
-      setFutureStartDate('');
-      setFutureEndDate('');
-      setFutureReason('');
-      setFutureStartTime('');
-      setFutureEndTime('');
-      setFutureCustomType('');
+    setMonthYear(val);
+    if (user) fetchAttendance(user._id, val);
+    setCalendarSelectionStart(null);
+    setFutureStartDate('');
+    setFutureEndDate('');
+    setFutureReason('');
+    setFutureStartTime('');
+    setFutureEndTime('');
+    setFutureCustomType('');
+    // Also reload subordinate attendance for new month
+    (async () => {
+      if (!user) return;
+      let subs: User[] = subordinates;
+      if (!subs.length) {
+        subs = await fetchSubordinates(user._id);
+        if (!subs.length && user.name) {
+          subs = await fetchSubordinates(user.name);
+        }
+      }
+      const att: Record<string, { summary: AttendanceSummaryView | null, employeeDays: AttendanceRecord[] }> = {};
+      for (const sub of subs) {
+        const attData = await fetchAttendanceForUser(sub._id, val);
+        if (attData) {
+          const recordsObj = attData.records || {};
+          const days: AttendanceRecord[] = Object.entries(recordsObj).map(([dateKey, value]: [string, any]) => {
+            const userForDay = attData.userId;
+            const dateObj = new Date(dateKey);
+            const dayOfWeek = dateObj.getDay();
+            const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+            const dayName = dayNames[dayOfWeek];
+            let schedule = undefined;
+            if (userForDay.schedules && Array.isArray(userForDay.schedules) && userForDay.schedules.length > 0) {
+              const effSchedules = userForDay.schedules
+                .filter((s: any) => new Date(s.effectiveFrom) <= dateObj)
+                .sort((a: any, b: any) => Number(new Date(b.effectiveFrom).getTime()) - Number(new Date(a.effectiveFrom).getTime()));
+              if (effSchedules.length > 0) {
+                const eff = effSchedules[0];
+                if (eff.daily && eff.daily[dayName]) {
+                  schedule = { ...eff.daily[dayName] };
+                }
+              }
+            }
+            if (!schedule) {
+              if (dayName === 'saturday' && userForDay.scheduleInOutTimeSat) {
+                schedule = { ...userForDay.scheduleInOutTimeSat, isHoliday: false, isHalfDay: true };
+              } else if (userForDay.scheduleInOutTime) {
+                schedule = { ...userForDay.scheduleInOutTime, isHoliday: false, isHalfDay: false };
+              } else if (dayName === 'sunday') {
+                schedule = { inTime: '09:00', outTime: '18:00', isHoliday: true, isHalfDay: false };
+              }
+            }
+            const effectiveCheckin = value.editedCheckin || value.checkin;
+            const effectiveCheckout = value.editedCheckout || value.checkout;
+            let status: any = 'Present';
+            if (value.typeOfPresence === 'Leave' || value.typeOfPresence === 'On leave') status = 'On leave';
+            else if (value.typeOfPresence === 'Holiday') status = 'Holiday';
+            else if (value.halfDay) status = 'HalfDay';
+            else if (!effectiveCheckin && !effectiveCheckout && value.typeOfPresence !== 'Leave' && value.typeOfPresence !== 'On leave') status = 'Absent';
+            if (status === 'Present' && !effectiveCheckin && !effectiveCheckout) status = 'Absent';
+            return {
+              id: userForDay._id,
+              name: userForDay.name,
+              date: dateKey,
+              inTime: effectiveCheckin ?? '',
+              outTime: effectiveCheckout ?? '',
+              status: status,
+              typeOfPresence: value.typeOfPresence,
+              value: value.value,
+              schedule: schedule
+            };
+          });
+          const daily: any = {};
+          const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+          weekdays.forEach((day) => {
+            if (day === 'saturday' && attData.userId.scheduleInOutTimeSat) {
+              daily[day] = { ...attData.userId.scheduleInOutTimeSat, isHoliday: false, isHalfDay: true };
+            } else if (day === 'sunday') {
+              daily[day] = { inTime: '09:00', outTime: '18:00', isHoliday: true, isHalfDay: false };
+            } else if (attData.userId.scheduleInOutTime) {
+              daily[day] = { ...attData.userId.scheduleInOutTime, isHoliday: false, isHalfDay: false };
+            } else {
+              daily[day] = undefined;
+            }
+          });
+          const mappedSum: AttendanceSummaryView = {
+            id: attData._id,
+            userId: attData.userId._id,
+            userName: attData.userId.name,
+            monthYear: attData.monthYear,
+            schedules: {
+              effectiveFrom: new Date().toISOString(),
+              daily
+            },
+            summary: {
+              ...attData.summary,
+              excessHours: ''
+            }
+          };
+          att[sub._id] = { summary: mappedSum, employeeDays: days };
+        } else {
+          att[sub._id] = { summary: null, employeeDays: [] };
+        }
+      }
+      setSubordinateAttendance(att);
+    })();
   };
 
   const handleDayClick = (date: string) => {
@@ -566,23 +796,36 @@ export default function EmployeeDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
-       {/* Header */}
-       <header className="bg-slate-900 border-b border-slate-800 p-2 px-3 sm:px-4 sticky top-0 z-40">
-           <div className="flex items-center justify-between gap-2">
-               <div className="min-w-0 flex-1 flex items-center gap-2">
-                   <img src="/lg.png" alt="Logo" className="w-12 h-12 object-contain shrink-0" />
-                   <div>
-                       <h1 className="text-base sm:text-xl font-bold text-white truncate">My Attendance</h1>
-                       <p className="text-[11px] sm:text-xs text-slate-400 truncate"><span className="hidden sm:inline">Asija and Associates LLP • </span>Welcome, {user.name}</p>
-                   </div>
-               </div>
-
-               <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-                   <button onClick={handleLogout} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-rose-400 transition-colors touch-manipulation active:scale-95" title="Sign Out">
-                       <LogOut className="w-5 h-5" />
-                   </button>
-               </div>
-           </div>
+      {/* Mobile sidebar toggle button (moved to right in header) */}
+      {/* Header */}
+      <header className="bg-slate-900 border-b border-slate-800 p-2 px-3 sm:px-4 sticky top-0 z-30">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0 flex-1 flex items-center gap-2">
+            <img src="/lg.png" alt="Logo" className="w-12 h-12 object-contain shrink-0" />
+            <div>
+              <h1 className="text-base sm:text-xl font-bold text-white truncate">My Attendance</h1>
+              <p className="text-[11px] sm:text-xs text-slate-400 truncate"><span className="hidden sm:inline">Asija and Associates LLP • </span>Welcome, {user.name}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <button onClick={handleLogout} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-rose-400 transition-colors touch-manipulation active:scale-95" title="Sign Out">
+              <LogOut className="w-5 h-5" />
+            </button>
+            {/* Mobile sidebar toggle button (right side) */}
+            <button
+              className="md:hidden ml-2 bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-200 focus:outline-none"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              aria-label={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+              type="button"
+            >
+              {sidebarOpen ? (
+                <span>&#10005;</span>
+              ) : (
+                <span>&#9776;</span>
+              )}
+            </button>
+          </div>
+        </div>
            
            {/* Selection banner - shown when dates are selected */}
            {futureStartDate && (
@@ -614,29 +857,137 @@ export default function EmployeeDashboard() {
            )}
        </header>
 
-       {/* Content */}
-       <main className="flex-1 p-3 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full space-y-6">
-           {/* Location Attendance Section */}
-           <LocationAttendanceSection userId={user._id} />
-
-           <EmployeeMonthView 
-              summaries={summary ? [summary] : []}
-              users={[user]}
-              selectedEmployeeId={user._id}
-              setSelectedEmployeeId={() => {}} // Disabled for employee view
-              selectedMonthYear={monthYear}
-              onMonthYearChange={handleMonthChange}
-              employeeDays={employeeDays}
-              isLoading={fetchLoading}
-              error={fetchError}
-              onLoadAttendance={() => user && fetchAttendance(user._id, monthYear)}
-              onDayClick={handleDayClick}
-              selectionStart={calendarSelectionStart}
-              onSelectionStartChange={setCalendarSelectionStart}
-              onApplyFutureRequest={() => setShowFutureModal(true)}
-              approvedRequests={employeeRequests}
-           />
-       </main>
+      <div className="flex min-h-[80vh]">
+        {/* Sidebar */}
+        {/* Overlay for mobile when sidebar is open */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-40 z-30 md:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+        <aside
+          className={`
+            fixed md:static top-0 left-0 z-40 h-full md:h-auto w-56 bg-slate-900 border-r border-slate-800 flex flex-col py-8 px-2 gap-2
+            transition-transform duration-200 ease-in-out
+            ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+            md:translate-x-0
+          `}
+          style={{ minWidth: '0' }}
+        >
+          <button
+            className={`w-full px-4 py-3 rounded-lg text-left font-semibold transition-colors ${activeTab === 'my' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'}`}
+            onClick={() => {
+              setActiveTab('my');
+              setSidebarOpen(false);
+            }}
+          >
+            My Attendance
+          </button>
+          <button
+            className={`w-full px-4 py-3 rounded-lg text-left font-semibold transition-colors ${activeTab === 'employees' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'}`}
+            onClick={() => {
+              setActiveTab('employees');
+              setSidebarOpen(false);
+            }}
+            disabled={subordinates.length === 0}
+          >
+            Employee Attendance
+          </button>
+        </aside>
+        {/* Main Content */}
+        <main className="flex-1 p-3 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full space-y-6 ml-0 md:ml-56 transition-all duration-200">
+           {activeTab === 'my' && <LocationAttendanceSection userId={user._id} />}
+           {activeTab === 'my' && (
+             <EmployeeMonthView 
+                summaries={summary ? [summary] : []}
+                users={[user]}
+                selectedEmployeeId={user._id}
+                setSelectedEmployeeId={() => {}} // Disabled for employee view
+                selectedMonthYear={monthYear}
+                onMonthYearChange={handleMonthChange}
+                employeeDays={employeeDays}
+                isLoading={fetchLoading}
+                error={fetchError}
+                onLoadAttendance={() => user && fetchAttendance(user._id, monthYear)}
+                onDayClick={handleDayClick}
+                selectionStart={calendarSelectionStart}
+                onSelectionStartChange={setCalendarSelectionStart}
+                onApplyFutureRequest={() => setShowFutureModal(true)}
+                approvedRequests={employeeRequests}
+             />
+           )}
+           {activeTab === 'employees' && (
+             <>
+               {subLoading && (
+                 <div className="bg-slate-900 border border-slate-700 rounded-lg p-4 text-slate-300 text-center">Loading subordinates...</div>
+               )}
+               {!subLoading && subordinates.length > 0 && (
+                 <section className="mt-2">
+                   <h3 className="text-lg font-bold text-slate-100 mb-4">Attendance of Employees Working Under You</h3>
+                   <div className="mb-4 flex flex-col gap-2 max-w-xs">
+                     <label htmlFor="search-subordinate" className="text-slate-300 font-medium">Search Employee:</label>
+                     <input
+                       id="search-subordinate"
+                       type="text"
+                       className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 min-w-[200px]"
+                       placeholder="Type name or OD ID..."
+                       value={searchTerm}
+                       onChange={e => {
+                         setSearchTerm(e.target.value);
+                         setSelectedSubordinateId(null); // Reset selection on new search
+                       }}
+                     />
+                     <select
+                       id="subordinate-select"
+                       className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 min-w-[200px]"
+                       value={selectedSubordinateId ?? ''}
+                       onChange={e => setSelectedSubordinateId(e.target.value || null)}
+                     >
+                       <option value="">-- Select --</option>
+                       {subordinates
+                         .filter(sub =>
+                           sub.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           sub.odId.toLowerCase().includes(searchTerm.toLowerCase())
+                         )
+                         .map(sub => (
+                           <option key={sub._id} value={sub._id}>{sub.name} ({sub.odId})</option>
+                         ))}
+                     </select>
+                   </div>
+                   {selectedSubordinateId && subordinateAttendance[selectedSubordinateId] ? (
+                     <div className="bg-slate-900 border border-slate-700 rounded-lg p-4 mt-4">
+                       <h4 className="text-base font-semibold text-slate-200 mb-2 flex items-center gap-2">
+                         <span className="inline-block bg-slate-700 rounded px-2 py-0.5 text-xs font-mono">
+                           {subordinates.find(s => s._id === selectedSubordinateId)?.odId}
+                         </span>
+                         {subordinates.find(s => s._id === selectedSubordinateId)?.name}
+                       </h4>
+                       <EmployeeMonthView
+                         summaries={subordinateAttendance[selectedSubordinateId]?.summary ? [subordinateAttendance[selectedSubordinateId].summary!] : []}
+                         users={[subordinates.find(s => s._id === selectedSubordinateId)!]}
+                         selectedEmployeeId={selectedSubordinateId}
+                         setSelectedEmployeeId={() => {}}
+                         selectedMonthYear={monthYear}
+                         onMonthYearChange={handleMonthChange}
+                         employeeDays={subordinateAttendance[selectedSubordinateId]?.employeeDays || []}
+                         isLoading={false}
+                         error={null}
+                         onLoadAttendance={() => {}}
+                       />
+                     </div>
+                   ) : (
+                     <div className="bg-slate-900 border border-slate-700 rounded-lg p-4 mt-4 text-slate-400 text-center">Select an employee to view attendance.</div>
+                   )}
+                 </section>
+               )}
+               {!subLoading && subordinates.length === 0 && (
+                 <div className="bg-slate-900 border border-slate-700 rounded-lg p-4 text-slate-400 text-center">No employees working under you.</div>
+               )}
+             </>
+           )}
+         </main>
+       </div>
 
        {/* Correction Modal */}
        {selectedDate && (
