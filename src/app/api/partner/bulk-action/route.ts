@@ -134,6 +134,8 @@ export async function POST(request: NextRequest) {
                 const { userId, date, requestedStatus, monthYear, startTime, endTime } = reqRecord;
 
                 let attendance = await Attendance.findOne({ userId, monthYear });
+                const isNewAttendanceRecord = !attendance;
+                
                 if (!attendance) {
                     attendance = new Attendance({
                         userId,
@@ -141,6 +143,35 @@ export async function POST(request: NextRequest) {
                         records: {},
                         summary: { totalHour: 0, totalLateArrival: 0, excessHour: 0, totalHalfDay: 0, totalPresent: 0, totalAbsent: 0, totalLeave: 0 }
                     });
+
+                    // Increment leave balance for non-articles if this is a new attendance record for month >= Jan 2026
+                    if (monthYear >= '2026-01') {
+                        const userForLeave = await User.findById(userId);
+                        if (userForLeave && userForLeave.isActive) {
+                            const designationLower = (userForLeave.designation || '').toLowerCase();
+                            const employmentTypeLower = (userForLeave.employmentType || '').toLowerCase();
+                            const isArticle = employmentTypeLower.includes('article') || designationLower.includes('article');
+                            
+                            if (!isArticle) {
+                                const currentEarned = userForLeave.leaveBalance?.earned || 0;
+                                const currentUsed = userForLeave.leaveBalance?.used || 0;
+                                const currentUsedAfterJan26 = userForLeave.leaveBalance?.usedAfterJan26 || 0;
+                                const currentBalanceAsOfJan26 = userForLeave.leaveBalance?.balanceAsOfJan26 || 0;
+                                
+                                const increment = 2;
+                                const newEarned = currentEarned + increment;
+                                const newRemaining = currentBalanceAsOfJan26 + newEarned - currentUsed - currentUsedAfterJan26;
+                                
+                                await User.findByIdAndUpdate(userForLeave._id, {
+                                    'leaveBalance.earned': newEarned,
+                                    'leaveBalance.remaining': newRemaining,
+                                    'leaveBalance.lastUpdated': new Date(),
+                                    'leaveBalance.monthlyEarned': 2,
+                                });
+                                console.log(`Leave balance incremented for user ${userForLeave.name} (new attendance record via bulk approval for ${monthYear})`);
+                            }
+                        }
+                    }
                 }
 
                 let rec = attendance.records.get(date);

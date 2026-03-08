@@ -5,8 +5,8 @@ import Attendance  from '@/models/Attendance';
 import User from '@/models/User';
 
 // Fine calculation rules
-// Staff: 2 consecutive late days = warning, 3rd day = 50, 4-7 days = 50 each, 8+ = 100 each
-// Article: 2 consecutive late days = warning, 3+ days = 25 each
+// Staff: 2 late days in month = warning, 3-7 late days = 50 each, 8+ = 100 each
+// Article: 2 late days in month = warning, 3+ late days = 25 each
 
 interface FineRule {
   consecutiveDay: number;
@@ -15,21 +15,13 @@ interface FineRule {
 }
 
 function getStaffFineRules(consecutiveDay: number): FineRule {
-  if (consecutiveDay <= 2) {
-    return { consecutiveDay, isWarning: true, amount: 0 };
-  } else if (consecutiveDay >= 3 && consecutiveDay <= 7) {
-    return { consecutiveDay, isWarning: false, amount: 50 };
-  } else {
-    return { consecutiveDay, isWarning: false, amount: 100 };
-  }
+  // This function is no longer used; replaced by new monthly logic
+  return { consecutiveDay, isWarning: false, amount: 0 };
 }
 
 function getArticleFineRules(consecutiveDay: number): FineRule {
-  if (consecutiveDay <= 2) {
-    return { consecutiveDay, isWarning: true, amount: 0 };
-  } else {
-    return { consecutiveDay, isWarning: false, amount: 25 };
-  }
+  // This function is no longer used; replaced by new monthly logic
+  return { consecutiveDay, isWarning: false, amount: 0 };
 }
 
 function isLateArrival(checkin: string, scheduledIn: string): boolean {
@@ -188,90 +180,81 @@ export async function POST(request: NextRequest) {
       const records = attendance.records instanceof Map 
         ? Object.fromEntries(attendance.records) 
         : attendance.records;
-      
       const dates = Object.keys(records).sort();
-      
-      // Get user initials for serial number
       const userInitials = getInitials(user.name || '');
 
-      // Get cumulative consecutive late days from previous months
-      // Find the most recent fine record for this user (before current month)
-      const previousFines = await Fine.find({ 
-        userId, 
-        monthYear: { $lt: monthYear } 
-      }).sort({ monthYear: -1 }).limit(1).lean();
-      
-      let consecutiveLateDays = 0;
-      if (previousFines.length > 0 && previousFines[0].fineRecords?.length > 0) {
-        // Get the last record's consecutive day count
-        const lastRecord = previousFines[0].fineRecords[previousFines[0].fineRecords.length - 1];
-        // Only carry over if the last day of previous month was late (consecutive count > 0)
-        // Check if the last record was a late arrival (not a reset)
-        if (lastRecord.consecutiveDay > 0) {
-          consecutiveLateDays = lastRecord.consecutiveDay;
+      // Count total late days in the month
+      let lateDates: string[] = [];
+      for (const dateStr of dates) {
+        const rec = records[dateStr];
+        const presenceType = rec.typeOfPresence as string;
+        if (presenceType === 'Holiday' || presenceType === 'On leave' || presenceType === 'Leave' || isScheduledHoliday(user, dateStr)) {
+          continue;
+        }
+        const effectiveCheckin = rec.editedCheckin || rec.checkin;
+        const scheduledIn = getScheduledInTime(user, dateStr);
+        if (isLateArrival(effectiveCheckin, scheduledIn)) {
+          lateDates.push(dateStr);
         }
       }
 
+      // Apply new fine rules
       const fineRecords: any[] = [];
-
-      for (const dateStr of dates) {
+      let warningCount = 0;
+      let fineCount = 0;
+      for (let i = 0; i < lateDates.length; i++) {
+        const dateStr = lateDates[i];
         const rec = records[dateStr];
-        
-        // Skip holidays and leaves, and also scheduled holidays
-        const presenceType = rec.typeOfPresence as string;
-        if (presenceType === 'Holiday' || presenceType === 'On leave' || presenceType === 'Leave' || isScheduledHoliday(user, dateStr)) {
-          // Don't reset consecutive count for holidays/leaves - they break the work streak
-          // But we also don't count them as late
-          continue;
-        }
-
         const effectiveCheckin = rec.editedCheckin || rec.checkin;
-        
-        // Get the scheduled in time for this user on this date
         const scheduledIn = getScheduledInTime(user, dateStr);
-        
-        // Check if late
-        if (isLateArrival(effectiveCheckin, scheduledIn)) {
-          consecutiveLateDays++;
-
-          // Calculate fine based on category
-          const rule = category === 'Staff' 
-            ? getStaffFineRules(consecutiveLateDays)
-            : getArticleFineRules(consecutiveLateDays);
-
-          // Generate globally unique serial number
-          let serialNo = '';
-          if (!rule.isWarning) {
-            globalFineCounter++;
-            serialNo = `${userInitials}/F${String(globalFineCounter).padStart(4, '0')}`;
+        const vertical = user?.team || user?.workingUnderPartner || (attendance.userId as any)?.team || (attendance.userId as any)?.workingUnderPartner || '';
+        let isWarning = false;
+        let fineAmount = 0;
+        let remark = '';
+        if (category === 'Staff') {
+          if (i < 2) {
+            isWarning = true;
+            remark = `Warning for ${i + 1} late day(s)`;
+          } else if (i >= 2 && i < 7) {
+            fineAmount = 50;
+            remark = `Fine ₹50 for ${i + 1}th late day`;
           } else {
-            globalWarningCounter++;
-            serialNo = `${userInitials}/W${String(globalWarningCounter).padStart(4, '0')}`;
+            fineAmount = 100;
+            remark = `Fine ₹100 for ${i + 1}th late day`;
           }
-
-          // Get vertical (team/workingUnderPartner)
-          const vertical = user?.team || user?.workingUnderPartner || (attendance.userId as any)?.team || (attendance.userId as any)?.workingUnderPartner || '';
-
-          fineRecords.push({
-            serialNo,
-            date: dateStr,
-            consecutiveDay: consecutiveLateDays,
-            fineAmount: rule.amount,
-            isWarning: rule.isWarning,
-            status: 'pending',
-            penaltyImposedBy: '',
-            reason: `In Time-${effectiveCheckin} (Scheduled: ${scheduledIn})`,
-            remark: rule.isWarning 
-              ? `Warning ${consecutiveLateDays}` 
-              : `Fine for ${consecutiveLateDays} consecutive late day(s)`,
-            paymentDate: '',
-            paymentMode: '',
-            vertical,
-          });
-        } else {
-          // Reset consecutive count if on time
-          consecutiveLateDays = 0;
+        } else if (category === 'Article') {
+          if (i < 2) {
+            isWarning = true;
+            remark = `Warning for ${i + 1} late day(s)`;
+          } else {
+            fineAmount = 25;
+            remark = `Fine ₹25 for ${i + 1}th late day`;
+          }
         }
+        let serialNo = '';
+        if (isWarning) {
+          globalWarningCounter++;
+          serialNo = `${userInitials}/W${String(globalWarningCounter).padStart(4, '0')}`;
+          warningCount++;
+        } else {
+          globalFineCounter++;
+          serialNo = `${userInitials}/F${String(globalFineCounter).padStart(4, '0')}`;
+          fineCount++;
+        }
+        fineRecords.push({
+          serialNo,
+          date: dateStr,
+          consecutiveDay: 0,
+          fineAmount,
+          isWarning,
+          status: 'pending',
+          penaltyImposedBy: '',
+          reason: `In Time-${effectiveCheckin} (Scheduled: ${scheduledIn})`,
+          remark,
+          paymentDate: '',
+          paymentMode: '',
+          vertical,
+        });
       }
 
       // Calculate totals

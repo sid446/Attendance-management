@@ -98,6 +98,8 @@ export async function POST(request: NextRequest) {
       const processed: Array<{ odId: string; userId: string; monthYear: string; date: string; createdUser: boolean }> = [];
       const errors: Array<{ odId: string; reason: string }> = [];
       const uploadedMonths = new Set<string>();
+      // Track user-month combinations where attendance is being created for the first time
+      const newAttendanceUserMonths = new Set<string>();
 
       // Pre-fetch all users for efficient in-memory matching
       const allUsers = await User.find({}).select('name _id odId employeeCode designation employmentType schedules scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth');
@@ -145,8 +147,13 @@ export async function POST(request: NextRequest) {
 
           // Find existing attendance or create new one per user per month
           let attendance = await Attendance.findOne({ userId: user._id, monthYear: isoMonthYear });
+          const isNewAttendanceForMonth = !attendance;
 
           if (!attendance) {
+            // Track this as a new attendance record for this user-month (first time upload)
+            const userMonthKey = `${user._id}_${isoMonthYear}`;
+            newAttendanceUserMonths.add(userMonthKey);
+            
             attendance = await Attendance.create({
               userId: user._id,
               monthYear: isoMonthYear,
@@ -440,48 +447,51 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Increment leave balance for processed users
+      // Increment leave balance for users who got their FIRST attendance record for this month
+      // Only increment if attendance didn't exist before for that user-month combination
+      // Only increment for months >= January 2026 (2026-01)
       try {
         const now = new Date();
-        // Get unique userIds from processed records
-        const uniqueUserIds = [...new Set(processed.map(p => p.userId))];
-        // Map userId to monthYear for this upload
-        const userMonthMap: Record<string, string> = {};
-        for (const p of processed) {
-          userMonthMap[p.userId] = p.monthYear;
-        }
-        for (const userId of uniqueUserIds) {
+        let incrementedCount = 0;
+        
+        // Process only users who had NEW attendance created (not updates to existing)
+        for (const userMonthKey of newAttendanceUserMonths) {
+          const [userId, monthYear] = userMonthKey.split('_');
+          
+          // Skip leave increment for months before January 2026
+          if (monthYear < '2026-01') {
+            console.log(`Skipping leave increment for ${userId} - month ${monthYear} is before Jan 2026`);
+            continue;
+          }
+          
           const user = await User.findById(userId);
           if (!user || !user.isActive) continue;
+          
           // Skip leave balance increment for articles - check both employmentType and designation
           const designationLower = (user.designation || '').toLowerCase();
           const employmentTypeLower = (user.employmentType || '').toLowerCase();
           const isArticle = employmentTypeLower.includes('article') || designationLower.includes('article');
           if (isArticle) continue;
+          
           const currentEarned = user.leaveBalance?.earned || 0;
           const currentUsed = user.leaveBalance?.used || 0;
-          const lastUpdated = user.leaveBalance?.lastUpdated;
-          const thisMonth = userMonthMap[userId];
-          let alreadyIncremented = false;
-          if (lastUpdated) {
-            const lastUpdatedMonth = `${lastUpdated.getFullYear()}-${String(lastUpdated.getMonth() + 1).padStart(2, '0')}`;
-            if (lastUpdatedMonth === thisMonth) {
-              alreadyIncremented = true;
-            }
-          }
-          if (alreadyIncremented) continue;
-          // Only increment for non-articles
+          const currentUsedAfterJan26 = user.leaveBalance?.usedAfterJan26 || 0;
+          const currentBalanceAsOfJan26 = user.leaveBalance?.balanceAsOfJan26 || 0;
+          
+          // Increment earned by 2 for non-articles (first time attendance for this month)
           const increment = 2;
           const newEarned = currentEarned + increment;
-          const newRemaining = newEarned - currentUsed; // Can be negative if used > earned
+          const newRemaining = currentBalanceAsOfJan26 + newEarned - currentUsed - currentUsedAfterJan26;
+          
           await User.findByIdAndUpdate(user._id, {
             'leaveBalance.earned': newEarned,
             'leaveBalance.remaining': newRemaining,
             'leaveBalance.lastUpdated': now,
             'leaveBalance.monthlyEarned': 2,
           });
+          incrementedCount++;
         }
-        console.log(`Leave balance incremented for ${uniqueUserIds.length} users (attendance upload)`);
+        console.log(`Leave balance incremented for ${incrementedCount} users (first time attendance upload for month >= Jan 2026)`);
       } catch (leaveError) {
         console.error('Error incrementing leave balance:', leaveError);
         // Don't fail the upload if leave increment fails
