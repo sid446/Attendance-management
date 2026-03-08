@@ -814,6 +814,22 @@ export default function EmployeeDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <button
+              className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-lg font-semibold text-sm transition-colors"
+              onClick={() => {
+                // Redirect to partner review-all page with partnerName and partnerEmail
+                if (user && user.name && user.email) {
+                  // Normalize partnerName: replace dots with spaces, remove extra spaces, capitalize each word
+                  let name = user.name.replace(/\./g, ' ');
+                  name = name.replace(/\s+/g, ' ').trim();
+                  name = name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+                  router.push(`/partner/review-all?partnerName=${encodeURIComponent(name)}&partnerEmail=${encodeURIComponent(user.email)}`);
+                }
+              }}
+              title="Review All Partner Requests"
+            >
+              Review All Requests
+            </button>
             <button onClick={handleLogout} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-rose-400 transition-colors touch-manipulation active:scale-95" title="Sign Out">
               <LogOut className="w-5 h-5" />
             </button>
