@@ -4,14 +4,20 @@ import { isHolidayDate } from '@/lib/holidaysClient';
 import { useRouter } from 'next/navigation';
 import { EmployeeMonthView } from '@/components/EmployeeMonthView';
 import { AttendanceRecord, AttendanceSummaryView, User } from '@/types/ui';
-// Helper to fetch users working under a partner
-async function fetchSubordinates(partnerIdOrName: string) {
-  const res = await fetch(`/api/users?workingUnderPartner=${encodeURIComponent(partnerIdOrName)}`);
+// Helper to fetch users working under a partner by normalized name match
+async function fetchSubordinates(partnerName: string) {
+  // Fetch all users (or all active users)
+  const res = await fetch(`/api/users?activeOnly=true`);
   const json = await res.json();
-  if (json.success && Array.isArray(json.data)) {
-    return json.data;
-  }
-  return [];
+  if (!json.success || !Array.isArray(json.data)) return [];
+  // Normalize function: remove dots, spaces, lowercase
+  const normalize = (str: string) => str.replace(/[.\s]/g, '').toLowerCase();
+  const normalizedPartner = normalize(partnerName);
+  // Find users whose workingUnderPartner matches normalized partner name
+  return json.data.filter((user: any) => {
+    if (!user.workingUnderPartner) return false;
+    return normalize(user.workingUnderPartner) === normalizedPartner;
+  });
 }
 
 // Helper to fetch attendance for a user
@@ -868,10 +874,12 @@ export default function EmployeeDashboard() {
         )}
         <aside
           className={`
-            fixed md:static top-0 left-0 z-40 h-full w-56 bg-slate-900 border-r border-slate-800 flex flex-col py-8 px-2 gap-2
+            fixed md:fixed md:top-[64px] top-0 left-0 z-40 w-56 bg-slate-900 border-r border-slate-800 flex flex-col py-8 px-2 gap-2
             transition-transform duration-200 ease-in-out
             ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
             md:translate-x-0
+            overflow-hidden
+            h-full md:h-screen
           `}
           style={{ minWidth: '0', height: '100vh' }}
         >
@@ -884,19 +892,20 @@ export default function EmployeeDashboard() {
           >
             My Attendance
           </button>
-          <button
-            className={`w-full px-4 py-3 rounded-lg text-left font-semibold transition-colors ${activeTab === 'employees' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'}`}
-            onClick={() => {
-              setActiveTab('employees');
-              setSidebarOpen(false);
-            }}
-            disabled={subordinates.length === 0}
-          >
-            Employee Attendance
-          </button>
+          {subordinates.length > 0 && (
+            <button
+              className={`w-full px-4 py-3 rounded-lg text-left font-semibold transition-colors ${activeTab === 'employees' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'}`}
+              onClick={() => {
+                setActiveTab('employees');
+                setSidebarOpen(false);
+              }}
+            >
+              Employee Attendance
+            </button>
+          )}
         </aside>
         {/* Main Content */}
-        <main className="flex-1 p-3 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full space-y-6 ml-0 transition-all duration-200">
+        <main className="flex-1 p-3 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full space-y-6 ml-0 md:ml-56 transition-all duration-200">
            {activeTab === 'my' && <LocationAttendanceSection userId={user._id} />}
            {activeTab === 'my' && (
              <EmployeeMonthView 
