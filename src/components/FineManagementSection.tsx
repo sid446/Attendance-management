@@ -871,21 +871,21 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
         <div className="flex items-start gap-3">
           <Info className="w-5 h-5 text-blue-400 mt-0.5 flex-shrink-0" />
           <div className="text-sm">
-            <h3 className="font-medium text-slate-200 mb-2">Fine Rules</h3>
+            <h3 className="font-medium text-slate-200 mb-2">Fine Rules (Late Attendance)</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-slate-400">
               <div>
-                <span className="font-medium text-slate-300">Staff:</span>
+                <span className="font-medium text-slate-300">Employee:</span>
                 <ul className="list-disc list-inside ml-2 space-y-0.5">
-                  <li>1-2 consecutive late days → Warning</li>
-                  <li>3rd-7th consecutive late day → ₹50 each</li>
-                  <li>8th+ consecutive late day → ₹100 each</li>
+                  <li>2 late in a month: Warning</li>
+                  <li>3-7 late in a month: ₹50 fine</li>
+                  <li>8 or more late in a month: ₹100 fine</li>
                 </ul>
               </div>
               <div>
-                <span className="font-medium text-slate-300">Article/Trainee:</span>
+                <span className="font-medium text-slate-300">Article:</span>
                 <ul className="list-disc list-inside ml-2 space-y-0.5">
-                  <li>1-2 consecutive late days → Warning</li>
-                  <li>3rd+ consecutive late day → ₹25 each</li>
+                  <li>2 late in a month: Warning</li>
+                  <li>3 or more late in a month: ₹25 fine</li>
                 </ul>
               </div>
             </div>
