@@ -281,9 +281,12 @@ export async function updateLeaveBalanceOnApproval(
     const currentEarned = user.leaveBalance?.earned || 0;
     const currentUsed = user.leaveBalance?.used || 0;
 
+    const newUsedAfterJan26 = currentUsedAfterJan26 + paidLeaves.length;
+    const calculatedRemaining = currentBalanceAsOfJan26 + currentEarned - currentUsed - newUsedAfterJan26;
+    const safeRemaining = Math.max(0, calculatedRemaining);
     await User.findByIdAndUpdate(userId, {
-      'leaveBalance.usedAfterJan26': currentUsedAfterJan26 + paidLeaves.length,
-      'leaveBalance.remaining': currentBalanceAsOfJan26 + currentEarned - currentUsed - (currentUsedAfterJan26 + paidLeaves.length),
+      'leaveBalance.usedAfterJan26': newUsedAfterJan26,
+      'leaveBalance.remaining': safeRemaining,
     });
 
   } catch (error) {
