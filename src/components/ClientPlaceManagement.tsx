@@ -35,6 +35,25 @@ interface ClientPlaceManagementProps {
 }
 
 export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ allUsers = [] }) => {
+    // Permanently delete client place
+    const handlePermanentDeletePlace = async (id: string) => {
+      if (!confirm('Are you sure you want to permanently delete this client place? This action cannot be undone.')) return;
+      try {
+        setError(null);
+        const response = await fetch(`/api/client-places?id=${id}&permanent=true`, {
+          method: 'DELETE'
+        });
+        const result = await response.json();
+        if (result.success) {
+          setClientPlaces(prev => prev.filter(p => p._id !== id));
+        } else {
+          setError(result.error || 'Failed to permanently delete client place');
+        }
+      } catch (err) {
+        setError('Failed to permanently delete client place');
+        console.error('Error permanently deleting client place:', err);
+      }
+    };
   const [clientPlaces, setClientPlaces] = useState<ClientPlace[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -604,12 +623,21 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
                     <Trash2 className="w-4 h-4" />
                   </button>
                 ) : (
-                  <button
-                    onClick={() => handleReactivatePlace(place._id)}
-                    className="text-xs text-emerald-400 hover:text-emerald-300 px-2 py-1 rounded hover:bg-slate-800 transition-colors"
-                  >
-                    Reactivate
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleReactivatePlace(place._id)}
+                      className="text-xs text-emerald-400 hover:text-emerald-300 px-2 py-1 rounded hover:bg-slate-800 transition-colors"
+                    >
+                      Reactivate
+                    </button>
+                    <button
+                      onClick={() => handlePermanentDeletePlace(place._id)}
+                      className="text-xs text-rose-400 hover:text-rose-300 px-2 py-1 rounded hover:bg-slate-800 transition-colors"
+                      title="Permanently Delete"
+                    >
+                      Permanently Delete
+                    </button>
+                  </div>
                 )}
               </div>
             </div>

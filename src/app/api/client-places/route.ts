@@ -246,31 +246,42 @@ export async function PUT(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   try {
     await connectDB();
-    
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
-    
+    const permanent = searchParams.get('permanent') === 'true';
+
     if (!id) {
       return NextResponse.json(
         { success: false, error: 'Client place ID is required' },
         { status: 400 }
       );
     }
-    
-    const clientPlace = await ClientPlace.findByIdAndUpdate(
-      id,
-      { $set: { isActive: false } },
-      { new: true }
-    );
-    
-    if (!clientPlace) {
-      return NextResponse.json(
-        { success: false, error: 'Client place not found' },
-        { status: 404 }
+
+    if (permanent) {
+      // Permanently delete
+      const deleted = await ClientPlace.findByIdAndDelete(id);
+      if (!deleted) {
+        return NextResponse.json(
+          { success: false, error: 'Client place not found' },
+          { status: 404 }
+        );
+      }
+      return NextResponse.json({ success: true, message: 'Client place permanently deleted' });
+    } else {
+      // Soft delete (deactivate)
+      const clientPlace = await ClientPlace.findByIdAndUpdate(
+        id,
+        { $set: { isActive: false } },
+        { new: true }
       );
+      if (!clientPlace) {
+        return NextResponse.json(
+          { success: false, error: 'Client place not found' },
+          { status: 404 }
+        );
+      }
+      return NextResponse.json({ success: true, message: 'Client place deactivated successfully' });
     }
-    
-    return NextResponse.json({ success: true, message: 'Client place deactivated successfully' });
   } catch (error: any) {
     console.error('Error deleting client place:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
