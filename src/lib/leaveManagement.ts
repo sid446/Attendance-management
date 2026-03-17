@@ -251,21 +251,33 @@ export async function updateLeaveBalanceOnApproval(
 
     // Handle single date (backward compatibility)
     if (typeof dateOrDetails === 'string') {
-      if (!isPaidLeave) {
-        return; // No balance update needed for unpaid leave
-      }
+        if (!isPaidLeave) {
+          return; // No balance update needed for unpaid leave
+        }
 
-      const currentUsedAfterJan26 = user.leaveBalance?.usedAfterJan26 || 0;
-      const currentBalanceAsOfJan26 = user.leaveBalance?.balanceAsOfJan26 || 0;
-      const currentEarned = user.leaveBalance?.earned || 0;
-      const currentUsed = user.leaveBalance?.used || 0;
+        const currentUsedAfterJan26 = user.leaveBalance?.usedAfterJan26 || 0;
+        const currentBalanceAsOfJan26 = user.leaveBalance?.balanceAsOfJan26 || 0;
+        const currentEarned = user.leaveBalance?.earned || 0;
+        const currentUsed = user.leaveBalance?.used || 0;
 
-      await User.findByIdAndUpdate(userId, {
-        'leaveBalance.usedAfterJan26': currentUsedAfterJan26 + 1,
-        'leaveBalance.remaining': currentBalanceAsOfJan26 + currentEarned - currentUsed - (currentUsedAfterJan26 + 1),
-      });
+        const currentRemaining = currentBalanceAsOfJan26 + currentEarned - currentUsed - currentUsedAfterJan26;
+        // Only deduct if there's at least 1 full day remaining. Do not make remaining negative.
+        if (currentRemaining < 1) {
+          // Not enough balance for a paid leave; treat as unpaid — no update
+          console.log(`[LEAVE DEBUG] Not enough remaining leave for user ${userId} on ${dateOrDetails}. Remaining=${currentRemaining}. Skipping paid deduction.`);
+          return;
+        }
 
-      return;
+        const newUsedAfterJan26 = currentUsedAfterJan26 + 1;
+        const calculatedRemaining = currentBalanceAsOfJan26 + currentEarned - currentUsed - newUsedAfterJan26;
+        const safeRemaining = Math.max(0, calculatedRemaining);
+
+        await User.findByIdAndUpdate(userId, {
+          'leaveBalance.usedAfterJan26': newUsedAfterJan26,
+          'leaveBalance.remaining': safeRemaining,
+        });
+
+        return;
     }
 
     // Handle multiple dates
@@ -281,7 +293,17 @@ export async function updateLeaveBalanceOnApproval(
     const currentEarned = user.leaveBalance?.earned || 0;
     const currentUsed = user.leaveBalance?.used || 0;
 
-    const newUsedAfterJan26 = currentUsedAfterJan26 + paidLeaves.length;
+    const currentRemaining = currentBalanceAsOfJan26 + currentEarned - currentUsed - currentUsedAfterJan26;
+    // Determine how many paid leaves can actually be accommodated
+    const maxPaidLeavesPossible = Math.floor(Math.max(0, currentRemaining));
+    const paidCount = Math.min(paidLeaves.length, maxPaidLeavesPossible);
+
+    if (paidCount <= 0) {
+      console.log(`[LEAVE DEBUG] No sufficient remaining leave for user ${userId}. paidLeaves requested=${paidLeaves.length}, available=${currentRemaining}`);
+      return; // Nothing to deduct
+    }
+
+    const newUsedAfterJan26 = currentUsedAfterJan26 + paidCount;
     const calculatedRemaining = currentBalanceAsOfJan26 + currentEarned - currentUsed - newUsedAfterJan26;
     const safeRemaining = Math.max(0, calculatedRemaining);
     await User.findByIdAndUpdate(userId, {

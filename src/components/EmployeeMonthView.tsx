@@ -205,36 +205,62 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
     <section className="bg-slate-900/60 border border-slate-800 rounded-xl shadow-sm p-4 sm:p-6 space-y-3 sm:space-y-4">
       {/* Monthly summary row */}
       {summaryFromList && summaryFromList.summary && (
-        <div className="mb-2 flex flex-wrap gap-4 items-center text-sm text-slate-200">
-          <div>
-            <span className="font-semibold">Total Hours:</span> {summaryFromList.summary.totalHour?.toFixed(2)}
-          </div>
-          <div>
-            <span className="font-semibold">Late Arrivals:</span> {summaryFromList.summary.totalLateArrival}
-          </div>
-          <div>
-            <span className="font-semibold">Half Days:</span> {summaryFromList.summary.totalHalfDay}
-          </div>
-          <div>
-            <span className="font-semibold">Presents:</span> {summaryFromList.summary.totalPresent}
-          </div>
-          <div>
-            <span className="font-semibold">Absents:</span> {summaryFromList.summary.totalAbsent}
-          </div>
-          <div>
-            <span className="font-semibold">Leaves:</span> {summaryFromList.summary.totalLeave}
-          </div>
-          <div>
-            <span className="font-semibold">Excess/Short Hours:</span> {(() => {
-              const val = summaryFromList.summary.excessHour;
-              const sign = val < 0 ? '-' : '';
-              const abs = Math.abs(val);
-              const h = Math.floor(abs);
-              const m = Math.round((abs % 1) * 60);
-              return `${sign}${h}:${m.toString().padStart(2, '0')}`;
-            })()}
-          </div>
-        </div>
+        (() => {
+          // Compute absent days locally: not Sunday, not DB-holiday, not weekoff, not leave,
+          // and both in and out are missing or '00:00'
+          let calcAbsentLocal = 0;
+          for (const rec of employeeDays) {
+            if (!rec || !rec.date) continue;
+            const d = new Date(rec.date);
+            if (d.getFullYear() !== selectedYear || d.getMonth() + 1 !== selectedMonth) continue;
+            // Skip Sundays
+            if (d.getDay() === 0) continue;
+            const t = rec.typeOfPresence || '';
+            // Skip DB-holiday
+            if (t === 'Holiday') continue;
+            // Skip weekoff types
+            if (typeof t === 'string' && t.toLowerCase().includes('weekoff')) continue;
+            // Skip leaves
+            if (t === 'Leave' || t === 'On leave') continue;
+            const effectiveCheckin = rec.editedCheckin || rec.checkin;
+            const effectiveCheckout = rec.editedCheckout || rec.checkout;
+            if ((!effectiveCheckin || effectiveCheckin === '00:00') && (!effectiveCheckout || effectiveCheckout === '00:00')) {
+              calcAbsentLocal += 1;
+            }
+          }
+          return (
+            <div className="mb-2 flex flex-wrap gap-4 items-center text-sm text-slate-200">
+              <div>
+                <span className="font-semibold">Total Hours:</span> {summaryFromList.summary.totalHour?.toFixed(2)}
+              </div>
+              <div>
+                <span className="font-semibold">Late Arrivals:</span> {summaryFromList.summary.totalLateArrival}
+              </div>
+              <div>
+                <span className="font-semibold">Half Days:</span> {summaryFromList.summary.totalHalfDay}
+              </div>
+              <div>
+                <span className="font-semibold">Presents:</span> {summaryFromList.summary.totalPresent}
+              </div>
+              <div>
+                <span className="font-semibold">Absents:</span> {calcAbsentLocal}
+              </div>
+              <div>
+                <span className="font-semibold">Leaves:</span> {summaryFromList.summary.totalLeave}
+              </div>
+              <div>
+                <span className="font-semibold">Excess/Short Hours:</span> {(() => {
+                  const val = summaryFromList.summary.excessHour;
+                  const sign = val < 0 ? '-' : '';
+                  const abs = Math.abs(val);
+                  const h = Math.floor(abs);
+                  const m = Math.round((abs % 1) * 60);
+                  return `${sign}${h}:${m.toString().padStart(2, '0')}`;
+                })()}
+              </div>
+            </div>
+          );
+        })()
       )}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-4">
         <div>

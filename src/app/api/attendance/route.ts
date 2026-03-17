@@ -815,6 +815,14 @@ function calculateSummary(
     totalHour += record.totalHour;
     excessHour += record.excessHour;
     // ...existing halfday/late/present/absent/leave logic...
+    // Ensure holidays and Sundays are NOT treated as half-days (some uploads set halfDay=true when totalHour=0)
+    const recordDateObj = new Date(dateStr);
+    const isSundayDate = recordDateObj.getDay() === 0;
+    if (record.typeOfPresence === 'Holiday' || isSundayDate) {
+      // Force clear any half-day flag for holidays or Sundays
+      record.halfDay = false;
+    }
+
     // Determine half-day based on employmentType (only for summary calculation, don't override individual record flags)
     let calculatedHalfDay = record.halfDay || false; // Use existing halfDay flag if already set
     if (!record.halfDay) { // Only recalculate if not already set

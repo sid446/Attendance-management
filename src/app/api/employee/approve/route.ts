@@ -374,6 +374,63 @@ export async function POST(request: NextRequest) {
           await updateLeaveBalanceOnApproval(attendanceRequest.userId, attendanceRequest.date, true);
         }
       }
+
+        // If approved status is Present - Outstation or Present - ClientPlace (weekday or weekoff),
+        // adjust leaveBalance.remaining by the fractional component of the value.
+        // Example: value=1.1 => add 0.1; value=1.2 => add 0.2; value=0.8 => subtract 0.2
+        try {
+          const statusLower = (attendanceRequest.requestedStatus || '').toLowerCase();
+          if (statusLower.includes('outstation') || statusLower.includes('client place') || statusLower.includes('clientplace')) {
+            const recValue = typeof rec.value === 'number' ? rec.value : (rec.value ? Number(rec.value) : 1);
+            const delta = Number((recValue - 1).toFixed(3));
+            if (Math.abs(delta) > 0) {
+              const u = await User.findById(attendanceRequest.userId);
+              if (u) {
+                // Skip adjustment for article trainees
+                const isArticle = (u.employmentType && String(u.employmentType).toLowerCase() === 'article') ||
+                  (u.designation && String(u.designation).toLowerCase().includes('article'));
+                if (isArticle) {
+                  // Do not modify leave balance for articles
+                } else {
+                  // Ensure leaveBalance object exists; operate on a local copy to satisfy TS
+                  const leaveBalance = u.leaveBalance ?? ({
+                    remaining: 0,
+                    monthlyEarned: 0,
+                    earned: 0,
+                    balanceAsOfJan26: 0,
+                    used: 0,
+                    usedAfterJan26: 0,
+                    lastUpdated: new Date()
+                  } as any);
+                  const prev = Number(leaveBalance.remaining ?? 0);
+                  const prevEarned = Number(leaveBalance.earned ?? 0);
+                  const updated = Number((prev + delta).toFixed(3));
+                  // Debug logging to trace unexpected double increments
+                  console.log(`[LEAVE DEBUG] Applying delta ${delta} for user ${attendanceRequest.userId} month ${attendanceRequest.monthYear}. Prev remaining: ${prev}, Prev earned: ${prevEarned}`);
+                  leaveBalance.remaining = updated;
+
+                  // If this approval belongs to month >= Jan 2026, also increment the earned amount
+                  try {
+                    if (attendanceRequest.monthYear && attendanceRequest.monthYear >= '2026-01') {
+                      const newEarned = Number(((leaveBalance.earned ?? 0) + delta).toFixed(3));
+                      leaveBalance.earned = newEarned;
+                      console.log(`[LEAVE DEBUG] Updated earned for user ${attendanceRequest.userId}: ${prevEarned} -> ${newEarned}`);
+                      // Do not change monthlyEarned here; monthlyEarned is used for scheduled monthly increments elsewhere
+                    }
+                  } catch (e) {
+                    // defensive: ignore any comparison issues
+                  }
+
+                  leaveBalance.lastUpdated = new Date();
+                  u.leaveBalance = leaveBalance;
+                  await u.save();
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Failed to adjust leave balance for outstation/clientplace approval', e);
+        }
     }
 
     // Send email notification

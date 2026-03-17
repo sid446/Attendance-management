@@ -578,6 +578,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
   const [approvalValue, setApprovalValue] = useState('');
   // For value cap logic
   const [approvalValueError, setApprovalValueError] = useState<string | null>(null);
+  const [modalProcessing, setModalProcessing] = useState(false);
 
   // Helper function to check if request type has fixed value (no editing allowed)
   const isFixedValueType = (requestedStatus: string): boolean => {
@@ -731,6 +732,8 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
 
   const handleModalSubmit = async () => {
     if (!selectedRequestId) return;
+    if (modalProcessing) return;
+    setModalProcessing(true);
 
     // Value cap logic for approval
     if (approvalAction === 'approve') {
@@ -780,9 +783,13 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
       }
     }
     
-    await handleApproveReject(selectedRequestId, approvalAction, approvalRemarks, valueToSend);
-    setShowApprovalModal(false);
-    setSelectedRequestId(null);
+    try {
+      await handleApproveReject(selectedRequestId, approvalAction, approvalRemarks, valueToSend);
+      setShowApprovalModal(false);
+      setSelectedRequestId(null);
+    } finally {
+      setModalProcessing(false);
+    }
   };
 
   // Approval Modal UI (improved, always rendered)
@@ -882,10 +889,11 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
               </button>
               <button
                 onClick={handleModalSubmit}
-                className={`px-4 py-2 rounded ${approvalAction === 'approve' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'} text-white font-semibold`}
+                disabled={modalProcessing}
+                className={`px-4 py-2 rounded ${approvalAction === 'approve' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'} text-white font-semibold ${modalProcessing ? 'opacity-60 cursor-not-allowed' : ''}`}
                 type="button"
               >
-                {approvalAction === 'approve' ? 'Approve' : 'Reject'}
+                {modalProcessing ? 'Processing...' : (approvalAction === 'approve' ? 'Approve' : 'Reject')}
               </button>
             </div>
           </div>
