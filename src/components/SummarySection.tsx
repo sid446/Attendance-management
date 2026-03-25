@@ -264,13 +264,15 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       const dates: { date: string; info: string; subInfo?: string }[] = [];
       Object.entries(records).forEach(([date, rec]) => {
           // Use edited times for display if available, otherwise use original times
-          const effectiveCheckin = rec.editedCheckin || rec.checkin;
-          
-          // Present logic: has valid checkin or halfDay
-          if ((effectiveCheckin && effectiveCheckin !== "00:00") || rec.halfDay) {
-               const info = rec.halfDay ? 'Half Day' : `Present (${effectiveCheckin})`;
-               dates.push({ date, info, subInfo: rec.halfDay ? 'Half Day' : undefined });
-          }
+        const effectiveCheckin = rec.editedCheckin || rec.checkin;
+        const effectiveCheckout = rec.editedCheckout || rec.checkout;
+        const isBothZero = !(effectiveCheckin && effectiveCheckin !== '00:00') && !(effectiveCheckout && effectiveCheckout !== '00:00');
+
+        // Present logic: has valid checkin or halfDay (but do NOT treat as half-day when both in/out are 00:00)
+        if ((effectiveCheckin && effectiveCheckin !== '00:00') || (rec.halfDay && !isBothZero)) {
+           const info = rec.halfDay ? 'Half Day' : `Present (${effectiveCheckin})`;
+           dates.push({ date, info, subInfo: rec.halfDay ? 'Half Day' : undefined });
+        }
       });
       return dates.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   };
@@ -282,6 +284,8 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     const dates: { date: string; info: string; subInfo?: string }[] = [];
     Object.entries(records).forEach(([date, rec]) => {
       const effectiveCheckin = rec.editedCheckin || rec.checkin;
+      const effectiveCheckout = rec.editedCheckout || rec.checkout;
+      const isBothZero = !(effectiveCheckin && effectiveCheckin !== '00:00') && !(effectiveCheckout && effectiveCheckout !== '00:00');
       const d = new Date(date);
       const empTypeHalfDay = getEmploymentTypeForDate(user, d);
       // For halftime, do not mark half-day if absent (totalHour === 0)
@@ -299,7 +303,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         }
       }
       // Only count as half-day if rules for this employment type say so
-      if (rec.halfDay && rec.typeOfPresence !== 'Holiday') {
+      if (rec.halfDay && rec.typeOfPresence !== 'Holiday' && !isBothZero) {
         dates.push({ date, info: 'Half Day', subInfo: `${empTypeHalfDay ? `Type: ${empTypeHalfDay}. ` : ''}${effectiveCheckin ? `In: ${effectiveCheckin}` : ''}` });
       }
     });
@@ -390,12 +394,13 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         
         const effectiveCheckin = rec.editedCheckin || rec.checkin;
         const effectiveCheckout = rec.editedCheckout || rec.checkout;
-        
+        const isBothZero = !(effectiveCheckin && effectiveCheckin !== '00:00') && !(effectiveCheckout && effectiveCheckout !== '00:00');
+
         if (rec.typeOfPresence === 'Leave' || rec.typeOfPresence === 'On leave') {
           if (!rec.halfDay) leaveDays++;
         } else if (
           ((effectiveCheckin && effectiveCheckin !== '00:00') && (effectiveCheckout && effectiveCheckout !== '00:00')) ||
-          rec.halfDay
+          (rec.halfDay && !isBothZero)
         ) {
           presentDays++;
         } else if (
@@ -474,13 +479,19 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                       status = 'Leave (Half)';
                       category = 'Leave';
                   }
-              } else if (rec.totalHour > 0 || (rec.checkin && rec.checkin !== '00:00') || rec.halfDay) {
-                  status = rec.halfDay ? 'Present (Half)' : 'Present';
-                  category = 'Present';
-              } else {
-                  status = 'Absent';
-                  category = 'Absent';
-              }
+                } else {
+                  const effectiveCheckin = rec.editedCheckin || rec.checkin;
+                  const effectiveCheckout = rec.editedCheckout || rec.checkout;
+                  const isBothZero = !(effectiveCheckin && effectiveCheckin !== '00:00') && !(effectiveCheckout && effectiveCheckout !== '00:00');
+
+                  if (rec.totalHour > 0 || (effectiveCheckin && effectiveCheckin !== '00:00') || (rec.halfDay && !isBothZero)) {
+                    status = rec.halfDay ? 'Present (Half)' : 'Present';
+                    category = 'Present';
+                  } else {
+                    status = 'Absent';
+                    category = 'Absent';
+                  }
+                }
               
               if (status) {
                   details.push({
@@ -1756,12 +1767,14 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       let lossDueToInvalidHour = 0;
       Object.entries(records).forEach(([dateStr, recAny]) => {
         const rec: any = recAny || {};
-        // If both inTime and outTime are '00:00', treat as absent, not invalid
-        const isBothZero = (!rec.checkin || rec.checkin === '00:00') && (!rec.checkout || rec.checkout === '00:00');
+        const effectiveCheckin = rec.editedCheckin || rec.checkin;
+        const effectiveCheckout = rec.editedCheckout || rec.checkout;
+        // If both inTime and outTime are '00:00' or missing, treat as absent, not invalid
+        const isBothZero = !(effectiveCheckin && effectiveCheckin !== '00:00') && !(effectiveCheckout && effectiveCheckout !== '00:00');
         if (isBothZero) return; // skip, this is absent
         // If either inTime or outTime is missing (invalid attendance)
-        const missingIn = !(rec.checkin && rec.checkin !== '00:00');
-        const missingOut = !(rec.checkout && rec.checkout !== '00:00');
+        const missingIn = !(effectiveCheckin && effectiveCheckin !== '00:00');
+        const missingOut = !(effectiveCheckout && effectiveCheckout !== '00:00');
         if (missingIn || missingOut) {
           // If excessHour is negative (deficit), sum it
           const ex = typeof rec.excessHour === 'number' ? rec.excessHour : (rec.excessHour ? Number(rec.excessHour) : 0);
@@ -1793,7 +1806,13 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         const d = new Date(dateStr);
         const isSunday = d.getDay() === 0;
         const isHoliday = holidayDates.has(dateStr) || rec.typeOfPresence === 'Holiday';
-        const value = typeof rec.value === 'number' ? rec.value : (rec.halfDay ? 0.5 : (rec.totalHour > 0 ? 1 : 0));
+        const effectiveCheckin = rec.editedCheckin || rec.checkin;
+        const effectiveCheckout = rec.editedCheckout || rec.checkout;
+        const isBothZero = !(effectiveCheckin && effectiveCheckin !== '00:00') && !(effectiveCheckout && effectiveCheckout !== '00:00');
+        // If both checkin/checkout are 00:00 (or missing) treat record as no-value (0)
+        const value = typeof rec.value === 'number'
+          ? rec.value
+          : (isBothZero ? 0 : (rec.halfDay ? 0.5 : (rec.totalHour > 0 ? 1 : 0)));
 
         const t = rec.typeOfPresence || '';
         const outclientSet = new Set(['Present - Outstation (Weekdays)', 'Present - Outstation (Weekoff)', 'Present - ClientPlace (Weekoff)', 'Present - ClientPlace (Weekdays)', 'Present - outstation', 'Present - client place']);
@@ -1804,7 +1823,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         // PIO
         if (isPIO(rec) && !isHoliday && !isSunday) {
           pio += 1;
-        } else if (empType === 'halftime' && rec.halfDay && !isHoliday && !isSunday) {
+        } else if (empType === 'halftime' && rec.halfDay && !isHoliday && !isSunday && !isBothZero) {
           // For halftime employees, count half-days as PIO (use rec.value if present)
           if (!outclientSet.has(t)) {
             const inc = typeof rec.value === 'number' ? rec.value : 0.5;
@@ -1840,11 +1859,14 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         }
 
         // HD handling:
-        // Count explicit 'Half Day - weekoff' regardless of rec.halfDay
+        // Count explicit 'Half Day - weekoff' regardless of rec.halfDay, but skip if record is absent
         if (t === 'Half Day - weekoff') {
-          weekoff_hd_days += 1;
+          if (!isAbsentRecord) weekoff_hd_days += 1;
         } else if (rec.halfDay) {
-          if (isSunday || isHoliday) {
+          // If record is actually absent (no valid checkin/checkout) do not count as half-day
+          if (isAbsentRecord) {
+            // skip
+          } else if (isSunday || isHoliday) {
             weekoff_hd_days += 1;
           } else {
             if (!outclientSet.has(t)) {

@@ -9,9 +9,18 @@ interface MachineFormat {
 }
 
 interface UploadSectionProps {
-  file: File | null;
-  onFileChange: (e: ChangeEvent<HTMLInputElement>) => void;
-  onProcessFile: () => void;
+  // Backwards-compatible single-file prop
+  file?: File | null;
+  // Optional multi-file prop
+  files?: File[];
+  // Existing handler (keeps compatibility)
+  onFileChange?: (e: ChangeEvent<HTMLInputElement>) => void;
+  // New optional multi-file change handler
+  onFilesChange?: (files: File[]) => void;
+  // Existing single-file process handler (keeps compatibility)
+  onProcessFile?: () => void;
+  // New optional multi-file process handler. If provided, it'll be called with all selected files.
+  onProcessMultiple?: (files: File[]) => void;
   processing: boolean;
   error: string | null;
   saveMessage: string | null;
@@ -21,9 +30,12 @@ interface UploadSectionProps {
 }
 
 export const UploadSection: React.FC<UploadSectionProps> = ({
-  file,
+  file = null,
+  files = [],
   onFileChange,
+  onFilesChange,
   onProcessFile,
+  onProcessMultiple,
   processing,
   error,
   saveMessage,
@@ -31,6 +43,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   machineFormat = 'machine2',
   onMachineFormatChange
 }) => {
+  const [selectedFiles, setSelectedFiles] = useState<File[]>(file ? [file] : files || []);
   const [showFormatPreview, setShowFormatPreview] = useState(false);
   const [machineFormats, setMachineFormats] = useState<MachineFormat[]>([]);
   const [showMachineDropdown, setShowMachineDropdown] = useState(false);
@@ -44,6 +57,15 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   });
   const [addingMachine, setAddingMachine] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+
+  // Keep selectedFiles in sync when parent supplies `file` or `files` props
+  useEffect(() => {
+    if (files && files.length > 0) {
+      setSelectedFiles(files);
+    } else if (file) {
+      setSelectedFiles([file]);
+    }
+  }, [file, files]);
 
   // Load machine formats on component mount
   useEffect(() => {
@@ -81,6 +103,13 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
 
   // Get current machine format details
   const currentFormat = machineFormats.find(f => f.machineId === machineFormat);
+
+  const handleFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const list = e.target.files ? Array.from(e.target.files) : [];
+    setSelectedFiles(list);
+    onFilesChange?.(list);
+    onFileChange?.(e);
+  };
 
   // Handle adding new machine format
   const handleAddMachine = async (e: React.FormEvent) => {
@@ -330,26 +359,51 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
             <div className="flex items-center gap-2">
               <Upload className="w-4 h-4 text-slate-400" />
               <span className="text-xs text-slate-400 truncate">
-                {file ? file.name : 'Click to choose an Excel file'}
+                {selectedFiles.length > 0 ? (
+                  selectedFiles.length === 1 ? selectedFiles[0].name : `${selectedFiles.length} files selected`
+                ) : 'Click to choose an Excel file'}
               </span>
             </div>
             <span className="text-[11px] text-slate-500">Browse</span>
             <input
               type="file"
               accept=".xlsx,.xls"
-              onChange={onFileChange}
+              multiple
+              onChange={handleFileInputChange}
               className="hidden"
             />
           </label>
           <button
-            onClick={onProcessFile}
-            disabled={!file || processing}
+            onClick={() => {
+              if (selectedFiles.length > 1) {
+                if (onProcessMultiple) {
+                  onProcessMultiple(selectedFiles);
+                } else if (onProcessFile) {
+                  // Fallback: call single-file handler (parent may handle batch itself)
+                  onProcessFile();
+                }
+              } else {
+                onProcessFile?.();
+              }
+            }}
+            disabled={selectedFiles.length === 0 || processing}
             className="px-4 py-2 bg-emerald-500 text-slate-950 text-xs font-medium rounded-md hover:bg-emerald-400 disabled:bg-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors"
           >
-            {processing ? 'Processing…' : 'Upload & Process'}
+            {processing ? 'Processing…' : (selectedFiles.length > 1 ? 'Upload & Process All' : 'Upload & Process')}
           </button>
         </div>
       </div>
+
+      {selectedFiles.length > 1 && (
+        <div className="mb-4 text-xs text-slate-300">
+          <div className="font-medium mb-1">Selected files:</div>
+          <ul className="list-disc list-inside text-slate-400 max-h-28 overflow-y-auto">
+            {selectedFiles.map((f, i) => (
+              <li key={i} className="truncate">{f.name}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Excel Format Preview */}
       <div className="mb-5">

@@ -182,15 +182,7 @@ export async function POST(request: NextRequest) {
                     };
                 }
 
-
-                                rec.typeOfPresence = requestedStatus as any;
-
-                                // Determine value based on request type
-                                const isLeaveRequest = requestedStatus.toLowerCase().includes('leave') ||
-                                                                            requestedStatus.toLowerCase().includes('absent') ||
-                                                                            requestedStatus === 'On leave';
-
-                                // Fetch user schedule for the day
+                                // Fetch user schedule for the day early so mapping logic can use it
                                 const userObj = await User.findById(userId);
                                 let scheduledInTime = '';
                                 let scheduledOutTime = '';
@@ -207,6 +199,35 @@ export async function POST(request: NextRequest) {
                                                 scheduledMinutes = schOutMin - schInMin >= 0 ? schOutMin - schInMin : (24 * 60 + schOutMin - schInMin);
                                         }
                                 }
+
+                                rec.typeOfPresence = requestedStatus as any;
+
+                                // Map generic 'Present' or 'Present - in office' (without weekday/weekoff)
+                                // to 'Present - in office - weekdays' or 'Present - in office - weekoff'
+                                try {
+                                    const reqLower = (requestedStatus || '').toLowerCase();
+                                    const alreadyQualified = /weekoff|weekday|week-off|weekdays|week day/i.test(requestedStatus || '');
+                                    if (reqLower.includes('present') && !alreadyQualified) {
+                                        const d = new Date(date);
+                                        const isSunday = d.getDay() === 0;
+                                        let isHolidaySchedule = false;
+                                        if (userObj) {
+                                            const sch = getScheduledTimes(userObj, date);
+                                            isHolidaySchedule = !!sch.isHoliday;
+                                        }
+                                        const useWeekoff = isSunday || isHolidaySchedule;
+                                        rec.typeOfPresence = useWeekoff ? 'Present - in office - weekoff' : 'Present - in office - weekdays';
+                                    }
+                                } catch (e) {
+                                    console.error('Failed to map generic Present to detailed type in bulk action:', e);
+                                }
+
+                                // Determine value based on request type
+                                const isLeaveRequest = requestedStatus.toLowerCase().includes('leave') ||
+                                                                            requestedStatus.toLowerCase().includes('absent') ||
+                                                                            requestedStatus === 'On leave';
+
+                                // user schedule variables are initialized earlier
 
                                 // Helper to check type
                                 const isType = (type: string) => requestedStatus.toLowerCase().includes(type.toLowerCase());

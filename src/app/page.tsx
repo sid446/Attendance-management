@@ -34,6 +34,7 @@ export default function AttendanceUpload() {
 
   // Attendance state
   const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [attendanceData, setAttendanceData] = useState<AttendanceRecord[]>([]);
   const [processing, setProcessing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -129,6 +130,32 @@ export default function AttendanceUpload() {
     }
   };
 
+  const processMultipleFiles = async (filesToProcess: File[]) => {
+    if (!filesToProcess || filesToProcess.length === 0) return;
+
+    setProcessing(true);
+    setError(null);
+    setSaveMessage(null);
+
+    for (const f of filesToProcess) {
+      try {
+        // keep UI file in sync for any UI feedback
+        setFile(f);
+        if (machineFormat === 'machine1') {
+          await processMachine1File(f);
+        } else {
+          await processMachine2File(f);
+        }
+      } catch (err) {
+        console.error('Error processing file', f.name, err);
+      }
+      // small pause to allow UI updates
+      await new Promise((r) => setTimeout(r, 100));
+    }
+
+    setProcessing(false);
+  };
+
   // Handle OTP verification
   const handleOTPSubmit = async () => {
     if (!otp || !sessionId) {
@@ -178,8 +205,28 @@ export default function AttendanceUpload() {
   };
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (selectedFile) {
+    const list = e.target.files ? Array.from(e.target.files) : [];
+    const selectedFile = list[0];
+    if (list.length > 0) {
+      setFiles(list);
+      setFile(selectedFile ?? null);
+      setError(null);
+      setSaveMessage(null);
+      setUploadErrors([]);
+      setAttendanceData([]);
+      setSummaries([]);
+      setCurrentMonthYear(null);
+      setUploadTotal(0);
+      setUploadSaved(0);
+      setUploadFailed(0);
+      setActiveSection('upload');
+    }
+  };
+
+  const handleFilesChange = (list: File[]) => {
+    const selectedFile = list[0] ?? null;
+    if (list.length > 0) {
+      setFiles(list);
       setFile(selectedFile);
       setError(null);
       setSaveMessage(null);
@@ -191,6 +238,9 @@ export default function AttendanceUpload() {
       setUploadSaved(0);
       setUploadFailed(0);
       setActiveSection('upload');
+    } else {
+      setFiles([]);
+      setFile(null);
     }
   };
 
@@ -335,8 +385,9 @@ export default function AttendanceUpload() {
     return `${yyyy}-${mm}`;
   };
 
-  const processMachine2File = async (): Promise<void> => {
-    if (!file) {
+  const processMachine2File = async (inputFile?: File): Promise<void> => {
+    const f = inputFile ?? file;
+    if (!f) {
       setError('Please select a file first');
       return;
     }
@@ -346,7 +397,7 @@ export default function AttendanceUpload() {
     setSaveMessage(null);
 
     try {
-      const data = await file.arrayBuffer();
+      const data = await f.arrayBuffer();
       const workbook = XLSX.read(data, { cellDates: false, cellNF: false, cellText: false });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true, defval: '' });
@@ -503,8 +554,9 @@ export default function AttendanceUpload() {
     }
   };
 
-  const processMachine1File = async (): Promise<void> => {
-    if (!file) {
+  const processMachine1File = async (inputFile?: File): Promise<void> => {
+    const f = inputFile ?? file;
+    if (!f) {
       setError('Please select a file first');
       return;
     }
@@ -514,7 +566,7 @@ export default function AttendanceUpload() {
     setSaveMessage(null);
 
     try {
-      const data = await file.arrayBuffer();//takes the data turn into into raw binary format as XLSX OR shetjs accept binary format
+      const data = await f.arrayBuffer();//takes the data turn into into raw binary format as XLSX OR shetjs accept binary format
       const workbook = XLSX.read(data, { cellDates: false, cellNF: false, cellText: false });//cellDates: false to prevent automatic conversion of date cells into JS Date objects,cellNF: false to avoid applying number formatting, cellText: false to get raw cell values without text formatting
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];//selects the first sheet in the workbook
       const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true, defval: '' });//converts the worksheet into a 2D array (array of arrays) where each inner array represents a row in the sheet. header: 1 indicates that the first row should be treated as data, raw: true ensures raw cell values are returned, defval: '' fills empty cells with an empty string instead of undefined
@@ -932,14 +984,20 @@ export default function AttendanceUpload() {
               rec.typeOfPresence !== 'Holiday' ? sum + (rec.totalHour || 0) : sum, 0),
             totalLateArrival: item.summary?.totalLateArrival ?? 0,
             excessHour: item.summary?.excessHour ?? 0,
-            totalHalfDay: Object.values(item.recordDetails).filter((rec: any) => 
-              rec.typeOfPresence !== 'Holiday' && rec.halfDay).length,
+            totalHalfDay: Object.values(item.recordDetails).filter((rec: any) => {
+              if (rec.typeOfPresence === 'Holiday') return false;
+              const effectiveCheckin = rec.editedCheckin || rec.checkin;
+              const effectiveCheckout = rec.editedCheckout || rec.checkout;
+              const isBothZero = !(effectiveCheckin && effectiveCheckin !== '00:00') && !(effectiveCheckout && effectiveCheckout !== '00:00');
+              return rec.halfDay && !isBothZero;
+            }).length,
             totalPresent: Object.values(item.recordDetails).filter((rec: any) => {
               if (rec.typeOfPresence === 'Holiday') return false;
               const effectiveCheckin = rec.editedCheckin || rec.checkin;
               const effectiveCheckout = rec.editedCheckout || rec.checkout;
-              // Present if both in and out are valid (not 00:00), or halfDay is true
-              return ((effectiveCheckin && effectiveCheckin !== "00:00") && (effectiveCheckout && effectiveCheckout !== "00:00")) || rec.halfDay;
+              const isBothZero = !(effectiveCheckin && effectiveCheckin !== '00:00') && !(effectiveCheckout && effectiveCheckout !== '00:00');
+              // Present if both in and out are valid (not 00:00), or halfDay is true (but not when both times are 00:00)
+              return ((!isBothZero) && (((effectiveCheckin && effectiveCheckin !== '00:00') && (effectiveCheckout && effectiveCheckout !== '00:00')) || rec.halfDay));
             }).length,
             totalAbsent: Object.values(item.recordDetails).filter((rec: any) => {
               if (rec.totalHour !== 0) return false;
@@ -1138,7 +1196,10 @@ export default function AttendanceUpload() {
                       {activeSection === 'upload' && (
                         <UploadSection
                           file={file}
+                          files={files}
                           onFileChange={handleFileChange}
+                          onFilesChange={handleFilesChange}
+                          onProcessMultiple={processMultipleFiles}
                           onProcessFile={() => {
                             if (machineFormat === 'machine1') {
                               processMachine1File();

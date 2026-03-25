@@ -440,6 +440,49 @@ export async function POST(request: NextRequest) {
               }
             }
 
+            // Also ensure Sundays (weekly off) are added as Holiday records
+            try {
+              const [yStr, mStr] = sampleRecord.monthYear.split('-');
+              const yNum = parseInt(yStr, 10);
+              const mNum = parseInt(mStr, 10); // 1-based month
+              // days in month
+              const daysInMonth = new Date(yNum, mNum, 0).getDate();
+
+              for (let d = 1; d <= daysInMonth; d++) {
+                const dd = String(d).padStart(2, '0');
+                const mm = String(mNum).padStart(2, '0');
+                const dateKey = `${yNum}-${mm}-${dd}`;
+
+                // If already present, skip
+                const existing = attendance.records.get(dateKey);
+                if (existing) continue;
+
+                const dateObj = new Date(dateKey);
+                if (dateObj.getDay() === 0) { // Sunday
+                  attendance.records.set(dateKey, {
+                    checkin: '00:00',
+                    checkout: '00:00',
+                    totalHour: 0,
+                    excessHour: 0,
+                    typeOfPresence: 'Holiday',
+                    halfDay: false,
+                    value: 0,
+                    remarks: 'Weekly Off (Sunday)',
+                  });
+
+                  processed.push({
+                    odId: user.odId || user._id.toString(),
+                    userId: user._id.toString(),
+                    monthYear: sampleRecord.monthYear,
+                    date: dateKey,
+                    createdUser: false,
+                  });
+                }
+              }
+            } catch (sundayErr) {
+              console.error('Error adding Sunday weekly-off records:', sundayErr);
+            }
+
             // Recalculate summary after adding holidays
             attendance.summary = calculateSummary(attendance.records as any, user);
             await attendance.save();

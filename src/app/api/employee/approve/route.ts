@@ -150,6 +150,46 @@ export async function POST(request: NextRequest) {
       // Update the attendance record with the requested status
       rec.typeOfPresence = attendanceRequest.requestedStatus;
 
+
+      // Fetch user and schedule early so mapping logic can use it
+      const userObj = await User.findById(attendanceRequest.userId);
+      let scheduledInTime = '';
+      let scheduledOutTime = '';
+      let scheduledMinutes = 0;
+      if (userObj) {
+        const schedule = getScheduledTimes(userObj, attendanceRequest.date);
+        scheduledInTime = schedule.inTime;
+        scheduledOutTime = schedule.outTime;
+        if (scheduledInTime && scheduledOutTime) {
+          const [schInH, schInM] = scheduledInTime.split(':').map(Number);
+          const [schOutH, schOutM] = scheduledOutTime.split(':').map(Number);
+          const schInMin = schInH * 60 + schInM;
+          const schOutMin = schOutH * 60 + schOutM;
+          scheduledMinutes = schOutMin - schInMin >= 0 ? schOutMin - schInMin : (24 * 60 + schOutMin - schInMin);
+        }
+      }
+
+      // If the requested status is a generic "Present" or "Present - in office" (without weekday/weekoff
+      // qualifier), map it to the correct detailed type based on whether the date is a weekoff (Sunday/holiday)
+      try {
+        const reqLower = (attendanceRequest.requestedStatus || '').toLowerCase();
+        const alreadyQualified = /weekoff|weekday|week-off|weekdays|week day/i.test(attendanceRequest.requestedStatus || '');
+        if (reqLower.includes('present') && !alreadyQualified) {
+          const d = new Date(attendanceRequest.date);
+          const isSunday = d.getDay() === 0;
+          let isHolidaySchedule = false;
+          if (userObj) {
+            const sched = getScheduledTimes(userObj, attendanceRequest.date);
+            isHolidaySchedule = !!sched.isHoliday;
+          }
+          const useWeekoff = isSunday || isHolidaySchedule;
+          rec.typeOfPresence = useWeekoff ? 'Present - in office - weekoff' : 'Present - in office - weekdays';
+        }
+      } catch (e) {
+        // defensive: if anything goes wrong, keep original requestedStatus
+        console.error('Failed to map generic Present to detailed type:', e);
+      }
+
       // Update editedCheckin/editedCheckout if times provided (never modify original checkin/checkout)
       if (attendanceRequest.startTime && attendanceRequest.startTime !== '00:00') {
         rec.editedCheckin = attendanceRequest.startTime;
@@ -158,11 +198,6 @@ export async function POST(request: NextRequest) {
         rec.editedCheckout = attendanceRequest.endTime;
       }
 
-      // Fetch user schedule for the day
-      const userObj = await User.findById(attendanceRequest.userId);
-      let scheduledInTime = '';
-      let scheduledOutTime = '';
-      let scheduledMinutes = 0;
       if (userObj) {
         const schedule = getScheduledTimes(userObj, attendanceRequest.date);
         scheduledInTime = schedule.inTime;

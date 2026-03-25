@@ -57,6 +57,16 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
   
   const selectionStart = externalSelectionStart !== undefined ? externalSelectionStart : internalSelectionStart;
   const setSelectionStart = onSelectionStartChange || setInternalSelectionStart;
+  // Admin edit modal state
+  const [editModalOpen, setEditModalOpen] = React.useState(false);
+  const [editDate, setEditDate] = React.useState<string | null>(null);
+  const [formStatus, setFormStatus] = React.useState<string>('Present');
+  const [formStartTime, setFormStartTime] = React.useState<string>('');
+  const [formEndTime, setFormEndTime] = React.useState<string>('');
+  const [formValue, setFormValue] = React.useState<number | undefined>(undefined);
+  const [formRemarks, setFormRemarks] = React.useState<string>('');
+  const [savingEdit, setSavingEdit] = React.useState(false);
+  const [editError, setEditError] = React.useState<string | null>(null);
   // Try to find user details from the 'users' list first, otherwise fallback to summaries
   const userFromList = users.find(u => u._id === selectedEmployeeId);
   const summaryFromList = summaries.find((s) => s.userId === selectedEmployeeId);
@@ -132,6 +142,108 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
     onMonthYearChange(`${selectedYear - 1}-${String(selectedMonth).padStart(2, '0')}`);
   };
 
+  // Helper: get scheduled times (inTime/outTime) for a specific date string YYYY-MM-DD
+  const getScheduledTimesForDate = (dateStr: string) => {
+    // Try to find a specific attendance record for that date
+    const rec = employeeDays.find((r) => (r.date || '').split('T')[0] === dateStr);
+    if (rec && rec.schedule && (rec.schedule.inTime || rec.schedule.outTime)) {
+      return { inTime: rec.schedule.inTime || '', outTime: rec.schedule.outTime || '' };
+    }
+    // Fallback to summary daily schedules
+    if (summaryFromList && summaryFromList.schedules) {
+      const d = new Date(dateStr + 'T00:00:00');
+      if (!Number.isNaN(d.getTime())) {
+        // If the date is Sunday, use Monday's schedule
+        const dow = d.getDay();
+        const lookupDow = dow === 0 ? 1 : dow;
+        const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        const dayName = dayNames[lookupDow] as keyof typeof summaryFromList.schedules.daily;
+        const daySchedule = summaryFromList.schedules.daily?.[dayName];
+        return { inTime: daySchedule?.inTime || '', outTime: daySchedule?.outTime || '' };
+      }
+    }
+    // Try to use user's schedule entries (fallback)
+    if (userFromList && userFromList.schedules && userFromList.schedules.length > 0) {
+      const d = new Date(dateStr + 'T00:00:00');
+      if (!Number.isNaN(d.getTime())) {
+        // find latest schedule effective on or before date
+        const applicable = [...userFromList.schedules].reverse().find((s) => {
+          try {
+            return new Date(s.effectiveFrom) <= d;
+          } catch (e) {
+            return false;
+          }
+        }) || userFromList.schedules[0];
+        if (applicable && applicable.daily) {
+          const dow = d.getDay();
+          const lookupDow = dow === 0 ? 1 : dow;
+          const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+          const dayName = dayNames[lookupDow];
+          const daySchedule = (applicable.daily as any)?.[dayName];
+          if (daySchedule) return { inTime: daySchedule.inTime || '', outTime: daySchedule.outTime || '' };
+        }
+      }
+    }
+
+    // Legacy single-schedule fields on user
+    if (userFromList) {
+      const d = new Date(dateStr + 'T00:00:00');
+      if (!Number.isNaN(d.getTime())) {
+        const dow = d.getDay();
+        const lookupDow = dow === 0 ? 1 : dow;
+        // Saturday-specific legacy schedule
+        if (lookupDow === 6 && userFromList.scheduleInOutTimeSat) {
+          return { inTime: userFromList.scheduleInOutTimeSat.inTime || '', outTime: userFromList.scheduleInOutTimeSat.outTime || '' };
+        }
+        if (userFromList.scheduleInOutTime) {
+          return { inTime: userFromList.scheduleInOutTime.inTime || '', outTime: userFromList.scheduleInOutTime.outTime || '' };
+        }
+      }
+    }
+
+    return { inTime: '', outTime: '' };
+  };
+
+  // Statuses that should NOT ask for manual in/out times and instead use schedule
+  const STATUS_USE_SCHEDULE = new Set<string>([
+    'WFH - weekdays', 'WFH - weekoff', 'Half Day - weekdays', 'Half Day - weekoff',
+    'Present - outstation', 'Present - client place'
+  ]);
+
+  const applyStatusAutoFill = (status: string, dateStr?: string) => {
+    // Absent: set times to 00:00 and value 0
+    if (status === 'Absent') {
+      setFormStartTime('00:00');
+      setFormEndTime('00:00');
+      setFormValue(0);
+      return;
+    }
+
+    // Half day statuses -> value 0.5 and use schedule if available
+    if (status.startsWith('Half Day')) {
+      setFormValue(0.5);
+      if (dateStr) {
+        const sch = getScheduledTimesForDate(dateStr);
+        if (sch.inTime) setFormStartTime(sch.inTime);
+        if (sch.outTime) setFormEndTime(sch.outTime);
+      }
+      return;
+    }
+
+    // Use schedule for defined statuses
+    if (STATUS_USE_SCHEDULE.has(status)) {
+      setFormValue(1);
+      if (dateStr) {
+        const sch = getScheduledTimesForDate(dateStr);
+        if (sch.inTime) setFormStartTime(sch.inTime);
+        if (sch.outTime) setFormEndTime(sch.outTime);
+      }
+      return;
+    }
+
+    // Default: do not override times/value
+  };
+
   const handleNextYear = () => {
     onMonthYearChange(`${selectedYear + 1}-${String(selectedMonth).padStart(2, '0')}`);
   };
@@ -187,12 +299,14 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
     if (dayRecord && dayRecord.schedule && dayRecord.schedule.inTime) {
       scheduledStr = dayRecord.schedule.inTime;
     } else if (summaryFromList?.schedules) {
+      // If the date is Sunday, use Monday's schedule per requirement
       const dow = date.getDay();
+      const lookupDow = dow === 0 ? 1 : dow;
       const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-      const dayName = dayNames[dow] as keyof typeof summaryFromList.schedules.daily;
+      const dayName = dayNames[lookupDow] as keyof typeof summaryFromList.schedules.daily;
       const daySchedule = summaryFromList.schedules.daily?.[dayName];
       scheduledStr = daySchedule?.inTime;
-      if (dow === 0 || !scheduledStr) return false; // Sunday or no schedule
+      if (!scheduledStr) return false; // no schedule available
     } else {
       return false;
     }
@@ -274,6 +388,122 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
         </div>
       </div>
 
+                  {/* Admin Edit Modal (portal-like inline) */}
+                  {editModalOpen && editDate && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center">
+                      <div className="absolute inset-0 bg-black/50" onClick={() => setEditModalOpen(false)} />
+                      <div className="relative w-[min(620px,95%)] bg-slate-900 border border-slate-700 rounded-lg p-4 text-sm text-slate-200">
+                        <h3 className="font-semibold mb-2">Edit Attendance — {editDate}</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-xs text-slate-400">Status</label>
+                            <select
+                              value={formStatus}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setFormStatus(v);
+                                // Determine editDate when in modal
+                                if (editDate) applyStatusAutoFill(v, editDate);
+                              }}
+                              className="w-full mt-1 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-sm"
+                            >
+                              <option>Present</option>
+                              <option>Absent</option>
+                              <option>On leave</option>
+                              <option>Leave</option>
+                              <option>Holiday</option>
+                              <option>WFH - weekdays</option>
+                              <option>WFH - weekoff</option>
+                              <option>Half Day - weekdays</option>
+                              <option>Half Day - weekoff</option>
+                              <option>Present - in office</option>
+                              <option>Present - client place</option>
+                              <option>Present - outstation</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-xs text-slate-400">Value (e.g. 1 or 0.5)</label>
+                            <input type="number" step="0.1" min="0" value={formValue ?? ''} onChange={(e) => setFormValue(e.target.value === '' ? undefined : Number(e.target.value))} className="w-full mt-1 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-sm" />
+                          </div>
+                          <div>
+                            <label className="text-xs text-slate-400">Start Time (HH:MM)</label>
+                            <input
+                              value={formStartTime}
+                              onChange={(e) => setFormStartTime(e.target.value)}
+                              placeholder="09:00"
+                              disabled={formStatus === 'Absent' || STATUS_USE_SCHEDULE.has(formStatus) || formStatus.startsWith('Half Day')}
+                              className={`w-full mt-1 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-sm ${formStatus === 'Absent' || STATUS_USE_SCHEDULE.has(formStatus) || formStatus.startsWith('Half Day') ? 'opacity-60 cursor-not-allowed' : ''}`}
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs text-slate-400">End Time (HH:MM)</label>
+                            <input
+                              value={formEndTime}
+                              onChange={(e) => setFormEndTime(e.target.value)}
+                              placeholder="18:00"
+                              disabled={formStatus === 'Absent' || STATUS_USE_SCHEDULE.has(formStatus) || formStatus.startsWith('Half Day')}
+                              className={`w-full mt-1 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-sm ${formStatus === 'Absent' || STATUS_USE_SCHEDULE.has(formStatus) || formStatus.startsWith('Half Day') ? 'opacity-60 cursor-not-allowed' : ''}`}
+                            />
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="text-xs text-slate-400">Remarks</label>
+                            <input value={formRemarks} onChange={(e) => setFormRemarks(e.target.value)} className="w-full mt-1 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-sm" />
+                          </div>
+                        </div>
+
+                        {editError && <div className="text-rose-400 text-xs mt-2">{editError}</div>}
+
+                        <div className="mt-3 flex items-center justify-end gap-2">
+                          <button onClick={() => setEditModalOpen(false)} className="px-3 py-1.5 bg-slate-800 border border-slate-700 rounded text-sm">Cancel</button>
+                          <button
+                            onClick={async () => {
+                              if (!selectedEmployeeId || !selectedMonthYear || !editDate) return setEditError('Missing employee or month');
+                              setSavingEdit(true);
+                              setEditError(null);
+                              try {
+                                const body = {
+                                  userId: selectedEmployeeId,
+                                  date: editDate,
+                                  monthYear: selectedMonthYear,
+                                  requestedStatus: formStatus,
+                                  startTime: formStartTime || undefined,
+                                  endTime: formEndTime || undefined,
+                                  attendanceValue: formValue,
+                                  remarks: formRemarks,
+                                  updatedBy: 'HR'
+                                };
+
+                                const res = await fetch('/api/attendance/admin-update', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify(body),
+                                });
+                                const result = await res.json();
+                                if (!res.ok || !result.success) {
+                                  setEditError(result.error || 'Failed to save');
+                                  setSavingEdit(false);
+                                  return;
+                                }
+                                // Refresh parent data
+                                if (selectedEmployeeId && selectedMonthYear && onLoadAttendance) {
+                                  onLoadAttendance(selectedEmployeeId, selectedMonthYear);
+                                }
+                                setEditModalOpen(false);
+                              } catch (e) {
+                                setEditError(e instanceof Error ? e.message : 'Save failed');
+                              } finally {
+                                setSavingEdit(false);
+                              }
+                            }}
+                            disabled={savingEdit}
+                            className="px-3 py-1.5 bg-emerald-500 text-slate-900 rounded text-sm disabled:opacity-60"
+                          >
+                            {savingEdit ? 'Saving…' : 'Save'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
       {/* Navigation Controls */}
       <div className="flex flex-col gap-3 p-3 sm:p-4 bg-slate-800/50 rounded-lg border border-slate-700">
         {/* Employee Selection - Show if showEmployeeSelector is true OR if multiple employees in summaries */}
@@ -702,6 +932,34 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                               }
                             </span>
                           </span>
+                        )}
+                        {/* Admin Edit Button */}
+                        {showEmployeeSelector && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // populate form with existing values
+                              const dateStr = `${selectedYear}-${String(selectedMonth).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                              setEditDate(dateStr);
+                              // prefer edited values if present
+                              const existingStart = rec?.editedCheckin || rec?.checkin || rec?.inTime || '';
+                              const existingEnd = rec?.editedCheckout || rec?.checkout || rec?.outTime || '';
+                              setFormStartTime(existingStart || '');
+                              setFormEndTime(existingEnd || '');
+                              const chosenStatus = (rec && (rec.typeOfPresence || rec.status)) || 'Present';
+                              setFormStatus(chosenStatus);
+                              // Autofill times/value depending on status (this will override only for statuses that require it)
+                              applyStatusAutoFill(chosenStatus, dateStr);
+                              setFormValue(typeof rec?.value === 'number' ? rec.value : undefined);
+                              setFormRemarks(rec?.remarks || '');
+                              setEditError(null);
+                              setEditModalOpen(true);
+                            }}
+                            title="Edit day"
+                            className="p-1 rounded hover:bg-slate-700 text-slate-300"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
                         )}
                         {isLate && (
                           <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 text-[9px] font-bold border border-amber-500/30">
