@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
 import EmployeeHistory from '@/models/EmployeeHistory';
+import Attendance from '@/models/Attendance';
+import { getScheduledTimes } from '@/lib/scheduleUtils';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -128,6 +130,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const historyFields = ['workingUnderPartner', 'designation', 'paidFrom', 'category', 'qualificationLevel', 'registeredUnderPartner'];
     const historyEntries = [];
 
+    // Detect whether schedule timelines changed and from which effective date we must recalculate.
+    const scheduleRecalcFrom = findScheduleRecalcStartDate((currentUser as any).schedules, schedules);
+
     for (const field of historyFields) {
       const newValue = body[field];
       const oldValue = currentUser[field as keyof typeof currentUser];
@@ -249,65 +254,24 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       { new: true, runValidators: true }
     );
 
-    // If employmentTypeHistory changed, trigger attendance recalculation from the earliest effectiveFrom
+    // Recalculate attendance summaries/day metrics when schedule/effective employment changes impact history.
+    const recalcFromCandidates: Date[] = [];
+    if (scheduleRecalcFrom) {
+      recalcFromCandidates.push(scheduleRecalcFrom);
+    }
     if (employmentTypeHistory && Array.isArray(employmentTypeHistory) && employmentTypeHistory.length > 0) {
-      // Find earliest effectiveFrom date
-      const minDate = employmentTypeHistory.reduce((min, entry) => {
-        const d = new Date(entry.effectiveFrom);
-        return (!min || d < min) ? d : min;
+      const minEmploymentDate = employmentTypeHistory.reduce((min, entry) => {
+        const d = parseAnyDate(entry.effectiveFrom);
+        if (!d) return min;
+        return !min || d < min ? d : min;
       }, null as Date | null);
-      if (minDate && user) {
-        // Recalculate attendance for all months from minDate to now
-        const startYear = minDate.getFullYear();
-        const startMonth = minDate.getMonth() + 1;
-        const now = new Date();
-        const endYear = now.getFullYear();
-        const endMonth = now.getMonth() + 1;
-        for (let y = startYear; y <= endYear; y++) {
-          const mStart = y === startYear ? startMonth : 1;
-          const mEnd = y === endYear ? endMonth : 12;
-          for (let m = mStart; m <= mEnd; m++) {
-            const monthStr = `${y}-${String(m).padStart(2, '0')}`;
-            const attendance = await (await import('@/models/Attendance')).default.findOne({ userId: user._id, monthYear: monthStr });
-            if (attendance) {
-              // For each day, determine employmentType in effect and recalculate halfDay
-              const records = attendance.records;
-              let changed = false;
-              for (const [date, rec] of records.entries()) {
-                // Find employmentType in effect for this date
-                const eff = employmentTypeHistory.filter(e => new Date(e.effectiveFrom) <= new Date(date));
-                let type = user.employmentType;
-                if (eff.length > 0) {
-                  eff.sort((a, b) => new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime());
-                  type = eff[0].employmentType;
-                }
-                // Recalculate halfDay logic based on type
-                let newHalfDay = false;
-                if (type === 'article') {
-                  // Article: after 13:30 or < half scheduled hours
-                  const isAfter1330 = rec.checkin && rec.checkin >= '13:30';
-                  const halfScheduled = rec.totalHour < 4; // Example: 8h schedule
-                  newHalfDay = isAfter1330 || halfScheduled;
-                } else if (type === 'fulltime') {
-                  // Fulltime: < half scheduled hours
-                  newHalfDay = rec.totalHour < 4;
-                } else if (type === 'halftime') {
-                  // Halftime: < half of halftime schedule (e.g., 2h if 4h schedule)
-                  newHalfDay = rec.totalHour < 2;
-                }
-                if (rec.halfDay !== newHalfDay) {
-                  rec.halfDay = newHalfDay;
-                  changed = true;
-                }
-              }
-              if (changed) {
-                attendance.markModified('records');
-                await attendance.save();
-              }
-            }
-          }
-        }
+      if (minEmploymentDate) {
+        recalcFromCandidates.push(minEmploymentDate);
       }
+    }
+    if (user && recalcFromCandidates.length > 0) {
+      const earliest = recalcFromCandidates.sort((a, b) => a.getTime() - b.getTime())[0];
+      await recalculateAttendanceFromDate(String(user._id), earliest);
     }
 
     if (!user) {
@@ -362,6 +326,228 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       { success: false, error: 'Failed to update user' },
       { status: 500 }
     );
+  }
+}
+
+function parseAnyDate(value: any): Date | null {
+  if (!value) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function monthYearFromDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function normalizeDailySchedule(daily: any): string {
+  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const normalized = days.map((day) => {
+    const s = daily?.[day] || {};
+    return {
+      day,
+      inTime: s.inTime || '',
+      outTime: s.outTime || '',
+      isHoliday: Boolean(s.isHoliday),
+      isHalfDay: Boolean(s.isHalfDay),
+    };
+  });
+  return JSON.stringify(normalized);
+}
+
+function findScheduleRecalcStartDate(currentSchedules: any, newSchedules: any): Date | null {
+  if (!Array.isArray(newSchedules) || newSchedules.length === 0) return null;
+
+  const currentArr = Array.isArray(currentSchedules) ? currentSchedules : [];
+  const currentMap = new Map<string, string>();
+  const nextMap = new Map<string, string>();
+
+  for (const entry of currentArr) {
+    const d = parseAnyDate(entry?.effectiveFrom);
+    if (!d) continue;
+    const key = d.toISOString().split('T')[0];
+    currentMap.set(key, normalizeDailySchedule(entry?.daily));
+  }
+
+  for (const entry of newSchedules) {
+    const d = parseAnyDate(entry?.effectiveFrom);
+    if (!d) continue;
+    const key = d.toISOString().split('T')[0];
+    nextMap.set(key, normalizeDailySchedule(entry?.daily));
+  }
+
+  const changedDates: Date[] = [];
+
+  for (const [key, nextValue] of nextMap.entries()) {
+    const prevValue = currentMap.get(key);
+    if (!prevValue || prevValue !== nextValue) {
+      const d = parseAnyDate(key);
+      if (d) changedDates.push(d);
+    }
+  }
+
+  for (const key of currentMap.keys()) {
+    if (!nextMap.has(key)) {
+      const d = parseAnyDate(key);
+      if (d) changedDates.push(d);
+    }
+  }
+
+  if (changedDates.length === 0) return null;
+  changedDates.sort((a, b) => a.getTime() - b.getTime());
+  return changedDates[0];
+}
+
+function calculateHours(checkin: string, checkout: string): number {
+  if (!checkin || !checkout || checkin === '00:00' || checkout === '00:00') return 0;
+  const [inH, inM] = checkin.split(':').map(Number);
+  const [outH, outM] = checkout.split(':').map(Number);
+  const startMinutes = inH * 60 + inM;
+  const endMinutes = outH * 60 + outM;
+  if (endMinutes <= startMinutes) return 0;
+  return Number(((endMinutes - startMinutes) / 60).toFixed(2));
+}
+
+function shouldExcludeFromHoursSummary(typeOfPresence: string, dateStr: string): boolean {
+  const day = new Date(dateStr).getDay();
+  if (day === 0) return true;
+  const excluded = new Set<string>([
+    'Holiday',
+    'Sunday',
+    'Weekoff',
+    'Absent',
+    'On leave',
+    'Leave',
+    'WFH - weekdays',
+    'WFH - weekoff',
+    'Work From Home (WFH)',
+    'Weekly Off - Work From Home (WO-WFH)',
+    'Onsite Presence (OS-P)',
+    'Present - ClientPlace (Weekdays)',
+    'Present - ClientPlace (Weekoff)',
+    'Present - client place',
+    'Present - outstation',
+    'Present - Outstation (Weekdays)',
+    'Present - Outstation (Weekoff)',
+    'Present - in office - weekoff',
+    'Present - weekoff',
+    'Weekly Off - Present (WO-Present)',
+    'Half Day - weekoff',
+    'Weekoff - special allowance',
+  ]);
+  return excluded.has(typeOfPresence);
+}
+
+async function recalculateAttendanceFromDate(userId: string, fromDate: Date) {
+  const user = await User.findById(userId);
+  if (!user) return;
+
+  const startMonthYear = monthYearFromDate(fromDate);
+  const attendances = await Attendance.find({
+    userId: user._id,
+    monthYear: { $gte: startMonthYear },
+  }).sort({ monthYear: 1 });
+
+  for (const attendance of attendances) {
+    const summary = {
+      totalHour: 0,
+      totalLateArrival: 0,
+      excessHour: 0,
+      totalHalfDay: 0,
+      totalPresent: 0,
+      totalAbsent: 0,
+      totalLeave: 0,
+    };
+
+    let totalScheduledHour = 0;
+
+    attendance.records.forEach((record: any, dateStr: string) => {
+      const inTime = String(record.editedCheckin || record.checkin || '').trim();
+      const outTime = String(record.editedCheckout || record.checkout || '').trim();
+      record.totalHour = calculateHours(inTime, outTime);
+
+      const schedule = getScheduledTimes(user as any, dateStr);
+      const scheduledIn = schedule.inTime;
+      const scheduledOut = schedule.outTime;
+
+      let dayScheduledHours = 0;
+      if (scheduledIn && scheduledOut && scheduledIn !== '00:00' && scheduledOut !== '00:00') {
+        dayScheduledHours = calculateHours(scheduledIn, scheduledOut);
+      }
+
+      // Excess/short using updated schedule.
+      let dayExcess = 0;
+      if (record.typeOfPresence === 'Holiday') {
+        dayExcess = 0;
+      } else if (inTime === '00:00' || outTime === '00:00' || !inTime || !outTime) {
+        dayExcess = dayScheduledHours > 0 ? -dayScheduledHours : 0;
+      } else {
+        dayExcess = Number((record.totalHour - dayScheduledHours).toFixed(2));
+      }
+      record.excessHour = dayExcess;
+
+      const includeInHoursSummary = !shouldExcludeFromHoursSummary(String(record.typeOfPresence || ''), dateStr);
+      if (includeInHoursSummary) {
+        summary.totalHour += record.totalHour;
+        totalScheduledHour += dayScheduledHours;
+      }
+
+      // Recompute half-day with latest employment/schedule assumptions.
+      const isSunday = new Date(dateStr).getDay() === 0;
+      if (record.typeOfPresence === 'Holiday' || isSunday) {
+        record.halfDay = false;
+      } else {
+        const employmentType = (user as any).employmentType || 'fulltime';
+        const designation = String((user as any).designation || '').toLowerCase();
+        const isArticle = employmentType === 'article' || designation === 'article';
+        const isAfter1PM = inTime ? inTime >= '13:00' : false;
+        if ((inTime === '00:00' && outTime === '00:00') || (!inTime && !outTime)) {
+          record.halfDay = false;
+        } else if (inTime === '00:00' && outTime !== '00:00' && record.totalHour > 0) {
+          record.halfDay = true;
+        } else if (employmentType === 'fulltime' && !isArticle) {
+          record.halfDay = record.totalHour < 6;
+        } else if (employmentType === 'halftime') {
+          const required = dayScheduledHours * 0.6;
+          record.halfDay = dayScheduledHours > 0 ? record.totalHour < required : false;
+        } else if (isArticle) {
+          record.halfDay = isAfter1PM || record.totalHour < 3.5;
+        }
+      }
+
+      if (record.halfDay) summary.totalHalfDay++;
+      if (inTime && scheduledIn && inTime > scheduledIn) summary.totalLateArrival++;
+
+      switch (record.typeOfPresence) {
+        case 'ThumbMachine':
+        case 'Manual':
+        case 'Remote':
+        case 'Weekly Off - Present (WO-Present)':
+        case 'Half Day (HD)':
+        case 'Work From Home (WFH)':
+        case 'Weekly Off - Work From Home (WO-WFH)':
+        case 'Onsite Presence (OS-P)':
+          if (record.totalHour > 0) summary.totalPresent++;
+          else summary.totalAbsent++;
+          break;
+        case 'On leave':
+        case 'Leave':
+          summary.totalLeave++;
+          break;
+        case 'Holiday':
+        case 'Sunday':
+        case 'Weekoff':
+        case 'Weekoff - special allowance':
+          break;
+        default:
+          summary.totalAbsent++;
+      }
+    });
+
+    summary.excessHour = Number((summary.totalHour - totalScheduledHour).toFixed(2));
+    attendance.summary = summary as any;
+    attendance.markModified('records');
+    attendance.markModified('summary');
+    await attendance.save();
   }
 }
 

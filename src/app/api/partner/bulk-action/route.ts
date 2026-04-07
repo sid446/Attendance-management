@@ -30,6 +30,7 @@ import AttendanceRequest from '@/models/AttendanceRequest';
 import Attendance from '@/models/Attendance';
 import User from '@/models/User';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
+import LeaveTransaction from '@/models/LeaveTransaction';
 
 function calculateDuration(start: string, end: string): number {
     if (!start || !end) return 0;
@@ -169,6 +170,19 @@ export async function POST(request: NextRequest) {
                                     'leaveBalance.monthlyEarned': 2,
                                 });
                                 console.log(`Leave balance incremented for user ${userForLeave.name} (new attendance record via bulk approval for ${monthYear})`);
+                                try {
+                                    await LeaveTransaction.create({
+                                        userId: userForLeave._id,
+                                        date: new Date().toISOString().split('T')[0],
+                                        monthYear,
+                                        type: 'earned',
+                                        amount: increment,
+                                        source: 'attendance-create-increment-bulk',
+                                        reference: reqRecord._id?.toString()
+                                    });
+                                } catch (e) {
+                                    console.error('Failed to write LeaveTransaction for bulk attendance-create increment', e);
+                                }
                             }
                         }
                     }

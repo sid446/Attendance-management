@@ -6,7 +6,7 @@ export interface DailyRecord {
   editedCheckout?: string;
   totalHour: number;
   excessHour: number;
-  typeOfPresence: 'ThumbMachine' | 'Manual' | 'Remote' | 'On leave' | 'Holiday' | 'Absent' | 'Weekly Off - Present (WO-Present)' | 'Half Day (HD)' | 'Work From Home (WFH)' | 'Weekly Off - Work From Home (WO-WFH)' | 'Onsite Presence (OS-P)';
+  typeOfPresence: 'ThumbMachine' | 'Manual' | 'Remote' | 'On leave' | 'Holiday' | 'Sunday' | 'Weekoff' | 'Absent' | 'Weekly Off - Present (WO-Present)' | 'Half Day (HD)' | 'Work From Home (WFH)' | 'Weekly Off - Work From Home (WO-WFH)' | 'Onsite Presence (OS-P)';
   halfDay: boolean;
   value: number;
   remarks?: string;

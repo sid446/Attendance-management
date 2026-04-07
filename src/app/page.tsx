@@ -35,6 +35,7 @@ export default function AttendanceUpload() {
   // Attendance state
   const [file, setFile] = useState<File | null>(null);
   const [files, setFiles] = useState<File[]>([]);
+  const [fixedFile, setFixedFile] = useState<File | null>(null);
   const [attendanceData, setAttendanceData] = useState<AttendanceRecord[]>([]);
   const [processing, setProcessing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -244,6 +245,20 @@ export default function AttendanceUpload() {
     }
   };
 
+  const handleFixedFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files && e.target.files[0] ? e.target.files[0] : null;
+    setFixedFile(selected);
+    if (selected) {
+      setError(null);
+      setSaveMessage(null);
+      setUploadErrors([]);
+      setUploadTotal(0);
+      setUploadSaved(0);
+      setUploadFailed(0);
+      setActiveSection('upload');
+    }
+  };
+
   const formatExcelTime = (excelTime: any): string => {
     if (!excelTime && excelTime !== 0) return '00:00:00';
     
@@ -383,6 +398,156 @@ export default function AttendanceUpload() {
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     return `${yyyy}-${mm}`;
+  };
+
+  const normalizeHeader = (value: any): string => String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+  const parseNumericValue = (raw: any): number | undefined => {
+    if (raw === null || raw === undefined || raw === '') return undefined;
+    const parsed = Number(String(raw).replace(/,/g, '').trim());
+    if (Number.isNaN(parsed)) return undefined;
+    return parsed;
+  };
+
+  const mapFixedPresenceCodeToType = (codeRaw: string): string => {
+    const code = codeRaw.trim().toUpperCase();
+    switch (code) {
+      case 'PRESENT':
+        return 'Present - in office - weekdays';
+      case 'WO-PRESENT':
+        return 'Present - in office - weekoff';
+      case 'HD':
+        return 'Half Day - weekdays';
+      case 'OS-P':
+        return 'Present - ClientPlace (Weekdays)';
+      case 'WO-HD':
+        return 'Half Day - weekoff';
+      case 'WFH':
+        return 'WFH - weekdays';
+      case 'WO-WFH':
+        return 'WFH - weekoff';
+      case 'SUN':
+        return 'Sunday';
+      case 'A':
+        return 'Absent';
+      case 'WEEKOFF':
+        return 'Weekoff';
+      case 'OHD-P':
+        return 'Present - in office - weekoff';
+      case 'OHD':
+        return 'Holiday';
+      default:
+        return codeRaw;
+    }
+  };
+
+  const processFixedDataFile = async (inputFile?: File): Promise<void> => {
+    const f = inputFile ?? fixedFile;
+    if (!f) {
+      setError('Please select a fixed data file first');
+      return;
+    }
+
+    setProcessing(true);
+    setError(null);
+    setSaveMessage(null);
+
+    try {
+      const data = await f.arrayBuffer();
+      const workbook = XLSX.read(data, { cellDates: false, cellNF: false, cellText: false });
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true, defval: '' });
+
+      const headerRowIndex = rows.findIndex((row) => {
+        const normalized = row.map(normalizeHeader);
+        const hasDate = normalized.some((h) => h === 'date');
+        const hasEmployee = normalized.some((h) => h === 'employee name');
+        const hasStatus = normalized.some((h) => h === 'present / absent' || h === 'present/absent');
+        const hasIn = normalized.some((h) => h.startsWith('actual intime'));
+        const hasOut = normalized.some((h) => h.startsWith('actual outtime'));
+        return hasDate && hasEmployee && hasStatus && hasIn && hasOut;
+      });
+
+      if (headerRowIndex === -1) {
+        throw new Error('Could not find fixed data headers. Required: Date, Employee Name, Present / Absent, Actual InTime, Actual OutTime');
+      }
+
+      const headers = rows[headerRowIndex].map(normalizeHeader);
+      const dateIndex = headers.findIndex((h: string) => h === 'date');
+      const employeeNameIndex = headers.findIndex((h: string) => h === 'employee name');
+      const presenceIndex = headers.findIndex((h: string) => h === 'present / absent' || h === 'present/absent');
+      const inTimeIndex = headers.findIndex((h: string) => h.startsWith('actual intime'));
+      const outTimeIndex = headers.findIndex((h: string) => h.startsWith('actual outtime'));
+      const actualWFHIndex = headers.findIndex((h: string) => h === 'actual - wfh' || h === 'actual-wfh');
+      const actualOutStationIndex = headers.findIndex((h: string) => h === 'actual - out station' || h === 'actual-out station' || h === 'actual - outstation' || h === 'actual-outstation');
+
+      if ([dateIndex, employeeNameIndex, presenceIndex, inTimeIndex, outTimeIndex].some((idx) => idx === -1)) {
+        throw new Error('One or more required headers are missing in fixed data file.');
+      }
+
+      const processed: AttendanceRecord[] = [];
+      const dataRows = rows.slice(headerRowIndex + 1);
+
+      for (const row of dataRows) {
+        const employeeName = String(row[employeeNameIndex] || '').trim();
+        const rawDate = row[dateIndex];
+        const presenceCode = String(row[presenceIndex] || '').trim();
+
+        if (!employeeName || !rawDate || !presenceCode) continue;
+
+        const parsedDate = formatExcelDate(rawDate);
+        if (!parsedDate) continue;
+
+        const inParsed = parseMachine1DateTime(row[inTimeIndex]);
+        const outParsed = parseMachine1DateTime(row[outTimeIndex]);
+        const inTime = inParsed.time || '00:00:00';
+        const outTime = outParsed.time || '00:00:00';
+
+        const mappedType = mapFixedPresenceCodeToType(presenceCode);
+        const normalizedCode = presenceCode.toUpperCase();
+        const status = (normalizedCode === 'A' || normalizedCode === 'ABSENT') ? 'Absent' : 'Present';
+        const actualWFHValue = actualWFHIndex >= 0 ? parseNumericValue(row[actualWFHIndex]) : undefined;
+        const actualOutStationValue = actualOutStationIndex >= 0 ? parseNumericValue(row[actualOutStationIndex]) : undefined;
+
+        let fixedValue: number | undefined;
+        if (normalizedCode === 'WFH' || normalizedCode === 'WO-WFH') {
+          fixedValue = actualWFHValue;
+        } else if (normalizedCode === 'OS-P') {
+          fixedValue = actualOutStationValue;
+        }
+
+        processed.push({
+          id: employeeName,
+          name: employeeName,
+          date: parsedDate,
+          inTime,
+          outTime,
+          status,
+          typeOfPresence: mappedType,
+          fixedData: true,
+          presentAbsent: presenceCode,
+          value: fixedValue,
+          schedule: undefined,
+        });
+      }
+
+      if (processed.length === 0) {
+        throw new Error('No valid fixed attendance rows were found in the uploaded file.');
+      }
+
+      setAttendanceData(processed);
+      const inferredMonthYear = processed[0] ? getMonthYearFromDate(processed[0].date) : null;
+      setCurrentMonthYear(inferredMonthYear);
+      setUploadTotal(processed.length);
+      setUploadSaved(0);
+      setUploadFailed(0);
+      await uploadToServer(processed, inferredMonthYear || undefined);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+      setError(`Error processing fixed data file: ${errorMessage}`);
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const processMachine2File = async (inputFile?: File): Promise<void> => {
@@ -854,61 +1019,70 @@ export default function AttendanceUpload() {
         Object.assign(existing.recordDetails, item.records || {});
       }
 
-      // If date range, filter records and calculate summary
-      if (startDate && endDate) {
-        for (const user of userMap.values()) {
-          const filteredRecords: any = {};
-          for (const [date, rec] of Object.entries(user.recordDetails)) {
+      // Recalculate summary from merged records for all filter types.
+      // This avoids double counting in month mode and keeps month/range behavior consistent.
+      for (const user of userMap.values()) {
+        const filteredRecords: any = {};
+        for (const [date, rec] of Object.entries(user.recordDetails)) {
+          if (startDate && endDate) {
             const d = new Date(date);
             if (d >= startDate && d <= endDate) {
               filteredRecords[date] = rec;
             }
-          }
-          // Calculate summary from filtered records
-          const summary = {
-            totalHour: 0,
-            totalLateArrival: 0,
-            excessHour: 0,
-            totalHalfDay: 0,
-            totalPresent: 0,
-            totalAbsent: 0,
-            totalLeave: 0,
-          };
-          for (const rec of Object.values(filteredRecords) as any[]) {
-            if (rec.typeOfPresence !== 'Holiday') {
-              summary.totalHour += rec.totalHour || 0;
-            }
-            if (rec.typeOfPresence === 'Leave' || rec.typeOfPresence === 'On leave') {
-              summary.totalLeave += 1;
-            } else if (rec.typeOfPresence !== 'Holiday' && rec.halfDay) {
-              summary.totalHalfDay += 1;
-              summary.totalPresent += 1;
-            } else if (rec.typeOfPresence !== 'Holiday' && rec.checkin && rec.checkin !== "00:00") {
-              summary.totalPresent += 1;
-              // Check late
-              // Need schedule to check late, but for simplicity, assume totalLateArrival is not calculated here
-            } else if (rec.typeOfPresence !== 'Holiday') {
-              summary.totalAbsent += 1;
-            }
-          }
-          user.summary = summary;
-          user.recordDetails = filteredRecords;
-        }
-      } else {
-        // For month ranges, sum the monthly summaries (but DO NOT sum excessHour, as it is already a total)
-        for (const item of allItems) {
-          const userId = item.userId?._id ? String(item.userId._id) : '';
-          const user = userMap.get(userId);
-          if (user) {
-            user.summary.totalHour += item.summary?.totalHour ?? 0;
-            user.summary.totalLateArrival += item.summary?.totalLateArrival ?? 0;
-            // DO NOT sum excessHour; leave as 0 or recalculate from daily if needed
-            user.summary.totalHalfDay += item.summary?.totalHalfDay ?? 0;
-            user.summary.totalPresent += item.summary?.totalPresent ?? 0;
-            user.summary.totalAbsent += item.summary?.totalAbsent ?? 0;
-            user.summary.totalLeave += item.summary?.totalLeave ?? 0;
+          } else {
+            filteredRecords[date] = rec;
           }
         }
+
+        const summary = {
+          totalHour: 0,
+          totalLateArrival: 0,
+          excessHour: 0,
+          totalHalfDay: 0,
+          totalPresent: 0,
+          totalAbsent: 0,
+          totalLeave: 0,
+        };
+
+        for (const rec of Object.values(filteredRecords) as any[]) {
+          const type = String(rec?.typeOfPresence || '');
+          const checkin = String(rec?.editedCheckin || rec?.checkin || '').trim();
+          const checkout = String(rec?.editedCheckout || rec?.checkout || '').trim();
+          const totalHour = Number(rec?.totalHour || 0);
+          const isHolidayLike =
+            type === 'Holiday' ||
+            type === 'Sunday' ||
+            type === 'Weekoff' ||
+            type === 'Weekoff - special allowance';
+
+          if (!isHolidayLike) {
+            summary.totalHour += totalHour;
+          }
+
+          if (type === 'Leave' || type === 'On leave') {
+            summary.totalLeave += 1;
+            continue;
+          }
+
+          if (isHolidayLike) {
+            continue;
+          }
+
+          const hasValidIn = checkin && checkin !== '00:00';
+          const hasValidOut = checkout && checkout !== '00:00';
+
+          if (rec?.halfDay) {
+            summary.totalHalfDay += 1;
+            summary.totalPresent += 1;
+          } else if (hasValidIn || hasValidOut || totalHour > 0) {
+            summary.totalPresent += 1;
+          } else {
+            summary.totalAbsent += 1;
+          }
+        }
+
+        user.summary = summary;
+        user.recordDetails = filteredRecords;
       }
 
       const mapped: AttendanceSummaryView[] = Array.from(userMap.values()).map((item) => {
@@ -980,39 +1154,12 @@ export default function AttendanceUpload() {
             scheduledHours: "", // Add calculation if needed
             shortHours: "",     // Add calculation if needed
             excessHours: "",    // Add calculation if needed
-            totalHour: Object.values(item.recordDetails).reduce((sum: number, rec: any) => 
-              rec.typeOfPresence !== 'Holiday' ? sum + (rec.totalHour || 0) : sum, 0),
+            totalHour: item.summary?.totalHour ?? 0,
             totalLateArrival: item.summary?.totalLateArrival ?? 0,
             excessHour: item.summary?.excessHour ?? 0,
-            totalHalfDay: Object.values(item.recordDetails).filter((rec: any) => {
-              if (rec.typeOfPresence === 'Holiday') return false;
-              const effectiveCheckin = rec.editedCheckin || rec.checkin;
-              const effectiveCheckout = rec.editedCheckout || rec.checkout;
-              const isBothZero = !(effectiveCheckin && effectiveCheckin !== '00:00') && !(effectiveCheckout && effectiveCheckout !== '00:00');
-              return rec.halfDay && !isBothZero;
-            }).length,
-            totalPresent: Object.values(item.recordDetails).filter((rec: any) => {
-              if (rec.typeOfPresence === 'Holiday') return false;
-              const effectiveCheckin = rec.editedCheckin || rec.checkin;
-              const effectiveCheckout = rec.editedCheckout || rec.checkout;
-              const isBothZero = !(effectiveCheckin && effectiveCheckin !== '00:00') && !(effectiveCheckout && effectiveCheckout !== '00:00');
-              // Present if both in and out are valid (not 00:00), or halfDay is true (but not when both times are 00:00)
-              return ((!isBothZero) && (((effectiveCheckin && effectiveCheckin !== '00:00') && (effectiveCheckout && effectiveCheckout !== '00:00')) || rec.halfDay));
-            }).length,
-            totalAbsent: Object.values(item.recordDetails).filter((rec: any) => {
-              if (rec.totalHour !== 0) return false;
-              if (rec.halfDay) return false;
-              if (rec.typeOfPresence === 'Leave' || rec.typeOfPresence === 'Holiday') return false;
-              if (typeof rec.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff')) return false;
-              // Use edited times if available
-              const effectiveCheckin = rec.editedCheckin || rec.checkin;
-              const effectiveCheckout = rec.editedCheckout || rec.checkout;
-              // Only mark absent if BOTH in and out are missing or '00:00'
-              if ((!(effectiveCheckin && effectiveCheckin !== "00:00")) && (!(effectiveCheckout && effectiveCheckout !== "00:00"))) {
-                return true;
-              }
-              return false;
-            }).length,
+            totalHalfDay: item.summary?.totalHalfDay ?? 0,
+            totalPresent: item.summary?.totalPresent ?? 0,
+            totalAbsent: item.summary?.totalAbsent ?? 0,
             totalLeave: item.summary?.totalLeave ?? 0,
           },
           recordDetails: item.recordDetails || {},
@@ -1197,9 +1344,14 @@ export default function AttendanceUpload() {
                         <UploadSection
                           file={file}
                           files={files}
+                          fixedFile={fixedFile}
                           onFileChange={handleFileChange}
                           onFilesChange={handleFilesChange}
+                          onFixedFileChange={handleFixedFileChange}
                           onProcessMultiple={processMultipleFiles}
+                          onProcessFixedFile={() => {
+                            processFixedDataFile();
+                          }}
                           onProcessFile={() => {
                             if (machineFormat === 'machine1') {
                               processMachine1File();

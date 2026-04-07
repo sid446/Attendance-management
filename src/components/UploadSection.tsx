@@ -27,6 +27,9 @@ interface UploadSectionProps {
   uploadErrors?: { odId: string; reason: string }[];
   machineFormat?: string;
   onMachineFormatChange?: (format: string) => void;
+  fixedFile?: File | null;
+  onFixedFileChange?: (e: ChangeEvent<HTMLInputElement>) => void;
+  onProcessFixedFile?: () => void;
 }
 
 export const UploadSection: React.FC<UploadSectionProps> = ({
@@ -41,7 +44,10 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   saveMessage,
   uploadErrors = [],
   machineFormat = 'machine2',
-  onMachineFormatChange
+  onMachineFormatChange,
+  fixedFile = null,
+  onFixedFileChange,
+  onProcessFixedFile
 }) => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>(file ? [file] : files || []);
   const [showFormatPreview, setShowFormatPreview] = useState(false);
@@ -57,6 +63,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   });
   const [addingMachine, setAddingMachine] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const [selectedFixedFile, setSelectedFixedFile] = useState<File | null>(fixedFile);
 
   // Keep selectedFiles in sync when parent supplies `file` or `files` props
   useEffect(() => {
@@ -66,6 +73,10 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       setSelectedFiles([file]);
     }
   }, [file, files]);
+
+  useEffect(() => {
+    setSelectedFixedFile(fixedFile);
+  }, [fixedFile]);
 
   // Load machine formats on component mount
   useEffect(() => {
@@ -109,6 +120,12 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
     setSelectedFiles(list);
     onFilesChange?.(list);
     onFileChange?.(e);
+  };
+
+  const handleFixedFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const nextFile = e.target.files && e.target.files[0] ? e.target.files[0] : null;
+    setSelectedFixedFile(nextFile);
+    onFixedFileChange?.(e);
   };
 
   // Handle adding new machine format
@@ -390,6 +407,44 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
             className="px-4 py-2 bg-emerald-500 text-slate-950 text-xs font-medium rounded-md hover:bg-emerald-400 disabled:bg-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors"
           >
             {processing ? 'Processing…' : (selectedFiles.length > 1 ? 'Upload & Process All' : 'Upload & Process')}
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-5 border border-slate-700/60 rounded-lg p-4 bg-slate-900/40">
+        <div className="mb-3">
+          <h3 className="text-sm font-semibold text-slate-100">Upload Fixed Attendance Data</h3>
+          <p className="text-xs text-slate-400 mt-1">
+            Required headers: Date, Employee Name, Present / Absent, Actual InTime, Actual OutTime.
+          </p>
+          <p className="text-[11px] text-slate-500 mt-1">
+            Date format: DD-MM-YYYY (example: 02-01-2026). Presence codes supported: Present, WO-Present, HD,
+            OS-P, WO-HD, WFH, WO-WFH, Sun, A, Weekoff, OHD-P, OHD.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <label className="flex-1 flex items-center justify-between px-4 py-3 border border-dashed border-slate-700 rounded-lg cursor-pointer bg-slate-900/80 hover:border-emerald-500 hover:bg-slate-900 transition-colors">
+            <div className="flex items-center gap-2">
+              <Upload className="w-4 h-4 text-slate-400" />
+              <span className="text-xs text-slate-400 truncate">
+                {selectedFixedFile ? selectedFixedFile.name : 'Click to choose fixed attendance Excel file'}
+              </span>
+            </div>
+            <span className="text-[11px] text-slate-500">Browse</span>
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={handleFixedFileInputChange}
+              className="hidden"
+            />
+          </label>
+          <button
+            onClick={() => onProcessFixedFile?.()}
+            disabled={!selectedFixedFile || processing}
+            className="px-4 py-2 bg-cyan-500 text-slate-950 text-xs font-medium rounded-md hover:bg-cyan-400 disabled:bg-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors"
+          >
+            {processing ? 'Processing…' : 'Upload Fixed Data'}
           </button>
         </div>
       </div>

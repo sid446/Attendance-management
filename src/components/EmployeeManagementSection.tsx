@@ -880,7 +880,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
 
         // Create schedule structure
         const scheduleEntry = {
-          effectiveFrom: '2026-01-01', // January 1, 2026
+          effectiveFrom: '2025-12-31', // December 31, 2025
           daily: {
             monday: { inTime: weekdayIn, outTime: weekdayOut },
             tuesday: { inTime: weekdayIn, outTime: weekdayOut },

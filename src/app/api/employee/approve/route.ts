@@ -5,6 +5,7 @@ import Attendance from '@/models/Attendance';
 import User from '@/models/User';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { transporter, mailOptions } from '@/lib/mailer';
+import LeaveTransaction from '@/models/LeaveTransaction';
 
 export async function POST(request: NextRequest) {
   try {
@@ -123,6 +124,19 @@ export async function POST(request: NextRequest) {
                 'leaveBalance.lastUpdated': new Date(),
                 'leaveBalance.monthlyEarned': 2,
               });
+              try {
+                await LeaveTransaction.create({
+                  userId: userForLeave._id,
+                  date: new Date().toISOString().split('T')[0],
+                  monthYear: attendanceRequest.monthYear,
+                  type: 'earned',
+                  amount: increment,
+                  source: 'attendance-create-increment',
+                  reference: attendanceRequest._id?.toString()
+                });
+              } catch (e) {
+                console.error('Failed to write LeaveTransaction for attendance-create increment', e);
+              }
               console.log(`[LEAVE DEBUG] Leave balance incremented for user ${userForLeave.name} (new attendance record for ${attendanceRequest.monthYear})`);
             } else {
               console.log(`[LEAVE DEBUG] Skipped increment - user is an article`);
@@ -459,6 +473,37 @@ export async function POST(request: NextRequest) {
                   leaveBalance.lastUpdated = new Date();
                   u.leaveBalance = leaveBalance;
                   await u.save();
+                  try {
+                    // record fractional delta transaction (adjust remaining)
+                    await LeaveTransaction.create({
+                      userId: u._id,
+                      date: attendanceRequest.date,
+                      monthYear: attendanceRequest.monthYear,
+                      type: 'adjust',
+                      amount: delta,
+                      source: 'outstation-delta',
+                      reference: attendanceRequest._id?.toString()
+                    });
+
+                    // if earned was incremented for month >= 2026-01, also record earned transaction
+                    try {
+                      if (attendanceRequest.monthYear && attendanceRequest.monthYear >= '2026-01') {
+                        await LeaveTransaction.create({
+                          userId: u._id,
+                          date: attendanceRequest.date,
+                          monthYear: attendanceRequest.monthYear,
+                          type: 'earned',
+                          amount: delta,
+                          source: 'outstation-earned',
+                          reference: attendanceRequest._id?.toString()
+                        });
+                      }
+                    } catch (e) {
+                      console.error('Failed to write earned LeaveTransaction for outstation delta', e);
+                    }
+                  } catch (e) {
+                    console.error('Failed to write LeaveTransaction for outstation/clientplace adjustment', e);
+                  }
                 }
               }
             }

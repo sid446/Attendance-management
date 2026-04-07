@@ -110,7 +110,9 @@ export async function POST(request: NextRequest) {
       for (const rec of records) {
         try {
           const odId = String(rec.id || rec.employeeCode || 'UNKNOWN');
-          const recName = rec.name ? String(rec.name).trim() : '';
+          const recName = rec.name ? String(rec.name).trim() : (rec.employeeName ? String(rec.employeeName).trim() : '');
+          const fixedPresenceCode = String(rec.presentAbsent || rec.statusCode || '').trim();
+          const isFixedDataUpload = Boolean(rec.fixedData) || fixedPresenceCode.length > 0;
 
           // 1. Match by Name only
           let user = null;
@@ -170,8 +172,8 @@ export async function POST(request: NextRequest) {
             });
           }
 
-          let checkin = normalizeTimeToHHmm(rec.inTime);
-          let checkout = normalizeTimeToHHmm(rec.outTime);
+          let checkin = normalizeTimeToHHmm(rec.inTime || rec.actualInTime);
+          let checkout = normalizeTimeToHHmm(rec.outTime || rec.actualOutTime);
 
           // Anomaly Detection: If checkin is late (>= 16:00) AND checkout is 00:00/empty,
           // person likely only punched OUT, so the checkin value is actually the exit time.
@@ -179,7 +181,7 @@ export async function POST(request: NextRequest) {
           const isCheckinLate = checkin >= '16:00';
           const isCheckoutMissing = checkout === '00:00' || checkout === '';
           let exitOnlyPunchDetected = false;
-          if (isCheckinLate && isCheckoutMissing) {
+          if (!isFixedDataUpload && isCheckinLate && isCheckoutMissing) {
             // Swap: the "checkin" is actually the checkout time
             checkout = checkin;
             checkin = '00:00';
@@ -216,6 +218,40 @@ export async function POST(request: NextRequest) {
           let finalHalfDay = false;
           let remarksStr = '';
 
+          if (isFixedDataUpload) {
+            const mappedType = rec.typeOfPresence ? String(rec.typeOfPresence).trim() : mapFixedPresenceCodeToType(fixedPresenceCode);
+            typeOfPresence = mappedType || 'Absent';
+            finalTotalHour = calculateTotalHours(finalCheckin, finalCheckout);
+            const uploadedValueRaw = rec.value;
+            const uploadedValue = typeof uploadedValueRaw === 'number' ? uploadedValueRaw : Number(uploadedValueRaw);
+            const hasUploadedValue = Number.isFinite(uploadedValue);
+            const normalizedFixedCode = fixedPresenceCode.toUpperCase();
+            const isWFHFixedType =
+              normalizedFixedCode === 'WFH' ||
+              normalizedFixedCode === 'WO-WFH' ||
+              typeOfPresence === 'WFH - weekdays' ||
+              typeOfPresence === 'WFH - weekoff' ||
+              typeOfPresence === 'Work From Home (WFH)' ||
+              typeOfPresence === 'Weekly Off - Work From Home (WO-WFH)';
+            const isOutStationFixedType =
+              normalizedFixedCode === 'OS-P' ||
+              typeOfPresence === 'Onsite Presence (OS-P)' ||
+              typeOfPresence === 'Present - Outstation (Weekdays)' ||
+              typeOfPresence === 'Present - Outstation (Weekoff)' ||
+              typeOfPresence === 'Present - outstation';
+
+            if (hasUploadedValue && (isWFHFixedType || isOutStationFixedType)) {
+              finalValue = uploadedValue;
+            } else {
+              finalValue = getPresenceValueByType(typeOfPresence);
+            }
+            finalHalfDay = typeOfPresence === 'Half Day - weekdays' || typeOfPresence === 'Half Day - weekoff' || typeOfPresence === 'Half Day (HD)';
+            if (typeOfPresence === 'Holiday' || typeOfPresence === 'Sunday' || typeOfPresence === 'Weekoff' || typeOfPresence === 'Absent') {
+              finalTotalHour = 0;
+            }
+            remarksStr = fixedPresenceCode ? `Fixed upload status: ${fixedPresenceCode}` : '';
+          }
+
           // Special case: if checkin is 00:00 but checkout is valid, mark as half day
           if (finalCheckin === '00:00' && finalCheckout !== '00:00' && finalCheckout !== '' && finalTotalHour > 0) {
             finalHalfDay = true;
@@ -226,7 +262,7 @@ export async function POST(request: NextRequest) {
           }
 
           // Check if date is a Sunday or Holiday when there's no working hours
-          if (totalHour === 0 && !approvedRequest) {
+          if (!isFixedDataUpload && totalHour === 0 && !approvedRequest) {
             const recordDate = new Date(isoDate);
             const dayOfWeek = recordDate.getDay(); // 0 = Sunday
             
@@ -246,7 +282,7 @@ export async function POST(request: NextRequest) {
             }
           }
           // Override if Approved Request Exists
-          if (approvedRequest) {
+          if (!isFixedDataUpload && approvedRequest) {
              // Calculate Request Duration
              let requestTotalHour = 0;
              if (approvedRequest.startTime && approvedRequest.endTime) {
@@ -305,7 +341,7 @@ export async function POST(request: NextRequest) {
 
           // Special handling for Article employees
           const isArticleEmployee = user && (user.employmentType === 'article' || user.designation?.toLowerCase() === 'article');
-          if (isArticleEmployee) {
+          if (!isFixedDataUpload && isArticleEmployee) {
             // Article employees are treated as full-time
             // Even with 00:00 times, they should be marked as present (not absent)
             // But preserve Holiday status for Sundays/holidays
@@ -756,6 +792,78 @@ function timeToMinutes(time: string): number {
   return h * 60 + m;
 }
 
+function mapFixedPresenceCodeToType(codeRaw: string): string {
+  const code = String(codeRaw || '').trim().toUpperCase();
+  switch (code) {
+    case 'PRESENT':
+      return 'Present - in office - weekdays';
+    case 'WO-PRESENT':
+      return 'Present - in office - weekoff';
+    case 'HD':
+      return 'Half Day - weekdays';
+    case 'OS-P':
+      return 'Present - ClientPlace (Weekdays)';
+    case 'WO-HD':
+      return 'Half Day - weekoff';
+    case 'WFH':
+      return 'WFH - weekdays';
+    case 'WO-WFH':
+      return 'WFH - weekoff';
+    case 'SUN':
+      return 'Sunday';
+    case 'A':
+      return 'Absent';
+    case 'WEEKOFF':
+      return 'Weekoff';
+    case 'OHD-P':
+      return 'Present - in office - weekoff';
+    case 'OHD':
+      return 'Holiday';
+    default:
+      return String(codeRaw || '').trim();
+  }
+}
+
+function getPresenceValueByType(typeOfPresence: string): number {
+  if (!typeOfPresence) return 0;
+  if (typeOfPresence === 'Absent' || typeOfPresence === 'Holiday' || typeOfPresence === 'Sunday' || typeOfPresence === 'Weekoff') return 0;
+  if (typeOfPresence === 'Half Day - weekdays' || typeOfPresence === 'Half Day - weekoff' || typeOfPresence === 'Half Day (HD)') return 0.5;
+  if (typeOfPresence === 'On leave' || typeOfPresence === 'Leave') return 0;
+  return 1;
+}
+
+function shouldExcludeFromSummaryHours(typeOfPresence: string, dateStr: string): boolean {
+  const day = new Date(dateStr).getDay();
+  if (day === 0) return true;
+
+  const excluded = new Set<string>([
+    'Holiday',
+    'Sunday',
+    'Weekoff',
+    'Absent',
+    'On leave',
+    'Leave',
+    'WFH - weekdays',
+    'WFH - weekoff',
+    'Work From Home (WFH)',
+    'Weekly Off - Work From Home (WO-WFH)',
+    'Onsite Presence (OS-P)',
+    'Present - ClientPlace (Weekdays)',
+    'Present - ClientPlace (Weekoff)',
+    'Present - client place',
+    'Present - outstation',
+    'Present - Outstation (Weekdays)',
+    'Present - Outstation (Weekoff)',
+    'Present - in office - weekoff',
+    'Present - weekoff',
+    'Weekly Off - Present (WO-Present)',
+    'Half Day - weekoff',
+    'Weekoff - special allowance',
+  ]);
+
+  return excluded.has(typeOfPresence);
+}
+
 function calculateSummary(
   records: Map<string, {
     checkin: string;
@@ -773,6 +881,7 @@ function calculateSummary(
   let totalHour = 0;
   let totalLateArrival = 0;
   let excessHour = 0;
+  let totalScheduledHour = 0;
   let totalHalfDay = 0;
   let totalPresent = 0;
   let totalAbsent = 0;
@@ -804,8 +913,25 @@ function calculateSummary(
       presentAbsent = 'Present';
     }
     let dayExcess = 0;
-    // Set excess = 0 for Sundays and Holidays
-    if (record.typeOfPresence === 'Holiday') {
+    let dayScheduledHours = 0;
+    if (scheduledInTime && scheduledOutTime && scheduledInTime !== '00:00' && scheduledOutTime !== '00:00') {
+      const [schInH, schInM] = scheduledInTime.split(':').map(Number);
+      const [schOutH, schOutM] = scheduledOutTime.split(':').map(Number);
+      const schInMin = schInH * 60 + schInM;
+      const schOutMin = schOutH * 60 + schOutM;
+      const scheduledMinutes = schOutMin - schInMin >= 0 ? schOutMin - schInMin : (24 * 60 + schOutMin - schInMin);
+      dayScheduledHours = Number((scheduledMinutes / 60).toFixed(2));
+    }
+    const recordDateObj = new Date(dateStr);
+    const isSundayDate = recordDateObj.getDay() === 0;
+    const isNonWorkingDayRecord =
+      record.typeOfPresence === 'Holiday' ||
+      record.typeOfPresence === 'Sunday' ||
+      record.typeOfPresence === 'Weekoff' ||
+      record.typeOfPresence === 'Weekoff - special allowance' ||
+      isSundayDate;
+    // Set excess = 0 for non-working days (Sunday/Holiday/Weekoff)
+    if (isNonWorkingDayRecord) {
       dayExcess = 0;
     } else if (presentAbsent === 'Absent' && scheduledInTime && scheduledOutTime && scheduledInTime !== '00:00' && scheduledOutTime !== '00:00') {
       const [schInH, schInM] = scheduledInTime.split(':').map(Number);
@@ -855,20 +981,21 @@ function calculateSummary(
     record.totalHour = calculateTotalHours(inTime, outTime);
     // Update record's excessHour
     record.excessHour = Number(dayExcess.toFixed(2));
-    totalHour += record.totalHour;
-    excessHour += record.excessHour;
+    const includeInHoursSummary = !shouldExcludeFromSummaryHours(record.typeOfPresence, dateStr);
+    if (includeInHoursSummary) {
+      totalHour += record.totalHour;
+      totalScheduledHour += dayScheduledHours;
+    }
     // ...existing halfday/late/present/absent/leave logic...
     // Ensure holidays and Sundays are NOT treated as half-days (some uploads set halfDay=true when totalHour=0)
-    const recordDateObj = new Date(dateStr);
-    const isSundayDate = recordDateObj.getDay() === 0;
-    if (record.typeOfPresence === 'Holiday' || isSundayDate) {
+    if (isNonWorkingDayRecord) {
       // Force clear any half-day flag for holidays or Sundays
       record.halfDay = false;
     }
 
     // Determine half-day based on employmentType (only for summary calculation, don't override individual record flags)
     let calculatedHalfDay = record.halfDay || false; // Use existing halfDay flag if already set
-    if (!record.halfDay) { // Only recalculate if not already set
+    if (!record.halfDay && !isNonWorkingDayRecord) { // Only recalculate if not already set
       // Special case: if inTime is 00:00 but outTime is valid, mark as half day
       if (inTime === '00:00' && outTime !== '00:00' && outTime !== '' && record.totalHour > 0) {
         calculatedHalfDay = true;
@@ -881,8 +1008,8 @@ function calculateSummary(
         const isArticle = employmentType === 'article' || designation === 'article';
         const isAfter1PM = inTime ? inTime >= '13:00' : false;
         if (employmentType === 'fulltime' && !isArticle) {
-          // Half day if arrive after 1:30 PM or spent less than 6.5 hours
-          calculatedHalfDay = isAfter1PM || record.totalHour < 6.5;
+          // For non-articles, half day depends only on 6-hour threshold.
+          calculatedHalfDay = record.totalHour < 6;
         } else if (employmentType === 'halftime') {
           // Can come anytime, half day if spent less than 60% of scheduled time
           const scheduledHours = scheduledInTime && scheduledOutTime ? calculateTotalHours(scheduledInTime, scheduledOutTime) : 0;
@@ -924,12 +1051,17 @@ function calculateSummary(
         totalLeave++;
         break;
       case 'Holiday':
+      case 'Sunday':
+      case 'Weekoff':
+      case 'Weekoff - special allowance':
         // Holidays don't count as present/absent
         break;
       default:
         totalAbsent++;
     }
   });
+
+  excessHour = Number((totalHour - totalScheduledHour).toFixed(2));
 
   return {
     totalHour,

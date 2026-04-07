@@ -41,13 +41,20 @@ function calculateSummary(
 
     const inTime = String(record.editedCheckin ?? record.checkin ?? '').trim();
     const outTime = String(record.editedCheckout ?? record.checkout ?? '').trim();
+    const isSundayDate = new Date(dateStr).getDay() === 0;
+    const isNonWorkingDayRecord =
+      record.typeOfPresence === 'Holiday' ||
+      record.typeOfPresence === 'Sunday' ||
+      record.typeOfPresence === 'Weekoff' ||
+      record.typeOfPresence === 'Weekoff - special allowance' ||
+      isSundayDate;
 
     // compute totalHour and default present/absent
     record.totalHour = calculateDuration(inTime, outTime);
 
     // compute dayExcess similar to existing logic (simplified)
     let dayExcess = 0;
-    if (record.typeOfPresence === 'Holiday') {
+    if (isNonWorkingDayRecord) {
       dayExcess = 0;
     } else if (scheduledInTime && scheduledOutTime && inTime && outTime && inTime !== '00:00' && outTime !== '00:00') {
       const [schInH, schInM] = scheduledInTime.split(':').map(Number);
@@ -77,15 +84,30 @@ function calculateSummary(
     // half day and present/absent/leave counting (simplified to match existing rules)
     const isSunday = new Date(dateStr).getDay() === 0;
     let calculatedHalf = record.halfDay || false;
-    if (!calculatedHalf) {
-      if ((inTime === '00:00' && outTime !== '00:00' && record.totalHour > 0)) calculatedHalf = true;
-      else if (record.totalHour > 0 && record.totalHour < 6.5) calculatedHalf = true;
+    if (!calculatedHalf && !isNonWorkingDayRecord) {
+      if ((inTime === '00:00' && outTime !== '00:00' && record.totalHour > 0)) {
+        calculatedHalf = true;
+      } else {
+        const isArticle = user && user.designation && String(user.designation).toLowerCase() === 'article';
+        if (isArticle) {
+          const isAfter1PM = inTime ? inTime >= '13:00' : false;
+          calculatedHalf = isAfter1PM || record.totalHour < 3.5;
+        } else {
+          // Non-article employees can come anytime; half-day only depends on total hours.
+          calculatedHalf = record.totalHour > 0 && record.totalHour < 6;
+        }
+      }
     }
+    if (isNonWorkingDayRecord) {
+      calculatedHalf = false;
+      record.excessHour = 0;
+    }
+
     if (calculatedHalf) totalHalfDay++;
 
     if (['On leave', 'Leave'].includes(record.typeOfPresence)) {
       totalLeave++;
-    } else if (record.typeOfPresence === 'Holiday' || isSunday) {
+    } else if (record.typeOfPresence === 'Holiday' || record.typeOfPresence === 'Sunday' || record.typeOfPresence === 'Weekoff' || isSunday) {
       // ignore
     } else if (record.totalHour > 0 || (record.excessHour && record.excessHour > 0)) {
       totalPresent++;
@@ -225,6 +247,18 @@ export async function POST(request: NextRequest) {
     } else if (startTime && endTime && startTime !== '00:00' && endTime !== '00:00') {
       rec.totalHour = calculateDuration(startTime, endTime);
       rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
+    }
+
+    const isSundayDate = new Date(date).getDay() === 0;
+    const isNonWorkingDayRecord =
+      rec.typeOfPresence === 'Holiday' ||
+      rec.typeOfPresence === 'Sunday' ||
+      rec.typeOfPresence === 'Weekoff' ||
+      rec.typeOfPresence === 'Weekoff - special allowance' ||
+      isSundayDate;
+    if (isNonWorkingDayRecord) {
+      rec.halfDay = false;
+      rec.excessHour = 0;
     }
 
     // Add HR remark

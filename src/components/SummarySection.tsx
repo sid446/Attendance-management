@@ -326,53 +326,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
   };
 
   const getScheduledHoursDetails = (item: AttendanceSummaryView) => {
-    if (!item) return [];
-    const user = allUsers?.find(u => u._id === item.userId || u.odId === item.userId);
-    if (!user) return [];
-    const monthYear = item.monthYear || '';
-    const [year, month] = monthYear.split('-').map(Number);
-    if (!year || !month) return [];
-    const records = item.recordDetails || {};
-    const details: { date: string; info: string; subInfo?: string }[] = [];
-    for (const dateStr of Object.keys(records)) {
-      const rec = records[dateStr];
-      // Exclude if typeOfPresence is Holiday (as in working day column)
-      if (rec.typeOfPresence === 'Holiday') continue;
-      const dateObj = new Date(dateStr);
-      const dayName = dateObj.toLocaleString('en-US', { weekday: 'long' }).toLowerCase();
-      // Find applicable schedule entry for this date
-      let scheduleEntry;
-      if (user && user.schedules && Array.isArray(user.schedules)) {
-        scheduleEntry = user.schedules.slice().reverse().find(entry => {
-          const eff = new Date(entry.effectiveFrom);
-          return eff <= dateObj;
-        });
-      }
-      let daySchedule;
-      if (scheduleEntry && scheduleEntry.daily && scheduleEntry.daily[dayName]) {
-        daySchedule = scheduleEntry.daily[dayName];
-      } else if (user.scheduleInOutTime && ['monday','tuesday','wednesday','thursday','friday'].includes(dayName)) {
-        daySchedule = user.scheduleInOutTime;
-      } else if (user.scheduleInOutTimeSat && dayName === 'saturday') {
-        daySchedule = user.scheduleInOutTimeSat;
-      } else if (user.scheduleInOutTimeMonth && dayName === 'monthly') {
-        daySchedule = user.scheduleInOutTimeMonth;
-      }
-      if (!daySchedule || daySchedule.isHoliday) continue;
-      const inTime = daySchedule.inTime;
-      const outTime = daySchedule.outTime;
-      let info = '0:00';
-      if (inTime && outTime && inTime !== '00:00' && outTime !== '00:00') {
-        const [inH, inM] = inTime.split(':').map(Number);
-        const [outH, outM] = outTime.split(':').map(Number);
-        let diff = (outH * 60 + outM) - (inH * 60 + inM);
-        if (diff < 0) diff += 24 * 60;
-        let hours = diff / 60;
-        info = `${Math.floor(hours)}:${(Math.round((hours % 1) * 60)).toString().padStart(2, '0')}`;
-      }
-      details.push({ date: dateStr, info, subInfo: `${dayName.charAt(0).toUpperCase() + dayName.slice(1)}${daySchedule.isHalfDay ? ' (Half Day)' : ''}` });
-    }
-    return details;
+    return getScheduledResultForItem(item).breakdown;
   };
 
   // Helper function to get working days calculation breakdown
@@ -506,119 +460,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
   };
 
   const getDefinedScheduleDetails = (item: AttendanceSummaryView) => {
-    const details: { date: string; info: string; subInfo?: string }[] = [];
-
-    let totalHours = 0;
-    let workingDays = 0;
-
-    // Calculate for each day that has attendance data
-    const records = item.recordDetails || {};
-    const user = allUsers?.find(u => u._id === item.userId || u.odId === item.userId);
-    for (const dateStr of Object.keys(records)) {
-      const d = new Date(dateStr);
-      const rec = records[dateStr];
-
-      // Skip holidays
-      if (rec.typeOfPresence === 'Holiday') {
-        details.push({
-            date: d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }),
-            info: 'Holiday',
-            subInfo: ''
-        });
-        continue;
-      }
-
-      const dayName = d.toLocaleString('en-US', { weekday: 'long' }).toLowerCase();
-      // Find applicable schedule entry for this date
-      let scheduleEntry;
-      if (user && user.schedules && Array.isArray(user.schedules)) {
-        scheduleEntry = user.schedules.slice().reverse().find(entry => {
-          const eff = new Date(entry.effectiveFrom);
-          return eff <= d;
-        });
-      }
-      let scheduledIn = '';
-      let scheduledOut = '';
-      let isHoliday = false;
-      let isHalfDay = false;
-      if (scheduleEntry && scheduleEntry.daily && scheduleEntry.daily[dayName]) {
-        const sch = scheduleEntry.daily[dayName] as { inTime?: string; outTime?: string; isHoliday?: boolean; isHalfDay?: boolean } | undefined;
-        scheduledIn = sch?.inTime ?? '';
-        scheduledOut = sch?.outTime ?? '';
-        isHoliday = !!sch?.isHoliday;
-        isHalfDay = !!sch?.isHalfDay;
-      } else if (user && user.scheduleInOutTime && ['monday','tuesday','wednesday','thursday','friday'].includes(dayName)) {
-        scheduledIn = user.scheduleInOutTime.inTime ?? '';
-        scheduledOut = user.scheduleInOutTime.outTime ?? '';
-        isHoliday = !!user.scheduleInOutTime.isHoliday;
-        isHalfDay = !!user.scheduleInOutTime.isHalfDay;
-      } else if (user && user.scheduleInOutTimeSat && dayName === 'saturday') {
-        scheduledIn = user.scheduleInOutTimeSat.inTime ?? '';
-        scheduledOut = user.scheduleInOutTimeSat.outTime ?? '';
-        isHoliday = !!user.scheduleInOutTimeSat.isHoliday;
-        isHalfDay = !!user.scheduleInOutTimeSat.isHalfDay;
-      } else if (user && user.scheduleInOutTimeMonth && dayName === 'monthly') {
-        scheduledIn = user.scheduleInOutTimeMonth.inTime ?? '';
-        scheduledOut = user.scheduleInOutTimeMonth.outTime ?? '';
-        isHoliday = !!user.scheduleInOutTimeMonth.isHoliday;
-        isHalfDay = !!user.scheduleInOutTimeMonth.isHalfDay;
-      }
-      if (isHoliday) {
-        details.push({
-            date: d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }),
-            info: 'Holiday/Off',
-            subInfo: ''
-        });
-        continue;
-      }
-      // Calculate scheduled hours for the day
-      const timeToHours = (t?: string) => {
-        if (!t) return 0;
-        const [h, m] = t.split(":").map(Number);
-        return h + m / 60;
-      };
-      const startTime = timeToHours(scheduledIn);
-      const endTime = timeToHours(scheduledOut);
-      let hours = 0;
-      if (startTime && endTime && endTime > startTime) {
-        hours = endTime - startTime;
-      }
-      // Use actual scheduled hours for half-day (from schedule, not divided by 2)
-      // If isHalfDay, just label it, but do not divide hours
-      totalHours += hours;
-      workingDays++;
-      const scheduleText = `${scheduledIn || '09:00'} - ${scheduledOut || '18:00'}`;
-      const hoursText = formatHoursMinutes(hours);
-      const note = isHalfDay ? ' (Half Day)' : '';
-      details.push({
-          date: d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }),
-          info: `${hoursText}${note}`,
-          subInfo: scheduleText
-      });
-    }
-
-    // Add lunch deduction info
-    if (workingDays > 0) {
-      const lunchDeduction = workingDays; // 1 hour per working day
-      const finalTotal = Math.max(0, totalHours - lunchDeduction);
-      details.push({
-          date: 'Subtotal',
-          info: formatHoursMinutes(totalHours),
-          subInfo: 'Before lunch deduction'
-      });
-      details.push({
-          date: 'Lunch Deduction',
-          info: `-${formatHoursMinutes(lunchDeduction)}`,
-          subInfo: `${workingDays} working days × 1 hour`
-      });
-      details.push({
-          date: 'Final Total',
-          info: formatHoursMinutes(finalTotal),
-          subInfo: 'Defined schedule (attendance days only)'
-      });
-    }
-
-    return details;
+    return getDefinedScheduleResultForItem(item).breakdown;
   };
 
   const openDetail = (e: React.MouseEvent, type: 'Late' | 'Absent' | 'Leave' | 'Present' | 'WorkHours' | 'ScheduledHours' | 'HalfDay' | 'DefinedSchedule' | 'WorkingDays', item: AttendanceSummaryView) => {
@@ -795,119 +637,13 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
   };
 
   const calculateDefinedScheduleHours = (item: AttendanceSummaryView): number => {
-    // Calculate defined schedule hours only for days with attendance records, with 1-hour lunch deduction per working day
-    let total = 0;
-    let workingDays = 0;
-    const records = item.recordDetails || {};
-    const user = allUsers?.find(u => u._id === item.userId || u.odId === item.userId);
-    for (const dateStr of Object.keys(records)) {
-      const d = new Date(dateStr);
-      const rec = records[dateStr];
-      // Skip holidays
-      if (rec.typeOfPresence === 'Holiday') continue;
-      const dayName = d.toLocaleString('en-US', { weekday: 'long' }).toLowerCase();
-      // Find applicable schedule entry for this date
-      let scheduleEntry;
-      if (user && user.schedules && Array.isArray(user.schedules)) {
-        scheduleEntry = user.schedules.slice().reverse().find(entry => {
-          const eff = new Date(entry.effectiveFrom);
-          return eff <= d;
-        });
-      }
-      let scheduledIn = '';
-      let scheduledOut = '';
-      let isHoliday = false;
-      let isHalfDay = false;
-      if (scheduleEntry && scheduleEntry.daily && scheduleEntry.daily[dayName]) {
-        const sch = scheduleEntry.daily[dayName] as { inTime?: string; outTime?: string; isHoliday?: boolean; isHalfDay?: boolean } | undefined;
-        scheduledIn = sch?.inTime ?? '';
-        scheduledOut = sch?.outTime ?? '';
-        isHoliday = !!sch?.isHoliday;
-        isHalfDay = !!sch?.isHalfDay;
-      } else if (user && user.scheduleInOutTime && ['monday','tuesday','wednesday','thursday','friday'].includes(dayName)) {
-        scheduledIn = user.scheduleInOutTime.inTime ?? '';
-        scheduledOut = user.scheduleInOutTime.outTime ?? '';
-        isHoliday = !!user.scheduleInOutTime.isHoliday;
-        isHalfDay = !!user.scheduleInOutTime.isHalfDay;
-      } else if (user && user.scheduleInOutTimeSat && dayName === 'saturday') {
-        scheduledIn = user.scheduleInOutTimeSat.inTime ?? '';
-        scheduledOut = user.scheduleInOutTimeSat.outTime ?? '';
-        isHoliday = !!user.scheduleInOutTimeSat.isHoliday;
-        isHalfDay = !!user.scheduleInOutTimeSat.isHalfDay;
-      } else if (user && user.scheduleInOutTimeMonth && dayName === 'monthly') {
-        scheduledIn = user.scheduleInOutTimeMonth.inTime ?? '';
-        scheduledOut = user.scheduleInOutTimeMonth.outTime ?? '';
-        isHoliday = !!user.scheduleInOutTimeMonth.isHoliday;
-        isHalfDay = !!user.scheduleInOutTimeMonth.isHalfDay;
-      }
-      if (isHoliday) continue;
-      // Calculate scheduled hours for the day
-      const timeToHours = (t?: string) => {
-        if (!t) return 0;
-        const [h, m] = t.split(":").map(Number);
-        return h + m / 60;
-      };
-      const startTime = timeToHours(scheduledIn);
-      const endTime = timeToHours(scheduledOut);
-      let hours = 0;
-      if (startTime && endTime && endTime > startTime) {
-        hours = endTime - startTime;
-      }
-      total += hours;
-      workingDays++;
-    }
-    // Subtract 1 hour lunch deduction for each working day
-    const lunchDeduction = workingDays; // 1 hour per working day
-    total = Math.max(0, total - lunchDeduction);
-    return total;
+    return getDefinedScheduleResultForItem(item).total;
   };
 
   // Calculate scheduled hours WITHOUT lunch deduction (for Scheduled column)
+  // Uses the same strict day filter as the Scheduled modal.
   const calculateScheduledHoursNoLunch = (item: AttendanceSummaryView): number => {
-      let total = 0;
-      // Get user
-      const user = allUsers?.find(u => u._id === item.userId || u.odId === item.userId);
-      if (!user) return 0;
-      // Only include days with uploaded attendance records that are not holidays (as in working day column)
-      const records = item.recordDetails || {};
-      for (const dateStr of Object.keys(records)) {
-        const rec = records[dateStr];
-        // Exclude if typeOfPresence is Holiday (as in working day column)
-        if (rec.typeOfPresence === 'Holiday') continue;
-        const dateObj = new Date(dateStr);
-        const dayKey = dateObj.toLocaleString('en-US', { weekday: 'long' }).toLowerCase();
-        // Find applicable schedule entry for this date
-        let scheduleEntry;
-        if (user.schedules && Array.isArray(user.schedules)) {
-          scheduleEntry = user.schedules.slice().reverse().find(entry => {
-            const eff = new Date(entry.effectiveFrom);
-            return eff <= dateObj;
-          });
-        }
-        let daySchedule;
-        if (scheduleEntry && scheduleEntry.daily && scheduleEntry.daily[dayKey]) {
-          daySchedule = scheduleEntry.daily[dayKey];
-        } else if (user.scheduleInOutTime && ['monday','tuesday','wednesday','thursday','friday'].includes(dayKey)) {
-          daySchedule = user.scheduleInOutTime;
-        } else if (user.scheduleInOutTimeSat && dayKey === 'saturday') {
-          daySchedule = user.scheduleInOutTimeSat;
-        } else if (user.scheduleInOutTimeMonth && dayKey === 'monthly') {
-          daySchedule = user.scheduleInOutTimeMonth;
-        }
-        // Skip if holiday
-        if (!daySchedule || daySchedule.isHoliday) continue;
-        const inTime = daySchedule.inTime;
-        const outTime = daySchedule.outTime;
-        if (inTime && outTime && inTime !== '00:00' && outTime !== '00:00') {
-          const [inH, inM] = inTime.split(':').map(Number);
-          const [outH, outM] = outTime.split(':').map(Number);
-          let diff = (outH * 60 + outM) - (inH * 60 + inM);
-          if (diff < 0) diff += 24 * 60; // overnight
-          let hours = diff / 60;
-          total += hours;
-        }
-      }
-      return total;
+      return getScheduledResultForItem(item).total;
   };
 
   // Helper function to calculate scheduled working days (expected working days)
@@ -1231,10 +967,220 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
            searchTerm !== '';
   };
 
+  const hasValidInOutForExcess = (rec: any) => {
+    const inTime = rec?.editedCheckin || rec?.checkin;
+    const outTime = rec?.editedCheckout || rec?.checkout;
+    return !!(inTime && inTime !== '00:00' && outTime && outTime !== '00:00');
+  };
+
+  const isExcessEligibleRecord = (dateStr: string, recAny: any) => {
+    const rec: any = recAny || {};
+    const type = String(rec.typeOfPresence || '');
+    const d = new Date(dateStr);
+
+    if (Number.isNaN(d.getTime())) return false;
+    if (d.getDay() === 0) return false; // Sunday
+
+    // Only and only these presence types are eligible
+    if (type === 'ThumbMachine') {
+      return hasValidInOutForExcess(rec) || Number(rec.totalHour || 0) > 0;
+    }
+
+    if (type === 'Present - in office - weekdays') {
+      return true;
+    }
+
+    if (type === 'Half Day - weekdays' || type === 'Half Day (HD)') {
+      return true;
+    }
+
+    return false;
+  };
+
+  const getExcessDateListForCurrentPeriod = () => {
+    const dateList: string[] = [];
+
+    if (filterType === 'week' && currentWeekStart) {
+      const weekStartDate = new Date(currentWeekStart);
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(weekStartDate);
+        d.setDate(weekStartDate.getDate() + i);
+        if (d.getMonth() === (selectedMonth - 1) && d.getFullYear() === selectedYear) {
+          dateList.push(d.toISOString().split('T')[0]);
+        }
+      }
+      return dateList;
+    }
+
+    if (filterType === 'range' && rangeStart && rangeEnd) {
+      const start = new Date(rangeStart);
+      const end = new Date(rangeEnd);
+      const d = new Date(start);
+      while (d <= end) {
+        dateList.push(d.toISOString().split('T')[0]);
+        d.setDate(d.getDate() + 1);
+      }
+      return dateList;
+    }
+
+    // Month view: only selected month dates.
+    const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+    for (let day = 1; day <= daysInMonth; day++) {
+      dateList.push(`${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
+    }
+
+    return dateList;
+  };
+
+  const getScheduledResultForItem = (item: AttendanceSummaryView) => {
+    const user = allUsers?.find(u => u._id === item.userId || u.odId === item.userId);
+    if (!user) {
+      return { total: 0, breakdown: [] as { date: string; info: string; subInfo?: string }[] };
+    }
+
+    let total = 0;
+    const breakdown: { date: string; info: string; subInfo?: string }[] = [];
+    const dateList = getExcessDateListForCurrentPeriod();
+
+    dateList.forEach((dateStr) => {
+      const rec = item.recordDetails?.[dateStr];
+      if (!rec || !isExcessEligibleRecord(dateStr, rec)) return;
+
+      const dateObj = new Date(dateStr);
+      const dayKey = dateObj.toLocaleString('en-US', { weekday: 'long' }).toLowerCase();
+
+      let scheduleEntry;
+      if (user.schedules && Array.isArray(user.schedules)) {
+        scheduleEntry = user.schedules.slice().reverse().find(entry => {
+          const eff = new Date(entry.effectiveFrom);
+          return eff <= dateObj;
+        });
+      }
+
+      let daySchedule: any;
+      if (scheduleEntry && scheduleEntry.daily && scheduleEntry.daily[dayKey]) {
+        daySchedule = scheduleEntry.daily[dayKey];
+      } else if (user.scheduleInOutTime && ['monday','tuesday','wednesday','thursday','friday'].includes(dayKey)) {
+        daySchedule = user.scheduleInOutTime;
+      } else if (user.scheduleInOutTimeSat && dayKey === 'saturday') {
+        daySchedule = user.scheduleInOutTimeSat;
+      } else if (user.scheduleInOutTimeMonth && dayKey === 'monthly') {
+        daySchedule = user.scheduleInOutTimeMonth;
+      }
+
+      if (!daySchedule || daySchedule.isHoliday) return;
+
+      const inTime = daySchedule.inTime;
+      const outTime = daySchedule.outTime;
+      if (!(inTime && outTime && inTime !== '00:00' && outTime !== '00:00')) return;
+
+      const [inH, inM] = inTime.split(':').map(Number);
+      const [outH, outM] = outTime.split(':').map(Number);
+      let diff = (outH * 60 + outM) - (inH * 60 + inM);
+      if (diff < 0) diff += 24 * 60;
+
+      const hours = diff / 60;
+      total += hours;
+
+      breakdown.push({
+        date: dateStr,
+        info: formatHoursMinutes(hours),
+        subInfo: `${dayKey.charAt(0).toUpperCase() + dayKey.slice(1)}${daySchedule.isHalfDay ? ' (Half Day)' : ''}`
+      });
+    });
+
+    return { total, breakdown };
+  };
+
+  const getDefinedScheduleResultForItem = (item: AttendanceSummaryView) => {
+    const user = allUsers?.find(u => u._id === item.userId || u.odId === item.userId);
+    if (!user) {
+      return { total: 0, breakdown: [] as { date: string; info: string; subInfo?: string }[] };
+    }
+
+    let subtotal = 0;
+    let workingDays = 0;
+    const breakdown: { date: string; info: string; subInfo?: string }[] = [];
+    const dateList = getExcessDateListForCurrentPeriod();
+
+    dateList.forEach((dateStr) => {
+      const rec = item.recordDetails?.[dateStr];
+      if (!rec || !isExcessEligibleRecord(dateStr, rec)) return;
+
+      const dateObj = new Date(dateStr);
+      const dayKey = dateObj.toLocaleString('en-US', { weekday: 'long' }).toLowerCase();
+
+      let scheduleEntry;
+      if (user.schedules && Array.isArray(user.schedules)) {
+        scheduleEntry = user.schedules.slice().reverse().find(entry => {
+          const eff = new Date(entry.effectiveFrom);
+          return eff <= dateObj;
+        });
+      }
+
+      let daySchedule: any;
+      if (scheduleEntry && scheduleEntry.daily && scheduleEntry.daily[dayKey]) {
+        daySchedule = scheduleEntry.daily[dayKey];
+      } else if (user.scheduleInOutTime && ['monday','tuesday','wednesday','thursday','friday'].includes(dayKey)) {
+        daySchedule = user.scheduleInOutTime;
+      } else if (user.scheduleInOutTimeSat && dayKey === 'saturday') {
+        daySchedule = user.scheduleInOutTimeSat;
+      } else if (user.scheduleInOutTimeMonth && dayKey === 'monthly') {
+        daySchedule = user.scheduleInOutTimeMonth;
+      }
+
+      if (!daySchedule || daySchedule.isHoliday) return;
+
+      const inTime = daySchedule.inTime;
+      const outTime = daySchedule.outTime;
+      if (!(inTime && outTime && inTime !== '00:00' && outTime !== '00:00')) return;
+
+      const [inH, inM] = inTime.split(':').map(Number);
+      const [outH, outM] = outTime.split(':').map(Number);
+      let diff = (outH * 60 + outM) - (inH * 60 + inM);
+      if (diff < 0) diff += 24 * 60;
+
+      const hours = diff / 60;
+      subtotal += hours;
+      workingDays++;
+
+      breakdown.push({
+        date: dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }),
+        info: formatHoursMinutes(hours),
+        subInfo: `${inTime} - ${outTime}${daySchedule.isHalfDay ? ' (Half Day)' : ''}`
+      });
+    });
+
+    if (workingDays > 0) {
+      const lunchDeduction = workingDays;
+      const finalTotal = Math.max(0, subtotal - lunchDeduction);
+      breakdown.push({ date: 'Subtotal', info: formatHoursMinutes(subtotal), subInfo: 'Before lunch deduction' });
+      breakdown.push({ date: 'Lunch Deduction', info: `-${formatHoursMinutes(lunchDeduction)}`, subInfo: `${workingDays} working days × 1 hour` });
+      breakdown.push({ date: 'Final Total', info: formatHoursMinutes(finalTotal), subInfo: 'Defined schedule (filtered attendance days)' });
+      return { total: finalTotal, breakdown };
+    }
+
+    return { total: 0, breakdown };
+  };
+
+  const getExcessResultForItem = (item: AttendanceSummaryView) => {
+    const workedHours = Number(item.summary?.totalHour || 0);
+    const scheduledHours = Number(calculateScheduledHoursNoLunch(item) || 0);
+    const total = Number((workedHours - scheduledHours).toFixed(2));
+
+    const breakdown: { date: string; info: string; subInfo?: string }[] = [
+      { date: 'Worked Hours', info: formatHoursMinutes(workedHours) },
+      { date: 'Scheduled Hours', info: formatHoursMinutes(scheduledHours) },
+      { date: 'Excess (Worked - Scheduled)', info: `${total >= 0 ? '+' : '-'}${formatHoursMinutes(Math.abs(total))}` },
+    ];
+
+    return { total, breakdown };
+  };
+
   const filteredSummaries = useMemo(() => {
     let list = summaries.filter(item => item != null); // Remove null/undefined items
     const holidayDatesSet = new Set(holidays.map(h => h.date));
-    
+
     // Text search filter
     if (searchTerm) {
       list = list.filter(item => 
@@ -1323,38 +1269,9 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
             };
           });
         }
-        // Calculate excess for week/range by summing daily excessHour for selected days
-        let calcExcessDeficit = 0;
-        if (filterType === 'week' && currentWeekStart) {
-          // Calculate week range, only include days from the selected month
-          const weekStartDate = new Date(currentWeekStart);
-          // Use selectedMonth and selectedYear from component scope
-          const weekDates = [];
-          for (let i = 0; i < 7; i++) {
-            const d = new Date(weekStartDate);
-            d.setDate(weekStartDate.getDate() + i);
-            if (d.getMonth() === (selectedMonth - 1) && d.getFullYear() === selectedYear) {
-              weekDates.push(d.toISOString().split('T')[0]);
-            }
-          }
-          calcExcessDeficit = weekDates.reduce((sum, date) => {
-            const rec = item.recordDetails?.[date];
-            return sum + (rec?.excessHour || 0);
-          }, 0);
-        } else if (filterType === 'range' && rangeStart && rangeEnd) {
-          // Calculate range
-          const start = new Date(rangeStart);
-          const end = new Date(rangeEnd);
-          let d = new Date(start);
-          while (d <= end) {
-            const dateStr = d.toISOString().split('T')[0];
-            calcExcessDeficit += item.recordDetails?.[dateStr]?.excessHour || 0;
-            d.setDate(d.getDate() + 1);
-          }
-        } else {
-          // Default to monthly summary
-          calcExcessDeficit = item.summary.excessHour || 0;
-        }
+        // Calculate excess using only eligible records:
+        // ThumbMachine, Present - in office - weekdays, Half Day (weekday).
+        const calcExcessDeficit = getExcessResultForItem(item).total;
         // Calculate Late on frontend based on toggle
         const lateDetails = getLateDetails(item);
         const calcLate = lateDetails.length;
@@ -1727,6 +1644,21 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     };
     const totalHolidaysInPeriod = countHolidaysInPeriod();
 
+    // Fetch snapshots for the target month so Leaves_B/F is accurate
+    const targetMonth = filterType === 'month' ? `${selectedYear}-${String(selectedMonth).padStart(2, '0')}` : `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
+    let snapshotMap: Record<string, any> = {};
+    try {
+      const snapRes = await fetch(`/api/leave/snapshots?monthYear=${targetMonth}`);
+      if (snapRes.ok) {
+        const json = await snapRes.json();
+        if (json && Array.isArray(json.data)) {
+          snapshotMap = Object.fromEntries(json.data.map((s: any) => [String(s.userId), s]));
+        }
+      }
+    } catch (e) {
+      // ignore snapshot fetch errors and fallback to user.leaveBalance
+    }
+
     // Partition summaries into employees and articles so export has two sections
     const employeeSummaries: AttendanceSummaryView[] = [];
     const articleSummaries: AttendanceSummaryView[] = [];
@@ -1928,7 +1860,11 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       const absentWFH = Number((wfh_weekday * 0.25).toFixed(3));
       const absentWFH_MaxActual = Number(Math.max(0, wfhMaxAllowed - presentWFHActual).toFixed(3));
       const staffWeekdaysWorking = Number((pio + os_p + (hd_count / 2) + presentWFHActual).toFixed(3));
-      const leavesBF = Math.max(0, (user?.leaveBalance?.remaining ?? 0) - (user?.leaveBalance?.monthlyEarned ?? 0));
+      // Prefer snapshot balanceAsOfMonth for Leaves B/F, fallback to user.leaveBalance
+      const snap = snapshotMap[String(user?._id || item.userId)];
+      const leavesBF = snap && typeof snap.balanceAsOfMonth === 'number'
+        ? Number(snap.balanceAsOfMonth)
+        : Math.max(0, (user?.leaveBalance?.remaining ?? 0) - (user?.leaveBalance?.monthlyEarned ?? 0));
       const leavesEarned = (user?.leaveBalance?.monthlyEarned ?? 2);
       const totalLeavesEarned = Number((leavesEarned + (extraEarnedFromOutclient || 0)).toFixed(3));
       let leavesConsumed = 0;
@@ -2174,7 +2110,11 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       { key: 'scheduled', header: 'Scheduled', width: 12 },
       { key: 'definedSchedule', header: 'Defined Work Hour', width: 15 },
       { key: 'workHours', header: 'Work Hours', width: 12 },
-      { key: 'excess', header: 'Excess', width: 10 }
+      { key: 'excess', header: 'Excess', width: 10 },
+      { key: 'leavesBF', header: 'Leaves B/F', width: 12 },
+      { key: 'leavesEarned', header: 'Leaves Earned', width: 12 },
+      { key: 'leavesConsumed', header: 'Leaves Consumed', width: 14 },
+      { key: 'leavesCF', header: 'Leaves C/F', width: 12 }
 
     ];
 
@@ -2184,9 +2124,32 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     worksheet.getRow(1).font = { bold: true, size: 13 };
     worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
 
+    // Prepare snapshots map for the selected month (if month filter)
+    let snapshotMap: Record<string, any> = {};
+    const targetMonth = filterType === 'month' ? `${selectedYear}-${String(selectedMonth).padStart(2, '0')}` : null;
+    if (targetMonth) {
+      try {
+        const userIds = filteredSummaries.map((s: any) => s.userId).filter(Boolean);
+        if (userIds.length > 0) {
+          const res = await fetch(`/api/leave/snapshots?monthYear=${targetMonth}&userIds=${userIds.join(',')}`);
+          if (res.ok) {
+            const json = await res.json();
+            (json.data || []).forEach((s: any) => { snapshotMap[s.userId] = s; });
+          }
+        }
+      } catch (e) {
+        // ignore snapshot fetch errors
+      }
+    }
+
     // Add data rows - using summary data from the database, start from row 3
     filteredSummaries.forEach((item) => {
       const user = allUsers?.find(u => u._id === item.userId);
+      const snapshot = item.userId ? snapshotMap[item.userId] : null;
+      const leavesBF = snapshot?.balanceAsOfMonth ?? user?.leaveBalance ?? '';
+      const leavesEarned = snapshot?.earnedThisMonth ?? '';
+      const leavesConsumed = snapshot?.usedThisMonth ?? '';
+      const leavesCF = snapshot?.remainingAfter ?? '';
       worksheet.addRow({
         paidFrom: user?.paidFrom || 'N/A',
         employeeName: user?.name || item.userName,
@@ -2207,7 +2170,11 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         workHours: formatHoursMinutes(item.summary.totalHour),
         excess: (item.calcExcessDeficit !== undefined && item.calcExcessDeficit !== 0)
           ? `${item.calcExcessDeficit > 0 ? '+' : item.calcExcessDeficit < 0 ? '-' : ''}${formatHoursMinutes(Math.abs(item.calcExcessDeficit))}`
-          : formatHoursMinutes(0)
+          : formatHoursMinutes(0),
+        leavesBF,
+        leavesEarned,
+        leavesConsumed,
+        leavesCF
       });
     });
 
@@ -2339,6 +2306,10 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       { header: 'Excess/Short (In Month)', key: 'excessShortHrsMonth', width: 10 },
       { header: 'Excess/Short (In a Day)', key: 'excessShortHrsDay', width: 10 },
       { header: 'Halfdays', key: 'halfDays', width: 8 },
+      { header: 'Leaves B/F', key: 'leavesBF', width: 12 },
+      { header: 'Leaves Earned', key: 'leavesEarned', width: 12 },
+      { header: 'Leaves Consumed', key: 'leavesConsumed', width: 14 },
+      { header: 'Leaves C/F', key: 'leavesCF', width: 12 },
       // Add extra fields at the end if needed
     ];
 
@@ -2365,7 +2336,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     };
 
     // Loop through each summary and each day
-    filteredSummaries.forEach((item: any) => {
+    for (const item of filteredSummaries) {
     // Helper to format seconds to ±HH:MM:SS
     const formatSecondsToHMS = (seconds: number): string => {
       const sign = seconds < 0 ? '-' : '';
@@ -2463,6 +2434,20 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         const m = Math.round((abs % 1) * 60);
         excessShortHrsMonth = `${sign}${h}:${m.toString().padStart(2, '0')}`;
       }
+      // Fetch monthly leave snapshot for this user/month (best-effort)
+      let snapshot: any = null;
+      try {
+        if (monthYear && item.userId) {
+          const sres = await fetch(`/api/leave/snapshots?monthYear=${monthYear}&userIds=${item.userId}`);
+          if (sres.ok) {
+            const sj = await sres.json();
+            snapshot = (sj.data && sj.data.length) ? sj.data[0] : null;
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+
       const records = item.recordDetails || {};
       Object.entries(records).forEach(([date, record]: [string, any]) => {
         const d = new Date(date);
@@ -2666,6 +2651,10 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           excessShortHrsMonth: '',
           excessShortHrsDay: formatSecondsToHMS(daySeconds),
           halfDays,
+          leavesBF: snapshot?.balanceAsOfMonth ?? (allUsers?.find(u=>u._id===item.userId)?.leaveBalance ?? ''),
+          leavesEarned: snapshot?.earnedThisMonth ?? '',
+          leavesConsumed: snapshot?.usedThisMonth ?? '',
+          leavesCF: snapshot?.remainingAfter ?? '',
           // Add extra fields at the end if needed
         });
         rowIndexes.push(worksheet.rowCount);
@@ -2678,7 +2667,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           worksheet.getRow(rowIdx).getCell('excessShortHrsMonth').value = excessShortHrsMonth;
         }
       }
-    });
+    };
 
     // Save file
     // Style header row
@@ -3476,46 +3465,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                     </td>
                     <td className="px-4 py-3 text-right font-mono cursor-pointer hover:bg-slate-800/60"
                         onClick={() => {
-                          // Prepare breakdown for modal
-                          let breakdown = [];
-                          if (filterType === 'week' && currentWeekStart) {
-                            const weekStartDate = new Date(currentWeekStart);
-                            for (let i = 0; i < 7; i++) {
-                              const d = new Date(weekStartDate);
-                              d.setDate(weekStartDate.getDate() + i);
-                              if (d.getMonth() === (selectedMonth - 1) && d.getFullYear() === selectedYear) {
-                                const dateStr = d.toISOString().split('T')[0];
-                                const rec = item.recordDetails?.[dateStr];
-                                if (rec) {
-                                  breakdown.push({ date: dateStr, info: `Excess: ${rec.excessHour ?? 0} hr`, subInfo: rec.remarks || '' });
-                                }
-                              }
-                            }
-                          } else if (filterType === 'range' && rangeStart && rangeEnd) {
-                            const start = new Date(rangeStart);
-                            const end = new Date(rangeEnd);
-                            let d = new Date(start);
-                            while (d <= end) {
-                              const dateStr = d.toISOString().split('T')[0];
-                              const rec = item.recordDetails?.[dateStr];
-                              if (rec) {
-                                breakdown.push({ date: dateStr, info: `Excess: ${rec.excessHour ?? 0} hr`, subInfo: rec.remarks || '' });
-                              }
-                              d.setDate(d.getDate() + 1);
-                            }
-                          } else {
-                            // Month view: show all days in month
-                            const month = selectedMonth;
-                            const year = selectedYear;
-                            const daysInMonth = new Date(year, month, 0).getDate();
-                            for (let day = 1; day <= daysInMonth; day++) {
-                              const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                              const rec = item.recordDetails?.[dateStr];
-                              if (rec) {
-                                breakdown.push({ date: dateStr, info: `Excess: ${rec.excessHour ?? 0} hr`, subInfo: rec.remarks || '' });
-                              }
-                            }
-                          }
+                          const breakdown = getExcessResultForItem(item).breakdown;
                           setDetailModal({
                             isOpen: true,
                             title: `Excess Calculation Details for ${item.userName}`,

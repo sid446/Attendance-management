@@ -29,6 +29,14 @@ function calculateSummary(
     let totalLeave = 0;
   
     records.forEach((record, dateStr) => {
+      const isSundayDate = new Date(dateStr).getDay() === 0;
+      const isNonWorkingDayRecord =
+        record.typeOfPresence === 'Holiday' ||
+        record.typeOfPresence === 'Sunday' ||
+        record.typeOfPresence === 'Weekoff' ||
+        record.typeOfPresence === 'Weekoff - special allowance' ||
+        isSundayDate;
+
       // Determine if this is an articleship employee
       const isArticleship = user && user.designation && user.designation.toLowerCase() === 'article';
 
@@ -39,16 +47,19 @@ function calculateSummary(
       if (record.checkin === '00:00' && record.checkout !== '00:00' && record.checkout !== '' && record.totalHour > 0) {
         isHalfDay = true;
       } else if (record.checkin) {
-        const checkinTime = record.checkin;
-        const isAfter1PM = checkinTime >= '13:00';
-        
         if (isArticleship) {
-          // For articleship: half-day if arrive after 1 PM
-          isHalfDay = isAfter1PM;
+          const checkinTime = record.checkin;
+          const isAfter1PM = checkinTime >= '13:00';
+          isHalfDay = isAfter1PM || record.totalHour < 3.5;
         } else {
-          // For others: half-day if arrive after 1 PM AND less than 6 hours worked
-          isHalfDay = isAfter1PM && (record.totalHour < 6);
+          // Non-article employees can come anytime; half-day only depends on total hours.
+          isHalfDay = record.totalHour < 6;
         }
+      }
+
+      if (isNonWorkingDayRecord) {
+        isHalfDay = false;
+        record.excessHour = 0;
       }
 
       // Update the record's halfDay flag
@@ -115,6 +126,8 @@ function calculateSummary(
              totalLeave++;
              break;
           case 'Holiday':
+           case 'Sunday':
+           case 'Weekoff':
           case 'Weekoff - special allowance':
              break;
           default:
@@ -213,6 +226,22 @@ export async function GET(request: NextRequest) {
                 rec.totalHour = calculateDuration(startTime, endTime);
                 // Assuming 9 hours standard for excess calculation logic roughly
                 rec.excessHour = rec.totalHour > 9 ? parseFloat((rec.totalHour - 9).toFixed(2)) : 0;
+        }
+
+        const isSundayDate = new Date(date).getDay() === 0;
+        const isNonWorkingDayRecord =
+          requestedStatus === 'Holiday' ||
+          requestedStatus === 'Sunday' ||
+          requestedStatus === 'Weekoff' ||
+          requestedStatus === 'Weekoff - special allowance' ||
+          rec.typeOfPresence === 'Holiday' ||
+          rec.typeOfPresence === 'Sunday' ||
+          rec.typeOfPresence === 'Weekoff' ||
+          rec.typeOfPresence === 'Weekoff - special allowance' ||
+          isSundayDate;
+        if (isNonWorkingDayRecord) {
+          rec.halfDay = false;
+          rec.excessHour = 0;
         }
 
         attendance.records.set(date, rec);
@@ -453,6 +482,18 @@ export async function POST(request: NextRequest) {
       else if (startTime && endTime && startTime !== '00:00' && endTime !== '00:00') {
         rec.totalHour = calculateDuration(startTime, endTime);
         rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
+      }
+
+      const isSundayDate = new Date(date).getDay() === 0;
+      const isNonWorkingDayRecord =
+        rec.typeOfPresence === 'Holiday' ||
+        rec.typeOfPresence === 'Sunday' ||
+        rec.typeOfPresence === 'Weekoff' ||
+        rec.typeOfPresence === 'Weekoff - special allowance' ||
+        isSundayDate;
+      if (isNonWorkingDayRecord) {
+        rec.halfDay = false;
+        rec.excessHour = 0;
       }
 
       attendance.records.set(date, rec);

@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import User, { IUser } from '@/models/User';
 import Attendance from '@/models/Attendance';
 import AttendanceRequest from '@/models/AttendanceRequest';
+import LeaveTransaction from '@/models/LeaveTransaction';
 
 export interface LeaveBalance {
   balanceAsOfJan26: number;
@@ -99,6 +100,20 @@ export async function incrementMonthlyLeave(monthYear?: string): Promise<void> {
         'leaveBalance.remaining': newRemaining,
         'leaveBalance.lastUpdated': now,
       });
+
+      try {
+        // Record ledger transaction for earned increment (phase 1: write ledger alongside existing balances)
+        await LeaveTransaction.create({
+          userId: user._id,
+          date: now.toISOString().split('T')[0],
+          monthYear: targetMonth,
+          type: 'earned',
+          amount: monthlyEarned,
+          source: 'monthly-increment'
+        });
+      } catch (e) {
+        console.error('Failed to write monthly earned LeaveTransaction for user', String(user._id), e);
+      }
     }
 
     console.log(`Monthly leave incremented for ${usersWithAttendance.length} users for month ${targetMonth}`);
@@ -277,6 +292,31 @@ export async function updateLeaveBalanceOnApproval(
           'leaveBalance.remaining': safeRemaining,
         });
 
+        // record ledger transaction for this paid leave
+        const monthYear = (dateOrDetails && dateOrDetails.length >= 7) ? dateOrDetails.slice(0,7) : undefined;
+        try {
+          await LeaveTransaction.create({
+            userId,
+            date: dateOrDetails,
+            monthYear,
+            type: 'used',
+            amount: 1,
+            source: 'approval'
+          });
+        } catch (e) {
+          console.error('Failed to write LeaveTransaction for used leave (single)', e);
+        }
+
+        // Attempt to create/update snapshot for this month (best-effort)
+        try {
+          if (monthYear) {
+            const ledger = await import('@/lib/leaveLedger');
+            await ledger.createMonthlySnapshots(monthYear);
+          }
+        } catch (e) {
+          console.error('Failed to create monthly snapshot after approval (single):', e);
+        }
+
         return;
     }
 
@@ -310,6 +350,39 @@ export async function updateLeaveBalanceOnApproval(
       'leaveBalance.usedAfterJan26': newUsedAfterJan26,
       'leaveBalance.remaining': safeRemaining,
     });
+
+    try {
+      // create ledger transactions for each paid leave (first paidCount)
+      const toRecord = paidLeaves.slice(0, paidCount);
+      const txs = toRecord.map(d => ({
+        userId,
+        date: d.date,
+        monthYear: (d.date && d.date.length >= 7) ? d.date.slice(0,7) : undefined,
+        type: 'used',
+        amount: d.value || 1,
+        source: 'approval'
+      }));
+      if (txs.length > 0) await LeaveTransaction.insertMany(txs);
+    } catch (e) {
+      console.error('Failed to write LeaveTransaction entries for multi-day approval', e);
+    }
+
+    // After recording transactions for multi-day approval, attempt to build snapshots for affected months
+    try {
+      const months = Array.from(new Set((paidLeaves || []).map(d => (d.date && d.date.length >= 7) ? d.date.slice(0,7) : undefined).filter(Boolean)));
+      if (months.length > 0) {
+        const ledger = await import('@/lib/leaveLedger');
+        for (const m of months) {
+          try {
+            await ledger.createMonthlySnapshots(m);
+          } catch (e) {
+            console.error('Failed to create monthly snapshot after approval (multi):', m, e);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to trigger snapshots after multi-day approval:', e);
+    }
 
   } catch (error) {
     console.error('Error updating leave balance on approval:', error);

@@ -18,7 +18,18 @@ function calculateSummary(
     let totalLeave = 0;
   
     records.forEach((record, dateStr) => {
+    const isSundayDate = new Date(dateStr).getDay() === 0;
+    const isNonWorkingDayRecord =
+      record.typeOfPresence === 'Holiday' ||
+      record.typeOfPresence === 'Sunday' ||
+      record.typeOfPresence === 'Weekoff' ||
+      record.typeOfPresence === 'Weekoff - special allowance' ||
+      isSundayDate;
+
       totalHour += record.totalHour || 0;
+      if (isNonWorkingDayRecord) {
+        record.excessHour = 0;
+      }
       excessHour += record.excessHour || 0;
   
 // Determine if this is an articleship employee
@@ -45,6 +56,10 @@ function calculateSummary(
     // Ensure half-day is NOT set when both check-in and check-out are invalid/00:00
     const bothTimesInvalid = (!record.checkin || record.checkin === '00:00') && (!record.checkout || record.checkout === '00:00');
     if (bothTimesInvalid) {
+      isHalfDay = false;
+    }
+
+    if (isNonWorkingDayRecord) {
       isHalfDay = false;
     }
 
@@ -79,6 +94,9 @@ function calculateSummary(
           totalLeave++;
           break;
         case 'Holiday':
+        case 'Sunday':
+        case 'Weekoff':
+        case 'Weekoff - special allowance':
           break;
         case 'Absent':
           totalAbsent++;
@@ -237,6 +255,23 @@ export async function POST(request: NextRequest) {
                     }
                     
                     await attendance.save();
+
+                    // If the newStatus represents a leave/absent change, update leave balances
+                    try {
+                      const statusLower = (newStatus || '').toString().toLowerCase();
+                      const isLeaveRequest = statusLower.includes('leave') || statusLower.includes('absent') || (newStatus === 'On leave');
+                      if (isLeaveRequest && user) {
+                        const { calculateLeaveUsageForMultipleDays, updateLeaveBalanceOnApproval } = await import('@/lib/leaveManagement');
+                        const leaveCalc = await calculateLeaveUsageForMultipleDays(user._id as any, dates, newStatus);
+                        if (leaveCalc && Array.isArray(leaveCalc.leaveDetails) && leaveCalc.leaveDetails.length > 0) {
+                          // Update leave balances (will internally no-op for unpaid leaves)
+                          await updateLeaveBalanceOnApproval(user._id as any, leaveCalc.leaveDetails as any);
+                        }
+                      }
+                    } catch (leaveErr) {
+                      console.error('Error updating leave balance for bulk status update:', leaveErr);
+                      // Don't fail the entire bulk update if leave update fails
+                    }
                 }
             }
         }

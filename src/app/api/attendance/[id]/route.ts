@@ -135,6 +135,18 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         }
       }
 
+      const isSundayDate = new Date(date).getDay() === 0;
+      const isNonWorkingDayRecord =
+        record?.typeOfPresence === 'Holiday' ||
+        record?.typeOfPresence === 'Sunday' ||
+        record?.typeOfPresence === 'Weekoff' ||
+        record?.typeOfPresence === 'Weekoff - special allowance' ||
+        isSundayDate;
+      if (record && isNonWorkingDayRecord) {
+        record.halfDay = false;
+        record.excessHour = 0;
+      }
+
       // Recalculate summary
       const attendanceUser = await User.findById(attendance.userId);
       attendance.summary = calculateSummary(attendance.records, attendanceUser);
@@ -237,6 +249,14 @@ function calculateSummary(records: Map<string, {
   let totalLeave = 0;
 
   records.forEach((record, dateStr) => {
+    const isSundayDate = new Date(dateStr).getDay() === 0;
+    const isNonWorkingDayRecord =
+      record.typeOfPresence === 'Holiday' ||
+      record.typeOfPresence === 'Sunday' ||
+      record.typeOfPresence === 'Weekoff' ||
+      record.typeOfPresence === 'Weekoff - special allowance' ||
+      isSundayDate;
+
     // Determine if user is an article (articleship)
     const isArticle = user && user.designation && user.designation.toLowerCase() === 'article';
 
@@ -247,18 +267,14 @@ function calculateSummary(records: Map<string, {
     if (record.checkin === '00:00' && record.checkout !== '00:00' && record.checkout !== '' && record.totalHour > 0) {
       halfDay = true;
     } else if (record.checkin) {
-      const checkinTime = record.checkin;
-      const checkinMinutes = timeToMinutes(checkinTime);
-      const onePMMinutes = timeToMinutes('13:00');
-      
-      if (checkinMinutes > onePMMinutes) {
-        if (isArticle) {
-          // For articles: half day if arrive after 1 PM
-          halfDay = true;
-        } else {
-          // For others: half day if arrive after 1 PM AND work less than 6 hours
-          halfDay = record.totalHour < 6;
-        }
+      if (isArticle) {
+        const checkinTime = record.checkin;
+        const checkinMinutes = timeToMinutes(checkinTime);
+        const onePMMinutes = timeToMinutes('13:00');
+        halfDay = checkinMinutes > onePMMinutes || record.totalHour < 3.5;
+      } else {
+        // Non-article employees can come anytime; half-day only depends on total hours.
+        halfDay = record.totalHour < 6;
       }
     }
 
@@ -266,6 +282,11 @@ function calculateSummary(records: Map<string, {
     const bothTimesInvalid = (!record.checkin || record.checkin === '00:00') && (!record.checkout || record.checkout === '00:00');
     if (bothTimesInvalid) {
       halfDay = false;
+    }
+
+    if (isNonWorkingDayRecord) {
+      halfDay = false;
+      record.excessHour = 0;
     }
 
     // Update the record's halfDay flag
@@ -326,6 +347,8 @@ function calculateSummary(records: Map<string, {
         totalLeave++;
         break;
       case 'Holiday':
+      case 'Sunday':
+      case 'Weekoff':
       case 'Weekoff - special allowance':
         break;
       default:
