@@ -26,7 +26,6 @@ export default function EmployeeLoginPage() {
       const json = await res.json();
 
       if (json.success) {
-        // Store user info in localStorage (Simplified "Session")
         localStorage.setItem('employeeUser', JSON.stringify(json.data));
         router.push('/employee/dashboard');
       } else {
@@ -40,58 +39,62 @@ export default function EmployeeLoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-xl shadow-2xl overflow-hidden">
-        <div className="bg-slate-950 p-6 border-b border-slate-800 text-center">
-           {/* Logo and Company Name */}
-           <div className="flex flex-col items-center mb-4">
-             <img src="/lg.png" alt="Asija Logo" className="w-20 h-20 object-contain mb-3" />
-             <h2 className="text-lg font-semibold text-emerald-400">Asija and Associates LLP</h2>
-           </div>
-           <h1 className="text-2xl font-bold text-white mb-2">Employee Portal</h1>
-           <p className="text-slate-400 text-sm">Access your attendance and profile</p>
+    <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center p-4">
+      <div className="w-full max-w-md overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/80 shadow-2xl shadow-black/40">
+        <div className="border-b border-zinc-800 bg-zinc-950/80 px-6 py-6 text-center">
+          <div className="mb-4 flex flex-col items-center">
+            <img src="/lg.png" alt="Asija Logo" className="mb-3 h-20 w-20 object-contain" />
+            <p className="text-sm font-medium text-emerald-500/95">Asija and Associates LLP</p>
+          </div>
+          <h1 className="mb-1 text-2xl font-semibold tracking-tight text-zinc-50">Employee portal</h1>
+          <p className="text-sm text-zinc-500">Attendance and profile</p>
         </div>
-        
+
         <div className="p-8">
-            <form onSubmit={handleLogin} className="space-y-6">
-                <div className="space-y-2">
-                    <label className="text-sm font-medium text-slate-300">Email Address</label>
-                    <div className="relative">
-                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500" />
-                        <input 
-                          type="email"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          placeholder="name@company.com"
-                          className="w-full bg-slate-950 border border-slate-700 rounded-lg py-3 pl-10 pr-4 text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500 transition-colors"
-                          required
-                        />
-                    </div>
-                </div>
+          <form onSubmit={handleLogin} className="space-y-6">
+            <div className="space-y-2">
+              <label htmlFor="employee-email" className="text-sm font-medium text-zinc-400">
+                Email
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-zinc-500" aria-hidden />
+                <input
+                  id="employee-email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="name@company.com"
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 py-3 pl-10 pr-4 text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600/40"
+                  required
+                  autoComplete="email"
+                />
+              </div>
+            </div>
 
-                {error && (
-                    <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg text-rose-400 text-sm">
-                        {error}
-                    </div>
-                )}
+            {error && (
+              <div className="rounded-lg border border-rose-500/25 bg-rose-950/40 p-3 text-sm text-rose-300">
+                {error}
+              </div>
+            )}
 
-                <button 
-                  type="submit"
-                  disabled={loading}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? (
-                      <>
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        Signing in...
-                      </>
-                  ) : (
-                      <>
-                        Sign In <ArrowRight className="w-5 h-5" />
-                      </>
-                  )}
-                </button>
-            </form>
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 py-3 font-medium text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+                  Signing in…
+                </>
+              ) : (
+                <>
+                  Sign in
+                  <ArrowRight className="h-5 w-5" aria-hidden />
+                </>
+              )}
+            </button>
+          </form>
         </div>
       </div>
     </div>

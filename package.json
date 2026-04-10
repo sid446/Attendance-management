@@ -12,6 +12,7 @@
     "migrate:attendance-email": "tsx scripts/migrate-attendance-email.ts",
     "migrate:employment-type-history": "tsx --env-file=.env.local scripts/migrate-employment-type-history.ts",
     "migrate:schedule-effective-date": "tsx --env-file=.env.local scripts/migrate-schedule-effective-date.ts",
+    "backfill:managed-field-histories": "tsx --env-file=.env.local scripts/backfill-managed-field-histories.ts",
     "backfill:nonworking-attendance": "tsx --env-file=.env.local scripts/backfill-nonworking-day-attendance.ts",
     "test:api": "tsx scripts/test-api.ts",
     "backup": "tsx scripts/backup-database.ts",

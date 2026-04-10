@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import User, { IUser } from '@/models/User';
+import { applyManagedEffectiveHistories } from '@/lib/userFieldHistory';
+
+const DEFAULT_BASELINE_EFFECTIVE_FROM = new Date('2025-12-31T00:00:00.000Z');
 
 export async function POST(request: NextRequest) {
   try {
@@ -162,6 +165,23 @@ export async function POST(request: NextRequest) {
         if (matchedUser) {
             // Update existing
             Object.assign(matchedUser, updateData);
+
+            applyManagedEffectiveHistories(
+              matchedUser as any,
+              {
+                registeredUnderPartner: updateData.registeredUnderPartner,
+                workingUnderPartner: updateData.workingUnderPartner,
+                basicSalary: updateData.basicSalary,
+                laptopAllowance: updateData.laptopAllowance,
+                totalSalaryPerMonth: updateData.totalSalaryPerMonth,
+                totalSalaryPerAnnum: updateData.totalSalaryPerAnnum,
+              },
+              {
+                changedAt: new Date(),
+                source: 'excel-upload',
+                baselineEffectiveFrom: DEFAULT_BASELINE_EFFECTIVE_FROM,
+              }
+            );
             
             // Set employmentType based on category
             matchedUser.employmentType = emp.category === 'Article' ? 'article' : 'fulltime';
@@ -211,7 +231,7 @@ export async function POST(request: NextRequest) {
               continue;
             }
 
-            await User.create({
+            const newUser = new User({
                 odId: odId,
                 name: dbName, // Store as "First.Last" or "First Last"? User DB seemed "First.Last"
                 email: email, 
@@ -220,6 +240,25 @@ export async function POST(request: NextRequest) {
                 leaveBalance: emp.leaveBalance,
                 ...updateData
             });
+
+            applyManagedEffectiveHistories(
+              newUser as any,
+              {
+                registeredUnderPartner: updateData.registeredUnderPartner,
+                workingUnderPartner: updateData.workingUnderPartner,
+                basicSalary: updateData.basicSalary,
+                laptopAllowance: updateData.laptopAllowance,
+                totalSalaryPerMonth: updateData.totalSalaryPerMonth,
+                totalSalaryPerAnnum: updateData.totalSalaryPerAnnum,
+              },
+              {
+                changedAt: new Date(),
+                source: 'excel-upload',
+                baselineEffectiveFrom: new Date(),
+              }
+            );
+
+            await newUser.save();
             stats.created++;
         }
 

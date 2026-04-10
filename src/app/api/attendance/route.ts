@@ -4,6 +4,7 @@ import Attendance from '@/models/Attendance';
 import AttendanceRequest from '@/models/AttendanceRequest';
 import User, { IUser } from '@/models/User';
 import Holiday from '@/models/Holiday';
+import { calculateLeaveUsageForMultipleDays, updateLeaveBalanceOnApproval, reconcilePartialLeaveFromAttendance } from '@/lib/leaveManagement';
 
 // GET - Fetch attendance records
 export async function GET(request: NextRequest) {
@@ -25,7 +26,10 @@ export async function GET(request: NextRequest) {
     }
 
     const attendanceRecords = await Attendance.find(query)
-      .populate('userId', 'name employeeId odId employeeCode email department team designation workingUnderPartner schedules scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth')
+      .populate(
+        'userId',
+        'name employeeId odId employeeCode email department team designation workingUnderPartner employmentType employmentTypeHistory schedules scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth'
+      )
       .sort({ monthYear: -1 });
 
     // Serialize records to plain JS objects and ensure summary fields are present
@@ -98,6 +102,10 @@ export async function POST(request: NextRequest) {
       const processed: Array<{ odId: string; userId: string; monthYear: string; date: string; createdUser: boolean }> = [];
       const errors: Array<{ odId: string; reason: string }> = [];
       const uploadedMonths = new Set<string>();
+      // Track uploaded absent/leave candidates by user for paid-leave allocation.
+      const uploadedLeaveCandidates = new Map<string, Set<string>>();
+      // Track uploaded dates by user to reconcile partial leave deductions idempotently.
+      const uploadedPartialReconcileDates = new Map<string, Set<string>>();
       // Track user-month combinations where attendance is being created for the first time
       const newAttendanceUserMonths = new Set<string>();
 
@@ -171,6 +179,9 @@ export async function POST(request: NextRequest) {
               },
             });
           }
+
+          // Preserve old state to avoid double-deducting leave on re-uploads.
+          const existingRecordBeforeUpdate = attendance.records.get(isoDate);
 
           let checkin = normalizeTimeToHHmm(rec.inTime || rec.actualInTime);
           let checkout = normalizeTimeToHHmm(rec.outTime || rec.actualOutTime);
@@ -381,6 +392,29 @@ export async function POST(request: NextRequest) {
           attendance.summary = calculateSummary(attendance.records as any, user);
           await attendance.save();
 
+          // Collect absent/leave days that were newly uploaded and not already paid leave.
+          const isLeaveCandidateType = typeOfPresence === 'Absent' || typeOfPresence === 'On leave';
+          const wasAlreadyPaidLeave = Boolean(
+            existingRecordBeforeUpdate &&
+            existingRecordBeforeUpdate.typeOfPresence === 'On leave' &&
+            Number(existingRecordBeforeUpdate.value || 0) >= 1
+          );
+          if (isLeaveCandidateType && !wasAlreadyPaidLeave) {
+            const key = String(user._id);
+            if (!uploadedLeaveCandidates.has(key)) {
+              uploadedLeaveCandidates.set(key, new Set<string>());
+            }
+            uploadedLeaveCandidates.get(key)?.add(isoDate);
+          }
+
+          // Always track uploaded dates so partial leave deductions can be reconciled
+          // (including reducing previously deducted partial leave on re-uploads).
+          const partialKey = String(user._id);
+          if (!uploadedPartialReconcileDates.has(partialKey)) {
+            uploadedPartialReconcileDates.set(partialKey, new Set<string>());
+          }
+          uploadedPartialReconcileDates.get(partialKey)?.add(isoDate);
+
           processed.push({
             odId,
             userId: String(user._id),
@@ -522,6 +556,115 @@ export async function POST(request: NextRequest) {
             // Recalculate summary after adding holidays
             attendance.summary = calculateSummary(attendance.records as any, user);
             await attendance.save();
+          }
+        }
+      }
+
+      // Apply leave-credit allocation for uploaded Absent/On leave days:
+      // earliest dates consume leave first; paid ones become On leave, rest stay Absent.
+      if (uploadedLeaveCandidates.size > 0) {
+        for (const [userId, dateSet] of uploadedLeaveCandidates.entries()) {
+          try {
+            const dates = Array.from(dateSet).sort();
+            if (dates.length === 0) continue;
+
+            const user = allUsers.find(u => String(u._id) === userId);
+            if (!user) continue;
+
+            const leaveCalc = await calculateLeaveUsageForMultipleDays(user._id as any, dates, 'On leave');
+            const details = leaveCalc?.leaveDetails || [];
+            if (details.length === 0) continue;
+
+            const detailByDate = new Map(details.map(d => [d.date, d]));
+            const attendanceByMonth = new Map<string, any>();
+            const paidDetails: Array<{ date: string; isPaidLeave: boolean; value: number }> = [];
+
+            for (const date of dates) {
+              const monthYear = date.slice(0, 7);
+              let attendance = attendanceByMonth.get(monthYear);
+              if (!attendance) {
+                attendance = await Attendance.findOne({ userId: user._id, monthYear });
+                if (attendance) {
+                  attendanceByMonth.set(monthYear, attendance);
+                }
+              }
+              if (!attendance) continue;
+
+              const rec = attendance.records.get(date);
+              if (!rec) continue;
+
+              const detail = detailByDate.get(date);
+              const isPaidLeave = Boolean(detail?.isPaidLeave && Number(detail?.value || 0) >= 1);
+
+              rec.typeOfPresence = isPaidLeave ? 'On leave' : 'Absent';
+              rec.value = isPaidLeave ? 1 : 0;
+              rec.halfDay = false;
+              attendance.records.set(date, rec);
+
+              if (isPaidLeave) {
+                paidDetails.push({ date, isPaidLeave: true, value: 1 });
+              }
+            }
+
+            for (const attendance of attendanceByMonth.values()) {
+              attendance.summary = calculateSummary(attendance.records as any, user as any);
+              await attendance.save();
+            }
+
+            if (paidDetails.length > 0) {
+              await updateLeaveBalanceOnApproval(user._id as any, paidDetails as any);
+            }
+          } catch (leaveApplyErr) {
+            console.error('Error applying uploaded leave allocation for user', userId, leaveApplyErr);
+          }
+        }
+      }
+
+      // Reconcile partial leave for weekday WFH/HD records based on value shortfall.
+      // Example: value 0.8 -> leave deduction 0.2 for that date.
+      if (uploadedPartialReconcileDates.size > 0) {
+        for (const [userId, dateSet] of uploadedPartialReconcileDates.entries()) {
+          try {
+            const user = allUsers.find(u => String(u._id) === userId);
+            if (!user) continue;
+
+            const dates = Array.from(dateSet).sort();
+            const attendanceByMonth = new Map<string, any>();
+            const partialEntries: Array<{ date: string; amount: number }> = [];
+
+            for (const date of dates) {
+              const monthYear = date.slice(0, 7);
+              let attendance = attendanceByMonth.get(monthYear);
+              if (!attendance) {
+                attendance = await Attendance.findOne({ userId: user._id, monthYear });
+                if (attendance) {
+                  attendanceByMonth.set(monthYear, attendance);
+                }
+              }
+              if (!attendance) continue;
+
+              const rec = attendance.records.get(date);
+              if (!rec) continue;
+
+              const day = new Date(date).getDay();
+              const isWeekday = day >= 1 && day <= 5;
+              const type = String(rec.typeOfPresence || '');
+              const isEligibleType = type === 'WFH - weekdays' || type === 'Half Day - weekdays' || type === 'Half Day (HD)';
+
+              const rawValue = Number(rec.value);
+              const normalizedValue = Number.isFinite(rawValue) ? Math.min(1, Math.max(0, rawValue)) : 0;
+              const amount = isWeekday && isEligibleType
+                ? Math.round((1 - normalizedValue) * 100) / 100
+                : 0;
+
+              partialEntries.push({ date, amount: Math.max(0, amount) });
+            }
+
+            if (partialEntries.length > 0) {
+              await reconcilePartialLeaveFromAttendance(user._id as any, partialEntries);
+            }
+          } catch (partialErr) {
+            console.error('Error reconciling partial leave for uploaded records for user', userId, partialErr);
           }
         }
       }

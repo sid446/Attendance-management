@@ -144,6 +144,15 @@ export interface User {
   workingUnderPartner?: string;
   workingTiming?: string;
 
+  fieldHistories?: {
+    registeredUnderPartner?: Array<{ value: string; effectiveFrom: string | Date; effectiveTo?: string | Date | null; source?: string }>;
+    workingUnderPartner?: Array<{ value: string; effectiveFrom: string | Date; effectiveTo?: string | Date | null; source?: string }>;
+    basicSalary?: Array<{ value: string; effectiveFrom: string | Date; effectiveTo?: string | Date | null; source?: string }>;
+    laptopAllowance?: Array<{ value: string; effectiveFrom: string | Date; effectiveTo?: string | Date | null; source?: string }>;
+    totalSalaryPerMonth?: Array<{ value: string; effectiveFrom: string | Date; effectiveTo?: string | Date | null; source?: string }>;
+    totalSalaryPerAnnum?: Array<{ value: string; effectiveFrom: string | Date; effectiveTo?: string | Date | null; source?: string }>;
+  };
+
 
   // Flexible additional info fields (e.g. PAN, Aadhaar, etc.)
   extraInfo?: {

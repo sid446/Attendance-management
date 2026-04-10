@@ -1,0 +1,226 @@
+import { NextRequest, NextResponse } from 'next/server';
+import dbConnect from '@/lib/mongodb';
+import User, { IUser } from '@/models/User';
+import { applyManagedEffectiveHistories } from '@/lib/userFieldHistory';
+
+type UploadMode = 'update' | 'add';
+
+function normalizeText(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+}
+
+function parseDate(value: unknown): Date | undefined {
+  const text = normalizeText(value);
+  if (!text) return undefined;
+  const d = new Date(text);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
+const DEFAULT_BASELINE_EFFECTIVE_FROM = new Date('2025-12-31T00:00:00.000Z');
+
+export async function POST(request: NextRequest) {
+  try {
+    await dbConnect();
+
+    const body = await request.json();
+    const employees = Array.isArray(body?.employees) ? body.employees : [];
+    const mode: UploadMode = body?.mode === 'add' ? 'add' : 'update';
+    const parsedEffectiveFrom = parseDate(body?.effectiveFrom);
+    const effectiveFrom = parsedEffectiveFrom || new Date();
+
+    if (!employees.length) {
+      return NextResponse.json({ success: false, error: 'No employee data provided' }, { status: 400 });
+    }
+
+    const stats = {
+      created: 0,
+      updated: 0,
+      failed: 0,
+      errors: [] as string[],
+      mode,
+      effectiveFrom: effectiveFrom.toISOString().split('T')[0],
+    };
+
+    const existingUsers = await User.find({});
+
+    const mapByCode = new Map<string, IUser>();
+    const mapByName = new Map<string, IUser>();
+
+    existingUsers.forEach((u) => {
+      const code = normalizeText((u as any).employeeCode).toLowerCase();
+      if (code) mapByCode.set(code, u);
+      const name = normalizeText((u as any).name).toLowerCase();
+      if (name) {
+        mapByName.set(name, u);
+        mapByName.set(name.replace(/\./g, ' '), u);
+      }
+    });
+
+    for (const emp of employees) {
+      try {
+        const name = normalizeText(emp?.name);
+        const employeeCode = normalizeText(emp?.employeeCode);
+        if (!name) {
+          stats.failed++;
+          stats.errors.push('Row skipped: Missing Name');
+          continue;
+        }
+
+        const codeKey = employeeCode.toLowerCase();
+        const nameKey = name.toLowerCase();
+        let matchedUser: IUser | undefined = undefined;
+
+        if (codeKey) {
+          matchedUser = mapByCode.get(codeKey);
+        }
+
+        if (!matchedUser) {
+          matchedUser = mapByName.get(nameKey) || mapByName.get(nameKey.replace(/\s+/g, '.'));
+        }
+
+        const updateData: any = {
+          registrationNo: emp.registrationNo,
+          employeeCode: employeeCode || undefined,
+          paidFrom: emp.paidFrom,
+          designation: emp.designation,
+          category: emp.category,
+          employmentType: emp.category === 'Article' ? 'article' : emp.employmentType,
+          tallyName: emp.tallyName,
+          gender: emp.gender,
+          email: emp.email,
+          parentName: emp.parentName,
+          parentOccupation: emp.parentOccupation,
+          mobileNumber: emp.mobileNumber,
+          alternateMobileNumber: emp.alternateMobileNumber,
+          alternateEmail: emp.alternateEmail,
+          address1: emp.address1,
+          address2: emp.address2,
+          emergencyContactNo: emp.emergencyContactNo,
+          emergencyContactRelation: emp.emergencyContactRelation,
+          anniversaryDate: parseDate(emp.anniversaryDate),
+          bankName: emp.bankName,
+          branchName: emp.branchName,
+          accountNumber: emp.accountNumber,
+          ifscCode: emp.ifscCode,
+          accountType: emp.accountType,
+          accountHolderName: emp.accountHolderName,
+          aadhaarNumber: emp.aadhaarNumber,
+          panNumber: emp.panNumber,
+          basicSalary: emp.basicSalary,
+          laptopAllowance: emp.laptopAllowance,
+          totalSalaryPerMonth: emp.totalSalaryPerMonth,
+          totalSalaryPerAnnum: emp.totalSalaryPerAnnum,
+          pf: emp.pf,
+          esi: emp.esi,
+          gratuity: emp.gratuity,
+          joiningDate: parseDate(emp.joiningDate),
+          articleshipStartDate: parseDate(emp.articleshipStartDate),
+          transferCase: emp.transferCase,
+          firstYearArticleship: emp.firstYearArticleship,
+          secondYearArticleship: emp.secondYearArticleship,
+          thirdYearArticleship: emp.thirdYearArticleship,
+          filledScholarship: emp.filledScholarship,
+          qualificationLevel: emp.qualificationLevel,
+          nextAttemptDueDate: parseDate(emp.nextAttemptDueDate),
+          registeredUnderPartner: emp.registeredUnderPartner,
+          workingUnderPartner: emp.workingUnderPartner,
+        };
+
+        Object.keys(updateData).forEach((key) => {
+          if (updateData[key] === undefined || updateData[key] === null || updateData[key] === '') {
+            delete updateData[key];
+          }
+        });
+
+        if (mode === 'update') {
+          if (!matchedUser) {
+            stats.failed++;
+            stats.errors.push(`Not found for update: ${name}${employeeCode ? ` (${employeeCode})` : ''}`);
+            continue;
+          }
+
+          Object.assign(matchedUser, updateData);
+
+          applyManagedEffectiveHistories(
+            matchedUser as any,
+            {
+              registeredUnderPartner: updateData.registeredUnderPartner,
+              workingUnderPartner: updateData.workingUnderPartner,
+              basicSalary: updateData.basicSalary,
+              laptopAllowance: updateData.laptopAllowance,
+              totalSalaryPerMonth: updateData.totalSalaryPerMonth,
+              totalSalaryPerAnnum: updateData.totalSalaryPerAnnum,
+            },
+            {
+              changedAt: new Date(),
+              source: 'basic-master-upload',
+              baselineEffectiveFrom: DEFAULT_BASELINE_EFFECTIVE_FROM,
+              fieldChangedAt: {
+                registeredUnderPartner: effectiveFrom,
+                workingUnderPartner: effectiveFrom,
+                basicSalary: effectiveFrom,
+                laptopAllowance: effectiveFrom,
+                totalSalaryPerMonth: effectiveFrom,
+                totalSalaryPerAnnum: effectiveFrom,
+              },
+            }
+          );
+
+          await matchedUser.save();
+          stats.updated++;
+          continue;
+        }
+
+        // mode === 'add'
+        if (matchedUser) {
+          stats.failed++;
+          stats.errors.push(`Already exists, skipped add: ${name}${employeeCode ? ` (${employeeCode})` : ''}`);
+          continue;
+        }
+
+        const cleanName = name.replace(/\s+/g, '.');
+        const email = normalizeText(updateData.email) || `${cleanName.toLowerCase().replace(/[^a-z0-9.]/g, '')}@asija.com`;
+        const odId = employeeCode || `OD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+        const newUser = new User({
+          odId,
+          name: cleanName,
+          email,
+          attendanceEmail: email,
+          joiningDate: updateData.joiningDate || new Date(),
+          isActive: true,
+          ...updateData,
+        });
+
+        applyManagedEffectiveHistories(
+          newUser as any,
+          {
+            registeredUnderPartner: updateData.registeredUnderPartner,
+            workingUnderPartner: updateData.workingUnderPartner,
+            basicSalary: updateData.basicSalary,
+            laptopAllowance: updateData.laptopAllowance,
+            totalSalaryPerMonth: updateData.totalSalaryPerMonth,
+            totalSalaryPerAnnum: updateData.totalSalaryPerAnnum,
+          },
+          {
+            changedAt: effectiveFrom,
+            source: 'basic-master-upload',
+            baselineEffectiveFrom: effectiveFrom,
+          }
+        );
+
+        await newUser.save();
+        stats.created++;
+      } catch (e) {
+        stats.failed++;
+        stats.errors.push(`Failed row ${normalizeText(emp?.name) || '(unknown)'}: ${(e as Error).message}`);
+      }
+    }
+
+    return NextResponse.json({ success: true, data: stats });
+  } catch (error) {
+    console.error('Basic master upload error:', error);
+    return NextResponse.json({ success: false, error: 'Failed to process basic master upload' }, { status: 500 });
+  }
+}

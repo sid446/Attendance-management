@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isHolidayDate } from '@/lib/holidaysClient';
 import { useRouter } from 'next/navigation';
 import { EmployeeMonthView } from '@/components/EmployeeMonthView';
@@ -30,7 +30,73 @@ async function fetchAttendanceForUser(userId: string, monthYear: string) {
   return null;
 }
 import { LocationAttendanceSection } from '@/components/LocationAttendanceSection';
-import { LogOut, X, Loader2, Send } from 'lucide-react';
+import { EmployeeDashboardOverview } from '@/components/EmployeeDashboardOverview';
+import {
+  PartnerTeamOverview,
+  type PartnerTeamRow,
+} from '@/components/PartnerTeamOverview';
+import {
+  computeSummaryAlignedMetrics,
+  getDailyWorkedHoursSeries,
+} from '@/lib/attendanceSummaryMetrics';
+import {
+  LogOut,
+  X,
+  Loader2,
+  Send,
+  PanelLeft,
+  PanelLeftClose,
+  LayoutDashboard,
+  CalendarDays,
+  Users as UsersIcon,
+  ClipboardList,
+} from 'lucide-react';
+
+function sessionToUser(raw: Record<string, unknown>): User {
+  return {
+    _id: String(raw._id ?? ''),
+    odId: String(raw.odId ?? ''),
+    name: String(raw.name ?? ''),
+    email: String(raw.email ?? ''),
+    joiningDate: String(raw.joiningDate ?? ''),
+    leaveBalance: raw.leaveBalance,
+    ...raw,
+  } as User;
+}
+
+function formatExcessHourForSummary(val: number): string {
+  const sign = val < 0 ? '-' : '';
+  const abs = Math.abs(val);
+  const h = Math.floor(abs);
+  const m = Math.round((abs % 1) * 60);
+  return `${sign}${h}:${m.toString().padStart(2, '0')}`;
+}
+
+/** Same title-case name used for partner review URLs and pending-request API. */
+function formatPartnerNameForReview(name: string): string {
+  let n = name.replace(/\./g, ' ');
+  n = n.replace(/\s+/g, ' ').trim();
+  return n
+    .split(' ')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
+function mergeAttendanceProfile(session: User, docUser: unknown): User {
+  if (!docUser || typeof docUser !== 'object') return session;
+  const d = docUser as Record<string, unknown>;
+  const id = d._id != null ? String(d._id) : session._id;
+  return {
+    ...session,
+    ...d,
+    _id: id,
+    odId: (d.odId as string) ?? session.odId,
+    name: (d.name as string) ?? session.name,
+    email: (d.email as string) ?? session.email,
+    employeeCode: (d.employeeCode as string) ?? session.employeeCode,
+    joiningDate: session.joiningDate || String(d.joiningDate ?? ''),
+  } as User;
+}
 
 const TIMED_CATEGORIES = [
   'Present - in office',
@@ -41,23 +107,71 @@ const TIMED_CATEGORIES = [
 ];
 
 export default function EmployeeDashboard() {
-  // Sidebar tab state
-  const [activeTab, setActiveTab] = useState<'my' | 'employees'>('my');
-  // Collapsible sidebar state
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'attendance' | 'employees'>('dashboard');
+  // Mobile drawer open
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  /** Desktop: narrow icon rail vs full labels */
+  const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(false);
   // Selected subordinate for dropdown
   const [selectedSubordinateId, setSelectedSubordinateId] = useState<string | null>(null);
   // Search state for filtering subordinates
   const [searchTerm, setSearchTerm] = useState('');
   // Sidebar tab state
 
-    // State for subordinates (if any)
-    const [subordinates, setSubordinates] = useState<User[]>([]);
-    const [subordinateAttendance, setSubordinateAttendance] = useState<Record<string, { summary: AttendanceSummaryView | null, employeeDays: AttendanceRecord[] }>>({});
-    const [subLoading, setSubLoading] = useState(false);
+  // State for subordinates (if any)
+  const [subordinates, setSubordinates] = useState<User[]>([]);
+  const [subordinateAttendance, setSubordinateAttendance] = useState<
+    Record<
+      string,
+      {
+        summary: AttendanceSummaryView | null;
+        employeeDays: AttendanceRecord[];
+        userForMetrics?: User;
+      }
+    >
+  >({});
+  const [subLoading, setSubLoading] = useState(false);
+  /** Team tab: scroll here after picking someone from the leaderboard (or overview). */
+  const teamSubordinateCalendarRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+
+  /** Pending attendance requests for this user as partner (review queue). */
+  const [partnerPendingReviewCount, setPartnerPendingReviewCount] = useState(0);
+
+  const fetchPartnerPendingReviewCount = useCallback(async () => {
+    if (!user?.name) {
+      setPartnerPendingReviewCount(0);
+      return;
+    }
+    const partnerName = formatPartnerNameForReview(user.name);
+    try {
+      const res = await fetch(
+        `/api/partner/pending-requests?partnerName=${encodeURIComponent(partnerName)}`
+      );
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        setPartnerPendingReviewCount(json.data.length);
+      } else {
+        setPartnerPendingReviewCount(0);
+      }
+    } catch {
+      setPartnerPendingReviewCount(0);
+    }
+  }, [user?.name]);
+
+  useEffect(() => {
+    fetchPartnerPendingReviewCount();
+  }, [fetchPartnerPendingReviewCount]);
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'visible') fetchPartnerPendingReviewCount();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [fetchPartnerPendingReviewCount]);
 
   // Attendance Data State
   const [summary, setSummary] = useState<AttendanceSummaryView | null>(null);
@@ -103,18 +217,38 @@ export default function EmployeeDashboard() {
     updatedAt?: string;
   }>>([]);
 
+  const [holidays, setHolidays] = useState<{ date: string; name: string }[]>([]);
+  /** Populated user from attendance API (schedules, employment type, etc.) for summary-aligned math */
+  const [attendanceUser, setAttendanceUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/holidays?activeOnly=true');
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          setHolidays(json.data);
+        }
+      } catch {
+        setHolidays([]);
+      }
+    })();
+  }, []);
+
   useEffect(() => {
     const stored = localStorage.getItem('employeeUser');
     if (!stored) {
       router.push('/employee/login');
       return;
     }
-    const userData = JSON.parse(stored);
-    setUser(userData);
+    const userData = JSON.parse(stored) as Record<string, unknown>;
+    const u = sessionToUser(userData);
+    setUser(u);
+    setAttendanceUser(u);
     setLoading(false);
-    
+
     // Initial Load
-    fetchAttendance(userData._id, monthYear);
+    fetchAttendance(u._id, monthYear, u);
 
     // Fetch subordinates if this user is a partner
     // Try both by _id and by name
@@ -122,15 +256,22 @@ export default function EmployeeDashboard() {
       setSubLoading(true);
       let subs: User[] = [];
       // Try by _id
-      subs = await fetchSubordinates(userData._id);
+      subs = await fetchSubordinates(String(userData._id ?? ''));
       // If none, try by name
       if (!subs.length && userData.name) {
-        subs = await fetchSubordinates(userData.name);
+        subs = await fetchSubordinates(String(userData.name));
       }
       setSubordinates(subs);
       setSubLoading(false);
       // Fetch attendance for each subordinate
-      const att: Record<string, { summary: AttendanceSummaryView | null, employeeDays: AttendanceRecord[] }> = {};
+      const att: Record<
+        string,
+        {
+          summary: AttendanceSummaryView | null;
+          employeeDays: AttendanceRecord[];
+          userForMetrics?: User;
+        }
+      > = {};
       for (const sub of subs) {
         const attData = await fetchAttendanceForUser(sub._id, monthYear);
         if (attData) {
@@ -196,6 +337,11 @@ export default function EmployeeDashboard() {
               daily[day] = undefined;
             }
           });
+          const recordDetailsPlain: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(recordsObj)) {
+            recordDetailsPlain[k] =
+              v && typeof v === 'object' ? { ...(v as object) } : v;
+          }
           const mappedSum: AttendanceSummaryView = {
             id: attData._id,
             userId: attData.userId._id,
@@ -207,10 +353,17 @@ export default function EmployeeDashboard() {
             },
             summary: {
               ...attData.summary,
-              excessHours: '' // Not used
-            }
+              excessHours: formatExcessHourForSummary(
+                attData.summary?.excessHour ?? 0
+              ),
+            },
+            recordDetails: recordDetailsPlain as AttendanceSummaryView['recordDetails'],
           };
-          att[sub._id] = { summary: mappedSum, employeeDays: days };
+          att[sub._id] = {
+            summary: mappedSum,
+            employeeDays: days,
+            userForMetrics: mergeAttendanceProfile(sub, attData.userId) as User,
+          };
         } else {
           att[sub._id] = { summary: null, employeeDays: [] };
         }
@@ -219,147 +372,161 @@ export default function EmployeeDashboard() {
     })();
   }, []);
 
-  const fetchAttendance = async (userId: string, my: string) => {
+  const fetchAttendance = async (userId: string, my: string, sessionUser?: User | null) => {
+    const baseSession = sessionUser ?? user;
     setFetchLoading(true);
     setFetchError(null);
     try {
-        // Fetch Summary and Employee Requests in parallel
-        const [resSum, resRequests] = await Promise.all([
-          fetch(`/api/attendance?userId=${userId}&monthYear=${my}`),
-          fetch(`/api/employee/request-correction?userId=${userId}`)
-        ]);
-        
-        const jsonSum = await resSum.json();
-        const jsonRequests = await resRequests.json();
+      // Fetch Summary and Employee Requests in parallel
+      const [resSum, resRequests] = await Promise.all([
+        fetch(`/api/attendance?userId=${userId}&monthYear=${my}`),
+        fetch(`/api/employee/request-correction?userId=${userId}`)
+      ]);
 
-        // Process employee requests
-        if (jsonRequests.success && jsonRequests.data) {
-          // Filter requests for the selected month
-          const filteredRequests = jsonRequests.data.filter((req: any) => {
-            const reqDate = req.date.split('T')[0];
-            return reqDate.startsWith(my);
-          });
-          setEmployeeRequests(filteredRequests);
-        } else {
-          setEmployeeRequests([]);
+      const jsonSum = await resSum.json();
+      const jsonRequests = await resRequests.json();
+
+      // Process employee requests
+      if (jsonRequests.success && jsonRequests.data) {
+        // Filter requests for the selected month
+        const filteredRequests = jsonRequests.data.filter((req: any) => {
+          const reqDate = req.date.split('T')[0];
+          return reqDate.startsWith(my);
+        });
+        setEmployeeRequests(filteredRequests);
+      } else {
+        setEmployeeRequests([]);
+      }
+
+      if (jsonSum.success && jsonSum.data && jsonSum.data.length > 0) {
+        const doc = jsonSum.data[0];
+        // For each day, fetch the latest user schedule (in case of changes mid-month)
+        const recordsObj = doc.records || {};
+        const days: AttendanceRecord[] = await Promise.all(
+          Object.entries(recordsObj).map(async ([dateKey, value]: [string, any]) => {
+            const userForDay = doc.userId;
+            const dateObj = new Date(dateKey);
+            const dayOfWeek = dateObj.getDay();
+            const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+            const dayName = dayNames[dayOfWeek];
+            let schedule = undefined;
+            // --- NEW LOGIC: Use schedules array with effective date ---
+            if (userForDay.schedules && Array.isArray(userForDay.schedules) && userForDay.schedules.length > 0) {
+              // Find the most recent schedule effective on or before this date
+              const effSchedules = userForDay.schedules
+                .filter((s: any) => new Date(s.effectiveFrom) <= dateObj)
+                .sort((a: any, b: any) => Number(new Date(b.effectiveFrom).getTime()) - Number(new Date(a.effectiveFrom).getTime()));
+              if (effSchedules.length > 0) {
+                const eff = effSchedules[0];
+                if (eff.daily && eff.daily[dayName]) {
+                  schedule = { ...eff.daily[dayName] };
+                }
+              }
+            }
+            // Fallback to legacy fields if no schedule found
+            if (!schedule) {
+              if (dayName === 'saturday' && userForDay.scheduleInOutTimeSat) {
+                schedule = { ...userForDay.scheduleInOutTimeSat, isHoliday: false, isHalfDay: true };
+              } else if (userForDay.scheduleInOutTime) {
+                schedule = { ...userForDay.scheduleInOutTime, isHoliday: false, isHalfDay: false };
+              } else if (dayName === 'sunday') {
+                schedule = { inTime: '09:00', outTime: '18:00', isHoliday: true, isHalfDay: false };
+              }
+            }
+
+            // Use edited times for display if available, otherwise use original times
+            const effectiveCheckin = value.editedCheckin || value.checkin;
+            const effectiveCheckout = value.editedCheckout || value.checkout;
+
+            let status: any = 'Present';
+            if (value.typeOfPresence === 'Leave' || value.typeOfPresence === 'On leave') status = 'On leave';
+            else if (value.typeOfPresence === 'Holiday') status = 'Holiday';
+            else if (value.halfDay) status = 'HalfDay';
+            else if (!effectiveCheckin && !effectiveCheckout && value.typeOfPresence !== 'Leave' && value.typeOfPresence !== 'On leave') status = 'Absent';
+
+            // Fallback
+            if (status === 'Present' && !effectiveCheckin && !effectiveCheckout) status = 'Absent';
+
+            return {
+              id: userForDay._id,
+              name: userForDay.name,
+              date: dateKey,
+              inTime: effectiveCheckin ?? '',
+              outTime: effectiveCheckout ?? '',
+              status: status,
+              typeOfPresence: value.typeOfPresence,
+              value: value.value,
+              schedule: schedule // Attach schedule for this day
+            };
+          })
+        );
+        setEmployeeDays(days);
+
+        // Build summary.schedules.daily using the latest user schedule for each weekday
+        const daily: any = {};
+        const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+        weekdays.forEach((day) => {
+          if (day === 'saturday' && doc.userId.scheduleInOutTimeSat) {
+            daily[day] = { ...doc.userId.scheduleInOutTimeSat, isHoliday: false, isHalfDay: true };
+          } else if (day === 'sunday') {
+            daily[day] = { inTime: '09:00', outTime: '18:00', isHoliday: true, isHalfDay: false };
+          } else if (doc.userId.scheduleInOutTime) {
+            daily[day] = { ...doc.userId.scheduleInOutTime, isHoliday: false, isHalfDay: false };
+          } else {
+            daily[day] = undefined;
+          }
+        });
+        // Format excessHour as string for legacy UI fields
+        const formatExcessHour = (val: number) => {
+          const sign = val < 0 ? '-' : '';
+          const abs = Math.abs(val);
+          const h = Math.floor(abs);
+          const m = Math.round((abs % 1) * 60);
+          return `${sign}${h}:${m.toString().padStart(2, '0')}`;
+        };
+        const recordDetailsPlain: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(recordsObj)) {
+          recordDetailsPlain[k] =
+            v && typeof v === 'object' ? { ...(v as object) } : v;
         }
-        
-        if (jsonSum.success && jsonSum.data && jsonSum.data.length > 0) {
-             const doc = jsonSum.data[0];
-             // For each day, fetch the latest user schedule (in case of changes mid-month)
-             const recordsObj = doc.records || {};
-             const days: AttendanceRecord[] = await Promise.all(
-               Object.entries(recordsObj).map(async ([dateKey, value]: [string, any]) => {
-                 const userForDay = doc.userId;
-                 const dateObj = new Date(dateKey);
-                 const dayOfWeek = dateObj.getDay();
-                 const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-                 const dayName = dayNames[dayOfWeek];
-                 let schedule = undefined;
-                 // --- NEW LOGIC: Use schedules array with effective date ---
-                 if (userForDay.schedules && Array.isArray(userForDay.schedules) && userForDay.schedules.length > 0) {
-                   // Find the most recent schedule effective on or before this date
-                   const effSchedules = userForDay.schedules
-                     .filter((s: any) => new Date(s.effectiveFrom) <= dateObj)
-                     .sort((a: any, b: any) => Number(new Date(b.effectiveFrom).getTime()) - Number(new Date(a.effectiveFrom).getTime()));
-                   if (effSchedules.length > 0) {
-                     const eff = effSchedules[0];
-                     if (eff.daily && eff.daily[dayName]) {
-                       schedule = { ...eff.daily[dayName] };
-                     }
-                   }
-                 }
-                 // Fallback to legacy fields if no schedule found
-                 if (!schedule) {
-                   if (dayName === 'saturday' && userForDay.scheduleInOutTimeSat) {
-                     schedule = { ...userForDay.scheduleInOutTimeSat, isHoliday: false, isHalfDay: true };
-                   } else if (userForDay.scheduleInOutTime) {
-                     schedule = { ...userForDay.scheduleInOutTime, isHoliday: false, isHalfDay: false };
-                   } else if (dayName === 'sunday') {
-                     schedule = { inTime: '09:00', outTime: '18:00', isHoliday: true, isHalfDay: false };
-                   }
-                 }
 
-                 // Use edited times for display if available, otherwise use original times
-                 const effectiveCheckin = value.editedCheckin || value.checkin;
-                 const effectiveCheckout = value.editedCheckout || value.checkout;
-
-                 let status: any = 'Present';
-                 if (value.typeOfPresence === 'Leave' || value.typeOfPresence === 'On leave') status = 'On leave';
-                 else if (value.typeOfPresence === 'Holiday') status = 'Holiday';
-                 else if (value.halfDay) status = 'HalfDay';
-                 else if (!effectiveCheckin && !effectiveCheckout && value.typeOfPresence !== 'Leave' && value.typeOfPresence !== 'On leave') status = 'Absent';
-
-                 // Fallback
-                 if (status === 'Present' && !effectiveCheckin && !effectiveCheckout) status = 'Absent';
-
-                 return {
-                   id: userForDay._id,
-                   name: userForDay.name,
-                   date: dateKey,
-                   inTime: effectiveCheckin ?? '',
-                   outTime: effectiveCheckout ?? '',
-                   status: status,
-                   typeOfPresence: value.typeOfPresence,
-                   value: value.value,
-                   schedule: schedule // Attach schedule for this day
-                 };
-               })
-             );
-             setEmployeeDays(days);
-
-             // Build summary.schedules.daily using the latest user schedule for each weekday
-             const daily: any = {};
-             const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-             weekdays.forEach((day) => {
-               if (day === 'saturday' && doc.userId.scheduleInOutTimeSat) {
-                 daily[day] = { ...doc.userId.scheduleInOutTimeSat, isHoliday: false, isHalfDay: true };
-               } else if (day === 'sunday') {
-                 daily[day] = { inTime: '09:00', outTime: '18:00', isHoliday: true, isHalfDay: false };
-               } else if (doc.userId.scheduleInOutTime) {
-                 daily[day] = { ...doc.userId.scheduleInOutTime, isHoliday: false, isHalfDay: false };
-               } else {
-                 daily[day] = undefined;
-               }
-             });
-             // Format excessHour as string for legacy UI fields
-             const formatExcessHour = (val: number) => {
-               const sign = val < 0 ? '-' : '';
-               const abs = Math.abs(val);
-               const h = Math.floor(abs);
-               const m = Math.round((abs % 1) * 60);
-               return `${sign}${h}:${m.toString().padStart(2, '0')}`;
-             };
-             const mappedSum: AttendanceSummaryView = {
-               id: doc._id,
-               userId: doc.userId._id,
-               userName: doc.userId.name,
-               monthYear: doc.monthYear,
-               schedules: {
-                 effectiveFrom: new Date().toISOString(),
-                 daily
-               },
-               summary: {
-                 ...doc.summary,
-                 excessHours: formatExcessHour(doc.summary?.excessHour ?? 0),
-               }
-             };
-             setSummary(mappedSum);
-        } else {
-            setSummary(null);
-            setEmployeeDays([]);
+        const mappedSum: AttendanceSummaryView = {
+          id: doc._id,
+          userId: String(doc.userId._id ?? doc.userId),
+          userName: doc.userId.name,
+          monthYear: doc.monthYear,
+          schedules: {
+            effectiveFrom: new Date().toISOString(),
+            daily
+          },
+          summary: {
+            ...doc.summary,
+            excessHours: formatExcessHour(doc.summary?.excessHour ?? 0),
+          },
+          recordDetails: recordDetailsPlain as AttendanceSummaryView['recordDetails'],
+        };
+        setSummary(mappedSum);
+        if (baseSession && doc.userId) {
+          setAttendanceUser(mergeAttendanceProfile(baseSession, doc.userId));
+        } else if (baseSession) {
+          setAttendanceUser(baseSession);
         }
+      } else {
+        setSummary(null);
+        setEmployeeDays([]);
+        if (baseSession) setAttendanceUser(baseSession);
+      }
 
     } catch (e) {
-        setFetchError('Failed to load data');
+      setFetchError('Failed to load data');
     } finally {
-        setFetchLoading(false);
+      setFetchLoading(false);
     }
   };
 
   const handleMonthChange = (val: string) => {
     setMonthYear(val);
-    if (user) fetchAttendance(user._id, val);
+    if (user) fetchAttendance(user._id, val, user);
     setCalendarSelectionStart(null);
     setFutureStartDate('');
     setFutureEndDate('');
@@ -377,7 +544,14 @@ export default function EmployeeDashboard() {
           subs = await fetchSubordinates(user.name);
         }
       }
-      const att: Record<string, { summary: AttendanceSummaryView | null, employeeDays: AttendanceRecord[] }> = {};
+      const att: Record<
+        string,
+        {
+          summary: AttendanceSummaryView | null;
+          employeeDays: AttendanceRecord[];
+          userForMetrics?: User;
+        }
+      > = {};
       for (const sub of subs) {
         const attData = await fetchAttendanceForUser(sub._id, val);
         if (attData) {
@@ -442,6 +616,11 @@ export default function EmployeeDashboard() {
               daily[day] = undefined;
             }
           });
+          const recordDetailsPlain: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(recordsObj)) {
+            recordDetailsPlain[k] =
+              v && typeof v === 'object' ? { ...(v as object) } : v;
+          }
           const mappedSum: AttendanceSummaryView = {
             id: attData._id,
             userId: attData.userId._id,
@@ -453,10 +632,17 @@ export default function EmployeeDashboard() {
             },
             summary: {
               ...attData.summary,
-              excessHours: ''
-            }
+              excessHours: formatExcessHourForSummary(
+                attData.summary?.excessHour ?? 0
+              ),
+            },
+            recordDetails: recordDetailsPlain as AttendanceSummaryView['recordDetails'],
           };
-          att[sub._id] = { summary: mappedSum, employeeDays: days };
+          att[sub._id] = {
+            summary: mappedSum,
+            employeeDays: days,
+            userForMetrics: mergeAttendanceProfile(sub, attData.userId) as User,
+          };
         } else {
           att[sub._id] = { summary: null, employeeDays: [] };
         }
@@ -470,7 +656,7 @@ export default function EmployeeDashboard() {
     today.setHours(0, 0, 0, 0);
     const clickedDate = new Date(date);
     clickedDate.setHours(0, 0, 0, 0);
-    
+
     if (clickedDate >= today) {
       // Future date - handle future request
       if (!futureStartDate) {
@@ -505,31 +691,31 @@ export default function EmployeeDashboard() {
       // Past date - handle correction request
       // Find the attendance record for this date
       const dayRecord = employeeDays.find(d => d.date === date);
-      
+
       // Check if correction request is allowed
       // Allowed when: Absent, Half Day, Holiday/Week Off, or in/out time is missing
       const status = dayRecord?.status;
       const inTime = dayRecord?.inTime;
       const outTime = dayRecord?.outTime;
       const typeOfPresence = dayRecord?.typeOfPresence;
-      
+
       const isAbsent = status === 'Absent' || !dayRecord;
       const isHalfDay = status === 'HalfDay' || typeOfPresence?.toLowerCase().includes('half');
       const isHoliday = status === 'Holiday' || typeOfPresence === 'Holiday' || typeOfPresence === 'Week Off';
       const isMissingPunch = !inTime || !outTime || inTime === '00:00' || outTime === '00:00';
-      
+
       // Check if there's already a pending request for this date
       const existingRequest = employeeRequests.find(r => r.date.split('T')[0] === date);
       if (existingRequest && existingRequest.status === 'Pending') {
         alert('You already have a pending request for this date. Please wait for it to be processed.');
         return;
       }
-      
+
       if (!isAbsent && !isHalfDay && !isHoliday && !isMissingPunch) {
         alert('Correction requests are only allowed for days marked as Absent, Half Day, Holiday/Week Off, or when attendance in/out is not marked.');
         return;
       }
-      
+
       setSelectedDate(date);
       setSelectedDateStatus(isHoliday ? 'Holiday' : null);
       // Set default status based on the day type
@@ -623,7 +809,7 @@ export default function EmployeeDashboard() {
       if (json.success) {
         alert(`Request sent successfully to ${json.sentTo}!`);
         setSelectedDate(null);
-        fetchAttendance(user._id, monthYear);
+        fetchAttendance(user._id, monthYear, user);
       } else {
         alert(json.error || 'Failed to send request');
       }
@@ -739,7 +925,7 @@ export default function EmployeeDashboard() {
         setFutureEndTime('');
         setFutureCustomType('');
         setCalendarSelectionStart(null);
-        fetchAttendance(user._id, monthYear);
+        fetchAttendance(user._id, monthYear, user);
       } else {
         alert(json.error || 'Failed to send request');
       }
@@ -755,7 +941,54 @@ export default function EmployeeDashboard() {
     router.push('/employee/login');
   };
 
-  if (loading || !user) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white">Loading...</div>;
+  const alignedMetrics = useMemo(
+    () =>
+      computeSummaryAlignedMetrics(
+        summary,
+        (attendanceUser ?? user) ?? undefined,
+        holidays,
+        monthYear
+      ),
+    [summary, attendanceUser, user, holidays, monthYear]
+  );
+
+  const chartDailySeries = useMemo(
+    () => (summary ? getDailyWorkedHoursSeries(summary) : []),
+    [summary]
+  );
+
+  const partnerTeamRows: PartnerTeamRow[] = useMemo(() => {
+    const out: PartnerTeamRow[] = [];
+    for (const sub of subordinates) {
+      const pack = subordinateAttendance[sub._id];
+      if (!pack?.summary || !pack.userForMetrics) continue;
+      const m = computeSummaryAlignedMetrics(
+        pack.summary,
+        pack.userForMetrics,
+        holidays,
+        monthYear
+      );
+      if (!m) continue;
+      out.push({
+        userId: sub._id,
+        name: sub.name,
+        code: sub.employeeCode?.trim() || sub.odId || '—',
+        metrics: m,
+      });
+    }
+    return out;
+  }, [subordinates, subordinateAttendance, holidays, monthYear]);
+
+  if (loading || !user) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center gap-3 text-zinc-300">
+        <Loader2 className="h-8 w-8 animate-spin text-zinc-500" aria-hidden />
+        <p className="text-sm">Loading your workspace…</p>
+      </div>
+    );
+  }
+
+  const pendingRequestCount = employeeRequests.filter((r) => r.status === 'Pending').length;
 
   // Correction request dropdown options (simplified)
   const statusOptions = [
@@ -800,443 +1033,602 @@ export default function EmployeeDashboard() {
     'Other'
   ];
 
+  const goPartnerReview = () => {
+    if (!user?.name || !user?.email) return;
+    const name = formatPartnerNameForReview(user.name);
+    router.push(
+      `/partner/review-all?partnerName=${encodeURIComponent(name)}&partnerEmail=${encodeURIComponent(user.email)}`
+    );
+    setSidebarOpen(false);
+  };
+
+  const navItemClass = (active: boolean) =>
+    `flex w-full items-center gap-3 rounded-lg py-2.5 text-sm font-medium transition-colors touch-manipulation ${
+      desktopSidebarCollapsed ? 'md:justify-center md:gap-0 md:px-0' : 'px-3'
+    } ${
+      active
+        ? 'bg-zinc-100 text-zinc-900 md:bg-zinc-800 md:text-zinc-50'
+        : 'text-zinc-500 hover:bg-zinc-800/60 hover:text-zinc-200'
+    }`;
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
-      {/* Mobile sidebar toggle button (moved to right in header) */}
-      {/* Header */}
-      <header className="bg-slate-900 border-b border-slate-800 p-2 px-3 sm:px-4 sticky top-0 z-30">
-        <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0 flex-1 flex items-center gap-2">
-            <img src="/lg.png" alt="Logo" className="w-12 h-12 object-contain shrink-0" />
-            <div>
-              <h1 className="text-base sm:text-xl font-bold text-white truncate">My Attendance</h1>
-              <p className="text-[11px] sm:text-xs text-slate-400 truncate"><span className="hidden sm:inline">Asija and Associates LLP • </span>Welcome, {user.name}</p>
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col">
+      <header className="sticky top-0 z-30 border-b border-zinc-800/80 bg-zinc-950/90 backdrop-blur-md">
+        <div className="flex items-center justify-between gap-3 px-3 py-2.5 sm:px-5">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              className="hidden md:inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-50"
+              onClick={() => setDesktopSidebarCollapsed((c) => !c)}
+              title={desktopSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              aria-expanded={!desktopSidebarCollapsed}
+            >
+              {desktopSidebarCollapsed ? (
+                <PanelLeft className="h-5 w-5" aria-hidden />
+              ) : (
+                <PanelLeftClose className="h-5 w-5" aria-hidden />
+              )}
+            </button>
+            <button
+              type="button"
+              className="md:hidden inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900 text-zinc-300"
+              onClick={() => setSidebarOpen((o) => !o)}
+              aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
+            >
+              {sidebarOpen ? <X className="h-5 w-5" /> : <PanelLeft className="h-5 w-5" />}
+            </button>
+            <img src="/lg.png" alt="" className="h-9 w-9 object-contain shrink-0 opacity-95" />
+            <div className="min-w-0">
+              <h1 className="truncate text-sm font-semibold tracking-tight text-zinc-100 sm:text-base">
+                {activeTab === 'dashboard'
+                  ? 'Dashboard'
+                  : activeTab === 'attendance'
+                    ? 'Attendance'
+                    : 'Team'}
+              </h1>
+              <p className="truncate text-[11px] text-zinc-500 sm:text-xs">
+                <span className="hidden sm:inline">Asija and Associates LLP · </span>
+                {user.name}
+              </p>
             </div>
           </div>
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             <button
-              className="hidden md:inline-block bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-lg font-semibold text-sm transition-colors"
-              onClick={() => {
-                // Redirect to partner review-all page with partnerName and partnerEmail
-                if (user && user.name && user.email) {
-                  // Normalize partnerName: replace dots with spaces, remove extra spaces, capitalize each word
-                  let name = user.name.replace(/\./g, ' ');
-                  name = name.replace(/\s+/g, ' ').trim();
-                  name = name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-                  router.push(`/partner/review-all?partnerName=${encodeURIComponent(name)}&partnerEmail=${encodeURIComponent(user.email)}`);
-                }
-              }}
-              title="Review All Partner Requests"
-            >
-              Review All Requests
-            </button>
-            <button onClick={handleLogout} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-rose-400 transition-colors touch-manipulation active:scale-95" title="Sign Out">
-              <LogOut className="w-5 h-5" />
-            </button>
-            {/* Mobile sidebar toggle button (right side) */}
-            <button
-              className="md:hidden ml-2 bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-200 focus:outline-none"
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              aria-label={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
               type="button"
+              className="relative hidden md:inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-800 sm:text-sm"
+              onClick={goPartnerReview}
+              title={
+                partnerPendingReviewCount > 0
+                  ? `${partnerPendingReviewCount} pending request${partnerPendingReviewCount === 1 ? '' : 's'} to review`
+                  : 'Review requests'
+              }
             >
-              {sidebarOpen ? (
-                <span>&#10005;</span>
-              ) : (
-                <span>&#9776;</span>
-              )}
+              <span className="relative inline-flex shrink-0">
+                <ClipboardList className="h-4 w-4 opacity-80" aria-hidden />
+                {partnerPendingReviewCount > 0 && (
+                  <span className="absolute -right-2 -top-2 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white shadow-sm">
+                    {partnerPendingReviewCount > 99 ? '99+' : partnerPendingReviewCount}
+                  </span>
+                )}
+              </span>
+              Review requests
+            </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-900 hover:text-rose-400"
+              title="Sign out"
+            >
+              <LogOut className="h-5 w-5" />
             </button>
           </div>
         </div>
-           
-           {/* Selection banner - shown when dates are selected */}
-           {futureStartDate && (
-             <div className="mt-2 flex items-center gap-2 bg-emerald-900/30 border border-emerald-500/30 rounded-lg p-2">
-               <button
-                 onClick={() => setShowFutureModal(true)}
-                 className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-md text-xs font-medium transition-colors animate-pulse truncate active:scale-95 touch-manipulation"
-               >
-                 {futureStartDate === futureEndDate
-                   ? `Request for ${futureStartDate}`
-                   : `${futureStartDate} → ${futureEndDate}`
-                 }
-               </button>
-               <button
-                 onClick={() => {
-                   setFutureStartDate('');
-                   setFutureEndDate('');
-                   setFutureReason('');
-                   setFutureStartTime('');
-                   setFutureEndTime('');
-                   setCalendarSelectionStart(null);
-                 }}
-                 className="p-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-md transition-colors touch-manipulation active:scale-95"
-                 title="Clear selection"
-               >
-                 <X className="w-4 h-4" />
-               </button>
-             </div>
-           )}
-       </header>
 
-      <div className="flex min-h-[80vh]">
-        {/* Sidebar */}
-        {/* Overlay for mobile when sidebar is open */}
+        {futureStartDate && (
+          <div className="border-t border-zinc-800/60 px-3 py-2 sm:px-5">
+            <div className="flex items-center gap-2 rounded-lg border border-emerald-500/25 bg-emerald-950/30 p-2">
+              <button
+                type="button"
+                onClick={() => setShowFutureModal(true)}
+                className="min-w-0 flex-1 truncate rounded-md bg-emerald-700 px-3 py-2 text-left text-xs font-medium text-white hover:bg-emerald-600"
+              >
+                {futureStartDate === futureEndDate
+                  ? `Continue request · ${futureStartDate}`
+                  : `${futureStartDate} → ${futureEndDate}`}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFutureStartDate('');
+                  setFutureEndDate('');
+                  setFutureReason('');
+                  setFutureStartTime('');
+                  setFutureEndTime('');
+                  setCalendarSelectionStart(null);
+                }}
+                className="shrink-0 rounded-md p-2 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                title="Clear selection"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
+      </header>
+
+      <div className="flex min-h-0 flex-1 w-full">
         {sidebarOpen && (
           <div
-            className="fixed inset-0 bg-black bg-opacity-40 z-30 md:hidden"
+            className="fixed inset-0 z-30 bg-zinc-950/70 backdrop-blur-sm md:hidden"
             onClick={() => setSidebarOpen(false)}
+            aria-hidden
           />
         )}
+
         <aside
+          aria-label="Workspace navigation"
           className={`
-            fixed md:fixed md:top-[64px] top-0 left-0 z-40 w-56 bg-slate-900 border-r border-slate-800 flex flex-col py-8 px-2 gap-2
-            transition-transform duration-200 ease-in-out
+            fixed inset-y-0 left-0 z-40 flex w-56 flex-col border-r border-zinc-800 bg-zinc-900
+            transition-[transform,width] duration-200 ease-out
             ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-            md:translate-x-0
-            overflow-hidden
-            h-full md:h-screen
+            md:relative md:translate-x-0 md:z-0
+            ${desktopSidebarCollapsed ? 'md:w-[4.5rem]' : 'md:w-56'}
+            shrink-0 px-2 py-4 md:py-6
           `}
-          style={{ minWidth: '0', height: '100vh' }}
         >
-          {/* Mobile only: Review All Requests button */}
-          <button
-            className="md:hidden bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-lg font-semibold text-sm transition-colors mb-2"
-            onClick={() => {
-              if (user && user.name && user.email) {
-                let name = user.name.replace(/\./g, ' ');
-                name = name.replace(/\s+/g, ' ').trim();
-                name = name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-                router.push(`/partner/review-all?partnerName=${encodeURIComponent(name)}&partnerEmail=${encodeURIComponent(user.email)}`);
-                setSidebarOpen(false);
-              }
-            }}
-            title="Review All Partner Requests"
+          <div
+            className={`mb-3 border-b border-zinc-800 pb-3 ${desktopSidebarCollapsed ? 'md:px-0 md:text-center' : ''}`}
           >
-            Review All Requests
-          </button>
+            <p
+              className={`text-[10px] font-medium uppercase tracking-wider text-zinc-500 ${desktopSidebarCollapsed ? 'md:sr-only' : ''}`}
+            >
+              Workspace
+            </p>
+          </div>
+
           <button
-            className={`w-full px-4 py-3 rounded-lg text-left font-semibold transition-colors ${activeTab === 'my' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'}`}
+            type="button"
+            className={navItemClass(activeTab === 'dashboard')}
             onClick={() => {
-              setActiveTab('my');
+              setActiveTab('dashboard');
               setSidebarOpen(false);
             }}
+            title="Dashboard"
           >
-            My Attendance
+            <LayoutDashboard className="h-5 w-5 shrink-0 opacity-90" aria-hidden />
+            <span className={desktopSidebarCollapsed ? 'md:sr-only' : ''}>Dashboard</span>
           </button>
+
+          <button
+            type="button"
+            className={navItemClass(activeTab === 'attendance')}
+            onClick={() => {
+              setActiveTab('attendance');
+              setSidebarOpen(false);
+            }}
+            title="Attendance"
+          >
+            <CalendarDays className="h-5 w-5 shrink-0 opacity-90" aria-hidden />
+            <span className={desktopSidebarCollapsed ? 'md:sr-only' : ''}>Attendance</span>
+          </button>
+
           {subordinates.length > 0 && (
             <button
-              className={`w-full px-4 py-3 rounded-lg text-left font-semibold transition-colors ${activeTab === 'employees' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'}`}
+              type="button"
+              className={navItemClass(activeTab === 'employees')}
               onClick={() => {
                 setActiveTab('employees');
                 setSidebarOpen(false);
               }}
+              title="Team attendance"
             >
-              Employee Attendance
+              <UsersIcon className="h-5 w-5 shrink-0 opacity-90" aria-hidden />
+              <span className={desktopSidebarCollapsed ? 'md:sr-only' : ''}>Team attendance</span>
             </button>
           )}
+
+          <button
+            type="button"
+            className={`${navItemClass(false)} mt-1`}
+            onClick={goPartnerReview}
+            title={
+              partnerPendingReviewCount > 0
+                ? `${partnerPendingReviewCount} pending — review requests`
+                : 'Review requests'
+            }
+          >
+            <span className="relative inline-flex shrink-0">
+              <ClipboardList className="h-5 w-5 opacity-90" aria-hidden />
+              {partnerPendingReviewCount > 0 && (
+                <span className="absolute -right-2.5 -top-2 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white shadow-sm">
+                  {partnerPendingReviewCount > 99 ? '99+' : partnerPendingReviewCount}
+                </span>
+              )}
+            </span>
+            <span className={desktopSidebarCollapsed ? 'md:sr-only' : ''}>Review requests</span>
+          </button>
         </aside>
-        {/* Main Content */}
-        <main className="flex-1 p-3 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full space-y-6 ml-0 md:ml-56 transition-all duration-200">
-           {activeTab === 'my' && <LocationAttendanceSection userId={user._id} />}
-           {activeTab === 'my' && (
-             <EmployeeMonthView 
-                summaries={summary ? [summary] : []}
-                users={[user]}
-                selectedEmployeeId={user._id}
-                setSelectedEmployeeId={() => {}} // Disabled for employee view
-                selectedMonthYear={monthYear}
+
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-7xl space-y-6 px-3 py-5 sm:px-6 sm:py-8 lg:px-10">
+            {activeTab === 'dashboard' && (
+              <EmployeeDashboardOverview
+                user={attendanceUser ?? user}
+                monthYear={monthYear}
                 onMonthYearChange={handleMonthChange}
-                employeeDays={employeeDays}
-                isLoading={fetchLoading}
-                error={fetchError}
-                onLoadAttendance={() => user && fetchAttendance(user._id, monthYear)}
-                onDayClick={handleDayClick}
-                selectionStart={calendarSelectionStart}
-                onSelectionStartChange={setCalendarSelectionStart}
-                onApplyFutureRequest={() => setShowFutureModal(true)}
-                approvedRequests={employeeRequests}
-             />
-           )}
-           {activeTab === 'employees' && (
-             <>
-               {subLoading && (
-                 <div className="bg-slate-900 border border-slate-700 rounded-lg p-4 text-slate-300 text-center">Loading subordinates...</div>
-               )}
-               {!subLoading && subordinates.length > 0 && (
-                 <section className="mt-2">
-                   <h3 className="text-lg font-bold text-slate-100 mb-4">Attendance of Employees Working Under You</h3>
-                   <div className="mb-4 flex flex-col gap-2 max-w-xs">
-                     <label htmlFor="search-subordinate" className="text-slate-300 font-medium">Search Employee:</label>
-                     <input
-                       id="search-subordinate"
-                       type="text"
-                       className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 min-w-[200px]"
-                       placeholder="Type name or OD ID..."
-                       value={searchTerm}
-                       onChange={e => {
-                         setSearchTerm(e.target.value);
-                         setSelectedSubordinateId(null); // Reset selection on new search
-                       }}
-                     />
-                     <select
-                       id="subordinate-select"
-                       className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 min-w-[200px]"
-                       value={selectedSubordinateId ?? ''}
-                       onChange={e => setSelectedSubordinateId(e.target.value || null)}
-                     >
-                       <option value="">-- Select --</option>
-                       {subordinates
-                         .filter(sub =>
-                           sub.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           sub.odId.toLowerCase().includes(searchTerm.toLowerCase())
-                         )
-                         .map(sub => (
-                           <option key={sub._id} value={sub._id}>{sub.name} ({sub.odId})</option>
-                         ))}
-                     </select>
-                   </div>
-                   {selectedSubordinateId && subordinateAttendance[selectedSubordinateId] ? (
-                     <div className="bg-slate-900 border border-slate-700 rounded-lg p-4 mt-4">
-                       <h4 className="text-base font-semibold text-slate-200 mb-2 flex items-center gap-2">
-                         <span className="inline-block bg-slate-700 rounded px-2 py-0.5 text-xs font-mono">
-                           {subordinates.find(s => s._id === selectedSubordinateId)?.odId}
-                         </span>
-                         {subordinates.find(s => s._id === selectedSubordinateId)?.name}
-                       </h4>
-                       <EmployeeMonthView
-                         summaries={subordinateAttendance[selectedSubordinateId]?.summary ? [subordinateAttendance[selectedSubordinateId].summary!] : []}
-                         users={[subordinates.find(s => s._id === selectedSubordinateId)!]}
-                         selectedEmployeeId={selectedSubordinateId}
-                         setSelectedEmployeeId={() => {}}
-                         selectedMonthYear={monthYear}
-                         onMonthYearChange={handleMonthChange}
-                         employeeDays={subordinateAttendance[selectedSubordinateId]?.employeeDays || []}
-                         isLoading={false}
-                         error={null}
-                         onLoadAttendance={() => {}}
-                       />
-                     </div>
-                   ) : (
-                     <div className="bg-slate-900 border border-slate-700 rounded-lg p-4 mt-4 text-slate-400 text-center">Select an employee to view attendance.</div>
-                   )}
-                 </section>
-               )}
-               {!subLoading && subordinates.length === 0 && (
-                 <div className="bg-slate-900 border border-slate-700 rounded-lg p-4 text-slate-400 text-center">No employees working under you.</div>
-               )}
-             </>
-           )}
-         </main>
-       </div>
+                alignedMetrics={alignedMetrics}
+                chartDailySeries={chartDailySeries}
+                requestsPending={pendingRequestCount}
+                isLoadingMetrics={fetchLoading}
+              />
+            )}
 
-       {/* Correction Modal */}
-       {selectedDate && (
-           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4">
-               <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
-                   <div className="p-3 sm:p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
-                       <h3 className="font-semibold text-white text-sm sm:text-base">Request Correction</h3>
-                       <button onClick={() => setSelectedDate(null)} className="text-slate-500 hover:text-white"><X className="w-5 h-5"/></button>
-                   </div>
-                   <div className="p-4 sm:p-6 space-y-4">
-                       <div className="p-3 bg-emerald-900/20 border border-emerald-500/30 rounded-lg text-emerald-200 text-sm">
-                           Requesting change for <strong>{selectedDate}</strong>
-                       </div>
+            {activeTab === 'attendance' && (
+              <>
+                <div className="space-y-2">
+                  <div className="px-0.5">
+                    <h2 className="text-sm font-medium text-zinc-300">Client location punch</h2>
+                    <p className="mt-0.5 text-xs text-zinc-600">
+                      Mark in/out when visiting assigned client sites today.
+                    </p>
+                  </div>
+                  <LocationAttendanceSection userId={user._id} />
+                </div>
+                <EmployeeMonthView
+                  summaries={summary ? [summary] : []}
+                  users={[user]}
+                  selectedEmployeeId={user._id}
+                  setSelectedEmployeeId={() => {}}
+                  selectedMonthYear={monthYear}
+                  onMonthYearChange={handleMonthChange}
+                  employeeDays={employeeDays}
+                  isLoading={fetchLoading}
+                  error={fetchError}
+                  onLoadAttendance={() => user && fetchAttendance(user._id, monthYear, user)}
+                  onDayClick={handleDayClick}
+                  selectionStart={calendarSelectionStart}
+                  onSelectionStartChange={setCalendarSelectionStart}
+                  onApplyFutureRequest={() => setShowFutureModal(true)}
+                  approvedRequests={employeeRequests}
+                  showSummaryStrip={false}
+                  sectionTitle="Calendar"
+                  subtitle="Past days: request a correction. Future days: select a range, then apply for leave or other status."
+                  sectionClassName="!bg-zinc-900/30 !border-zinc-800/80"
+                />
+              </>
+            )}
 
-                       <div className="space-y-2">
-                           <label className="text-sm font-medium text-slate-300">Select Correct Status</label>
-                           <select 
-                             value={requestStatus}
-                             onChange={(e) => setRequestStatus(e.target.value)}
-                             className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-emerald-500 text-sm sm:text-base"
-                           >
-                              {getCorrectionStatusOptions().map(s => <option key={s} value={s}>{s}</option>)}
-                           </select>
-                       </div>
+            {activeTab === 'employees' && (
+              <>
+                <div>
+                  <h2 className="text-lg font-semibold text-zinc-100">Team attendance</h2>
+                  <p className="mt-1 text-sm text-zinc-500">
+                    View monthly calendars for people reporting to you.
+                  </p>
+                </div>
+                {subLoading && (
+                  <div className="flex items-center justify-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/40 py-12 text-sm text-zinc-400">
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    Loading…
+                  </div>
+                )}
+                {!subLoading && subordinates.length > 0 && (
+                  <section className="space-y-6">
+                    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 sm:p-5">
+                      <PartnerTeamOverview
+                        monthYear={monthYear}
+                        rows={partnerTeamRows}
+                        onSelectMember={(id) => {
+                          setSelectedSubordinateId(id);
+                          setSearchTerm('');
+                          window.setTimeout(() => {
+                            teamSubordinateCalendarRef.current?.scrollIntoView({
+                              behavior: 'smooth',
+                              block: 'start',
+                            });
+                          }, 80);
+                        }}
+                      />
+                      <p className="mt-4 border-t border-zinc-800/80 pt-3 text-[11px] text-zinc-600">
+                        Month matches your Dashboard and Attendance tabs — change the month there to
+                        refresh team data.
+                      </p>
+                    </div>
+                    <div className="flex max-w-md flex-col gap-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+                      <label htmlFor="search-subordinate" className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                        Find employee
+                      </label>
+                      <input
+                        id="search-subordinate"
+                        type="text"
+                        className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600"
+                        placeholder="Name or OD ID…"
+                        value={searchTerm}
+                        onChange={(e) => {
+                          setSearchTerm(e.target.value);
+                          setSelectedSubordinateId(null);
+                        }}
+                      />
+                      <select
+                        id="subordinate-select"
+                        className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200"
+                        value={selectedSubordinateId ?? ''}
+                        onChange={(e) => setSelectedSubordinateId(e.target.value || null)}
+                      >
+                        <option value="">Select…</option>
+                        {subordinates
+                          .filter(
+                            (sub) =>
+                              sub.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                              sub.odId.toLowerCase().includes(searchTerm.toLowerCase())
+                          )
+                          .map((sub) => (
+                            <option key={sub._id} value={sub._id}>
+                              {sub.name} ({sub.odId})
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    <div
+                      ref={teamSubordinateCalendarRef}
+                      className="scroll-mt-6"
+                      id="team-subordinate-calendar"
+                    >
+                      {selectedSubordinateId && subordinateAttendance[selectedSubordinateId] ? (
+                        <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
+                          <h3 className="mb-4 flex flex-wrap items-center gap-2 text-base font-semibold text-zinc-200">
+                            <span className="rounded-md bg-zinc-800 px-2 py-0.5 font-mono text-xs text-zinc-300">
+                              {subordinates.find((s) => s._id === selectedSubordinateId)?.odId}
+                            </span>
+                            {subordinates.find((s) => s._id === selectedSubordinateId)?.name}
+                          </h3>
+                          <EmployeeMonthView
+                            summaries={
+                              subordinateAttendance[selectedSubordinateId]?.summary
+                                ? [subordinateAttendance[selectedSubordinateId].summary!]
+                                : []
+                            }
+                            users={[subordinates.find((s) => s._id === selectedSubordinateId)!]}
+                            selectedEmployeeId={selectedSubordinateId}
+                            setSelectedEmployeeId={() => {}}
+                            selectedMonthYear={monthYear}
+                            onMonthYearChange={handleMonthChange}
+                            employeeDays={subordinateAttendance[selectedSubordinateId]?.employeeDays || []}
+                            isLoading={false}
+                            error={null}
+                            onLoadAttendance={() => {}}
+                            showSummaryStrip={true}
+                            sectionTitle="Calendar"
+                            subtitle={null}
+                            sectionClassName="!bg-zinc-900/20 !border-zinc-800/70"
+                          />
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-zinc-800 py-12 text-center text-sm text-zinc-500">
+                          Select an employee to load their calendar.
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                )}
+                {!subLoading && subordinates.length === 0 && (
+                  <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 py-12 text-center text-sm text-zinc-500">
+                    No team members are linked to your profile.
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </main>
+      </div>
 
-                       {(requestStatus !== 'On leave' && requestStatus !== 'Present - outstation') && (
-                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                               <div className="space-y-2">
-                                   <label className="text-sm font-medium text-slate-300">Start Time</label>
-                                   <input 
-                                     type="time" 
-                                     value={startTime}
-                                     onChange={(e) => setStartTime(e.target.value)}
-                                     className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-emerald-500 text-sm sm:text-base"
-                                   />
-                               </div>
-                               <div className="space-y-2">
-                                   <label className="text-sm font-medium text-slate-300">End Time</label>
-                                   <input 
-                                     type="time" 
-                                     value={endTime}
-                                     onChange={(e) => setEndTime(e.target.value)}
-                                     className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-emerald-500 text-sm sm:text-base"
-                                   />
-                               </div>
-                           </div>
-                       )}
+      {/* Correction Modal */}
+      {selectedDate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4">
+          <div className="w-full max-w-md bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+            <div className="p-3 sm:p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-950">
+              <h3 className="font-semibold text-white text-sm sm:text-base">Request Correction</h3>
+              <button onClick={() => setSelectedDate(null)} className="text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-4 sm:p-6 space-y-4">
+              <div className="p-3 bg-emerald-900/20 border border-emerald-500/30 rounded-lg text-emerald-200 text-sm">
+                Requesting change for <strong>{selectedDate}</strong>
+              </div>
 
-                       <div className="space-y-2">
-                           <label className="text-sm font-medium text-slate-300">Reason *</label>
-                           <textarea 
-                             value={requestReason}
-                             onChange={(e) => setRequestReason(e.target.value)}
-                             placeholder="E.g., Forgot to punch out due to client meeting..."
-                             className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-slate-200 outline-none focus:border-emerald-500 min-h-20 text-sm sm:text-base"
-                             required
-                           />
-                       </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-zinc-300">Select Correct Status</label>
+                <select
+                  value={requestStatus}
+                  onChange={(e) => setRequestStatus(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2.5 text-zinc-200 outline-none focus:border-emerald-500 text-sm sm:text-base"
+                >
+                  {getCorrectionStatusOptions().map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
 
-                       <button 
-                         onClick={submitRequest}
-                         disabled={sendingRequest || !requestReason.trim()}
-                         className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg flex items-center justify-center gap-2 mt-4 text-sm sm:text-base"
-                       >
-                           {sendingRequest ? <Loader2 className="w-4 h-4 animate-spin"/> : <Send className="w-4 h-4"/>}
-                           Send Request to Partner
-                       </button>
-                   </div>
-               </div>
-           </div>
-       )}
+              {(requestStatus !== 'On leave' && requestStatus !== 'Present - outstation') && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-zinc-300">Start Time</label>
+                    <input
+                      type="time"
+                      value={startTime}
+                      onChange={(e) => setStartTime(e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2.5 text-zinc-200 outline-none focus:border-emerald-500 text-sm sm:text-base"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-zinc-300">End Time</label>
+                    <input
+                      type="time"
+                      value={endTime}
+                      onChange={(e) => setEndTime(e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2.5 text-zinc-200 outline-none focus:border-emerald-500 text-sm sm:text-base"
+                    />
+                  </div>
+                </div>
+              )}
 
-       {showFutureModal && (
-           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4">
-               <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
-                   <div className="p-3 sm:p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
-                       <h3 className="font-semibold text-white text-sm sm:text-base">Future Request</h3>
-                       <button onClick={() => {
-                         setShowFutureModal(false);
-                         setFutureStartDate('');
-                         setFutureEndDate('');
-                         setFutureReason('');
-                         setFutureStartTime('');
-                         setFutureEndTime('');
-                         setFutureCustomType('');
-                         setCalendarSelectionStart(null);
-                       }} className="text-slate-500 hover:text-white"><X className="w-5 h-5"/></button>
-                   </div>
-                   <div className="p-4 sm:p-6 space-y-4">
-                       <div className="p-3 bg-indigo-900/20 border border-indigo-500/30 rounded-lg text-indigo-200 text-sm">
-                           {futureStartDate === futureEndDate 
-                             ? `Selected date: ${futureStartDate}`
-                             : `Selected range: ${futureStartDate} to ${futureEndDate}`
-                           }
-                           <div className="mt-2 text-xs text-indigo-300">
-                             📅 Dates selected from calendar. Click another date to change range, or proceed with request.
-                           </div>
-                       </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-zinc-300">Reason *</label>
+                <textarea
+                  value={requestReason}
+                  onChange={(e) => setRequestReason(e.target.value)}
+                  placeholder="E.g., Forgot to punch out due to client meeting..."
+                  className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-3 text-zinc-200 outline-none focus:border-emerald-500 min-h-20 text-sm sm:text-base"
+                  required
+                />
+              </div>
 
-                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                           <div className={TIMED_CATEGORIES.includes(futureType) ? "col-span-1 sm:col-span-2 space-y-2" : "space-y-2"}>
-                               <label className="text-sm font-medium text-slate-300">
-                                   {TIMED_CATEGORIES.includes(futureType) ? "Date" : "Start Date"}
-                               </label>
-                               <input 
-                                 type="date" 
-                                 value={futureStartDate}
-                                 readOnly
-                                 className="w-full bg-slate-800 border border-slate-600 rounded-lg p-2.5 text-slate-300 cursor-not-allowed text-sm sm:text-base"
-                               />
-                           </div>
-                           {!TIMED_CATEGORIES.includes(futureType) && (
-                               <div className="space-y-2">
-                                   <label className="text-sm font-medium text-slate-300">End Date</label>
-                                   <input 
-                                     type="date" 
-                                     value={futureEndDate}
-                                     readOnly
-                                     className="w-full bg-slate-800 border border-slate-600 rounded-lg p-2.5 text-slate-300 cursor-not-allowed text-sm sm:text-base"
-                                   />
-                               </div>
-                           )}
-                       </div>
+              <button
+                onClick={submitRequest}
+                disabled={sendingRequest || !requestReason.trim()}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg flex items-center justify-center gap-2 mt-4 text-sm sm:text-base"
+              >
+                {sendingRequest ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                Send Request to Partner
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-                       <div className="space-y-2">
-                           <label className="text-sm font-medium text-slate-300">Request Type</label>
-                           <select 
-                             value={futureType}
-                             onChange={(e) => {
-                                 const val = e.target.value;
-                                 setFutureType(val);
-                                 if (TIMED_CATEGORIES.includes(val)) {
-                                     if (futureStartDate) setFutureEndDate(futureStartDate);
-                                     setFutureStartTime('');
-                                     setFutureEndTime('');
-                                 }
-                                 if (val !== 'Other') {
-                                     setFutureCustomType('');
-                                 }
-                             }}
-                             className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-indigo-500 text-sm sm:text-base"
-                           >
-                              {futureStatusOptions.map(s => <option key={s} value={s}>{s}</option>)}
-                           </select>
-                       </div>
+      {showFutureModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4">
+          <div className="w-full max-w-md bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+            <div className="p-3 sm:p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-950">
+              <h3 className="font-semibold text-white text-sm sm:text-base">Future Request</h3>
+              <button onClick={() => {
+                setShowFutureModal(false);
+                setFutureStartDate('');
+                setFutureEndDate('');
+                setFutureReason('');
+                setFutureStartTime('');
+                setFutureEndTime('');
+                setFutureCustomType('');
+                setCalendarSelectionStart(null);
+              }} className="text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-4 sm:p-6 space-y-4">
+              <div className="p-3 bg-indigo-900/20 border border-indigo-500/30 rounded-lg text-indigo-200 text-sm">
+                {futureStartDate === futureEndDate
+                  ? `Selected date: ${futureStartDate}`
+                  : `Selected range: ${futureStartDate} to ${futureEndDate}`
+                }
+                <div className="mt-2 text-xs text-indigo-300">
+                  📅 Dates selected from calendar. Click another date to change range, or proceed with request.
+                </div>
+              </div>
 
-                       {futureType === 'Other' && (
-                           <div className="space-y-2">
-                               <label className="text-sm font-medium text-slate-300">Specify Request Type *</label>
-                               <input 
-                                 type="text"
-                                 value={futureCustomType}
-                                 onChange={(e) => setFutureCustomType(e.target.value)}
-                                 placeholder="Enter your request type..."
-                                 className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-indigo-500 text-sm sm:text-base"
-                                 required
-                               />
-                           </div>
-                       )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className={TIMED_CATEGORIES.includes(futureType) ? "col-span-1 sm:col-span-2 space-y-2" : "space-y-2"}>
+                  <label className="text-sm font-medium text-zinc-300">
+                    {TIMED_CATEGORIES.includes(futureType) ? "Date" : "Start Date"}
+                  </label>
+                  <input
+                    type="date"
+                    value={futureStartDate}
+                    readOnly
+                    className="w-full bg-zinc-800 border border-zinc-600 rounded-lg p-2.5 text-zinc-300 cursor-not-allowed text-sm sm:text-base"
+                  />
+                </div>
+                {!TIMED_CATEGORIES.includes(futureType) && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-zinc-300">End Date</label>
+                    <input
+                      type="date"
+                      value={futureEndDate}
+                      readOnly
+                      className="w-full bg-zinc-800 border border-zinc-600 rounded-lg p-2.5 text-zinc-300 cursor-not-allowed text-sm sm:text-base"
+                    />
+                  </div>
+                )}
+              </div>
 
-                       {TIMED_CATEGORIES.includes(futureType) && (
-                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                               <div className="space-y-2">
-                                   <label className="text-sm font-medium text-slate-300">Start Time *</label>
-                                   <input 
-                                     type="time" 
-                                     value={futureStartTime}
-                                     onChange={(e) => setFutureStartTime(e.target.value)}
-                                     required
-                                     className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-indigo-500 text-sm sm:text-base"
-                                   />
-                               </div>
-                               <div className="space-y-2">
-                                   <label className="text-sm font-medium text-slate-300">End Time *</label>
-                                   <input 
-                                     type="time" 
-                                     value={futureEndTime}
-                                     onChange={(e) => setFutureEndTime(e.target.value)}
-                                     required
-                                     className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 outline-none focus:border-indigo-500 text-sm sm:text-base"
-                                   />
-                               </div>
-                           </div>
-                       )}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-zinc-300">Request Type</label>
+                <select
+                  value={futureType}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setFutureType(val);
+                    if (TIMED_CATEGORIES.includes(val)) {
+                      if (futureStartDate) setFutureEndDate(futureStartDate);
+                      setFutureStartTime('');
+                      setFutureEndTime('');
+                    }
+                    if (val !== 'Other') {
+                      setFutureCustomType('');
+                    }
+                  }}
+                  className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2.5 text-zinc-200 outline-none focus:border-indigo-500 text-sm sm:text-base"
+                >
+                  {futureStatusOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
 
-                       <div className="space-y-2">
-                           <label className="text-sm font-medium text-slate-300">Reason *</label>
-                           <textarea 
-                             value={futureReason}
-                             onChange={(e) => setFutureReason(e.target.value)}
-                             placeholder="Reason for future absence..."
-                             className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-slate-200 outline-none focus:border-indigo-500 min-h-20 text-sm sm:text-base"
-                             required
-                           />
-                       </div>
+              {futureType === 'Other' && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-zinc-300">Specify Request Type *</label>
+                  <input
+                    type="text"
+                    value={futureCustomType}
+                    onChange={(e) => setFutureCustomType(e.target.value)}
+                    placeholder="Enter your request type..."
+                    className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2.5 text-zinc-200 outline-none focus:border-indigo-500 text-sm sm:text-base"
+                    required
+                  />
+                </div>
+              )}
 
-                       <button 
-                         onClick={submitFutureRequest}
-                         disabled={sendingFutureRequest || !futureReason.trim()}
-                         className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg flex items-center justify-center gap-2 mt-4 text-sm sm:text-base"
-                       >
-                           {sendingFutureRequest ? <Loader2 className="w-4 h-4 animate-spin"/> : <Send className="w-4 h-4"/>}
-                           Send Request
-                       </button>
-                   </div>
-               </div>
-           </div>
-       )}
+              {TIMED_CATEGORIES.includes(futureType) && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-zinc-300">Start Time *</label>
+                    <input
+                      type="time"
+                      value={futureStartTime}
+                      onChange={(e) => setFutureStartTime(e.target.value)}
+                      required
+                      className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2.5 text-zinc-200 outline-none focus:border-indigo-500 text-sm sm:text-base"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-zinc-300">End Time *</label>
+                    <input
+                      type="time"
+                      value={futureEndTime}
+                      onChange={(e) => setFutureEndTime(e.target.value)}
+                      required
+                      className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2.5 text-zinc-200 outline-none focus:border-indigo-500 text-sm sm:text-base"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-zinc-300">Reason *</label>
+                <textarea
+                  value={futureReason}
+                  onChange={(e) => setFutureReason(e.target.value)}
+                  placeholder="Reason for future absence..."
+                  className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-3 text-zinc-200 outline-none focus:border-indigo-500 min-h-20 text-sm sm:text-base"
+                  required
+                />
+              </div>
+
+              <button
+                onClick={submitFutureRequest}
+                disabled={sendingFutureRequest || !futureReason.trim()}
+                className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg flex items-center justify-center gap-2 mt-4 text-sm sm:text-base"
+              >
+                {sendingFutureRequest ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                Send Request
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

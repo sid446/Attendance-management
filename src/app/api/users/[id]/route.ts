@@ -4,6 +4,9 @@ import User from '@/models/User';
 import EmployeeHistory from '@/models/EmployeeHistory';
 import Attendance from '@/models/Attendance';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
+import { applyManagedEffectiveHistories, ManagedEffectiveField } from '@/lib/userFieldHistory';
+
+const DEFAULT_BASELINE_EFFECTIVE_FROM = new Date('2025-12-31T00:00:00.000Z');
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -114,8 +117,29 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       employmentType,
       employmentTypeHistory,
       changedBy, // Who made the change
-      changeReason // Reason for the change
+      changeReason, // Reason for the change
+      managedEffectiveFrom,
+      managedEffectiveFromByField,
     } = body;
+  const managedChangeAt = parseAnyDate(managedEffectiveFrom) || new Date();
+  const managedFieldDates: Partial<Record<ManagedEffectiveField, Date>> = {};
+  if (managedEffectiveFromByField && typeof managedEffectiveFromByField === 'object') {
+    const managedFields: ManagedEffectiveField[] = [
+      'registeredUnderPartner',
+      'workingUnderPartner',
+      'basicSalary',
+      'laptopAllowance',
+      'totalSalaryPerMonth',
+      'totalSalaryPerAnnum',
+    ];
+    for (const field of managedFields) {
+      const parsed = parseAnyDate((managedEffectiveFromByField as any)[field]);
+      if (parsed) {
+        managedFieldDates[field] = parsed;
+      }
+    }
+  }
+
 
     // Get current user data before update for history tracking
     const currentUser = await User.findById(id);
@@ -248,11 +272,28 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         ...(employmentType !== undefined && { employmentType }),
         ...(employmentTypeHistory && { employmentTypeHistory }),
       };
-    const user = await User.findByIdAndUpdate(
-      id,
-      updateObj,
-      { new: true, runValidators: true }
+
+    Object.assign(currentUser, updateObj);
+
+    applyManagedEffectiveHistories(
+      currentUser as any,
+      {
+        registeredUnderPartner,
+        workingUnderPartner,
+        basicSalary,
+        laptopAllowance,
+        totalSalaryPerMonth,
+        totalSalaryPerAnnum,
+      },
+      {
+        changedAt: managedChangeAt,
+        source: 'manual-update',
+        baselineEffectiveFrom: DEFAULT_BASELINE_EFFECTIVE_FROM,
+        fieldChangedAt: managedFieldDates,
+      }
     );
+
+    const user = await currentUser.save();
 
     // Recalculate attendance summaries/day metrics when schedule/effective employment changes impact history.
     const recalcFromCandidates: Date[] = [];

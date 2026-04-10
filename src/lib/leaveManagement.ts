@@ -3,6 +3,7 @@ import User, { IUser } from '@/models/User';
 import Attendance from '@/models/Attendance';
 import AttendanceRequest from '@/models/AttendanceRequest';
 import LeaveTransaction from '@/models/LeaveTransaction';
+import LeaveSnapshot from '@/models/LeaveSnapshot';
 
 export interface LeaveBalance {
   balanceAsOfJan26: number;
@@ -20,6 +21,52 @@ export interface LeaveTransaction {
   amount: number;
   reason: string;
   reference?: string; // Could be attendance record ID or request ID
+}
+
+function getCurrentUserRemaining(user: any): number {
+  return (
+    (user?.leaveBalance?.balanceAsOfJan26 || 0) +
+    (user?.leaveBalance?.earned || 0) -
+    (user?.leaveBalance?.used || 0) -
+    (user?.leaveBalance?.usedAfterJan26 || 0)
+  );
+}
+
+async function getEffectiveRemainingForMonth(
+  userId: mongoose.Types.ObjectId,
+  user: any,
+  monthYear: string
+): Promise<number> {
+  const currentRemaining = getCurrentUserRemaining(user);
+
+  // For pre-2026 months, keep existing behavior.
+  if (!monthYear || monthYear < '2026-01') {
+    return currentRemaining;
+  }
+
+  try {
+    const snap = await LeaveSnapshot.findOne({ userId, monthYear })
+      .select('balanceAsOfMonth earnedThisMonth adjustmentsThisMonth usedThisMonth remainingAfter')
+      .lean();
+
+    if (!snap) {
+      return currentRemaining;
+    }
+
+    const snapComputed =
+      Number(snap.balanceAsOfMonth || 0) +
+      Number(snap.earnedThisMonth || 0) +
+      Number(snap.adjustmentsThisMonth || 0) -
+      Number(snap.usedThisMonth || 0);
+
+    const snapRemainingAfter = Number(snap.remainingAfter || 0);
+
+    // Use the larger value so missing monthly credit in user.leaveBalance
+    // does not incorrectly force paid leaves to unpaid.
+    return Math.max(currentRemaining, snapComputed, snapRemainingAfter);
+  } catch (e) {
+    return currentRemaining;
+  }
 }
 
 /**
@@ -137,9 +184,6 @@ export async function calculateLeaveUsageForMultipleDays(
       throw new Error('User not found');
     }
 
-    // Get current leave balance
-    const currentBalance = (user.leaveBalance?.balanceAsOfJan26 || 0) + (user.leaveBalance?.earned || 0) - (user.leaveBalance?.used || 0) - (user.leaveBalance?.usedAfterJan26 || 0);
-
     // Check if this is a leave request
     const isLeaveRequest = requestedStatus.toLowerCase().includes('leave') ||
                           requestedStatus.toLowerCase().includes('absent') ||
@@ -167,11 +211,20 @@ export async function calculateLeaveUsageForMultipleDays(
       return { leaveDetails };
     }
 
-    // For other employees, calculate how many can be paid vs unpaid based on balance
+    // For other employees, calculate how many can be paid vs unpaid based on balance.
+    // Use month-aware effective remaining (snapshot-aware) so monthly earned credit is considered.
     const leaveDetails = [];
-    let remainingBalance = currentBalance;
+    const remainingByMonth = new Map<string, number>();
 
     for (const date of dates) {
+      const monthYear = String(date).slice(0, 7);
+      if (!remainingByMonth.has(monthYear)) {
+        const effective = await getEffectiveRemainingForMonth(userId, user, monthYear);
+        remainingByMonth.set(monthYear, effective);
+      }
+
+      let remainingBalance = remainingByMonth.get(monthYear) || 0;
+
       if (remainingBalance >= 1) {
         // Has enough balance for paid leave
         leaveDetails.push({
@@ -180,6 +233,7 @@ export async function calculateLeaveUsageForMultipleDays(
           value: 1
         });
         remainingBalance -= 1;
+        remainingByMonth.set(monthYear, remainingBalance);
       } else {
         // No balance remaining, unpaid leave
         leaveDetails.push({
@@ -217,7 +271,8 @@ export async function calculateLeaveUsage(
       throw new Error('User not found');
     }
 
-    const remainingLeave = (user.leaveBalance?.balanceAsOfJan26 || 0) + (user.leaveBalance?.earned || 0) - (user.leaveBalance?.used || 0) - (user.leaveBalance?.usedAfterJan26 || 0);
+    const monthYear = String(date || '').slice(0, 7);
+    const remainingLeave = await getEffectiveRemainingForMonth(userId, user, monthYear);
 
     // Check if this is a leave request
     const isLeaveRequest = requestedStatus.toLowerCase().includes('leave') ||
@@ -274,12 +329,17 @@ export async function updateLeaveBalanceOnApproval(
         const currentBalanceAsOfJan26 = user.leaveBalance?.balanceAsOfJan26 || 0;
         const currentEarned = user.leaveBalance?.earned || 0;
         const currentUsed = user.leaveBalance?.used || 0;
+        const monthYear = (dateOrDetails && dateOrDetails.length >= 7) ? dateOrDetails.slice(0,7) : undefined;
+        const effectiveRemainingForMonth = await getEffectiveRemainingForMonth(
+          userId,
+          user,
+          monthYear || ''
+        );
 
-        const currentRemaining = currentBalanceAsOfJan26 + currentEarned - currentUsed - currentUsedAfterJan26;
         // Only deduct if there's at least 1 full day remaining. Do not make remaining negative.
-        if (currentRemaining < 1) {
+        if (effectiveRemainingForMonth < 1) {
           // Not enough balance for a paid leave; treat as unpaid — no update
-          console.log(`[LEAVE DEBUG] Not enough remaining leave for user ${userId} on ${dateOrDetails}. Remaining=${currentRemaining}. Skipping paid deduction.`);
+          console.log(`[LEAVE DEBUG] Not enough remaining leave for user ${userId} on ${dateOrDetails}. Remaining=${effectiveRemainingForMonth}. Skipping paid deduction.`);
           return;
         }
 
@@ -293,7 +353,6 @@ export async function updateLeaveBalanceOnApproval(
         });
 
         // record ledger transaction for this paid leave
-        const monthYear = (dateOrDetails && dateOrDetails.length >= 7) ? dateOrDetails.slice(0,7) : undefined;
         try {
           await LeaveTransaction.create({
             userId,
@@ -333,13 +392,29 @@ export async function updateLeaveBalanceOnApproval(
     const currentEarned = user.leaveBalance?.earned || 0;
     const currentUsed = user.leaveBalance?.used || 0;
 
-    const currentRemaining = currentBalanceAsOfJan26 + currentEarned - currentUsed - currentUsedAfterJan26;
-    // Determine how many paid leaves can actually be accommodated
-    const maxPaidLeavesPossible = Math.floor(Math.max(0, currentRemaining));
-    const paidCount = Math.min(paidLeaves.length, maxPaidLeavesPossible);
+    // Determine paid capacity month-wise using snapshot-aware effective remaining.
+    const paidByMonth = new Map<string, Array<{ date: string; isPaidLeave: boolean; value: number }>>();
+    for (const p of paidLeaves) {
+      const monthYear = (p.date && p.date.length >= 7) ? p.date.slice(0, 7) : '';
+      if (!monthYear) continue;
+      if (!paidByMonth.has(monthYear)) paidByMonth.set(monthYear, []);
+      paidByMonth.get(monthYear)?.push(p);
+    }
+
+    const allowedDateSet = new Set<string>();
+    let paidCount = 0;
+    for (const [monthYear, monthPaidLeaves] of paidByMonth.entries()) {
+      const effectiveRemainingForMonth = await getEffectiveRemainingForMonth(userId, user, monthYear);
+      const maxPaidLeavesPossible = Math.floor(Math.max(0, effectiveRemainingForMonth));
+      const allowedCount = Math.min(monthPaidLeaves.length, maxPaidLeavesPossible);
+      paidCount += allowedCount;
+      for (let i = 0; i < allowedCount; i++) {
+        allowedDateSet.add(monthPaidLeaves[i].date);
+      }
+    }
 
     if (paidCount <= 0) {
-      console.log(`[LEAVE DEBUG] No sufficient remaining leave for user ${userId}. paidLeaves requested=${paidLeaves.length}, available=${currentRemaining}`);
+      console.log(`[LEAVE DEBUG] No sufficient remaining leave for user ${userId}. paidLeaves requested=${paidLeaves.length}`);
       return; // Nothing to deduct
     }
 
@@ -352,8 +427,8 @@ export async function updateLeaveBalanceOnApproval(
     });
 
     try {
-      // create ledger transactions for each paid leave (first paidCount)
-      const toRecord = paidLeaves.slice(0, paidCount);
+      // create ledger transactions only for dates allowed by month-wise effective remaining
+      const toRecord = paidLeaves.filter(d => allowedDateSet.has(d.date));
       const txs = toRecord.map(d => ({
         userId,
         date: d.date,
@@ -386,6 +461,121 @@ export async function updateLeaveBalanceOnApproval(
 
   } catch (error) {
     console.error('Error updating leave balance on approval:', error);
+    throw error;
+  }
+}
+
+/**
+ * Reconcile partial leave deductions for attendance records (idempotent).
+ * Example: value 0.8 on eligible weekday status deducts 0.2 leave.
+ */
+export async function reconcilePartialLeaveFromAttendance(
+  userId: mongoose.Types.ObjectId,
+  entries: Array<{ date: string; amount: number }>
+): Promise<void> {
+  try {
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+
+    const balanceAsOfJan26 = user.leaveBalance?.balanceAsOfJan26 || 0;
+    const currentEarned = user.leaveBalance?.earned || 0;
+    const currentUsed = user.leaveBalance?.used || 0;
+    let currentUsedAfterJan26 = round2(user.leaveBalance?.usedAfterJan26 || 0);
+
+    const affectedMonths = new Set<string>();
+    const computeRemaining = () => round2(balanceAsOfJan26 + currentEarned - currentUsed - currentUsedAfterJan26);
+
+    for (const entry of entries) {
+      const date = String(entry?.date || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        continue;
+      }
+
+      const monthYear = date.slice(0, 7);
+      const desiredAmount = round2(clamp01(Number(entry?.amount || 0)));
+      const reference = `attendance-partial:${date}`;
+
+      const existingTx = await LeaveTransaction.findOne({
+        userId,
+        source: 'attendance-partial',
+        reference,
+        type: 'used',
+      });
+
+      const existingAmount = round2(Number(existingTx?.amount || 0));
+      const requestedDelta = round2(desiredAmount - existingAmount);
+      let appliedDelta = 0;
+
+      if (requestedDelta > 0) {
+        const remaining = Math.max(0, computeRemaining());
+        appliedDelta = round2(Math.min(requestedDelta, remaining));
+      } else if (requestedDelta < 0) {
+        const reversible = Math.min(Math.abs(requestedDelta), existingAmount, currentUsedAfterJan26);
+        appliedDelta = round2(-reversible);
+      }
+
+      const newAmount = round2(existingAmount + appliedDelta);
+
+      if (newAmount <= 0) {
+        if (existingTx) {
+          await LeaveTransaction.deleteOne({ _id: existingTx._id });
+          affectedMonths.add(monthYear);
+        }
+      } else if (existingTx) {
+        existingTx.amount = newAmount;
+        existingTx.monthYear = monthYear;
+        existingTx.date = date;
+        await existingTx.save();
+        if (Math.abs(appliedDelta) > 0) {
+          affectedMonths.add(monthYear);
+        }
+      } else {
+        await LeaveTransaction.create({
+          userId,
+          date,
+          monthYear,
+          type: 'used',
+          amount: newAmount,
+          source: 'attendance-partial',
+          reference,
+        });
+        if (newAmount > 0) {
+          affectedMonths.add(monthYear);
+        }
+      }
+
+      if (Math.abs(appliedDelta) > 0) {
+        currentUsedAfterJan26 = round2(currentUsedAfterJan26 + appliedDelta);
+      }
+    }
+
+    const safeRemaining = Math.max(0, round2(balanceAsOfJan26 + currentEarned - currentUsed - currentUsedAfterJan26));
+    await User.findByIdAndUpdate(userId, {
+      'leaveBalance.usedAfterJan26': currentUsedAfterJan26,
+      'leaveBalance.remaining': safeRemaining,
+    });
+
+    if (affectedMonths.size > 0) {
+      try {
+        const ledger = await import('@/lib/leaveLedger');
+        for (const monthYear of affectedMonths) {
+          try {
+            await ledger.createMonthlySnapshots(monthYear);
+          } catch (e) {
+            console.error('Failed to create monthly snapshot after partial leave reconciliation:', monthYear, e);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to trigger snapshot reconciliation for partial leave:', e);
+      }
+    }
+  } catch (error) {
+    console.error('Error reconciling partial leave from attendance:', error);
     throw error;
   }
 }

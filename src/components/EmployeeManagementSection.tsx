@@ -6,6 +6,57 @@ import { User as UserBase, ScheduleTime, DailySchedule } from '@/types/ui';
 type User = UserBase & {
   articleCreditsAsOnJan26?: number;
 };
+
+type ManagedFieldKey =
+  | 'registeredUnderPartner'
+  | 'workingUnderPartner'
+  | 'basicSalary'
+  | 'laptopAllowance'
+  | 'totalSalaryPerMonth'
+  | 'totalSalaryPerAnnum';
+
+const getDefaultManagedEffectiveDates = (): Record<ManagedFieldKey, string> => {
+  return {
+    registeredUnderPartner: '',
+    workingUnderPartner: '',
+    basicSalary: '',
+    laptopAllowance: '',
+    totalSalaryPerMonth: '',
+    totalSalaryPerAnnum: '',
+  };
+};
+
+const getManagedEffectiveDatesFromUser = (user?: Partial<User>): Record<ManagedFieldKey, string> => {
+  const defaults = getDefaultManagedEffectiveDates();
+  const fieldHistories = (user as any)?.fieldHistories || {};
+
+  const toDateInputValue = (value: any): string => {
+    if (!value) return '';
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return '';
+    return d.toISOString().split('T')[0];
+  };
+
+  const fields: ManagedFieldKey[] = [
+    'registeredUnderPartner',
+    'workingUnderPartner',
+    'basicSalary',
+    'laptopAllowance',
+    'totalSalaryPerMonth',
+    'totalSalaryPerAnnum',
+  ];
+
+  for (const field of fields) {
+    const history = Array.isArray(fieldHistories[field]) ? fieldHistories[field] : [];
+    if (history.length === 0) continue;
+
+    const active = history.find((h: any) => h && (h.effectiveTo === null || h.effectiveTo === undefined));
+    const selected = active || history[history.length - 1];
+    defaults[field] = toDateInputValue(selected?.effectiveFrom);
+  }
+
+  return defaults;
+};
 import { Edit2, Save, X, Plus, Upload, FileUp, Filter, Trash2, Search, Download, ChevronDown, ChevronUp, FileSpreadsheet, Settings, Users, Briefcase, CreditCard, Tag } from 'lucide-react';
 import type { Workbook, Worksheet, Row, Cell } from 'exceljs';
 
@@ -67,6 +118,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   const [employeeHistory, setEmployeeHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState<boolean>(false);
   const [changeReason, setChangeReason] = useState<string>('');
+  const [managedFieldsEffectiveFromByField, setManagedFieldsEffectiveFromByField] = useState<Record<ManagedFieldKey, string>>(getDefaultManagedEffectiveDates());
 
   // Extra Info State
   const [newExtraLabel, setNewExtraLabel] = useState<string>('');
@@ -132,6 +184,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       if (user) {
         setEditingUser(user);
         setFormData(user);
+        setManagedFieldsEffectiveFromByField(getManagedEffectiveDatesFromUser(user));
       }
     }
   }, [selectedUserId, users]);
@@ -186,6 +239,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
     }
     
     setFormData(formDataCopy);
+    setManagedFieldsEffectiveFromByField(getManagedEffectiveDatesFromUser(formDataCopy));
     setError(null);
     // Fetch employee history
     fetchEmployeeHistory(user._id);
@@ -196,6 +250,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
     setFormData({});
     setEmployeeHistory([]);
     setChangeReason('');
+    setManagedFieldsEffectiveFromByField(getDefaultManagedEffectiveDates());
     setError(null);
   };
 
@@ -229,6 +284,12 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       }
       return newData;
     });
+  };
+
+  const hasManagedFieldValue = (field: ManagedFieldKey) => {
+    const value = (formData as any)[field];
+    if (value === null || value === undefined) return false;
+    return String(value).trim() !== '';
   };
 
   // Add new employment type history entry
@@ -594,7 +655,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         body: JSON.stringify({
           ...prepareFormDataForSave(formData),
           changedBy: 'HR Admin', // You can make this dynamic based on logged-in user
-          changeReason: changeReason || 'Employee information update'
+          changeReason: changeReason || 'Employee information update',
+          managedEffectiveFromByField: managedFieldsEffectiveFromByField,
         }),
       });
 
@@ -610,6 +672,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       setFormData({});
       setEmployeeHistory([]);
       setChangeReason('');
+      setManagedFieldsEffectiveFromByField(getDefaultManagedEffectiveDates());
       
       // Refresh user data to ensure schedule changes are reflected
       if (onRefreshUsers) {
@@ -836,8 +899,6 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         nextAttempt: findCol(['Next Attempt Due Date', 'Next Attempt']),
         regPartner: findCol(['Registered Under Partner', 'Reg Partner']),
         workPartner: findCol(['Working Under Partner', 'Work Partner']),
-        timingMonFri: findCol(['Work Timings (Mon to Fri)', 'Work Timings Mon-Fri', 'Mon-Fri Timings']),
-        timingSat: findCol(['Work Timings (Sat)', 'Saturday Timings', 'Sat Timings']),
         leavesBF: findCol(['Leaves B/F', 'Leaves Brought Forward', 'Balance Leaves']),
         articleCredits: findCol(['Credits for Articles (as on 1st Jan 26)'])
       };
@@ -853,44 +914,6 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
 
         // Helper to get val
         const getVal = (i: number) => i !== -1 ? row[i] : undefined;
-        
-        // Parse Work Timings for Mon-Fri "10:00-19:00"
-        let weekdayIn = '09:00';
-        let weekdayOut = '18:00';
-        const timingMonFriRaw = getVal(idx.timingMonFri);
-        if (timingMonFriRaw && typeof timingMonFriRaw === 'string') {
-            const parts = timingMonFriRaw.split('-');
-            if (parts.length >= 2) {
-                weekdayIn = parts[0].trim();
-                weekdayOut = parts[1].trim();
-            }
-        }
-
-        // Parse Work Timings for Saturday "10:00-18:00"
-        let saturdayIn = '09:00';
-        let saturdayOut = '18:00';
-        const timingSatRaw = getVal(idx.timingSat);
-        if (timingSatRaw && typeof timingSatRaw === 'string') {
-            const parts = timingSatRaw.split('-');
-            if (parts.length >= 2) {
-                saturdayIn = parts[0].trim();
-                saturdayOut = parts[1].trim();
-            }
-        }
-
-        // Create schedule structure
-        const scheduleEntry = {
-          effectiveFrom: '2025-12-31', // December 31, 2025
-          daily: {
-            monday: { inTime: weekdayIn, outTime: weekdayOut },
-            tuesday: { inTime: weekdayIn, outTime: weekdayOut },
-            wednesday: { inTime: weekdayIn, outTime: weekdayOut },
-            thursday: { inTime: weekdayIn, outTime: weekdayOut },
-            friday: { inTime: weekdayIn, outTime: weekdayOut },
-            saturday: { inTime: saturdayIn, outTime: saturdayOut },
-            sunday: { inTime: '', outTime: '', isHoliday: true }
-          }
-        };
 
         // Parse article credits (number)
         let articleCreditsAsOnJan26 = undefined;
@@ -972,8 +995,6 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           registeredUnderPartner: getVal(idx.regPartner),
           workingUnderPartner: getVal(idx.workPartner),
           leaveBalance,
-          // Add schedule structure
-          schedules: [scheduleEntry],
           articleCreditsAsOnJan26,
           extraInfo: allExtraLabels.map(label => {
             const colIndex = headers.findIndex(h => String(h).trim().toLowerCase() === label.toLowerCase());
@@ -1735,6 +1756,22 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       <option key={team} value={team}>{team}</option>
                     ))}
                   </select>
+                  {hasManagedFieldValue('workingUnderPartner') && (
+                    <div className="mt-2">
+                      <label className="block text-[11px] text-slate-500 mb-1">Work Partner Effective From</label>
+                      <input
+                        type="date"
+                        value={managedFieldsEffectiveFromByField.workingUnderPartner}
+                        onChange={(e) =>
+                          setManagedFieldsEffectiveFromByField((prev) => ({
+                            ...prev,
+                            workingUnderPartner: e.target.value,
+                          }))
+                        }
+                        className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -2387,6 +2424,23 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   </div>
                 ))}
 
+                {hasManagedFieldValue('registeredUnderPartner') && (
+                  <div>
+                    <label className="block text-[11px] text-slate-500 mb-1">Registered Under Partner Effective From</label>
+                    <input
+                      type="date"
+                      value={managedFieldsEffectiveFromByField.registeredUnderPartner}
+                      onChange={(e) =>
+                        setManagedFieldsEffectiveFromByField((prev) => ({
+                          ...prev,
+                          registeredUnderPartner: e.target.value,
+                        }))
+                      }
+                      className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    />
+                  </div>
+                )}
+
                 {/* Dates */}
                  <div>
                   <label className="block text-xs text-slate-400 mb-1">Articleship Start</label>
@@ -2525,6 +2579,22 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     onChange={(e) => handleInputChange('basicSalary' as keyof User, e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
                   />
+                  {hasManagedFieldValue('basicSalary') && (
+                    <div className="mt-2">
+                      <label className="block text-[11px] text-slate-500 mb-1">Basic Salary Effective From</label>
+                      <input
+                        type="date"
+                        value={managedFieldsEffectiveFromByField.basicSalary}
+                        onChange={(e) =>
+                          setManagedFieldsEffectiveFromByField((prev) => ({
+                            ...prev,
+                            basicSalary: e.target.value,
+                          }))
+                        }
+                        className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                      />
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">Laptop Allowance</label>
@@ -2534,6 +2604,22 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     onChange={(e) => handleInputChange('laptopAllowance' as keyof User, e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
                   />
+                  {hasManagedFieldValue('laptopAllowance') && (
+                    <div className="mt-2">
+                      <label className="block text-[11px] text-slate-500 mb-1">Laptop Allowance Effective From</label>
+                      <input
+                        type="date"
+                        value={managedFieldsEffectiveFromByField.laptopAllowance}
+                        onChange={(e) =>
+                          setManagedFieldsEffectiveFromByField((prev) => ({
+                            ...prev,
+                            laptopAllowance: e.target.value,
+                          }))
+                        }
+                        className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                      />
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">Other Allowance</label>
@@ -2570,6 +2656,47 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     onChange={(e) => handleInputChange('totalSalaryPerMonth' as keyof User, e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
                   />
+                  {hasManagedFieldValue('totalSalaryPerMonth') && (
+                    <div className="mt-2">
+                      <label className="block text-[11px] text-slate-500 mb-1">Total Salary (P/M) Effective From</label>
+                      <input
+                        type="date"
+                        value={managedFieldsEffectiveFromByField.totalSalaryPerMonth}
+                        onChange={(e) =>
+                          setManagedFieldsEffectiveFromByField((prev) => ({
+                            ...prev,
+                            totalSalaryPerMonth: e.target.value,
+                          }))
+                        }
+                        className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                      />
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Per Annum</label>
+                  <input
+                    type="text"
+                    value={(formData as any).totalSalaryPerAnnum || ''}
+                    onChange={(e) => handleInputChange('totalSalaryPerAnnum' as keyof User, e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                  />
+                  {hasManagedFieldValue('totalSalaryPerAnnum') && (
+                    <div className="mt-2">
+                      <label className="block text-[11px] text-slate-500 mb-1">Per Annum Effective From</label>
+                      <input
+                        type="date"
+                        value={managedFieldsEffectiveFromByField.totalSalaryPerAnnum}
+                        onChange={(e) =>
+                          setManagedFieldsEffectiveFromByField((prev) => ({
+                            ...prev,
+                            totalSalaryPerAnnum: e.target.value,
+                          }))
+                        }
+                        className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                      />
+                    </div>
+                  )}
                 </div>
                 
                 {/* Deductions */}

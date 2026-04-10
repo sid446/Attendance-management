@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, CheckCircle, XCircle, AlertTriangle, CalendarOff, Briefcase, ChevronLeft, ChevronRight, User as UserIcon, Calendar, Search, Edit3, FileCheck } from 'lucide-react';
+import { Clock, CheckCircle, XCircle, AlertTriangle, CalendarOff, Briefcase, ChevronLeft, ChevronRight, User as UserIcon, Calendar, Search, Edit3, FileCheck, Loader2 } from 'lucide-react';
 import { AttendanceSummaryView, AttendanceRecord, User, DailySchedule } from '@/types/ui';
 import { ScheduleEntry } from '@/types/ui';
 interface ApprovedRequest {
@@ -30,6 +30,12 @@ interface EmployeeMonthViewProps {
   onApplyFutureRequest?: () => void; // Callback to open future request modal
   showEmployeeSelector?: boolean; // When true, always show employee dropdown using users list (for admin views)
   approvedRequests?: ApprovedRequest[]; // For admin view: show indicators for approved/edited days
+  /** When false, hides the top summary strip (e.g. when shown in a dashboard overview). Default true. */
+  showSummaryStrip?: boolean;
+  sectionTitle?: string;
+  /** undefined = default admin subtitle; null = hide; string = custom */
+  subtitle?: string | null;
+  sectionClassName?: string;
 }
 
 export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
@@ -48,7 +54,11 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
   onSelectionStartChange,
   onApplyFutureRequest,
   showEmployeeSelector = false,
-  approvedRequests = []
+  approvedRequests = [],
+  showSummaryStrip = true,
+  sectionTitle = 'Employee Month View',
+  subtitle: subtitleProp,
+  sectionClassName = ''
 }) => {
   // Selection state for range picking - use external state if provided
   const [internalSelectionStart, setInternalSelectionStart] = React.useState<string | null>(null);
@@ -67,6 +77,17 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
   const [formRemarks, setFormRemarks] = React.useState<string>('');
   const [savingEdit, setSavingEdit] = React.useState(false);
   const [editError, setEditError] = React.useState<string | null>(null);
+  const [requestDetailModal, setRequestDetailModal] = React.useState<ApprovedRequest | null>(null);
+
+  React.useEffect(() => {
+    if (!requestDetailModal) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setRequestDetailModal(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [requestDetailModal]);
+
   // Try to find user details from the 'users' list first, otherwise fallback to summaries
   const userFromList = users.find(u => u._id === selectedEmployeeId);
   const summaryFromList = summaries.find((s) => s.userId === selectedEmployeeId);
@@ -315,10 +336,14 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
     return actualMins > scheduledMins;
   };
 
+  const defaultSubtitle = 'View detailed daily attendance for any employee and month.';
+  const resolvedSubtitle =
+    subtitleProp === undefined ? defaultSubtitle : subtitleProp;
+
   return (
-    <section className="bg-slate-900/60 border border-slate-800 rounded-xl shadow-sm p-4 sm:p-6 space-y-3 sm:space-y-4">
+    <section className={`bg-slate-900/60 border border-slate-800 rounded-xl shadow-sm p-4 sm:p-6 space-y-3 sm:space-y-4 ${sectionClassName}`.trim()}>
       {/* Monthly summary row */}
-      {summaryFromList && summaryFromList.summary && (
+      {showSummaryStrip && summaryFromList && summaryFromList.summary && (
         (() => {
           // Compute absent days locally: not Sunday, not DB-holiday, not weekoff, not leave,
           // and both in and out are missing or '00:00'
@@ -379,12 +404,14 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-4">
         <div>
           <h2 className="text-base sm:text-lg font-semibold text-slate-50 flex items-center gap-2">
-            <Calendar className="w-4 h-4 sm:w-5 sm:h-5" />
-            Employee Month View
+            <Calendar className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
+            {sectionTitle}
           </h2>
-          <p className="text-xs text-slate-400 mt-1 hidden sm:block">
-            View detailed daily attendance for any employee and month.
-          </p>
+          {resolvedSubtitle !== null && resolvedSubtitle !== '' && (
+            <p className="text-xs text-slate-400 mt-1 sm:max-w-xl">
+              {resolvedSubtitle}
+            </p>
+          )}
         </div>
       </div>
 
@@ -499,6 +526,73 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                             className="px-3 py-1.5 bg-emerald-500 text-slate-900 rounded text-sm disabled:opacity-60"
                           >
                             {savingEdit ? 'Saving…' : 'Save'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {requestDetailModal && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                      <div className="absolute inset-0 bg-black/50" onClick={() => setRequestDetailModal(null)} aria-hidden />
+                      <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="request-detail-title"
+                        className="relative w-[min(420px,95%)] bg-slate-900 border border-slate-700 rounded-lg p-4 text-sm text-slate-200 shadow-xl"
+                      >
+                        <h3 id="request-detail-title" className="font-semibold text-slate-50 mb-3">
+                          Request details
+                        </h3>
+                        <dl className="space-y-2 text-xs">
+                          <div className="flex justify-between gap-4">
+                            <dt className="text-slate-500 shrink-0">Status</dt>
+                            <dd className="text-slate-200 text-right">{requestDetailModal.status || 'Unknown'}</dd>
+                          </div>
+                          <div className="flex justify-between gap-4">
+                            <dt className="text-slate-500 shrink-0">Requested</dt>
+                            <dd className="text-slate-200 text-right break-words">{requestDetailModal.requestedStatus || 'Unknown'}</dd>
+                          </div>
+                          {requestDetailModal.status === 'Approved' && (
+                            <>
+                              <div className="flex justify-between gap-4">
+                                <dt className="text-slate-500 shrink-0">Approved by</dt>
+                                <dd className="text-slate-200 text-right">{requestDetailModal.approvedBy || 'Unknown'}</dd>
+                              </div>
+                              <div className="flex justify-between gap-4">
+                                <dt className="text-slate-500 shrink-0">Email</dt>
+                                <dd className="text-slate-200 text-right break-all">{requestDetailModal.approvedByEmail || '—'}</dd>
+                              </div>
+                              <div className="flex justify-between gap-4">
+                                <dt className="text-slate-500 shrink-0">Date</dt>
+                                <dd className="text-slate-200 text-right">
+                                  {requestDetailModal.approvedAt
+                                    ? new Date(requestDetailModal.approvedAt).toLocaleString('en-US', {
+                                        year: 'numeric',
+                                        month: 'short',
+                                        day: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                      })
+                                    : 'N/A'}
+                                </dd>
+                              </div>
+                            </>
+                          )}
+                          {requestDetailModal.status === 'Pending' && (
+                            <p className="text-slate-400 pt-1">Awaiting approval from partner/HR.</p>
+                          )}
+                          {requestDetailModal.status === 'Rejected' && (
+                            <p className="text-slate-400 pt-1">This request was rejected.</p>
+                          )}
+                        </dl>
+                        <div className="mt-4 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => setRequestDetailModal(null)}
+                            className="px-3 py-1.5 bg-slate-800 border border-slate-700 rounded text-sm hover:bg-slate-700"
+                          >
+                            Close
                           </button>
                         </div>
                       </div>
@@ -690,30 +784,25 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
             </div>
           </div>
         ) : (
-          <>
-            {/* Month Navigation within Calendar */}
-            <div className="flex items-center justify-between mb-3 sm:mb-4 px-1">
-              <button
-                onClick={handlePrevMonth}
-                disabled={isLoading}
-                className="p-2.5 sm:p-2 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-800 disabled:cursor-not-allowed rounded-lg text-slate-300 hover:text-white disabled:text-slate-500 transition-colors touch-manipulation active:scale-95"
-                title="Previous Month"
+          <div className="relative">
+            {isLoading && selectedEmployeeId && selectedMonthYear && (
+              <div
+                className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-slate-950/60 backdrop-blur-[1px]"
+                aria-live="polite"
+                aria-busy="true"
               >
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-              
-              <h3 className="text-lg sm:text-lg font-semibold text-slate-200">
+                <div className="flex items-center gap-2 rounded-md border border-slate-700 bg-slate-900/90 px-4 py-3 text-sm text-slate-200 shadow-lg">
+                  <Loader2 className="h-5 w-5 animate-spin text-emerald-400" aria-hidden />
+                  <span>Loading attendance…</span>
+                </div>
+              </div>
+            )}
+
+            <div className="mb-3 sm:mb-4 px-1 text-center">
+              <h3 className="text-lg font-semibold text-slate-200">
                 {months.find(m => m.value === selectedMonth)?.label} {selectedYear}
               </h3>
-              
-              <button
-                onClick={handleNextMonth}
-                disabled={isLoading}
-                className="p-2.5 sm:p-2 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-800 disabled:cursor-not-allowed rounded-lg text-slate-300 hover:text-white disabled:text-slate-500 transition-colors touch-manipulation active:scale-95"
-                title="Next Month"
-              >
-                <ChevronRight className="w-5 h-5" />
-              </button>
+              <p className="mt-1 text-[11px] text-slate-500 sm:hidden">Use the controls above to change month</p>
             </div>
 
             {/* Day name headers - hidden on mobile since 2-col layout */}
@@ -753,11 +842,6 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                 let isLate = false;
                 if (rec) {
                   isLate = isLateArrival(dateObj, rec.inTime, rec);
-                  // Debug: log schedule, inTime, and lateness calculation for employee dashboard
-                  if (window && window.location && window.location.pathname.includes('employee/dashboard')) {
-                    // eslint-disable-next-line no-console
-                    console.log('[DEBUG] Date:', rec.date, 'inTime:', rec.inTime, 'schedule:', rec.schedule, 'isLate:', isLate);
-                  }
                 }
 
                 // Check if request is a custom/other type (not standard)
@@ -899,29 +983,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                             title={`Request: ${approvedReq.status}${isCustomRequestType ? ` (${approvedReq.requestedStatus})` : ''}${approvedReq.status === 'Approved' ? ` by ${approvedReq.approvedBy || 'Unknown'}` : ''}${approvedReq.approvedByEmail ? ` (${approvedReq.approvedByEmail})` : ''}${approvedReq.approvedAt ? ` on ${new Date(approvedReq.approvedAt).toLocaleDateString()}` : ''}`}
                             onClick={(e) => {
                               e.stopPropagation();
-                              const requestStatus = approvedReq.status || 'Unknown';
-                              const requestedStatus = approvedReq.requestedStatus || 'Unknown';
-                              let message = `Request Details:\n\nStatus: ${requestStatus}\nRequested: ${requestedStatus}`;
-                              
-                              if (approvedReq.status === 'Approved') {
-                                const approver = approvedReq.approvedBy || 'Unknown';
-                                const email = approvedReq.approvedByEmail || 'No email';
-                                const date = approvedReq.approvedAt 
-                                  ? new Date(approvedReq.approvedAt).toLocaleDateString('en-US', {
-                                      year: 'numeric',
-                                      month: 'short',
-                                      day: 'numeric',
-                                      hour: '2-digit',
-                                      minute: '2-digit'
-                                    })
-                                  : 'N/A';
-                                message += `\nApproved By: ${approver}\nEmail: ${email}\nDate: ${date}`;
-                              } else if (approvedReq.status === 'Pending') {
-                                message += `\n\nAwaiting approval from partner/HR.`;
-                              } else if (approvedReq.status === 'Rejected') {
-                                message += `\n\nThis request was rejected.`;
-                              }
-                              alert(message);
+                              setRequestDetailModal(approvedReq);
                             }}
                           >
                             <FileCheck className="w-2.5 h-2.5 sm:mr-0.5" />
@@ -1009,7 +1071,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                 );
               })}
             </div>
-          </>
+          </div>
         )}
       </div>
 
@@ -1044,6 +1106,10 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded border border-slate-500/60 bg-slate-800/50"></div>
             <span className="text-slate-300">No Record</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded border border-indigo-500/60 bg-indigo-500/15"></div>
+            <span className="text-slate-300">WFH / OHD / other special</span>
           </div>
           {approvedRequests.length > 0 && (
             <>

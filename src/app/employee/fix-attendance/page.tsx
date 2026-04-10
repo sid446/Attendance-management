@@ -167,10 +167,10 @@ function FixAttendanceContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="w-8 h-8 text-emerald-400 animate-spin mx-auto mb-4" />
-          <p className="text-slate-400">Loading your attendance records...</p>
+          <p className="text-zinc-400">Loading your attendance records...</p>
         </div>
       </div>
     );
@@ -178,19 +178,19 @@ function FixAttendanceContent() {
 
   if (submitted) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-xl p-8 text-center">
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-xl p-8 text-center">
           <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle className="w-8 h-8 text-emerald-400" />
           </div>
           <h1 className="text-2xl font-bold text-white mb-2">Corrections Submitted!</h1>
-          <p className="text-slate-400 mb-6">
+          <p className="text-zinc-400 mb-6">
             {submitResult?.success} correction{submitResult?.success !== 1 ? 's' : ''} have been sent to your work partner for approval.
             You will be notified once they are reviewed.
           </p>
           <a
             href="/employee/dashboard"
-            className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-medium rounded-lg transition-colors"
+            className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-6 py-3 font-medium text-white transition-colors hover:bg-emerald-500"
           >
             <ArrowLeft className="w-4 h-4" />
             Go to Dashboard
@@ -202,16 +202,16 @@ function FixAttendanceContent() {
 
   if (error && invalidRecords.length === 0) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-xl p-8 text-center">
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-xl p-8 text-center">
           <div className="w-16 h-16 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
             <AlertTriangle className="w-8 h-8 text-rose-400" />
           </div>
           <h1 className="text-2xl font-bold text-white mb-2">Unable to Load Records</h1>
-          <p className="text-slate-400 mb-6">{error}</p>
+          <p className="text-zinc-400 mb-6">{error}</p>
           <a
             href="/employee/dashboard"
-            className="inline-flex items-center gap-2 px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white font-medium rounded-lg transition-colors"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-zinc-700 hover:bg-zinc-600 text-white font-medium rounded-lg transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
             Go to Dashboard
@@ -227,17 +227,17 @@ function FixAttendanceContent() {
     : '';
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen bg-zinc-950">
       {/* Header */}
-      <header className="bg-slate-900 border-b border-slate-800 px-4 py-4">
+      <header className="border-b border-zinc-800/90 bg-zinc-950/90 px-4 py-4 backdrop-blur-md">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div>
             <h1 className="text-xl font-semibold text-white">Fix Attendance Records</h1>
-            <p className="text-sm text-slate-400">{userName} • {monthName}</p>
+            <p className="text-sm text-zinc-400">{userName} • {monthName}</p>
           </div>
           <a
             href="/employee/dashboard"
-            className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm rounded-lg transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm rounded-lg transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
             Dashboard
@@ -278,12 +278,12 @@ function FixAttendanceContent() {
             return (
               <div
                 key={record.date}
-                className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden"
+                className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden"
               >
                 {/* Record Header */}
-                <div className="bg-slate-800/50 px-4 py-3 flex items-center justify-between">
+                <div className="bg-zinc-800/50 px-4 py-3 flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <Calendar className="w-4 h-4 text-slate-400" />
+                    <Calendar className="w-4 h-4 text-zinc-400" />
                     <span className="font-medium text-white">{formatDate(record.date)}</span>
                   </div>
                   <span className={`text-xs px-2 py-1 rounded border ${getIssueColor(record.issue)}`}>
@@ -296,14 +296,14 @@ function FixAttendanceContent() {
                   {/* Original Times */}
                   <div className="flex gap-6 mb-4 text-sm">
                     <div>
-                      <span className="text-slate-500">Original Check-in: </span>
-                      <span className={needsCheckin ? 'text-rose-400' : 'text-slate-300'}>
+                      <span className="text-zinc-500">Original Check-in: </span>
+                      <span className={needsCheckin ? 'text-rose-400' : 'text-zinc-300'}>
                         {record.checkin || '—'}
                       </span>
                     </div>
                     <div>
-                      <span className="text-slate-500">Original Check-out: </span>
-                      <span className={needsCheckout ? 'text-rose-400' : 'text-slate-300'}>
+                      <span className="text-zinc-500">Original Check-out: </span>
+                      <span className={needsCheckout ? 'text-rose-400' : 'text-zinc-300'}>
                         {record.checkout || '—'}
                       </span>
                     </div>
@@ -313,32 +313,32 @@ function FixAttendanceContent() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {needsCheckin && (
                       <div>
-                        <label className="block text-xs font-medium text-slate-300 mb-1">
+                        <label className="block text-xs font-medium text-zinc-300 mb-1">
                           Correct Check-in Time *
                         </label>
                         <div className="relative">
-                          <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                          <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                           <input
                             type="time"
                             value={correction?.newCheckin || ''}
                             onChange={(e) => updateCorrection(record.date, 'newCheckin', e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 focus:border-emerald-500 focus:outline-none"
+                            className="w-full pl-10 pr-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-200 focus:border-emerald-500 focus:outline-none"
                           />
                         </div>
                       </div>
                     )}
                     {needsCheckout && (
                       <div>
-                        <label className="block text-xs font-medium text-slate-300 mb-1">
+                        <label className="block text-xs font-medium text-zinc-300 mb-1">
                           Correct Check-out Time *
                         </label>
                         <div className="relative">
-                          <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                          <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                           <input
                             type="time"
                             value={correction?.newCheckout || ''}
                             onChange={(e) => updateCorrection(record.date, 'newCheckout', e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 focus:border-emerald-500 focus:outline-none"
+                            className="w-full pl-10 pr-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-200 focus:border-emerald-500 focus:outline-none"
                           />
                         </div>
                       </div>
@@ -347,7 +347,7 @@ function FixAttendanceContent() {
 
                   {/* Reason Input */}
                   <div className="mt-4">
-                    <label className="block text-xs font-medium text-slate-300 mb-1">
+                    <label className="block text-xs font-medium text-zinc-300 mb-1">
                       Reason (optional)
                     </label>
                     <input
@@ -355,7 +355,7 @@ function FixAttendanceContent() {
                       value={correction?.reason || ''}
                       onChange={(e) => updateCorrection(record.date, 'reason', e.target.value)}
                       placeholder="e.g., Thumb machine was not working"
-                      className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
+                      className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2 text-zinc-200 placeholder:text-zinc-600 focus:border-emerald-500 focus:outline-none"
                     />
                   </div>
                 </div>
@@ -369,7 +369,7 @@ function FixAttendanceContent() {
           <button
             onClick={handleSubmit}
             disabled={submitting}
-            className="flex items-center gap-2 px-8 py-3 bg-emerald-500 hover:bg-emerald-400 disabled:bg-emerald-800 disabled:cursor-not-allowed text-slate-900 font-semibold rounded-lg transition-colors"
+            className="flex items-center gap-2 rounded-lg bg-emerald-600 px-8 py-3 font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-900"
           >
             {submitting ? (
               <Loader2 className="w-5 h-5 animate-spin" />
@@ -380,7 +380,7 @@ function FixAttendanceContent() {
           </button>
         </div>
 
-        <p className="text-center text-xs text-slate-500 mt-4">
+        <p className="text-center text-xs text-zinc-500 mt-4">
           Your corrections will be reviewed by your work partner before being applied.
         </p>
       </main>
@@ -391,7 +391,7 @@ function FixAttendanceContent() {
 export default function FixAttendancePage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
       </div>
     }>

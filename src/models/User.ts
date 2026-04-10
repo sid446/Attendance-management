@@ -31,6 +31,13 @@ export interface IEmploymentTypeHistory {
   effectiveFrom: Date;
 }
 
+export interface IEffectiveValueHistory {
+  value: string;
+  effectiveFrom: Date;
+  effectiveTo?: Date | null;
+  source?: string;
+}
+
 export interface IUser extends Document {
   odId: string;
   name: string;
@@ -89,6 +96,15 @@ export interface IUser extends Document {
   registeredUnderPartner?: string;
   workingUnderPartner?: string;
   workingTiming?: string;
+
+  fieldHistories?: {
+    registeredUnderPartner?: IEffectiveValueHistory[];
+    workingUnderPartner?: IEffectiveValueHistory[];
+    basicSalary?: IEffectiveValueHistory[];
+    laptopAllowance?: IEffectiveValueHistory[];
+    totalSalaryPerMonth?: IEffectiveValueHistory[];
+    totalSalaryPerAnnum?: IEffectiveValueHistory[];
+  };
 
 
   // Flexible additional info (e.g. PAN, Aadhaar, etc.)
@@ -174,6 +190,30 @@ const ScheduleEntrySchema: Schema = new Schema(
       required: true,
     },
     daily: DailyScheduleSchema,
+  },
+  { _id: false }
+);
+
+const EffectiveValueHistorySchema: Schema = new Schema(
+  {
+    value: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    effectiveFrom: {
+      type: Date,
+      required: true,
+    },
+    effectiveTo: {
+      type: Date,
+      default: null,
+    },
+    source: {
+      type: String,
+      trim: true,
+      default: 'system',
+    },
   },
   { _id: false }
 );
@@ -407,6 +447,32 @@ const UserSchema = new Schema(
     workingTiming: {
       type: String,
       trim: true,
+    },
+    fieldHistories: {
+      registeredUnderPartner: {
+        type: [EffectiveValueHistorySchema],
+        default: [],
+      },
+      workingUnderPartner: {
+        type: [EffectiveValueHistorySchema],
+        default: [],
+      },
+      basicSalary: {
+        type: [EffectiveValueHistorySchema],
+        default: [],
+      },
+      laptopAllowance: {
+        type: [EffectiveValueHistorySchema],
+        default: [],
+      },
+      totalSalaryPerMonth: {
+        type: [EffectiveValueHistorySchema],
+        default: [],
+      },
+      totalSalaryPerAnnum: {
+        type: [EffectiveValueHistorySchema],
+        default: [],
+      },
     },
     extraInfo: [
       {

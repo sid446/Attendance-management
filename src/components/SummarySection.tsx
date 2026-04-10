@@ -227,11 +227,17 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     const records = item.recordDetails || {};
     const dates: { date: string; info: string; subInfo?: string }[] = [];
     Object.entries(records).forEach(([date, rec]) => {
+        if (rec.typeOfPresence === 'Absent') {
+          dates.push({ date, info: 'Absent', subInfo: 'Marked absent' });
+          return;
+        }
+        if (rec.typeOfPresence === 'Leave' || rec.typeOfPresence === 'On leave') {
+          dates.push({ date, info: 'Absent', subInfo: 'On leave' });
+          return;
+        }
         // Absent logic: 0 hours, not Leave/Holiday, not weekoff, both in and out invalid
         if (
           rec.totalHour === 0 &&
-          rec.typeOfPresence !== 'Leave' &&
-          rec.typeOfPresence !== 'On leave' &&
           rec.typeOfPresence !== 'Holiday' &&
           !(typeof rec.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff'))
         ) {
@@ -351,6 +357,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         const isBothZero = !(effectiveCheckin && effectiveCheckin !== '00:00') && !(effectiveCheckout && effectiveCheckout !== '00:00');
 
         if (rec.typeOfPresence === 'Leave' || rec.typeOfPresence === 'On leave') {
+          absentDays++;
           if (!rec.halfDay) leaveDays++;
         } else if (
           ((effectiveCheckin && effectiveCheckin !== '00:00') && (effectiveCheckout && effectiveCheckout !== '00:00')) ||
@@ -365,14 +372,14 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         }
       });
       
-      const totalWorkingDays = presentDays + absentDays + leaveDays;
+      const totalWorkingDays = presentDays + absentDays;
       
       // Add summary breakdown at the top
-      details.push({
+        details.push({
           date: 'CALCULATION',
-          info: `Present + Absent + Leave = Total`,
-          subInfo: 'Formula'
-      });
+          info: `Present + Absent = Total`,
+          subInfo: 'Leave is included in Absent'
+        });
       
       details.push({
           date: 'Present Days',
@@ -395,7 +402,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       details.push({
           date: 'TOTAL',
           info: `${totalWorkingDays} Working Days`,
-          subInfo: `${presentDays} + ${absentDays} + ${leaveDays}`
+          subInfo: `${presentDays} + ${absentDays}`
       });
       
       // Add individual day breakdown
@@ -778,7 +785,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       if (type === 'Absent') {
         absent += 1;
       } else if (type === 'On leave' || type === 'Leave') {
-        absent += value === 0 ? 1 : 0; // Unpaid leave = absent
+        absent += 1; // Informational policy: all leave days count as absent
       } else if (type === 'Half Day - weekdays') {
         hdWeekday += value;
         present += 1; // Count as 1 day present
@@ -1279,7 +1286,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         const halfDayDetails = getHalfDayDetails(item);
         const calcHalfDay = halfDayDetails.length;
 
-        // Calculate absent days per rule: not Sunday, not DB-holiday, not weekoff type, not leave,
+        // Calculate absent days per rule: not Sunday, not DB-holiday, not weekoff type,
         // and both in and out are missing or '00:00'. This ensures absent is counted even if
         // present values exceed expected working days.
         let calcAbsent = 0;
@@ -1292,8 +1299,16 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           if (holidayDatesSet.has(dateStr)) return;
           // Skip weekoff types
           if (typeof rec.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff')) return;
-          // Skip leaves
-          if (rec.typeOfPresence === 'Leave' || rec.typeOfPresence === 'On leave') return;
+          // Explicitly marked absent is always absent
+          if (rec.typeOfPresence === 'Absent') {
+            calcAbsent += 1;
+            return;
+          }
+          // Leave days are also absent (informational policy)
+          if (rec.typeOfPresence === 'Leave' || rec.typeOfPresence === 'On leave') {
+            calcAbsent += 1;
+            return;
+          }
           const effectiveCheckin = rec.editedCheckin || rec.checkin;
           const effectiveCheckout = rec.editedCheckout || rec.checkout;
           if ((!effectiveCheckin || effectiveCheckin === '00:00') && (!effectiveCheckout || effectiveCheckout === '00:00')) {
@@ -1337,8 +1352,8 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           bValue = b.employeeCode || b.odId || '';
           break;
         case 'totalWorkingDays':
-          aValue = a.summary.totalPresent + a.summary.totalAbsent + a.summary.totalLeave;
-          bValue = b.summary.totalPresent + b.summary.totalAbsent + b.summary.totalLeave;
+          aValue = a.summary.totalPresent + a.summary.totalAbsent;
+          bValue = b.summary.totalPresent + b.summary.totalAbsent;
           break;
         case 'calcScheduled':
           aValue = a.calcScheduled || 0;
@@ -1442,7 +1457,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
    * Detailed Export
    * Columns (keeps existing columns up to `paidFrom`, then):
    * - PIO: ThumbMachine | Present - in office | Present - in office - weekdays (halfDay=false), exclude holidays
-   * - WO-PIO: Present - in office - weekoff / Present - weekoff / WO-Present (halfDay=false)
+   * - WO-PIO: Present - in office - weekoff / Present - weekoff / WO-Present (halfDay=false), plus PIO-eligible presence on Sunday or on a date in `holidays`
    * - OS-P: Outstation/ClientPlace present types (weekdays/weekoff). halfDay counts as 0.5
    * - A: Absent (existing logic: 0 hours, not leave/holiday/weekoff and no checkin/out)
    * - HD: Half-day weekdays (halfDay=true, exclude outstation/clientplace, exclude weekoff)
@@ -1533,6 +1548,95 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     // WFH allowed default per user (days) - default 2
     const getWfhAllowed = (user: User | undefined) => {
       return 2;
+    };
+
+    const toDateOnly = (v: string) => new Date(`${v}T00:00:00`);
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+
+    const getExportRange = () => {
+      if (filterType === 'month') {
+        const start = new Date(selectedYear, selectedMonth - 1, 1);
+        const end = new Date(selectedYear, selectedMonth, 0);
+        return { start, end };
+      }
+
+      if (filterType === 'week') {
+        const firstDay = new Date(selectedYear, selectedMonth - 1, 1);
+        const lastDay = new Date(selectedYear, selectedMonth, 0);
+        let weekStart = new Date(currentWeekStart);
+        if (weekStart < firstDay) weekStart = new Date(firstDay);
+        let weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekEnd.getDate() + 6);
+        if (weekEnd > lastDay) weekEnd = new Date(lastDay);
+        return { start: weekStart, end: weekEnd };
+      }
+
+      return { start: new Date(rangeStart), end: new Date(rangeEnd) };
+    };
+
+    const isHolidayLikeType = (typeOfPresence: string) => {
+      const t = String(typeOfPresence || '').toLowerCase();
+      return (
+        t === 'holiday' ||
+        t === 'sun' ||
+        t === 'sunday' ||
+        t === 'official holiday duty (ohd)' ||
+        t.includes('weekoff')
+      );
+    };
+
+    // Leave contribution rules for detailed export adjustments:
+    // Absent => 1, Half Day => 0.5, WFH => 1 - value, Leave => value/full-day.
+    const getLeaveContribution = (dateStr: string, rec: any): number => {
+      if (!rec) return 0;
+
+      const dateObj = toDateOnly(dateStr);
+      if (dateObj.getDay() === 0) return 0;
+      if (holidayDates.has(dateStr)) return 0;
+
+      const type = String(rec.typeOfPresence || '');
+      if (isHolidayLikeType(type)) return 0;
+
+      const inTime = String(rec.editedCheckin || rec.checkin || '').trim();
+      const outTime = String(rec.editedCheckout || rec.checkout || '').trim();
+      const hasIn = inTime !== '' && inTime !== '00:00';
+      const hasOut = outTime !== '' && outTime !== '00:00';
+      const totalHour = Number(rec.totalHour || 0);
+
+      // Paid leave / on leave entries
+      if (type === 'Leave' || type === 'On leave') {
+        const raw = Number(rec.value);
+        if (Number.isFinite(raw) && raw > 0) return round2(clamp01(raw));
+        return rec.halfDay ? 0.5 : 1;
+      }
+
+      // Absent entries
+      const isAbsentByType = type === 'Absent';
+      const isAbsentByTime = totalHour === 0 && !hasIn && !hasOut;
+      if (isAbsentByType || isAbsentByTime) {
+        return 1;
+      }
+
+      // Half day entries
+      if (rec.halfDay || type === 'Half Day - weekdays' || type === 'Half Day - weekoff' || type === 'Half Day (HD)') {
+        return 0.5;
+      }
+
+      // WFH entries consume the shortfall from 1 day
+      const isWFH =
+        type === 'WFH - weekdays' ||
+        type === 'WFH - weekoff' ||
+        type === 'Work From Home (WFH)' ||
+        type === 'Weekly Off - Work From Home (WO-WFH)';
+
+      if (isWFH) {
+        const raw = Number(rec.value);
+        const normalized = Number.isFinite(raw) ? clamp01(raw) : 0;
+        return round2(Math.max(0, 1 - normalized));
+      }
+
+      return 0;
     };
 
     // Import ExcelJS dynamically
@@ -1644,8 +1748,14 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     };
     const totalHolidaysInPeriod = countHolidaysInPeriod();
 
-    // Fetch snapshots for the target month so Leaves_B/F is accurate
-    const targetMonth = filterType === 'month' ? `${selectedYear}-${String(selectedMonth).padStart(2, '0')}` : `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
+    const exportRange = getExportRange();
+
+    // Current month context for snapshot-driven leave adjustment
+    const targetMonth = filterType === 'range'
+      ? `${exportRange.end.getFullYear()}-${String(exportRange.end.getMonth() + 1).padStart(2, '0')}`
+      : `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
+
+    // Fetch snapshots for the target month so Leaves_B/F and leave taken adjustment are accurate
     let snapshotMap: Record<string, any> = {};
     try {
       const snapRes = await fetch(`/api/leave/snapshots?monthYear=${targetMonth}`);
@@ -1657,6 +1767,27 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       }
     } catch (e) {
       // ignore snapshot fetch errors and fallback to user.leaveBalance
+    }
+
+    // For week/range exports, fetch full current-month attendance so we can
+    // adjust snapshot leave values for included/excluded dates precisely.
+    let currentMonthRecordsByUser: Record<string, Record<string, any>> = {};
+    if (filterType !== 'month') {
+      try {
+        const monthRes = await fetch(`/api/attendance?monthYear=${encodeURIComponent(targetMonth)}`);
+        if (monthRes.ok) {
+          const json = await monthRes.json();
+          if (json?.success && Array.isArray(json.data)) {
+            for (const row of json.data) {
+              const uid = String(row?.userId?._id || row?.userId || '');
+              if (!uid) continue;
+              currentMonthRecordsByUser[uid] = (row?.records || {}) as Record<string, any>;
+            }
+          }
+        }
+      } catch (e) {
+        // If month fetch fails, detailed export falls back to in-range records only.
+      }
     }
 
     // Partition summaries into employees and articles so export has two sections
@@ -1729,7 +1860,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       let wfh_weekoff = 0; // sum of values
       let wfh_weekday = 0; // sum of values
       let present_wfh_actual = 0; // same as wfh_weekday
-      let leaves_taken = 0; // full leave days
+      let leaves_taken = 0;
       let extraEarnedFromOutclient = 0; // additional leave earned from outstation/clientplace attendances
       let staffOvertime = 0; // sum of excessHour for ThumbMachine records
 
@@ -1763,8 +1894,10 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           }
         }
 
-        // WO-PIO
+        // WO-PIO: explicit weekoff present types, or in-office present (PIO rules) on Sunday / holiday
         if (isWOPIO(rec)) {
+          wo_pio += 1;
+        } else if (isPIO(rec) && (isSunday || isHoliday)) {
           wo_pio += 1;
         }
 
@@ -1773,12 +1906,18 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           os_p += (rec.halfDay ? 0.5 : 1);
         }
 
-        // Absent (A) - reuse existing logic: totalHour===0 and not leave/holiday/weekoff and no checkin/out
+        // Absent (A): exclude Sundays and holidays from absent counting.
         let isAbsentRecord = false;
-        if (
+        const isExplicitAbsent = rec.typeOfPresence === 'Absent';
+        const isLeaveMarked = rec.typeOfPresence === 'Leave' || rec.typeOfPresence === 'On leave';
+
+        if (!isSunday && !isHoliday && (isExplicitAbsent || isLeaveMarked)) {
+          absent += 1;
+          isAbsentRecord = true;
+        } else if (
+          !isSunday &&
+          !isHoliday &&
           rec.totalHour === 0 &&
-          rec.typeOfPresence !== 'Leave' &&
-          rec.typeOfPresence !== 'On leave' &&
           rec.typeOfPresence !== 'Holiday' &&
           !(typeof rec.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff'))
         ) {
@@ -1837,14 +1976,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           present_wfh_actual += value;
         }
 
-        // Leaves taken (full)
-        if ((rec.typeOfPresence === 'On leave' || rec.typeOfPresence === 'Leave')) {
-          if (rec.value === 1 || !rec.halfDay) {
-            leaves_taken += (rec.value === 1 ? 1 : (rec.halfDay ? 0.5 : 1));
-          } else if (rec.value && typeof rec.value === 'number') {
-            leaves_taken += rec.value;
-          }
-        }
+        leaves_taken += getLeaveContribution(dateStr, rec);
 
         // Staff Overtime
         const excessHourVal = typeof rec.excessHour === 'number' ? rec.excessHour : (rec.excessHour ? Number(rec.excessHour) : 0);
@@ -1860,6 +1992,54 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       const absentWFH = Number((wfh_weekday * 0.25).toFixed(3));
       const absentWFH_MaxActual = Number(Math.max(0, wfhMaxAllowed - presentWFHActual).toFixed(3));
       const staffWeekdaysWorking = Number((pio + os_p + (hd_count / 2) + presentWFHActual).toFixed(3));
+
+      // Snapshot-driven leave taken adjustment for week/range exports.
+      // Baseline from current-month snapshot, then:
+      // 1) subtract excluded current-month dates,
+      // 2) add included non-current-month dates (e.g., last day of previous month).
+      if (filterType !== 'month') {
+        const uid = String(user?._id || item.userId);
+        const fullCurrentMonthRecords = currentMonthRecordsByUser[uid] || {};
+        const snapshotUsedRaw = Number(snapshotMap[uid]?.usedThisMonth);
+        const hasSnapshotUsed = Number.isFinite(snapshotUsedRaw);
+
+        let excludedCurrentMonthContribution = 0;
+        if (hasSnapshotUsed) {
+          for (const [dateStr, rec] of Object.entries(fullCurrentMonthRecords)) {
+            if (!dateStr.startsWith(`${targetMonth}-`)) continue;
+            const d = toDateOnly(dateStr);
+            const isIncluded = d >= exportRange.start && d <= exportRange.end;
+            if (!isIncluded) {
+              excludedCurrentMonthContribution += getLeaveContribution(dateStr, rec);
+            }
+          }
+        }
+
+        let includedOtherMonthContribution = 0;
+        for (const [dateStr, rec] of Object.entries(records)) {
+          if (dateStr.startsWith(`${targetMonth}-`)) continue;
+          const d = toDateOnly(dateStr);
+          if (d >= exportRange.start && d <= exportRange.end) {
+            includedOtherMonthContribution += getLeaveContribution(dateStr, rec);
+          }
+        }
+
+        if (hasSnapshotUsed) {
+          const adjustedCurrentMonth = Math.max(0, snapshotUsedRaw - excludedCurrentMonthContribution);
+          leaves_taken = round2(adjustedCurrentMonth + includedOtherMonthContribution);
+        } else {
+          leaves_taken = round2(leaves_taken);
+        }
+      } else {
+        const uid = String(user?._id || item.userId);
+        const snapshotUsedRaw = Number(snapshotMap[uid]?.usedThisMonth);
+        if (Number.isFinite(snapshotUsedRaw)) {
+          leaves_taken = round2(snapshotUsedRaw);
+        } else {
+          leaves_taken = round2(leaves_taken);
+        }
+      }
+
       // Prefer snapshot balanceAsOfMonth for Leaves B/F, fallback to user.leaveBalance
       const snap = snapshotMap[String(user?._id || item.userId)];
       const leavesBF = snap && typeof snap.balanceAsOfMonth === 'number'
@@ -2160,7 +2340,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         designation: item.designation || '-',
         totalDays: Object.keys(item.recordDetails || {}).length,
         holidays: Object.values(item.recordDetails || {}).filter((r: any) => r.typeOfPresence === 'Holiday').length,
-        workingDays: item.summary.totalPresent + item.summary.totalAbsent + calculateLeaveConsumed(item),
+        workingDays: item.summary.totalPresent + item.summary.totalAbsent,
         present: item.summary.totalPresent,
         halfDays: item.summary.totalHalfDay,
         absent: item.summary.totalAbsent,

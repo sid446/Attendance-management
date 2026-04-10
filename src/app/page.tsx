@@ -12,6 +12,7 @@ import { UploadSection } from '@/components/UploadSection';
 import { SummarySection } from '@/components/SummarySection';
 import { EmployeeMonthView } from '@/components/EmployeeMonthView';
 import { EmployeeManagementSection } from '@/components/EmployeeManagementSection';
+import { EmployeeMasterUploadSection } from '@/components/EmployeeMasterUploadSection';
 import { AttendanceRequestsSection } from '@/components/AttendanceRequestsSection';
 import { HolidayManagement } from '@/components/HolidayManagement';
 import { BackupManagementSection } from '@/components/BackupManagementSection';
@@ -19,7 +20,6 @@ import { LeaveManagementSection } from '@/components/LeaveManagementSection';
 import { FineManagementSection } from '@/components/FineManagementSection';
 import { InvalidAttendanceSection } from '@/components/InvalidAttendanceSection';
 import { ClientPlaceManagement } from '@/components/ClientPlaceManagement';
-import { get } from "http";
 
 export default function AttendanceUpload() {
   // Auth state
@@ -48,9 +48,12 @@ export default function AttendanceUpload() {
   const [uploadTotal, setUploadTotal] = useState<number>(0);
   const [uploadSaved, setUploadSaved] = useState<number>(0);
   const [uploadFailed, setUploadFailed] = useState<number>(0);
-  const [activeSection, setActiveSection] = useState<'upload' | 'summary' | 'employee' | 'employees' | 'requests' | 'holidays' | 'backup' | 'leave' | 'fines' | 'articleCredits' | 'invalid' | 'clientPlaces'>('summary');
+  const [activeSection, setActiveSection] = useState<'upload' | 'summary' | 'employee' | 'employees' | 'employeeMasterUpload' | 'requests' | 'holidays' | 'backup' | 'leave' | 'fines' | 'articleCredits' | 'invalid' | 'clientPlaces'>('summary');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
-  const [selectedEmployeeMonth, setSelectedEmployeeMonth] = useState<string>('');
+  const [selectedEmployeeMonth, setSelectedEmployeeMonth] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
   // Modal state for EmployeeMonthView
   const [employeeMonthModal, setEmployeeMonthModal] = useState<{ open: boolean; userId: string | null; monthYear: string }>({ open: false, userId: null, monthYear: '' });
   // Modal state for EmployeeManagementSection
@@ -1061,6 +1064,13 @@ export default function AttendanceUpload() {
 
           if (type === 'Leave' || type === 'On leave') {
             summary.totalLeave += 1;
+            // Informational policy: paid leave is still an absence from work.
+            summary.totalAbsent += 1;
+            continue;
+          }
+
+          if (type === 'Absent') {
+            summary.totalAbsent += 1;
             continue;
           }
 
@@ -1376,6 +1386,10 @@ export default function AttendanceUpload() {
                 selectedUserId={selectedEmployeeId}
                 onRefreshUsers={fetchUsers}
               />
+            )}
+
+            {activeSection === 'employeeMasterUpload' && (
+              <EmployeeMasterUploadSection onRefreshUsers={fetchUsers} />
             )}
             {/* Summary Section */}
             {activeSection === 'summary' && (
