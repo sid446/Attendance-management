@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import User, { IUser } from '@/models/User';
-import { applyManagedEffectiveHistories } from '@/lib/userFieldHistory';
+import {
+  applyManagedEffectiveHistories,
+  MANAGED_EFFECTIVE_FIELDS,
+  ManagedEffectiveField,
+  normalizeManagedFieldValue,
+} from '@/lib/userFieldHistory';
 
 const DEFAULT_BASELINE_EFFECTIVE_FROM = new Date('2025-12-31T00:00:00.000Z');
 
@@ -164,24 +169,26 @@ export async function POST(request: NextRequest) {
 
         if (matchedUser) {
             // Update existing
+            const managedIncoming: Partial<Record<ManagedEffectiveField, unknown>> = {};
+            const priorManaged: Partial<Record<ManagedEffectiveField, string>> = {};
+            for (const field of MANAGED_EFFECTIVE_FIELDS) {
+              if (Object.prototype.hasOwnProperty.call(updateData, field) && updateData[field as keyof typeof updateData] !== undefined) {
+                managedIncoming[field] = updateData[field as keyof typeof updateData] as unknown;
+                priorManaged[field] = normalizeManagedFieldValue(matchedUser[field as keyof IUser]);
+              }
+            }
+
             Object.assign(matchedUser, updateData);
 
-            applyManagedEffectiveHistories(
-              matchedUser as any,
-              {
-                registeredUnderPartner: updateData.registeredUnderPartner,
-                workingUnderPartner: updateData.workingUnderPartner,
-                basicSalary: updateData.basicSalary,
-                laptopAllowance: updateData.laptopAllowance,
-                totalSalaryPerMonth: updateData.totalSalaryPerMonth,
-                totalSalaryPerAnnum: updateData.totalSalaryPerAnnum,
-              },
-              {
+            if (Object.keys(managedIncoming).length > 0) {
+              applyManagedEffectiveHistories(matchedUser as any, managedIncoming, {
                 changedAt: new Date(),
                 source: 'excel-upload',
                 baselineEffectiveFrom: DEFAULT_BASELINE_EFFECTIVE_FROM,
-              }
-            );
+                priorValues: priorManaged,
+              });
+              matchedUser.markModified('fieldHistories');
+            }
             
             // Set employmentType based on category
             matchedUser.employmentType = emp.category === 'Article' ? 'article' : 'fulltime';
@@ -241,22 +248,20 @@ export async function POST(request: NextRequest) {
                 ...updateData
             });
 
-            applyManagedEffectiveHistories(
-              newUser as any,
-              {
-                registeredUnderPartner: updateData.registeredUnderPartner,
-                workingUnderPartner: updateData.workingUnderPartner,
-                basicSalary: updateData.basicSalary,
-                laptopAllowance: updateData.laptopAllowance,
-                totalSalaryPerMonth: updateData.totalSalaryPerMonth,
-                totalSalaryPerAnnum: updateData.totalSalaryPerAnnum,
-              },
-              {
+            const managedIncomingNew: Partial<Record<ManagedEffectiveField, unknown>> = {};
+            for (const field of MANAGED_EFFECTIVE_FIELDS) {
+              if (Object.prototype.hasOwnProperty.call(updateData, field) && updateData[field as keyof typeof updateData] !== undefined) {
+                managedIncomingNew[field] = updateData[field as keyof typeof updateData] as unknown;
+              }
+            }
+            if (Object.keys(managedIncomingNew).length > 0) {
+              applyManagedEffectiveHistories(newUser as any, managedIncomingNew, {
                 changedAt: new Date(),
                 source: 'excel-upload',
                 baselineEffectiveFrom: new Date(),
-              }
-            );
+              });
+              newUser.markModified('fieldHistories');
+            }
 
             await newUser.save();
             stats.created++;

@@ -4,7 +4,12 @@ import User from '@/models/User';
 import EmployeeHistory from '@/models/EmployeeHistory';
 import Attendance from '@/models/Attendance';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
-import { applyManagedEffectiveHistories, ManagedEffectiveField } from '@/lib/userFieldHistory';
+import {
+  applyManagedEffectiveHistories,
+  ManagedEffectiveField,
+  MANAGED_EFFECTIVE_FIELDS,
+  normalizeManagedFieldValue,
+} from '@/lib/userFieldHistory';
 
 const DEFAULT_BASELINE_EFFECTIVE_FROM = new Date('2025-12-31T00:00:00.000Z');
 
@@ -18,7 +23,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     await dbConnect();
 
     const { id } = await params;
-    const user = await User.findById(id);
+    const user = await User.findById(id).lean();
 
     if (!user) {
       return NextResponse.json(
@@ -28,7 +33,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     // Ensure attendanceEmail is set for backward compatibility
-    const userData = user.toObject();
+    const userData = { ...user } as Record<string, unknown>;
     if (!userData.attendanceEmail && userData.email) {
       userData.attendanceEmail = userData.email;
     }
@@ -67,6 +72,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       scheduleInOutTimeSat,
       scheduleInOutTimeMonth,
       isActive,
+      inactiveAsOf,
       extraInfo,
       // Extended fields
       registrationNo,
@@ -273,25 +279,57 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         ...(employmentTypeHistory && { employmentTypeHistory }),
       };
 
+    if (isActive === true) {
+      updateObj.inactiveAsOf = null;
+    }
+    const staysInactive =
+      isActive === false || (isActive === undefined && currentUser.isActive === false);
+    if (staysInactive) {
+      const raw =
+        inactiveAsOf !== undefined && inactiveAsOf !== null && inactiveAsOf !== ''
+          ? inactiveAsOf
+          : currentUser.inactiveAsOf;
+      const parsed = parseAnyDate(raw);
+      if (!parsed) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              'inactiveAsOf is required for inactive employees (first calendar day they are inactive).',
+          },
+          { status: 400 }
+        );
+      }
+      if (isActive === false || (inactiveAsOf !== undefined && inactiveAsOf !== null && inactiveAsOf !== '')) {
+        updateObj.inactiveAsOf = parsed;
+      }
+    }
+
+    const managedEffectiveIncoming: Partial<Record<ManagedEffectiveField, unknown>> = {};
+    for (const field of MANAGED_EFFECTIVE_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(body, field)) {
+        managedEffectiveIncoming[field] = (body as Record<string, unknown>)[field];
+      }
+    }
+
+    const priorManaged: Partial<Record<ManagedEffectiveField, string>> = {};
+    for (const field of Object.keys(managedEffectiveIncoming) as ManagedEffectiveField[]) {
+      priorManaged[field] = normalizeManagedFieldValue(currentUser[field]);
+    }
+
     Object.assign(currentUser, updateObj);
 
-    applyManagedEffectiveHistories(
-      currentUser as any,
-      {
-        registeredUnderPartner,
-        workingUnderPartner,
-        basicSalary,
-        laptopAllowance,
-        totalSalaryPerMonth,
-        totalSalaryPerAnnum,
-      },
-      {
-        changedAt: managedChangeAt,
-        source: 'manual-update',
-        baselineEffectiveFrom: DEFAULT_BASELINE_EFFECTIVE_FROM,
-        fieldChangedAt: managedFieldDates,
-      }
-    );
+    applyManagedEffectiveHistories(currentUser as any, managedEffectiveIncoming, {
+      changedAt: managedChangeAt,
+      source: 'manual-update',
+      baselineEffectiveFrom: DEFAULT_BASELINE_EFFECTIVE_FROM,
+      fieldChangedAt: managedFieldDates,
+      priorValues: priorManaged,
+    });
+
+    if (Object.keys(managedEffectiveIncoming).length > 0) {
+      currentUser.markModified('fieldHistories');
+    }
 
     const user = await currentUser.save();
 
@@ -652,9 +690,11 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     await dbConnect();
 
     const { id } = await params;
+    const now = new Date();
+    const inactiveAsOf = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
     const user = await User.findByIdAndUpdate(
       id,
-      { isActive: false },
+      { isActive: false, inactiveAsOf },
       { new: true }
     );
 
@@ -665,9 +705,15 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    const userData = user.toObject();
+    if (!userData.attendanceEmail && userData.email) {
+      userData.attendanceEmail = userData.email;
+    }
+
     return NextResponse.json({
       success: true,
       message: 'User deactivated successfully',
+      data: userData,
     });
   } catch (error) {
     console.error('Error deleting user:', error);

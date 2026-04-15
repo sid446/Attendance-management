@@ -909,7 +909,7 @@ export default function AttendanceUpload() {
 
   const fetchUsers = useCallback(async () => {
     try {
-      const response = await fetch('/api/users');
+      const response = await fetch('/api/users?listOnly=1');
       const result = await response.json();
       if (result.success && Array.isArray(result.data)) {
         setAllUsers(result.data);
@@ -984,7 +984,7 @@ export default function AttendanceUpload() {
       }
 
       // Fetch all users with schedules for schedule lookup
-      const usersResponse = await fetch('/api/users');
+      const usersResponse = await fetch('/api/users?listOnly=1');
       const usersResult = await usersResponse.json();
       const allUsersWithSchedules = usersResult.success ? usersResult.data : [];
       const userScheduleMap = new Map<string, any>();
@@ -992,20 +992,19 @@ export default function AttendanceUpload() {
         userScheduleMap.set(String(user._id), user);
       });
 
-      // Fetch all months
-      const allItems: any[] = [];
-      for (const monthYear of monthYears) {
-        const url = `/api/attendance?monthYear=${encodeURIComponent(monthYear)}`;
-        const response = await fetch(url);
-        const result = await response.json();
-
-        if (!response.ok || !result.success) {
-          throw new Error(result.error || 'Failed to fetch attendance summaries');
-        }
-
-        const items: any[] = Array.isArray(result.data) ? result.data : [];
-        allItems.push(...items);
-      }
+      // Fetch all months in parallel (faster than sequential when spanning multiple months)
+      const monthChunks = await Promise.all(
+        monthYears.map(async (my) => {
+          const url = `/api/attendance?monthYear=${encodeURIComponent(my)}`;
+          const response = await fetch(url);
+          const result = await response.json();
+          if (!response.ok || !result.success) {
+            throw new Error(result.error || 'Failed to fetch attendance summaries');
+          }
+          return Array.isArray(result.data) ? result.data : [];
+        })
+      );
+      const allItems: any[] = monthChunks.flat();
 
       // Aggregate by userId
       const userMap = new Map<string, any>();
@@ -1095,7 +1094,9 @@ export default function AttendanceUpload() {
         user.recordDetails = filteredRecords;
       }
 
-      const mapped: AttendanceSummaryView[] = Array.from(userMap.values()).map((item) => {
+      const mapped: AttendanceSummaryView[] = Array.from(userMap.values())
+        .filter((item) => Object.keys(item.recordDetails || {}).length > 0)
+        .map((item) => {
         // Get the monthYear for schedule lookup
         const monthYear = typeof filter === 'string' ? filter : ('end' in filter ? filter.end : filter.endDate);
         
@@ -1109,12 +1110,7 @@ export default function AttendanceUpload() {
           return applicable || null;
         };
 
-        console.log('item.userId:', item.userId);
-        console.log('item.userId.schedules:', item.userId?.schedules);
-
         const userFromMap = userScheduleMap.get(item.userId?._id ? String(item.userId._id) : '');
-        console.log('userFromMap:', userFromMap);
-        console.log('userFromMap.schedules:', userFromMap?.schedules);
 
         const yearSchedule = getApplicableSchedule(userFromMap || item.userId, monthYear);
 

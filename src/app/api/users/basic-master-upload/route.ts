@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import User, { IUser } from '@/models/User';
-import { applyManagedEffectiveHistories } from '@/lib/userFieldHistory';
+import {
+  applyManagedEffectiveHistories,
+  MANAGED_EFFECTIVE_FIELDS,
+  ManagedEffectiveField,
+  normalizeManagedFieldValue,
+} from '@/lib/userFieldHistory';
 
 type UploadMode = 'update' | 'add';
 
@@ -140,32 +145,31 @@ export async function POST(request: NextRequest) {
             continue;
           }
 
+          const managedIncoming: Partial<Record<ManagedEffectiveField, unknown>> = {};
+          const priorManaged: Partial<Record<ManagedEffectiveField, string>> = {};
+          for (const field of MANAGED_EFFECTIVE_FIELDS) {
+            if (Object.prototype.hasOwnProperty.call(updateData, field) && updateData[field as keyof typeof updateData] !== undefined) {
+              managedIncoming[field] = updateData[field as keyof typeof updateData] as unknown;
+              priorManaged[field] = normalizeManagedFieldValue(matchedUser[field as keyof IUser]);
+            }
+          }
+
           Object.assign(matchedUser, updateData);
 
-          applyManagedEffectiveHistories(
-            matchedUser as any,
-            {
-              registeredUnderPartner: updateData.registeredUnderPartner,
-              workingUnderPartner: updateData.workingUnderPartner,
-              basicSalary: updateData.basicSalary,
-              laptopAllowance: updateData.laptopAllowance,
-              totalSalaryPerMonth: updateData.totalSalaryPerMonth,
-              totalSalaryPerAnnum: updateData.totalSalaryPerAnnum,
-            },
-            {
+          if (Object.keys(managedIncoming).length > 0) {
+            const fieldChangedAt: Partial<Record<ManagedEffectiveField, Date>> = {};
+            for (const f of Object.keys(managedIncoming) as ManagedEffectiveField[]) {
+              fieldChangedAt[f] = effectiveFrom;
+            }
+            applyManagedEffectiveHistories(matchedUser as any, managedIncoming, {
               changedAt: new Date(),
               source: 'basic-master-upload',
               baselineEffectiveFrom: DEFAULT_BASELINE_EFFECTIVE_FROM,
-              fieldChangedAt: {
-                registeredUnderPartner: effectiveFrom,
-                workingUnderPartner: effectiveFrom,
-                basicSalary: effectiveFrom,
-                laptopAllowance: effectiveFrom,
-                totalSalaryPerMonth: effectiveFrom,
-                totalSalaryPerAnnum: effectiveFrom,
-              },
-            }
-          );
+              fieldChangedAt,
+              priorValues: priorManaged,
+            });
+            matchedUser.markModified('fieldHistories');
+          }
 
           await matchedUser.save();
           stats.updated++;
@@ -193,22 +197,20 @@ export async function POST(request: NextRequest) {
           ...updateData,
         });
 
-        applyManagedEffectiveHistories(
-          newUser as any,
-          {
-            registeredUnderPartner: updateData.registeredUnderPartner,
-            workingUnderPartner: updateData.workingUnderPartner,
-            basicSalary: updateData.basicSalary,
-            laptopAllowance: updateData.laptopAllowance,
-            totalSalaryPerMonth: updateData.totalSalaryPerMonth,
-            totalSalaryPerAnnum: updateData.totalSalaryPerAnnum,
-          },
-          {
+        const managedIncomingNew: Partial<Record<ManagedEffectiveField, unknown>> = {};
+        for (const field of MANAGED_EFFECTIVE_FIELDS) {
+          if (Object.prototype.hasOwnProperty.call(updateData, field) && updateData[field as keyof typeof updateData] !== undefined) {
+            managedIncomingNew[field] = updateData[field as keyof typeof updateData] as unknown;
+          }
+        }
+        if (Object.keys(managedIncomingNew).length > 0) {
+          applyManagedEffectiveHistories(newUser as any, managedIncomingNew, {
             changedAt: effectiveFrom,
             source: 'basic-master-upload',
             baselineEffectiveFrom: effectiveFrom,
-          }
-        );
+          });
+          newUser.markModified('fieldHistories');
+        }
 
         await newUser.save();
         stats.created++;

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AttendanceSummaryView, User, DailySchedule, ScheduleTime } from '@/types/ui';
 import { Search, Calendar, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, BarChart3, Users, Clock, AlertCircle, TrendingUp, UserX, UserCheck, Download, ListChecks, X, Eye } from 'lucide-react';
 import { BulkLeaveManager } from './BulkLeaveManager';
@@ -22,6 +22,22 @@ const getEmploymentTypeForDate = (user: User | undefined, date: Date): string | 
   }
   return user.employmentType;
 };
+
+/** Chronological sort for attendance date keys (`yyyy-mm-dd` or parseable ISO). Object key order is not reliable. */
+function sortRecordDetailsEntries<T>(recordDetails: Record<string, T> | undefined | null): [string, T][] {
+  return Object.entries(recordDetails || {}).sort(([a], [b]) => {
+    const parse = (s: string) => {
+      const t = s.trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return new Date(`${t}T12:00:00`).getTime();
+      const ms = Date.parse(t);
+      return Number.isNaN(ms) ? Number.NaN : ms;
+    };
+    const ta = parse(a);
+    const tb = parse(b);
+    if (!Number.isNaN(ta) && !Number.isNaN(tb)) return ta - tb;
+    return a.localeCompare(b);
+  });
+}
 
 interface DetailModalProps {
   isOpen: boolean;
@@ -1428,6 +1444,46 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     }));
   }, [summaries, searchTerm, selectedYear, selectedMonth, teamFilter, designationFilter, lateFilter, presentFilter, absentFilter, leaveFilter, halfDayFilter, workHoursFilter, excessFilter, sortField, sortDirection, holidays, allUsers, filterType, currentWeekStart, rangeStart, rangeEnd]);
 
+  /** Render the table in chunks; stats and exports still use full `filteredSummaries`. */
+  const SUMMARY_TABLE_CHUNK = 50;
+  const [tableVisibleCount, setTableVisibleCount] = useState(SUMMARY_TABLE_CHUNK);
+  const tableLoadMoreSentinelRef = useRef<HTMLTableRowElement | null>(null);
+
+  useEffect(() => {
+    setTableVisibleCount(SUMMARY_TABLE_CHUNK);
+  }, [summaries]);
+
+  const displayedSummaries = useMemo(
+    () =>
+      filteredSummaries.slice(
+        0,
+        Math.min(tableVisibleCount, filteredSummaries.length)
+      ),
+    [filteredSummaries, tableVisibleCount]
+  );
+
+  useEffect(() => {
+    const el = tableLoadMoreSentinelRef.current;
+    if (!el || tableVisibleCount >= filteredSummaries.length || isLoading) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setTableVisibleCount((c) =>
+            Math.min(c + SUMMARY_TABLE_CHUNK, filteredSummaries.length)
+          );
+        }
+      },
+      { root: null, rootMargin: '320px', threshold: 0 }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [
+    filteredSummaries.length,
+    tableVisibleCount,
+    isLoading,
+    displayedSummaries.length,
+  ]);
+
   // Calculate Aggregates for the Dashboard
   const stats = useMemo(() => {
     return filteredSummaries.reduce((acc, curr) => ({
@@ -1478,7 +1534,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
    * - Leaves Consumed This Month: IF(StaffWeekdaysWorking < 10, 0, min( LeavesTaken, LeavesB/F + LeavesEarned))
    * - C/F Leaves: Leaves B/F + Earned - Consumed
    * - Staff Weekoff Working Days: WO-PIO + Weekoff HD (converted) + WFH weekoff × 0.75
-   * - Staff Overtime: empty placeholder
+   * - Staff Overtime (non-articles): ThumbMachine excess hours ÷ weekday hours, plus floor(max(0, period excess hours) / 6) — each full 6h of net excess adds 1 overtime day (e.g. 24h → +4, 22h → +3)
    * - Net Staff Working Days: if employmentType==='article' => Staff Weekdays-Working else Staff Weekdays-Working + Leaves Consumed + Staff Weekoff Working + Staff Overtime
    *
    * Notes:
@@ -1828,7 +1884,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
 
       // Calculate loss due to invalid attendance (deficient due to missing in/out)
       let lossDueToInvalidHour = 0;
-      Object.entries(records).forEach(([dateStr, recAny]) => {
+      sortRecordDetailsEntries(records).forEach(([dateStr, recAny]) => {
         const rec: any = recAny || {};
         const effectiveCheckin = rec.editedCheckin || rec.checkin;
         const effectiveCheckout = rec.editedCheckout || rec.checkout;
@@ -1864,7 +1920,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       let extraEarnedFromOutclient = 0; // additional leave earned from outstation/clientplace attendances
       let staffOvertime = 0; // sum of excessHour for ThumbMachine records
 
-      Object.entries(records).forEach(([dateStr, recAny]) => {
+      sortRecordDetailsEntries(records).forEach(([dateStr, recAny]) => {
         const rec: any = recAny || {};
         const d = new Date(dateStr);
         const isSunday = d.getDay() === 0;
@@ -2005,7 +2061,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
 
         let excludedCurrentMonthContribution = 0;
         if (hasSnapshotUsed) {
-          for (const [dateStr, rec] of Object.entries(fullCurrentMonthRecords)) {
+          for (const [dateStr, rec] of sortRecordDetailsEntries(fullCurrentMonthRecords)) {
             if (!dateStr.startsWith(`${targetMonth}-`)) continue;
             const d = toDateOnly(dateStr);
             const isIncluded = d >= exportRange.start && d <= exportRange.end;
@@ -2016,7 +2072,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         }
 
         let includedOtherMonthContribution = 0;
-        for (const [dateStr, rec] of Object.entries(records)) {
+        for (const [dateStr, rec] of sortRecordDetailsEntries(records)) {
           if (dateStr.startsWith(`${targetMonth}-`)) continue;
           const d = toDateOnly(dateStr);
           if (d >= exportRange.start && d <= exportRange.end) {
@@ -2058,9 +2114,12 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       const weekoffs_total = Number((totalSundaysInPeriod + totalHolidaysInPeriod).toFixed(3));
       const staffWeekoffWorking = Number((wo_pio + (weekoff_hd_days_converted / 2) + wfh_weekoff).toFixed(3));
 
-      // ...existing code...
-
-      const staffOvertimeDays = Number(((staffOvertime || 0) / (weekdayHours || 8)).toFixed(2));
+      // Staff Overtime (non-articles): hours from ThumbMachine excess → days, plus 1 day per each full 6h of net period excess (worked − scheduled)
+      const thumbOvertimeDays = Number(((staffOvertime || 0) / (weekdayHours || 8)).toFixed(2));
+      const periodExcessHours = Math.max(0, Number(item.calcExcessDeficit) || 0);
+      const overtimeDaysFromExcessBlocks =
+        !isArticle && periodExcessHours >= 6 ? Math.floor(periodExcessHours / 6) : 0;
+      const staffOvertimeDays = Number((thumbOvertimeDays + overtimeDaysFromExcessBlocks).toFixed(2));
       const employmentType = user?.employmentType || getEmploymentTypeForDate(user as any, new Date());
 
       // Net Staff Working Days formula:
@@ -2291,10 +2350,6 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       { key: 'definedSchedule', header: 'Defined Work Hour', width: 15 },
       { key: 'workHours', header: 'Work Hours', width: 12 },
       { key: 'excess', header: 'Excess', width: 10 },
-      { key: 'leavesBF', header: 'Leaves B/F', width: 12 },
-      { key: 'leavesEarned', header: 'Leaves Earned', width: 12 },
-      { key: 'leavesConsumed', header: 'Leaves Consumed', width: 14 },
-      { key: 'leavesCF', header: 'Leaves C/F', width: 12 }
 
     ];
 
@@ -2304,32 +2359,9 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     worksheet.getRow(1).font = { bold: true, size: 13 };
     worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
 
-    // Prepare snapshots map for the selected month (if month filter)
-    let snapshotMap: Record<string, any> = {};
-    const targetMonth = filterType === 'month' ? `${selectedYear}-${String(selectedMonth).padStart(2, '0')}` : null;
-    if (targetMonth) {
-      try {
-        const userIds = filteredSummaries.map((s: any) => s.userId).filter(Boolean);
-        if (userIds.length > 0) {
-          const res = await fetch(`/api/leave/snapshots?monthYear=${targetMonth}&userIds=${userIds.join(',')}`);
-          if (res.ok) {
-            const json = await res.json();
-            (json.data || []).forEach((s: any) => { snapshotMap[s.userId] = s; });
-          }
-        }
-      } catch (e) {
-        // ignore snapshot fetch errors
-      }
-    }
-
     // Add data rows - using summary data from the database, start from row 3
     filteredSummaries.forEach((item) => {
       const user = allUsers?.find(u => u._id === item.userId);
-      const snapshot = item.userId ? snapshotMap[item.userId] : null;
-      const leavesBF = snapshot?.balanceAsOfMonth ?? user?.leaveBalance ?? '';
-      const leavesEarned = snapshot?.earnedThisMonth ?? '';
-      const leavesConsumed = snapshot?.usedThisMonth ?? '';
-      const leavesCF = snapshot?.remainingAfter ?? '';
       worksheet.addRow({
         paidFrom: user?.paidFrom || 'N/A',
         employeeName: user?.name || item.userName,
@@ -2351,10 +2383,6 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         excess: (item.calcExcessDeficit !== undefined && item.calcExcessDeficit !== 0)
           ? `${item.calcExcessDeficit > 0 ? '+' : item.calcExcessDeficit < 0 ? '-' : ''}${formatHoursMinutes(Math.abs(item.calcExcessDeficit))}`
           : formatHoursMinutes(0),
-        leavesBF,
-        leavesEarned,
-        leavesConsumed,
-        leavesCF
       });
     });
 
@@ -2456,42 +2484,211 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
 
     // Create workbook
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Daywise Attendance');
+    const worksheet = workbook.addWorksheet('Daywise Attendance', {
+      views: [{ state: 'frozen', ySplit: 1, topLeftCell: 'A2', activeCell: 'A2' }],
+    });
 
-    // Define columns in requested order
+    // Column keys + widths (no `header` here — we insert a real header row so row 1 is not overwritten by data)
     worksheet.columns = [
-      { header: 'Weekdays/Weekoffs', key: 'weekType', width: 14 },
-      { header: 'Source', key: 'source', width: 18 },
-      { header: 'Date', key: 'date', width: 12 },
-      { header: 'Day', key: 'day', width: 10 },
-      { header: 'Employee Name', key: 'employeeName', width: 18 },
-      { header: 'Designation', key: 'designation', width: 14 },
-      { header: 'Present / Absent', key: 'presentAbsent', width: 14 },
-      { header: 'Actual InTime Orignal Data', key: 'actualInTimeOriginal', width: 18 },
-      { header: 'Actual OutTime Orignal Data', key: 'actualOutTimeOriginal', width: 18 },
-      { header: 'Actual InTime Editable Data', key: 'actualInTimeEditable', width: 18 },
-      { header: 'Actual OutTime Editable Data', key: 'actualOutTimeEditable', width: 18 },
-      { header: 'True/False In Time', key: 'trueFalseInTime', width: 14 },
-      { header: 'True/False Out Time', key: 'trueFalseOutTime', width: 14 },
-      { header: 'Scheduled In Time', key: 'scheduledInTime', width: 12 },
-      { header: 'Scheduled Out Time', key: 'scheduledOutTime', width: 12 },
-      { header: 'MAX - WFH', key: 'maxWFH', width: 10 },
-      { header: 'ACTUAL - WFH', key: 'actualWFH', width: 10 },
-      { header: 'MAX - Outstation (1.2 Days)', key: 'maxOutstation', width: 12 },
-      { header: 'ACTUAL - Out Station', key: 'actualOutstation', width: 10 },
-      { header: 'Working Hrs', key: 'workingHrs', width: 8 },
-      { header: 'Scheduled Time', key: 'scheduledTime', width: 8 },
-      { header: 'Scheduled Hrs (In Month)', key: 'scheduledHrsMonth', width: 10 },
-      { header: 'Working Hrs (In Month)', key: 'workingHrsMonth', width: 10 },
-      { header: 'Excess/Short (In Month)', key: 'excessShortHrsMonth', width: 10 },
-      { header: 'Excess/Short (In a Day)', key: 'excessShortHrsDay', width: 10 },
-      { header: 'Halfdays', key: 'halfDays', width: 8 },
-      { header: 'Leaves B/F', key: 'leavesBF', width: 12 },
-      { header: 'Leaves Earned', key: 'leavesEarned', width: 12 },
-      { header: 'Leaves Consumed', key: 'leavesConsumed', width: 14 },
-      { header: 'Leaves C/F', key: 'leavesCF', width: 12 },
-      // Add extra fields at the end if needed
+      { key: 'weekType', width: 12 },
+      { key: 'source', width: 22 },
+      { key: 'date', width: 12 },
+      { key: 'day', width: 11 },
+      { key: 'employeeName', width: 22 },
+      { key: 'designation', width: 16 },
+      { key: 'presentAbsent', width: 14 },
+      { key: 'actualInTimeOriginal', width: 14 },
+      { key: 'actualOutTimeOriginal', width: 14 },
+      { key: 'actualInTimeEditable', width: 14 },
+      { key: 'actualOutTimeEditable', width: 14 },
+      { key: 'trueFalseInTime', width: 12 },
+      { key: 'trueFalseOutTime', width: 12 },
+      { key: 'scheduledInTime', width: 12 },
+      { key: 'scheduledOutTime', width: 12 },
+      { key: 'maxWFH', width: 10 },
+      { key: 'actualWFH', width: 11 },
+      { key: 'maxOutstation', width: 14 },
+      { key: 'actualOutstation', width: 12 },
+      { key: 'workingHrs', width: 11 },
+      { key: 'scheduledTime', width: 12 },
+      { key: 'scheduledHrsMonth', width: 16 },
+      { key: 'workingHrsMonth', width: 16 },
+      { key: 'excessShortHrsMonth', width: 16 },
+      { key: 'excessShortHrsDay', width: 16 },
+      { key: 'halfDays', width: 9 },
     ];
+
+    const daywiseHeaderLabels = [
+      'Weekday / weekoff',
+      'Source',
+      'Date',
+      'Day',
+      'Employee name',
+      'Designation',
+      'Present / absent',
+      'Actual in (original)',
+      'Actual out (original)',
+      'Actual in (edited)',
+      'Actual out (edited)',
+      'In time unchanged',
+      'Out time unchanged',
+      'Scheduled in',
+      'Scheduled out',
+      'Max WFH',
+      'Actual WFH',
+      'Max outstation (1.2 d)',
+      'Actual outstation',
+      'Working hrs (day)',
+      'Scheduled (day)',
+      'Scheduled hrs (month)',
+      'Working hrs (month)',
+      'Excess/short (month)',
+      'Excess/short (day)',
+      'Half day',
+    ];
+    worksheet.insertRow(1, daywiseHeaderLabels);
+
+    const formatSecondsToHMS = (seconds: number): string => {
+      const sign = seconds < 0 ? '-' : '';
+      const abs = Math.abs(seconds);
+      const h = Math.floor(abs / 3600);
+      const m = Math.floor((abs % 3600) / 60);
+      const s = abs % 60;
+      return `${sign}${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    };
+
+    const daywiseBorderThin = {
+      top: { style: 'thin' as const, color: { argb: 'FFCBD5E1' } },
+      bottom: { style: 'thin' as const, color: { argb: 'FFCBD5E1' } },
+      left: { style: 'thin' as const, color: { argb: 'FFCBD5E1' } },
+      right: { style: 'thin' as const, color: { argb: 'FFCBD5E1' } },
+    };
+
+    /** Presence types that use max outstation 1.2 d and per-day actual from `record.value` (same as legacy Present - outstation). */
+    const daywiseOutstationPresenceExact = new Set([
+      'Present - outstation',
+      'Present - Outstation (Weekdays)',
+      'Present - Outstation (Weekoff)',
+      'Present - ClientPlace (Weekdays)',
+      'Present - ClientPlace (Weekoff)',
+      'Present - client place',
+      'Onsite Presence (OS-P)',
+    ]);
+    const isDaywiseOutstationPresence = (raw: string) => {
+      const s = String(raw || '').trim();
+      if (daywiseOutstationPresenceExact.has(s)) return true;
+      const low = s.toLowerCase().replace(/\s+/g, ' ');
+      return (
+        low === 'present - outstation (weekdays)' ||
+        low === 'present - outstation (weekoff)' ||
+        low === 'present - clientplace (weekdays)' ||
+        low === 'present - clientplace (weekoff)' ||
+        low === 'present - client place' ||
+        low === 'present- outstation (weekoff)' ||
+        low === 'present- outstation (weekdays)' ||
+        low === 'present- clientplace (weekoff)' ||
+        low === 'present- clientplace (weekdays)' ||
+        low === 'onsite presence (os-p)' ||
+        low === 'os-p'
+      );
+    };
+
+    /** Loose match when type/status strings vary but still mean client place / outstation (in/out may be 00:00). */
+    const isDaywiseOutstationByPhrase = (raw: string) => {
+      const low = String(raw || '').toLowerCase().replace(/\s+/g, ' ');
+      if (low === 'os-p' || low.includes('(os-p)') || low.includes('onsite presence')) return true;
+      if (!low.includes('present')) return false;
+      if (low.includes('outstation')) return true;
+      if (low.includes('clientplace') || low.includes('client place')) return true;
+      return false;
+    };
+
+    const recordIsDaywiseOutstationRow = (rec: any) => {
+      for (const k of ['typeOfPresence', 'status'] as const) {
+        const v = rec?.[k];
+        if (typeof v !== 'string' || !v.trim()) continue;
+        const t = v.trim();
+        if (isDaywiseOutstationPresence(t) || isDaywiseOutstationByPhrase(t)) return true;
+      }
+      return false;
+    };
+
+    /** Per-day actual outstation days: prefer numeric `value` (including 0), then fallbacks. */
+    const formatDaywiseActualOutstation = (rec: any, workingHrsFallback: unknown): string => {
+      const v = rec?.value;
+      if (typeof v === 'number' && !Number.isNaN(v)) return String(v);
+      if (typeof v === 'string' && v.trim() !== '') {
+        const n = Number(v);
+        if (!Number.isNaN(n)) return String(n);
+        return v.trim();
+      }
+      if (v != null && v !== '') {
+        const n = Number(v);
+        if (!Number.isNaN(n)) return String(n);
+      }
+      if (typeof workingHrsFallback === 'number' && !Number.isNaN(workingHrsFallback)) {
+        return String(workingHrsFallback);
+      }
+      if (workingHrsFallback != null && String(workingHrsFallback).trim() !== '') {
+        const n = Number(workingHrsFallback);
+        if (!Number.isNaN(n)) return String(n);
+        return String(workingHrsFallback);
+      }
+      return '';
+    };
+
+    /** `typeOfPresence` values for WFH on daily records (see `Attendance.ts` / summary aggregates). */
+    const daywiseWFHTypeExact = new Set([
+      'WFH - weekdays',
+      'WFH - weekoff',
+      'Work From Home (WFH)',
+      'Weekly Off - Work From Home (WO-WFH)',
+    ]);
+
+    const recordIsDaywiseWFHRow = (rec: any) => {
+      const t = String(rec?.typeOfPresence || rec?.status || '').trim();
+      return daywiseWFHTypeExact.has(t);
+    };
+
+    /**
+     * Weekday WFH → "WFH". DB week-off WFH types, or weekday/legacy WFH on API holiday or Sunday → "WO-WFH".
+     */
+    const daywiseWFHStatusLabel = (rec: any, isHolidayDate: boolean, isSundayDate: boolean): 'WFH' | 'WO-WFH' => {
+      const t = String(rec?.typeOfPresence || rec?.status || '').trim();
+      if (t === 'WFH - weekoff' || t === 'Weekly Off - Work From Home (WO-WFH)') {
+        return 'WO-WFH';
+      }
+      if (t === 'WFH - weekdays' || t === 'Work From Home (WFH)') {
+        if (isHolidayDate || isSundayDate) return 'WO-WFH';
+        return 'WFH';
+      }
+      return 'WFH';
+    };
+
+    /** Same rules as `handleDetailedExport` / monthly WO-PIO column (PIO on Sun/API holiday, or explicit weekoff present). */
+    const daywiseIsPIO = (rec: any) => {
+      const t = String(rec?.typeOfPresence || rec?.status || '');
+      if (!t) return false;
+      if (rec.halfDay) return false;
+      if (t === 'ThumbMachine') {
+        const effectiveCheckin = rec.editedCheckin || rec.checkin;
+        const effectiveCheckout = rec.editedCheckout || rec.checkout;
+        const hasValidCheckin = !!(effectiveCheckin && effectiveCheckin !== '00:00');
+        const hasValidCheckout = !!(effectiveCheckout && effectiveCheckout !== '00:00');
+        if (!hasValidCheckin && !hasValidCheckout) return false;
+      }
+      return t === 'ThumbMachine' || t === 'Present - in office' || t === 'Present - in office - weekdays';
+    };
+
+    const daywiseIsWOPIOExplicit = (rec: any) => {
+      const t = String(rec?.typeOfPresence || rec?.status || '');
+      if (!t || rec.halfDay) return false;
+      return (
+        t === 'Present - in office - weekoff' ||
+        t === 'Present - weekoff' ||
+        t === 'Weekly Off - Present (WO-Present)'
+      );
+    };
 
     // Helper to get updater email from attendance request (if edited)
     const getUpdaterEmail = (record: any) => {
@@ -2517,16 +2714,6 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
 
     // Loop through each summary and each day
     for (const item of filteredSummaries) {
-    // Helper to format seconds to ±HH:MM:SS
-    const formatSecondsToHMS = (seconds: number): string => {
-      const sign = seconds < 0 ? '-' : '';
-      const abs = Math.abs(seconds);
-      const h = Math.floor(abs / 3600);
-      const m = Math.floor((abs % 3600) / 60);
-      const s = abs % 60;
-      return `${sign}${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    };
-
     // These must be declared inside the forEach to be scoped per summary
     const dailyExcessShortSeconds: number[] = [];
     const rowIndexes: number[] = [];
@@ -2535,7 +2722,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     const monthYear = item.monthYear || '';
     const [year, month] = monthYear.split('-').map(Number);
     const recordsMonth = item.recordDetails || {};
-    Object.entries(recordsMonth).forEach(([date, record]: [string, any]) => {
+    sortRecordDetailsEntries(recordsMonth).forEach(([date, record]: [string, any]) => {
       const d = new Date(date);
       if (d.getFullYear() === year && d.getMonth() + 1 === month) {
         // Use edited in/out times for calculation
@@ -2555,9 +2742,8 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       if (allUsers && item.userId) {
         const user = allUsers.find(u => u._id === item.userId);
         if (user && item.recordDetails) {
-          for (const dateStr of Object.keys(item.recordDetails)) {
+          for (const [dateStr, rec] of sortRecordDetailsEntries(item.recordDetails)) {
             if (holidayDates.has(dateStr)) continue; // skip API holidays
-            const rec = item.recordDetails[dateStr];
             if (rec.typeOfPresence === 'Holiday') continue;
             const dateObj = new Date(dateStr);
             const dayName = dateObj.toLocaleString('en-US', { weekday: 'long' }).toLowerCase();
@@ -2614,22 +2800,8 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         const m = Math.round((abs % 1) * 60);
         excessShortHrsMonth = `${sign}${h}:${m.toString().padStart(2, '0')}`;
       }
-      // Fetch monthly leave snapshot for this user/month (best-effort)
-      let snapshot: any = null;
-      try {
-        if (monthYear && item.userId) {
-          const sres = await fetch(`/api/leave/snapshots?monthYear=${monthYear}&userIds=${item.userId}`);
-          if (sres.ok) {
-            const sj = await sres.json();
-            snapshot = (sj.data && sj.data.length) ? sj.data[0] : null;
-          }
-        }
-      } catch (e) {
-        // ignore
-      }
-
       const records = item.recordDetails || {};
-      Object.entries(records).forEach(([date, record]: [string, any]) => {
+      sortRecordDetailsEntries(records).forEach(([date, record]: [string, any]) => {
         const d = new Date(date);
         const dayName = d.toLocaleString('en-US', { weekday: 'long' });
         // Robust extraction for each column
@@ -2727,22 +2899,24 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         let presentAbsent = 'Absent';
         const inTime = String(actualInTimeEditable).trim();
         const outTime = String(actualOutTimeEditable).trim();
-        // Custom present logic for WFH and Outstation
+        // Custom present logic for WFH and Outstation (client place / outstation: 00:00 in-out is OK; still fill max/actual outstation)
         const typeOfPresence = record.typeOfPresence || record.status || '';
-        if (isHoliday || isSunday) {
-          presentAbsent = 'Holiday';
-        } else if (
-          typeOfPresence === 'Present - outstation'
-        ) {
+        // Outstation / client place / OS-P must win over calendar Sunday or API holidays (e.g. work at client on a Sunday).
+        if (recordIsDaywiseOutstationRow(record)) {
           maxOutstation = '1.2';
-          actualOutstation = typeof record.value === 'number' ? String(record.value) : String(record.value ?? workingHrs);
-          presentAbsent = 'Present';
-        } else if (
-          typeOfPresence === 'WFH - weekdays' || typeOfPresence === 'WFH - weekoff'
-        ) {
+          actualOutstation = formatDaywiseActualOutstation(record, workingHrs);
+          presentAbsent = 'OS-P';
+        } else if (recordIsDaywiseWFHRow(record)) {
           maxWFH = '0.75';
-          actualWFH = typeof record.value === 'number' ? String(record.value) : String(record.value ?? workingHrs);
-          presentAbsent = 'Present';
+          actualWFH = formatDaywiseActualOutstation(record, workingHrs);
+          presentAbsent = daywiseWFHStatusLabel(record, isHoliday, isSunday);
+        } else if (
+          daywiseIsWOPIOExplicit(record) ||
+          (daywiseIsPIO(record) && (isHoliday || isSunday))
+        ) {
+          presentAbsent = 'WO-PIO';
+        } else if (isHoliday || isSunday) {
+          presentAbsent = 'Holiday';
         } else if (
           (record.status && record.status.toLowerCase().includes('present')) ||
           (inTime !== '00:00' && outTime !== '00:00')
@@ -2831,11 +3005,6 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           excessShortHrsMonth: '',
           excessShortHrsDay: formatSecondsToHMS(daySeconds),
           halfDays,
-          leavesBF: snapshot?.balanceAsOfMonth ?? (allUsers?.find(u=>u._id===item.userId)?.leaveBalance ?? ''),
-          leavesEarned: snapshot?.earnedThisMonth ?? '',
-          leavesConsumed: snapshot?.usedThisMonth ?? '',
-          leavesCF: snapshot?.remainingAfter ?? '',
-          // Add extra fields at the end if needed
         });
         rowIndexes.push(worksheet.rowCount);
       });
@@ -2849,71 +3018,89 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       }
     };
 
-    // Save file
-    // Style header row
+    // Header row (row 1) — data starts row 2 (keep header compact; no wrap avoids tall rows)
     const headerRow = worksheet.getRow(1);
-    headerRow.height = 45;
+    headerRow.height = 22;
     headerRow.eachCell((cell) => {
-      cell.font = { bold: true, size:12, color: { argb: 'FFFFFFFF' } };
+      cell.font = { bold: true, size: 10, name: 'Calibri', color: { argb: 'FFFFFFFF' } };
       cell.fill = {
         type: 'pattern',
         pattern: 'solid',
-        fgColor: { argb: 'FF2C5F2D' }
+        fgColor: { argb: 'FF1E3A8A' },
       };
-      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: false, shrinkToFit: true };
       cell.border = {
-        top: { style: 'thin', color: { argb: 'FF000000' } },
-        bottom: { style: 'thin', color: { argb: 'FF000000' } },
-        left: { style: 'thin', color: { argb: 'FF000000' } },
-        right: { style: 'thin', color: { argb: 'FF000000' } }
+        top: { style: 'thin', color: { argb: 'FF1E40AF' } },
+        bottom: { style: 'medium', color: { argb: 'FF1E40AF' } },
+        left: { style: 'thin', color: { argb: 'FF1E40AF' } },
+        right: { style: 'thin', color: { argb: 'FF1E40AF' } },
       };
     });
 
-    // Style data rows
+    const daywiseLeftAlignKeys = new Set(['source', 'employeeName', 'designation']);
+
     worksheet.eachRow((row, rowNumber) => {
-      if (rowNumber === 1) return; // Skip header
+      if (rowNumber === 1) return;
+      row.height = 15;
       const isEvenRow = rowNumber % 2 === 0;
       row.eachCell((cell, colNumber) => {
-        cell.font = { size: 11 };
+        const colKey = worksheet.columns[colNumber - 1]?.key as string | undefined;
+        const alignLeft = colKey && daywiseLeftAlignKeys.has(colKey);
+        cell.font = { size: 10, name: 'Calibri', color: { argb: 'FF0F172A' } };
         cell.fill = {
           type: 'pattern',
           pattern: 'solid',
-          fgColor: { argb: isEvenRow ? 'FFF8F9FA' : 'FFFFFFFF' }
+          fgColor: { argb: isEvenRow ? 'FFF8FAFC' : 'FFFFFFFF' },
         };
-        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-        cell.border = {
-          top: { style: 'thin', color: { argb: 'FFE0E0E0' } },
-          bottom: { style: 'thin', color: { argb: 'FFE0E0E0' } },
-          left: { style: 'thin', color: { argb: 'FFE0E0E0' } },
-          right: { style: 'thin', color: { argb: 'FFE0E0E0' } }
+        cell.alignment = {
+          vertical: 'middle',
+          horizontal: alignLeft ? 'left' : 'center',
+          wrapText: false,
+          shrinkToFit: true,
+          indent: alignLeft ? 1 : 0,
         };
+        cell.border = daywiseBorderThin;
       });
-      // Highlight 'Absent' in Present / Absent column
+
       const presentAbsentCell = row.getCell('presentAbsent');
-      if (presentAbsentCell.value === 'Absent') {
-        presentAbsentCell.font = {
-          size: 11,
-          color: { argb: 'FFFF0000' },
-          bold: true
+      const pa = presentAbsentCell.value;
+      if (pa === 'Absent') {
+        presentAbsentCell.font = { size: 10, name: 'Calibri', color: { argb: 'FFBE123C' }, bold: true };
+        presentAbsentCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFFFF1F2' },
         };
-      } else if (presentAbsentCell.value === 'Holiday') {
-        presentAbsentCell.font = {
-          size: 11,
-          color: { argb: 'FFFFD700' }, // Yellow
-          bold: true
+      } else if (pa === 'Holiday') {
+        presentAbsentCell.font = { size: 10, name: 'Calibri', color: { argb: 'FFB45309' }, bold: true };
+        presentAbsentCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFFEF3C7' },
+        };
+      } else if (pa === 'Present' || pa === 'OS-P' || pa === 'WFH' || pa === 'WO-WFH' || pa === 'WO-PIO') {
+        presentAbsentCell.font = { size: 10, name: 'Calibri', color: { argb: 'FF047857' }, bold: true };
+        presentAbsentCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFECFDF5' },
         };
       }
     });
 
-    // Auto-fit columns
-    worksheet.columns.forEach((col) => {
-      const headerStr = typeof col.header === 'string' ? col.header : Array.isArray(col.header) ? col.header.join(' ') : '';
-      let maxLength = headerStr.length;
-      col.eachCell?.((cell) => {
-        const cellValue = cell.value ? cell.value.toString() : '';
-        maxLength = Math.max(maxLength, cellValue.length);
-      });
-      col.width = Math.max(col.width || 10, Math.min(maxLength + 2, 40));
+    // Widen columns slightly if content is longer than default (cap so layout stays usable)
+    worksheet.columns.forEach((col, idx) => {
+      const headerLen = (daywiseHeaderLabels[idx] || '').length;
+      let maxLen = headerLen;
+      if (col.eachCell) {
+        col.eachCell({ includeEmpty: false }, (cell, rowNumber) => {
+          if (rowNumber === 1) return;
+          const v = cell.value != null ? String(cell.value) : '';
+          maxLen = Math.max(maxLen, Math.min(v.length, 55));
+        });
+      }
+      const base = col.width || 10;
+      col.width = Math.min(42, Math.max(base, maxLen * 0.9 + 1.5));
     });
 
     const fileName = `daywise_attendance_${new Date().toISOString().split('T')[0]}.xlsx`;
@@ -3517,7 +3704,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {(filteredSummaries as any[]).map((item) => (
+                {(displayedSummaries as any[]).map((item) => (
                   <tr
                     key={item.id}
                     className="hover:bg-slate-800/40 transition-colors group"
@@ -3663,6 +3850,44 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                     </td>
                   </tr>
                 ))}
+                {filteredSummaries.length > displayedSummaries.length && (
+                  <tr ref={tableLoadMoreSentinelRef}>
+                    <td colSpan={18} className="border-t border-slate-800/80 px-4 py-4 text-center text-xs text-slate-500">
+                      <div className="flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap sm:justify-center">
+                        <span className="inline-flex items-center gap-2">
+                          <span
+                            className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent"
+                            aria-hidden
+                          />
+                          Showing {displayedSummaries.length} of {filteredSummaries.length} employees — scroll to load more
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setTableVisibleCount((c) =>
+                              Math.min(
+                                c + SUMMARY_TABLE_CHUNK,
+                                filteredSummaries.length
+                              )
+                            )
+                          }
+                          className="rounded-md border border-slate-600 bg-slate-800 px-3 py-1.5 text-slate-200 hover:bg-slate-700"
+                        >
+                          Load {SUMMARY_TABLE_CHUNK} more
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setTableVisibleCount(filteredSummaries.length)
+                          }
+                          className="rounded-md border border-emerald-700/60 bg-emerald-950/40 px-3 py-1.5 text-emerald-200 hover:bg-emerald-900/50"
+                        >
+                          Show all
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

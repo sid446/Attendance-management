@@ -2,20 +2,31 @@ import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
 
-// GET - Fetch all users
-export async function GET() {
+// GET - Fetch all users (?listOnly=1 omits heavy fieldHistories for list views)
+export async function GET(request: NextRequest) {
   try {
     await dbConnect();
 
-    const users = await User.find({ isActive: true }).sort({ name: 1 });
+    const { searchParams } = new URL(request.url);
+    const listOnly =
+      searchParams.get('listOnly') === '1' || searchParams.get('listOnly') === 'true';
+    const includeInactive =
+      searchParams.get('includeInactive') === '1' ||
+      searchParams.get('includeInactive') === 'true';
+
+    const match = includeInactive ? {} : { isActive: true };
+
+    const users = listOnly
+      ? await User.find(match).sort({ name: 1 }).select('-fieldHistories').lean()
+      : await User.find(match).sort({ name: 1 }).lean();
 
     // Ensure attendanceEmail is set for backward compatibility
-    const usersData = users.map(user => {
-      const userData = user.toObject();
-      if (!userData.attendanceEmail && userData.email) {
-        userData.attendanceEmail = userData.email;
+    const usersData = users.map((userData: any) => {
+      const u = { ...userData };
+      if (!u.attendanceEmail && u.email) {
+        u.attendanceEmail = u.email;
       }
-      return userData;
+      return u;
     });
 
     return NextResponse.json({
@@ -49,6 +60,7 @@ export async function POST(request: NextRequest) {
       scheduleInOutTimeSat,
       scheduleInOutTimeMonth,
       isActive,
+      inactiveAsOf,
       // Extended fields
       registrationNo,
       employeeCode,
@@ -126,6 +138,17 @@ export async function POST(request: NextRequest) {
       finalAttendanceEmail = email;
     }
 
+    const active = isActive !== undefined ? isActive : true;
+    if (!active && !inactiveAsOf) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'inactiveAsOf is required when creating an inactive employee.',
+        },
+        { status: 400 }
+      );
+    }
+
     const user = await User.create({
       odId,
       name,
@@ -137,7 +160,8 @@ export async function POST(request: NextRequest) {
       scheduleInOutTime: scheduleInOutTime || { inTime: '09:00', outTime: '18:00' },
       scheduleInOutTimeSat: scheduleInOutTimeSat || { inTime: '09:00', outTime: '13:00' },
       scheduleInOutTimeMonth: scheduleInOutTimeMonth || { inTime: '09:00', outTime: '18:00' },
-      isActive: isActive !== undefined ? isActive : true,
+      isActive: active,
+      inactiveAsOf: !active && inactiveAsOf ? new Date(inactiveAsOf) : null,
       // Extended fields
       ...(registrationNo && { registrationNo }),
       ...(employeeCode && { employeeCode }),

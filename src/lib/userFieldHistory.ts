@@ -13,7 +13,7 @@ export type ManagedEffectiveField = typeof MANAGED_EFFECTIVE_FIELDS[number];
 
 type SourceType = 'manual-update' | 'excel-upload' | 'basic-master-upload' | 'system';
 
-function normalizeValue(value: unknown): string {
+export function normalizeManagedFieldValue(value: unknown): string {
   if (value === null || value === undefined) return '';
   return String(value).trim();
 }
@@ -55,25 +55,30 @@ export function applyManagedEffectiveHistories(
     source?: SourceType;
     baselineEffectiveFrom?: Date;
     fieldChangedAt?: Partial<Record<ManagedEffectiveField, Date>>;
+    /** Values before this update. Required when `user[field]` was already overwritten (e.g. after Object.assign). */
+    priorValues?: Partial<Record<ManagedEffectiveField, string>>;
   }
 ): void {
   const changedAt = options?.changedAt || new Date();
   const source = options?.source || 'system';
   const baselineEffectiveFrom = options?.baselineEffectiveFrom;
   const fieldChangedAt = options?.fieldChangedAt || {};
+  const priorValues = options?.priorValues;
 
   if (!user.fieldHistories) {
     user.fieldHistories = {};
   }
 
   for (const field of MANAGED_EFFECTIVE_FIELDS) {
-    const hasIncoming = Object.prototype.hasOwnProperty.call(incoming, field);
-    if (!hasIncoming) continue;
+    if (!Object.prototype.hasOwnProperty.call(incoming, field)) continue;
 
     const fieldChangeAt = fieldChangedAt[field] || changedAt;
 
-    const nextValue = normalizeValue(incoming[field]);
-    const currentValue = normalizeValue(user[field]);
+    const nextValue = normalizeManagedFieldValue(incoming[field]);
+    const priorValue =
+      priorValues && Object.prototype.hasOwnProperty.call(priorValues, field)
+        ? normalizeManagedFieldValue((priorValues as Record<string, unknown>)[field])
+        : normalizeManagedFieldValue(user[field]);
 
     if (!Array.isArray(user.fieldHistories[field])) {
       user.fieldHistories[field] = [];
@@ -81,17 +86,15 @@ export function applyManagedEffectiveHistories(
 
     const history = user.fieldHistories[field] as Array<any>;
 
-    // Seed baseline history if missing and there is an existing value.
-    if (history.length === 0 && currentValue) {
-      history.push({
-        value: currentValue,
-        effectiveFrom: baselineEffectiveFrom || getAnchorEffectiveFrom(user, fieldChangeAt),
-        effectiveTo: null,
-        source: 'system',
-      });
-    }
-
-    if (nextValue === currentValue) {
+    if (nextValue === priorValue) {
+      if (history.length === 0 && nextValue) {
+        history.push({
+          value: nextValue,
+          effectiveFrom: baselineEffectiveFrom || getAnchorEffectiveFrom(user, fieldChangeAt),
+          effectiveTo: null,
+          source: 'system',
+        });
+      }
       continue;
     }
 
@@ -101,6 +104,13 @@ export function applyManagedEffectiveHistories(
 
     if (currentActive) {
       currentActive.effectiveTo = getPreviousDay(fieldChangeAt);
+    } else if (priorValue) {
+      history.push({
+        value: priorValue,
+        effectiveFrom: baselineEffectiveFrom || getAnchorEffectiveFrom(user, fieldChangeAt),
+        effectiveTo: getPreviousDay(fieldChangeAt),
+        source: 'system',
+      });
     }
 
     history.push({
@@ -128,7 +138,7 @@ export function seedManagedEffectiveHistories(
   let seededCount = 0;
 
   for (const field of MANAGED_EFFECTIVE_FIELDS) {
-    const currentValue = normalizeValue(user[field]);
+    const currentValue = normalizeManagedFieldValue(user[field]);
     if (!currentValue) continue;
 
     if (!Array.isArray(user.fieldHistories[field])) {

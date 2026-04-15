@@ -39,9 +39,17 @@ interface LocationAttendanceRecord {
 
 interface LocationAttendanceSectionProps {
   userId: string;
+  /**
+   * When true, omit the outer “page card” chrome — parent provides the section frame
+   * (e.g. employee Attendance tab “Client location punch” block).
+   */
+  embedded?: boolean;
 }
 
-export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps> = ({ userId }) => {
+export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps> = ({
+  userId,
+  embedded = false,
+}) => {
   const [assignedPlaces, setAssignedPlaces] = useState<ClientPlace[]>([]);
   const [todayRecords, setTodayRecords] = useState<LocationAttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -194,44 +202,61 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
 
   if (loading) {
     return (
-      <div className="bg-slate-900 border border-slate-700 rounded-xl p-6">
-        <div className="flex items-center justify-center gap-2 text-slate-400">
-          <Loader2 className="w-5 h-5 animate-spin" />
-          <span>Loading assigned locations...</span>
-        </div>
+      <div
+        className={`flex items-center justify-center gap-2 text-sm text-zinc-500 ${
+          embedded ? 'py-14' : 'rounded-xl border border-zinc-800 bg-zinc-950 p-6'
+        }`}
+      >
+        <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
+        <span>Loading assigned locations...</span>
       </div>
     );
   }
 
   if (assignedPlaces.length === 0) {
     return (
-      <div className="bg-slate-900 border border-slate-700 rounded-xl p-6">
-        <div className="text-center py-6">
-          <MapPin className="w-12 h-12 mx-auto mb-3 text-slate-600" />
-          <h3 className="text-lg font-semibold text-white mb-1">No Client Places Assigned</h3>
-          <p className="text-sm text-slate-400">
-            You haven't been assigned to any client locations yet.
-            <br />Contact your administrator if you need access.
+      <div
+        className={
+          embedded
+            ? 'rounded-lg border border-dashed border-zinc-700 bg-zinc-950/40 py-10 text-center'
+            : 'rounded-xl border border-zinc-800 bg-zinc-950 p-6'
+        }
+      >
+        <div className={embedded ? 'px-4' : 'py-6'}>
+          <MapPin className="mx-auto mb-3 h-12 w-12 text-zinc-600" />
+          <h3 className="mb-1 text-lg font-semibold text-zinc-100">No client places assigned</h3>
+          <p className="text-sm text-zinc-500">
+            You haven&apos;t been assigned to any client locations yet.
+            <br />
+            Contact your administrator if you need access.
           </p>
         </div>
       </div>
     );
   }
 
+  const rootCard =
+    embedded
+      ? 'overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/50'
+      : 'overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950';
+
   return (
-    <div className="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden">
+    <div className={rootCard}>
       {/* Header */}
-      <div className="p-4 border-b border-slate-700 flex items-center justify-between">
+      <div className="flex items-center justify-between border-b border-zinc-800 p-4">
         <div className="flex items-center gap-2">
-          <MapPin className="w-5 h-5 text-emerald-400" />
-          <h3 className="font-semibold text-white">Mark Attendance - Client Place & Outstation</h3>
+          <MapPin className="h-5 w-5 text-emerald-400" />
+          <h3 className="font-semibold text-zinc-100">
+            {embedded ? 'Mark in / out at site' : 'Mark attendance — client place & outstation'}
+          </h3>
         </div>
         <button
           onClick={fetchData}
-          className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors"
+          className="rounded p-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
           title="Refresh"
+          type="button"
         >
-          <RefreshCw className="w-4 h-4" />
+          <RefreshCw className="h-4 w-4" />
         </button>
       </div>
 
@@ -259,9 +284,10 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
       )}
 
       {/* Assigned Places List */}
-      <div className="p-4 space-y-3">
-        <p className="text-sm text-slate-400 mb-3">
-          Select a client location to mark your attendance. You must be within {assignedPlaces[0]?.radiusMeters || 500}m of the location.
+      <div className="space-y-3 p-4">
+        <p className="mb-3 text-sm text-zinc-500">
+          Select a client location to mark your attendance. You must be within{' '}
+          {assignedPlaces[0]?.radiusMeters || 500}m of the location.
         </p>
 
         {assignedPlaces.map(place => {
@@ -272,10 +298,10 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
           return (
             <div
               key={place._id}
-              className={`p-4 rounded-lg border transition-all cursor-pointer ${
+              className={`cursor-pointer rounded-lg border p-4 transition-all ${
                 isSelected
-                  ? 'bg-emerald-900/20 border-emerald-500/50'
-                  : 'bg-slate-800/50 border-slate-700 hover:border-slate-600'
+                  ? 'border-emerald-500/50 bg-emerald-900/20'
+                  : 'border-zinc-800 bg-zinc-900/50 hover:border-zinc-600'
               }`}
               onClick={() => {
                 if (availablePunch !== 'done') {
@@ -286,8 +312,8 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
-                  <h4 className="font-medium text-white truncate">{place.name}</h4>
-                  <p className="text-sm text-slate-400 truncate">{place.address}</p>
+                  <h4 className="truncate font-medium text-zinc-100">{place.name}</h4>
+                  <p className="truncate text-sm text-zinc-500">{place.address}</p>
                 </div>
 
                 {/* Status Badge */}
@@ -312,13 +338,13 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
                       </span>
                     )}
                     {record.totalHours !== undefined && (
-                      <span className="text-xs text-slate-400">
+                      <span className="text-xs text-zinc-500">
                         Total: {record.totalHours.toFixed(2)} hrs
                       </span>
                     )}
                   </div>
                 ) : (
-                  <span className="text-xs bg-slate-700 text-slate-400 px-2 py-0.5 rounded">
+                  <span className="rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
                     Not marked
                   </span>
                 )}
@@ -326,7 +352,7 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
 
               {/* Action Buttons (when selected) */}
               {isSelected && availablePunch !== 'done' && (
-                <div className="mt-4 pt-4 border-t border-slate-700">
+                <div className="mt-4 border-t border-zinc-800 pt-4">
                   {locationError && (
                     <div className="mb-3 flex items-center gap-2 text-sm text-amber-300 bg-amber-900/20 p-2 rounded">
                       <AlertCircle className="w-4 h-4 shrink-0" />
@@ -359,14 +385,14 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
                     )}
                   </button>
 
-                  <p className="mt-2 text-xs text-center text-slate-500">
+                  <p className="mt-2 text-center text-xs text-zinc-600">
                     Your current location will be verified against the client place coordinates
                   </p>
                 </div>
               )}
 
               {availablePunch === 'done' && (
-                <div className="mt-3 pt-3 border-t border-slate-700">
+                <div className="mt-3 border-t border-zinc-800 pt-3">
                   <div className="flex items-center gap-2 text-sm text-emerald-400">
                     <Check className="w-4 h-4" />
                     <span>Attendance complete for today</span>
@@ -380,15 +406,15 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
 
       {/* Today's Summary */}
       {todayRecords.length > 0 && (
-        <div className="p-4 border-t border-slate-700 bg-slate-950/50">
-          <h4 className="text-sm font-medium text-slate-400 mb-2">Today's Location Attendance</h4>
-          <div className="text-sm text-slate-300">
+        <div className="border-t border-zinc-800 bg-zinc-950/70 p-4">
+          <h4 className="mb-2 text-sm font-medium text-zinc-500">Today&apos;s location attendance</h4>
+          <div className="text-sm text-zinc-300">
             {todayRecords.map(record => (
               <div key={record._id} className="flex items-center justify-between py-1">
                 <span>{record.clientPlaceId.name}</span>
                 <span className={`text-xs ${
                   record.status === 'complete' ? 'text-emerald-400' :
-                  record.status === 'partial' ? 'text-amber-400' : 'text-slate-400'
+                  record.status === 'partial' ? 'text-amber-400' : 'text-zinc-500'
                 }`}>
                   {record.status === 'complete' ? 'Complete' :
                    record.status === 'partial' ? 'In progress' : 'Pending'}

@@ -136,6 +136,8 @@ export interface IUser extends Document {
   scheduleInOutTimeMonth?: IScheduleTime; // Monthly/alternate schedule
 
   isActive: boolean;
+  /** First calendar day the employee is inactive; attendance/summaries exclude this day onward. */
+  inactiveAsOf?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -521,6 +523,10 @@ const UserSchema = new Schema(
     isActive: {
       type: Boolean,
       default: true,
+    },
+    inactiveAsOf: {
+      type: Date,
+      default: null,
     },
   },
   {

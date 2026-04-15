@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { ArrowLeft } from 'lucide-react';
 
 interface Request {
   _id: string;
@@ -27,6 +28,7 @@ interface RequestGroup {
 }
 
 function ReviewAllPageContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const partnerName = searchParams.get('partnerName') || searchParams.get('partner');
   const partnerEmail = searchParams.get('partnerEmail');
@@ -369,12 +371,29 @@ function ReviewAllPageContent() {
     }
   };
 
+  const goToEmployeeDashboard = () => {
+    router.push('/employee/dashboard');
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-950">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-10 w-10 border-2 border-slate-700 border-t-emerald-500 mx-auto"></div>
-          <p className="mt-4 text-slate-400 text-sm">Loading requests...</p>
+      <div className="min-h-screen flex flex-col bg-slate-950">
+        <header className="shrink-0 border-b border-slate-800/50 bg-slate-900/95 px-4 py-3">
+          <button
+            type="button"
+            onClick={goToEmployeeDashboard}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800"
+            aria-label="Back to employee dashboard"
+          >
+            <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
+            Back
+          </button>
+        </header>
+        <div className="flex flex-1 items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-10 w-10 border-2 border-slate-700 border-t-emerald-500 mx-auto"></div>
+            <p className="mt-4 text-slate-400 text-sm">Loading requests...</p>
+          </div>
         </div>
       </div>
     );
@@ -382,7 +401,19 @@ function ReviewAllPageContent() {
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4">
+      <div className="min-h-screen flex flex-col bg-slate-950 p-4">
+        <header className="mb-4 shrink-0">
+          <button
+            type="button"
+            onClick={goToEmployeeDashboard}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-2 text-sm font-medium text-slate-200 hover:bg-slate-800"
+            aria-label="Back to employee dashboard"
+          >
+            <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
+            Back
+          </button>
+        </header>
+        <div className="flex flex-1 items-center justify-center">
         <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl text-center max-w-sm w-full">
           <div className="w-12 h-12 bg-rose-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
             <svg className="w-6 h-6 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -391,6 +422,7 @@ function ReviewAllPageContent() {
           </div>
           <h2 className="text-lg font-semibold text-white mb-2">Something went wrong</h2>
           <p className="text-slate-400 text-sm">{error}</p>
+        </div>
         </div>
       </div>
     );
@@ -402,6 +434,15 @@ function ReviewAllPageContent() {
       <header className="sticky top-0 z-40 bg-slate-900/95 backdrop-blur-xl border-b border-slate-800/50">
         <div className="max-w-6xl mx-auto px-4 py-4">
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={goToEmployeeDashboard}
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-700 bg-slate-800/80 text-slate-200 hover:bg-slate-800"
+              title="Back to employee dashboard"
+              aria-label="Back to employee dashboard"
+            >
+              <ArrowLeft className="h-5 w-5" aria-hidden />
+            </button>
             <img src="/lg.png" alt="Asija Logo" className="w-10 h-10 object-contain" />
             <div>
               <div className="flex items-center gap-2">

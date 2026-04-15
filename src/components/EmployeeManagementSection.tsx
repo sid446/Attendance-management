@@ -1,4 +1,5 @@
-import React, { useState, useEffect, ChangeEvent, useMemo } from 'react';
+import React, { useState, useEffect, ChangeEvent, useMemo, useCallback, useRef } from 'react';
+import { Edit2, Save, X, Plus, Upload, FileUp, Filter, Trash2, Search, Download, ChevronDown, ChevronUp, FileSpreadsheet, Settings, Users, Briefcase, CreditCard, Tag } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { User as UserBase, ScheduleTime, DailySchedule } from '@/types/ui';
 
@@ -26,16 +27,47 @@ const getDefaultManagedEffectiveDates = (): Record<ManagedFieldKey, string> => {
   };
 };
 
+/** Stable MongoDB document id for URLs and comparisons (handles string, $oid, ObjectId-like). */
+function isUserMarkedInactive(user: Pick<User, 'isActive'>): boolean {
+  if (user.isActive === false) return true;
+  const raw: unknown = user.isActive;
+  return typeof raw === 'string' && raw.toLowerCase() === 'false';
+}
+
+function normalizeMongoId(raw: unknown): string {
+  if (raw == null) return '';
+  if (typeof raw === 'string') {
+    const s = raw.trim();
+    return s && s !== 'undefined' ? s : '';
+  }
+  if (typeof raw === 'object' && raw !== null && '$oid' in (raw as Record<string, unknown>)) {
+    const oid = (raw as { $oid: unknown }).$oid;
+    return typeof oid === 'string' ? oid.trim() : '';
+  }
+  const s = String(raw);
+  return s === '[object Object]' ? '' : s;
+}
+
+/** yyyy-mm-dd for <input type="date"> — local calendar day; empty if invalid */
+function toDateInputValue(value: unknown): string {
+  if (value == null || value === '') return '';
+  if (typeof value === 'string') {
+    const t = value.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+    const lead = t.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (lead) return lead[1];
+  }
+  const d = value instanceof Date ? value : new Date(value as string);
+  if (Number.isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${mo}-${day}`;
+}
+
 const getManagedEffectiveDatesFromUser = (user?: Partial<User>): Record<ManagedFieldKey, string> => {
   const defaults = getDefaultManagedEffectiveDates();
   const fieldHistories = (user as any)?.fieldHistories || {};
-
-  const toDateInputValue = (value: any): string => {
-    if (!value) return '';
-    const d = new Date(value);
-    if (isNaN(d.getTime())) return '';
-    return d.toISOString().split('T')[0];
-  };
 
   const fields: ManagedFieldKey[] = [
     'registeredUnderPartner',
@@ -57,7 +89,85 @@ const getManagedEffectiveDatesFromUser = (user?: Partial<User>): Record<ManagedF
 
   return defaults;
 };
-import { Edit2, Save, X, Plus, Upload, FileUp, Filter, Trash2, Search, Download, ChevronDown, ChevronUp, FileSpreadsheet, Settings, Users, Briefcase, CreditCard, Tag } from 'lucide-react';
+
+type SalaryHistoryFieldKey =
+  | 'basicSalary'
+  | 'laptopAllowance'
+  | 'totalSalaryPerMonth'
+  | 'totalSalaryPerAnnum';
+
+function sortSalaryHistoryDesc(fieldHistory: unknown): Array<{
+  value?: string;
+  effectiveFrom?: unknown;
+  effectiveTo?: unknown;
+}> {
+  const arr = Array.isArray(fieldHistory) ? [...fieldHistory] : [];
+  return arr.sort(
+    (a, b) =>
+      new Date((b as { effectiveFrom?: string }).effectiveFrom as string).getTime() -
+      new Date((a as { effectiveFrom?: string }).effectiveFrom as string).getTime()
+  );
+}
+
+function formatSalaryHistoryRowDate(value: unknown): string {
+  if (value == null || value === '') return '—';
+  const d = value instanceof Date ? value : new Date(value as string);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString();
+}
+
+const USERS_LIST_ENDPOINT = '/api/users?listOnly=1&includeInactive=1';
+
+function EmployeeManagementTableSkeleton() {
+  const rowCount = 8;
+  return (
+    <div className="overflow-x-auto" aria-busy="true" aria-label="Loading employees">
+      <table className="w-full text-left text-sm">
+        <thead className="bg-slate-800/50 text-slate-400 font-medium text-xs uppercase tracking-wide">
+          <tr>
+            <th className="px-4 py-3.5">Employee</th>
+            <th className="px-4 py-3.5 hidden md:table-cell">Email</th>
+            <th className="px-4 py-3.5 hidden lg:table-cell">Team</th>
+            <th className="px-4 py-3.5 hidden sm:table-cell">Designation</th>
+            <th className="px-4 py-3.5 hidden xl:table-cell">Joined</th>
+            <th className="px-4 py-3.5 text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-800/50 animate-pulse">
+          {Array.from({ length: rowCount }, (_, i) => (
+            <tr key={i} className={i % 2 === 0 ? 'bg-slate-900/20' : ''}>
+              <td className="px-4 py-3.5">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-slate-700/60 shrink-0" />
+                  <div className="space-y-2 flex-1 min-w-0">
+                    <div className="h-3.5 bg-slate-700/60 rounded w-36 max-w-full" />
+                    <div className="h-2.5 bg-slate-800 rounded w-24 max-w-full" />
+                  </div>
+                </div>
+              </td>
+              <td className="px-4 py-3.5 hidden md:table-cell">
+                <div className="h-3 bg-slate-700/50 rounded w-40" />
+              </td>
+              <td className="px-4 py-3.5 hidden lg:table-cell">
+                <div className="h-3 bg-slate-700/50 rounded w-28" />
+              </td>
+              <td className="px-4 py-3.5 hidden sm:table-cell">
+                <div className="h-3 bg-slate-700/50 rounded w-24" />
+              </td>
+              <td className="px-4 py-3.5 hidden xl:table-cell">
+                <div className="h-3 bg-slate-700/50 rounded w-20" />
+              </td>
+              <td className="px-4 py-3.5 text-right">
+                <div className="h-8 bg-slate-700/50 rounded-lg w-20 ml-auto" />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 import type { Workbook, Worksheet, Row, Cell } from 'exceljs';
 
 export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | null; onRefreshUsers?: () => void }> = ({ selectedUserId, onRefreshUsers }) => {
@@ -76,6 +186,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   const [filterTeams, setFilterTeams] = useState<string[]>([]);
   const [filterUsers, setFilterUsers] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
+  /** When false, deactivated employees are hidden from the table (still in data for export / re-activate). */
+  const [showInactiveEmployees, setShowInactiveEmployees] = useState(false);
   // Dropdown visibility state
   const [showDesignationDropdown, setShowDesignationDropdown] = useState(false);
   const [showTeamDropdown, setShowTeamDropdown] = useState(false);
@@ -119,6 +231,16 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   const [historyLoading, setHistoryLoading] = useState<boolean>(false);
   const [changeReason, setChangeReason] = useState<string>('');
   const [managedFieldsEffectiveFromByField, setManagedFieldsEffectiveFromByField] = useState<Record<ManagedFieldKey, string>>(getDefaultManagedEffectiveDates());
+  const [salaryRevisionPanel, setSalaryRevisionPanel] = useState<{
+    field: SalaryHistoryFieldKey;
+    value: string;
+    effectiveFrom: string;
+  } | null>(null);
+  /** Per salary field: expanded "all history" panel (effective from + end date for every segment). */
+  const [salaryHistoryExpanded, setSalaryHistoryExpanded] = useState<Partial<Record<SalaryHistoryFieldKey, boolean>>>({});
+  const openedForSelectionRef = useRef<string | null>(null);
+  /** Bumped on unmount and before each users-list fetch so stale responses cannot overwrite newer state (e.g. after delete). */
+  const usersListFetchGenerationRef = useRef(0);
 
   // Extra Info State
   const [newExtraLabel, setNewExtraLabel] = useState<string>('');
@@ -139,26 +261,38 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
     return users.map(u => u.name).filter(Boolean).sort();
   }, [users]);
 
-  // Fetch users
-  const fetchUsers = async () => {
-    setLoading(true);
+  const inactiveUserCount = useMemo(() => users.filter(isUserMarkedInactive).length, [users]);
+
+  // Fetch users (list payload; use soft refresh after mutations to avoid table skeleton flash)
+  const fetchUsers = async (opts?: { soft?: boolean }) => {
+    const gen = ++usersListFetchGenerationRef.current;
+    if (!opts?.soft) {
+      setLoading(true);
+      setError(null);
+    }
     try {
-      const response = await fetch('/api/users');
+      const response = await fetch(USERS_LIST_ENDPOINT, { cache: 'no-store' });
       const result = await response.json();
+      if (gen !== usersListFetchGenerationRef.current) {
+        return;
+      }
       if (result.success) {
         setUsers(result.data);
       } else {
         throw new Error(result.error);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch users');
+      if (gen === usersListFetchGenerationRef.current) {
+        setError(err instanceof Error ? err.message : 'Failed to fetch users');
+      }
     } finally {
-      setLoading(false);
+      if (gen === usersListFetchGenerationRef.current && !opts?.soft) {
+        setLoading(false);
+      }
     }
   };
 
-  // Fetch employee history
-  const fetchEmployeeHistory = async (userId: string) => {
+  const fetchEmployeeHistory = useCallback(async (userId: string) => {
     setHistoryLoading(true);
     try {
       const response = await fetch(`/api/users/${userId}/history`);
@@ -175,82 +309,132 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
     } finally {
       setHistoryLoading(false);
     }
-  };
+  }, []);
 
-  // Set editing user when selectedUserId changes
-  useEffect(() => {
-    if (selectedUserId && users.length > 0) {
-      const user = users.find(u => u._id === selectedUserId);
-      if (user) {
-        setEditingUser(user);
-        setFormData(user);
-        setManagedFieldsEffectiveFromByField(getManagedEffectiveDatesFromUser(user));
-      }
+  const applyUserToEditForm = useCallback((user: User) => {
+    const formDataCopy: Partial<User> = {
+      ...user,
+      joiningDate: toDateInputValue(user.joiningDate),
+      inactiveAsOf: toDateInputValue(user.inactiveAsOf) || undefined,
+      team: user.workingUnderPartner || user.team || '',
+    };
+    if (formDataCopy.schedules && Array.isArray(formDataCopy.schedules)) {
+      formDataCopy.schedules = (formDataCopy.schedules as any[]).map((entry: any) => ({
+        ...entry,
+        effectiveFrom: toDateInputValue(entry.effectiveFrom),
+      })) as User['schedules'];
     }
-  }, [selectedUserId, users]);
+    setEditingUser(user);
+    setFormData(formDataCopy);
+    setManagedFieldsEffectiveFromByField(getManagedEffectiveDatesFromUser(formDataCopy));
+  }, []);
+
+  const openUserForEdit = useCallback(
+    async (user: User) => {
+      setError(null);
+      const uid = normalizeMongoId(user._id);
+      if (!uid) {
+        setError('Missing employee id. Please refresh the page.');
+        return;
+      }
+      try {
+        const response = await fetch(`/api/users/${encodeURIComponent(uid)}`);
+        const result = await response.json();
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to load employee');
+        }
+        const fullUser = result.data as User;
+        applyUserToEditForm(fullUser);
+        void fetchEmployeeHistory(normalizeMongoId(fullUser._id) || uid);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load employee');
+        applyUserToEditForm(user);
+        void fetchEmployeeHistory(uid);
+      }
+    },
+    [applyUserToEditForm, fetchEmployeeHistory]
+  );
+
+  // Open editor when parent passes selectedUserId (once per selection, after list is loaded)
+  useEffect(() => {
+    if (!selectedUserId) {
+      openedForSelectionRef.current = null;
+      return;
+    }
+    if (users.length === 0) return;
+    const user = users.find((u) => normalizeMongoId(u._id) === selectedUserId);
+    if (!user) return;
+    if (openedForSelectionRef.current === selectedUserId) return;
+    openedForSelectionRef.current = selectedUserId;
+    void openUserForEdit(user);
+  }, [selectedUserId, users, openUserForEdit]);
 
   const handleDeleteUser = async (user: User) => {
     if (!window.confirm(`Are you sure you want to delete employee "${user.name}"? This will deactivate their account.`)) {
       return;
     }
 
+    const id = normalizeMongoId(user._id);
+    if (!id) {
+      alert('Missing employee id. Please refresh the page and try again.');
+      return;
+    }
+
     try {
-      const response = await fetch(`/api/users/${user._id}`, {
+      const response = await fetch(`/api/users/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       });
 
-      const result = await response.json();
+      const text = await response.text();
+      let result: { success?: boolean; error?: string; data?: User } = {};
+      try {
+        result = text ? JSON.parse(text) : {};
+      } catch {
+        alert(`Delete failed (bad response). HTTP ${response.status}.`);
+        return;
+      }
 
       if (!response.ok || !result.success) {
         throw new Error(result.error || 'Failed to delete user');
       }
 
-      // Remove from list or mark inactive
-      // Since API does soft delete (isActive: false), we might want to filter them out or show them as inactive
-      // Current fetchUsers() returns all users, so we can just update local state
-      setUsers(prev => prev.filter(u => u._id !== user._id));
-      
+      const serverUser = result.data as User | undefined;
+      const inactiveAsOf = serverUser?.inactiveAsOf ?? undefined;
+
+      // Hide immediately (table filters out isActive === false) even if a slow initial fetch would race.
+      setUsers((prev) =>
+        prev.map((u) =>
+          normalizeMongoId(u._id) === id
+            ? { ...u, isActive: false, inactiveAsOf: inactiveAsOf ?? u.inactiveAsOf }
+            : u
+        )
+      );
+
+      if (onRefreshUsers) {
+        onRefreshUsers();
+      }
+      await fetchUsers({ soft: true });
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to delete user');
     }
   };
 
-  useEffect(() => {
-    fetchUsers();
-  }, []);
-
   const handleEditClick = (user: User) => {
-    setEditingUser(user);
-    // Deep copy or structured clone to avoid mutation issues,
-    // ensuring dates are strings compatible with inputs if needed
-    const formDataCopy = {
-      ...user,
-      joiningDate: user.joiningDate ? new Date(user.joiningDate).toISOString().split('T')[0] : '',
-      // Ensure team matches workingUnderPartner
-      team: user.workingUnderPartner || user.team || '',
-    };
-    
-    // Convert schedule effectiveFrom dates to strings for form inputs
-    if (formDataCopy.schedules && Array.isArray(formDataCopy.schedules)) {
-      formDataCopy.schedules = formDataCopy.schedules.map((entry: any) => ({
-        ...entry,
-        effectiveFrom: entry.effectiveFrom ? new Date(entry.effectiveFrom).toISOString().split('T')[0] : ''
-      }));
-    }
-    
-    setFormData(formDataCopy);
-    setManagedFieldsEffectiveFromByField(getManagedEffectiveDatesFromUser(formDataCopy));
-    setError(null);
-    // Fetch employee history
-    fetchEmployeeHistory(user._id);
+    openedForSelectionRef.current = normalizeMongoId(user._id) || null;
+    void openUserForEdit(user);
   };
 
   const handleCancelEdit = () => {
+    if (selectedUserId) {
+      openedForSelectionRef.current = selectedUserId;
+    }
     setEditingUser(null);
     setFormData({});
     setEmployeeHistory([]);
     setChangeReason('');
     setManagedFieldsEffectiveFromByField(getDefaultManagedEffectiveDates());
+    setSalaryRevisionPanel(null);
+    setSalaryHistoryExpanded({});
     setError(null);
   };
 
@@ -383,7 +567,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       }
       setNewExtraLabel('');
       // Refresh users so new field appears everywhere
-      fetchUsers();
+      fetchUsers({ soft: true });
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to add field');
     } finally {
@@ -469,9 +653,42 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
     }
   };
 
-  // Fetch predefined values when component mounts
   useEffect(() => {
-    fetchPredefinedValues();
+    (async () => {
+      const gen = ++usersListFetchGenerationRef.current;
+      setLoading(true);
+      setError(null);
+      try {
+        const [usersRes, preRes] = await Promise.all([
+          fetch(USERS_LIST_ENDPOINT, { cache: 'no-store' }),
+          fetch('/api/users/predefined-values', { cache: 'no-store' }),
+        ]);
+        const usersJson = await usersRes.json();
+        const preJson = await preRes.json();
+        if (gen !== usersListFetchGenerationRef.current) {
+          return;
+        }
+        if (usersJson.success) {
+          setUsers(usersJson.data);
+        } else {
+          throw new Error(usersJson.error || 'Failed to fetch users');
+        }
+        if (preJson.success && preJson.data) {
+          setPredefinedValues(preJson.data);
+        }
+      } catch (err) {
+        if (gen === usersListFetchGenerationRef.current) {
+          setError(err instanceof Error ? err.message : 'Failed to fetch users');
+        }
+      } finally {
+        if (gen === usersListFetchGenerationRef.current) {
+          setLoading(false);
+        }
+      }
+    })();
+    return () => {
+      usersListFetchGenerationRef.current++;
+    };
   }, []);
 
   // Schedule Helper Functions
@@ -599,7 +816,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   };
 
   const handleAddScheduleEntry = () => {
-    const newEffectiveFrom = new Date().toISOString().split('T')[0]; // Today's date
+    const newEffectiveFrom = toDateInputValue(new Date());
     setFormData(prev => {
       const schedules = Array.isArray(prev.schedules) ? [...prev.schedules] : [];
       const newEntry = {
@@ -640,8 +857,24 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
     return prepared;
   };
 
+  const handleIsActiveChange = (checked: boolean) => {
+    setFormData((prev) => ({
+      ...prev,
+      isActive: checked,
+      ...(checked ? { inactiveAsOf: undefined } : {}),
+    }));
+  };
+
   const handleSave = async () => {
     if (!editingUser || !editingUser._id) return;
+
+    if (formData.isActive === false) {
+      const d = formData.inactiveAsOf;
+      if (d == null || String(d).trim() === '') {
+        setError('Select the inactive date (first day the employee is inactive) when unchecking Active.');
+        return;
+      }
+    }
 
     setSaveLoading(true);
     setError(null);
@@ -673,7 +906,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       setEmployeeHistory([]);
       setChangeReason('');
       setManagedFieldsEffectiveFromByField(getDefaultManagedEffectiveDates());
-      
+      setSalaryRevisionPanel(null);
+      setSalaryHistoryExpanded({});
+
       // Refresh user data to ensure schedule changes are reflected
       if (onRefreshUsers) {
         onRefreshUsers();
@@ -689,6 +924,13 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
     if (!formData.name || !formData.email || !formData.odId || !formData.joiningDate) {
       setError('OD ID, Name, Email, and Joining Date are required');
       return;
+    }
+    if (formData.isActive === false) {
+      const d = formData.inactiveAsOf;
+      if (d == null || String(d).trim() === '') {
+        setError('Select the inactive date when adding an inactive employee.');
+        return;
+      }
     }
 
     setSaveLoading(true);
@@ -1016,7 +1258,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       }
 
       setUploadStats(result.data);
-      fetchUsers(); // Refresh list
+      fetchUsers({ soft: true }); // Refresh list
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
@@ -1107,7 +1349,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       const result = await response.json();
       if (result.success) {
           setUploadStats(result.stats);
-          fetchUsers();
+          fetchUsers({ soft: true });
       } else {
           throw new Error(result.error);
       }
@@ -1209,7 +1451,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       const result = await response.json();
       if (result.success) {
         setUploadStats(result.stats);
-        fetchUsers();
+        fetchUsers({ soft: true });
       } else {
         throw new Error(result.error);
       }
@@ -1223,6 +1465,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   };
 
   const filteredUsers = users.filter((user) => {
+    if (!showInactiveEmployees && isUserMarkedInactive(user)) {
+      return false;
+    }
     // Multi-select Designation filter
     if (filterDesignations.length > 0 && !filterDesignations.includes(user.designation || '')) {
       return false;
@@ -1580,14 +1825,170 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
     window.URL.revokeObjectURL(url);
   };
 
-  if (loading && !users.length) {
-    return <div className="text-slate-400 p-4">Loading employees...</div>;
-  }
+  const openSalaryRevisionPanel = (field: SalaryHistoryFieldKey) => {
+    setSalaryHistoryExpanded((prev) => ({ ...prev, [field]: true }));
+    setSalaryRevisionPanel({
+      field,
+      value: '',
+      effectiveFrom: toDateInputValue(new Date()),
+    });
+  };
+
+  const applySalaryRevision = () => {
+    if (!salaryRevisionPanel) return;
+    const { field, value, effectiveFrom } = salaryRevisionPanel;
+    if (!effectiveFrom.trim()) {
+      alert('Please select the effective from date for the new salary.');
+      return;
+    }
+    handleInputChange(field as keyof User, value);
+    setManagedFieldsEffectiveFromByField((prev) => ({ ...prev, [field]: effectiveFrom }));
+    setSalaryRevisionPanel(null);
+  };
+
+  const renderSalaryFieldWithHistory = (field: SalaryHistoryFieldKey, label: string, theme: 'salary' | 'extended' = 'salary') => {
+    const inputCls =
+      theme === 'extended'
+        ? 'w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50'
+        : 'w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50';
+    const dateCls =
+      theme === 'extended'
+        ? 'w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-purple-500/50'
+        : 'w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50';
+    const panelBorder = theme === 'extended' ? 'border-purple-900/50' : 'border-emerald-900/50';
+    const panelTitle = theme === 'extended' ? 'text-purple-400/90' : 'text-emerald-400/90';
+    const panelBtn =
+      theme === 'extended' ? 'rounded bg-purple-600/80 px-2 py-1 text-[11px] text-white hover:bg-purple-600' : 'rounded bg-emerald-600/80 px-2 py-1 text-[11px] text-white hover:bg-emerald-600';
+
+    const histAll = sortSalaryHistoryDesc((formData as any)?.fieldHistories?.[field]);
+    const historyOpen = Boolean(salaryHistoryExpanded[field]);
+    const historyCount = histAll.length;
+
+    return (
+      <div key={field}>
+        <button
+          type="button"
+          onClick={() =>
+            setSalaryHistoryExpanded((prev) => ({
+              ...prev,
+              [field]: !prev[field],
+            }))
+          }
+          className="mb-2 flex w-full items-center justify-between gap-2 rounded border border-slate-700 bg-slate-900/80 px-2.5 py-2 text-left text-[11px] text-slate-300 hover:border-slate-600 hover:bg-slate-900"
+          aria-expanded={historyOpen}
+        >
+          <span className="flex items-center gap-2">
+            {historyOpen ? <ChevronUp className="h-3.5 w-3.5 shrink-0 text-slate-500" /> : <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-500" />}
+            <span>
+              Salary history
+              {historyCount > 0 ? (
+                <span className="ml-1.5 text-slate-500">({historyCount})</span>
+              ) : null}
+            </span>
+          </span>
+          <span className="text-[10px] text-slate-500 shrink-0">Effective from · End date</span>
+        </button>
+        {historyOpen && (
+          <div className="mb-3 rounded border border-slate-800 bg-slate-950/90 p-2">
+            {historyCount === 0 ? (
+              <p className="text-[11px] text-slate-500 py-1">No saved history for this field yet. After you add a new salary and save, previous amounts appear here with start and end dates.</p>
+            ) : (
+              <ul className="max-h-56 space-y-0 overflow-y-auto text-[11px] divide-y divide-slate-800/80">
+                {histAll.map((row, idx) => {
+                  const isOpenEnded = row.effectiveTo == null || row.effectiveTo === '';
+                  const currentCls =
+                    theme === 'extended' ? 'text-purple-400/90' : 'text-emerald-500/90';
+                  return (
+                    <li key={`${String(row.effectiveFrom)}-${idx}`} className="flex flex-col gap-0.5 py-2 first:pt-0">
+                      <div className="font-medium text-slate-200">{row.value ?? '—'}</div>
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-slate-400">
+                        <span>
+                          <span className="text-slate-500">From </span>
+                          {formatSalaryHistoryRowDate(row.effectiveFrom)}
+                        </span>
+                        <span>
+                          <span className="text-slate-500">End </span>
+                          {isOpenEnded ? <span className={currentCls}>Current (no end date)</span> : formatSalaryHistoryRowDate(row.effectiveTo)}
+                        </span>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        )}
+        <label className="block text-xs text-slate-400 mb-1">{label}</label>
+        <input
+          type="text"
+          value={(formData as any)[field] || ''}
+          onChange={(e) => handleInputChange(field as keyof User, e.target.value)}
+          className={inputCls}
+        />
+        <div className="mt-2">
+          <label className="block text-[11px] text-slate-500 mb-1">Effective from (current amount)</label>
+          <input
+            type="date"
+            value={managedFieldsEffectiveFromByField[field]}
+            onChange={(e) =>
+              setManagedFieldsEffectiveFromByField((prev) => ({
+                ...prev,
+                [field]: e.target.value,
+              }))
+            }
+            className={dateCls}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => openSalaryRevisionPanel(field)}
+          className="mt-2 inline-flex items-center gap-1 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-300 hover:border-slate-600 hover:text-white"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Add new salary
+        </button>
+        {salaryRevisionPanel?.field === field && (
+          <div className={`mt-2 space-y-2 rounded border ${panelBorder} bg-slate-950 p-2`}>
+            <div className={`text-[11px] ${panelTitle}`}>New amount (applies to the form; save employee to persist)</div>
+            <input
+              type="text"
+              value={salaryRevisionPanel.value}
+              onChange={(e) =>
+                setSalaryRevisionPanel((p) => (p && p.field === field ? { ...p, value: e.target.value } : p))
+              }
+              placeholder="Amount"
+              className={inputCls}
+            />
+            <input
+              type="date"
+              value={salaryRevisionPanel.effectiveFrom}
+              onChange={(e) =>
+                setSalaryRevisionPanel((p) => (p && p.field === field ? { ...p, effectiveFrom: e.target.value } : p))
+              }
+              className={dateCls}
+            />
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={applySalaryRevision} className={panelBtn}>
+                Apply to current row
+              </button>
+              <button
+                type="button"
+                onClick={() => setSalaryRevisionPanel(null)}
+                className="rounded border border-slate-600 px-2 py-1 text-[11px] text-slate-300 hover:bg-slate-800"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // ============== EDIT FORM VIEW =================
   if (editingUser) {
     return (
-      <div className="bg-slate-900/50 rounded-lg border border-slate-800 p-6">
+      <div className="employee-edit-date-inputs bg-slate-900/50 rounded-lg border border-slate-800 p-6">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-semibold text-emerald-400">Edit Employee</h2>
           <button onClick={handleCancelEdit} className="text-slate-400 hover:text-slate-200">
@@ -1768,7 +2169,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             workingUnderPartner: e.target.value,
                           }))
                         }
-                        className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                        className="w-full min-h-9 rounded border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 [color-scheme:light] focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500"
                       />
                     </div>
                   )}
@@ -1816,12 +2217,12 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       <option value="halftime">Half Time</option>
                       <option value="article">Article</option>
                     </select>
-                    <input
-                      type="date"
-                      value={newEmploymentTypeDate}
-                      onChange={e => setNewEmploymentTypeDate(e.target.value)}
-                      className="px-2 py-1 rounded bg-slate-700 text-slate-200"
-                    />
+                      <input
+                        type="date"
+                        value={newEmploymentTypeDate}
+                        onChange={e => setNewEmploymentTypeDate(e.target.value)}
+                        className="min-h-9 rounded border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 [color-scheme:light]"
+                      />
                     <button
                       type="button"
                       onClick={handleAddEmploymentTypeHistory}
@@ -1836,21 +2237,41 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   <label className="block text-xs text-slate-400 mb-1">Joining Date</label>
                   <input
                     type="date"
-                    value={formData.joiningDate as string || ''}
+                    value={toDateInputValue(formData.joiningDate)}
                     onChange={(e) => handleInputChange('joiningDate', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    className="w-full min-h-10 rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 [color-scheme:light] focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500"
                   />
                 </div>
                 
-                 <div className="flex items-center gap-2 mt-4">
-                  <input
-                    type="checkbox"
-                    id="isActive"
-                    checked={formData.isActive || false}
-                    onChange={(e) => handleInputChange('isActive', e.target.checked)}
-                    className="w-4 h-4 bg-slate-950 border-slate-800 rounded text-emerald-500 focus:ring-0"
-                  />
-                  <label htmlFor="isActive" className="text-sm text-slate-300">Active Employee</label>
+                 <div className="flex flex-col gap-3 mt-4">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="isActive"
+                      checked={formData.isActive !== false}
+                      onChange={(e) => handleIsActiveChange(e.target.checked)}
+                      className="w-4 h-4 bg-slate-950 border-slate-800 rounded text-emerald-500 focus:ring-0"
+                    />
+                    <label htmlFor="isActive" className="text-sm text-slate-300">Active Employee</label>
+                  </div>
+                  {formData.isActive === false && (
+                    <div>
+                      <label htmlFor="inactiveAsOf" className="block text-xs text-slate-400 mb-1">
+                        Inactive as of (first day excluded from attendance &amp; summaries)
+                      </label>
+                      <input
+                        id="inactiveAsOf"
+                        type="date"
+                        value={toDateInputValue(formData.inactiveAsOf)}
+                        onChange={(e) => handleInputChange('inactiveAsOf', e.target.value)}
+                        className="w-full max-w-xs min-h-10 rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 [color-scheme:light] focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500"
+                        required
+                      />
+                      <p className="text-xs text-slate-500 mt-1">
+                        Days on and after this date are not counted in reports or dashboards.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1879,9 +2300,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       <label className="text-sm text-slate-300">Effective From:</label>
                       <input
                         type="date"
-                        value={entry.effectiveFrom ? new Date(entry.effectiveFrom).toISOString().split('T')[0] : ''}
+                        value={toDateInputValue(entry.effectiveFrom)}
                         onChange={(e) => handleEffectiveFromChange(index, e.target.value)}
-                        className=" border border-slate-800 text-black bg-zinc-300  text-sm rounded px-2 py-1"
+                        className="min-h-9 rounded border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 [color-scheme:light]"
                       />
                     </div>
                     <button
@@ -2372,7 +2793,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     <label className="block text-xs text-slate-400 mb-1">Anniversary Date</label>
                     <input
                       type="date"
-                      value={(formData as any).anniversaryDate ? new Date((formData as any).anniversaryDate).toISOString().split('T')[0] : ''}
+                      value={toDateInputValue((formData as any).anniversaryDate)}
                       onChange={(e) => handleInputChange('anniversaryDate' as keyof User, e.target.value)}
                       className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
                     />
@@ -2446,7 +2867,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   <label className="block text-xs text-slate-400 mb-1">Articleship Start</label>
                   <input
                     type="date"
-                    value={formData.articleshipStartDate ? new Date(formData.articleshipStartDate).toISOString().split('T')[0] : ''}
+                    value={toDateInputValue(formData.articleshipStartDate)}
                     onChange={(e) => handleInputChange('articleshipStartDate', e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
                   />
@@ -2455,7 +2876,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   <label className="block text-xs text-slate-400 mb-1">Next Attempt Due</label>
                   <input
                     type="date"
-                    value={formData.nextAttemptDueDate ? new Date(formData.nextAttemptDueDate).toISOString().split('T')[0] : ''}
+                    value={toDateInputValue(formData.nextAttemptDueDate)}
                     onChange={(e) => handleInputChange('nextAttemptDueDate', e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
                   />
@@ -2571,56 +2992,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   <h4 className="text-sm font-medium text-slate-400 mb-3 border-b border-slate-700 pb-1">Salary Details</h4>
                 </div>
                 
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">Basic Salary</label>
-                  <input
-                    type="text"
-                    value={(formData as any).basicSalary || ''}
-                    onChange={(e) => handleInputChange('basicSalary' as keyof User, e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                  />
-                  {hasManagedFieldValue('basicSalary') && (
-                    <div className="mt-2">
-                      <label className="block text-[11px] text-slate-500 mb-1">Basic Salary Effective From</label>
-                      <input
-                        type="date"
-                        value={managedFieldsEffectiveFromByField.basicSalary}
-                        onChange={(e) =>
-                          setManagedFieldsEffectiveFromByField((prev) => ({
-                            ...prev,
-                            basicSalary: e.target.value,
-                          }))
-                        }
-                        className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                      />
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">Laptop Allowance</label>
-                  <input
-                    type="text"
-                    value={(formData as any).laptopAllowance || ''}
-                    onChange={(e) => handleInputChange('laptopAllowance' as keyof User, e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                  />
-                  {hasManagedFieldValue('laptopAllowance') && (
-                    <div className="mt-2">
-                      <label className="block text-[11px] text-slate-500 mb-1">Laptop Allowance Effective From</label>
-                      <input
-                        type="date"
-                        value={managedFieldsEffectiveFromByField.laptopAllowance}
-                        onChange={(e) =>
-                          setManagedFieldsEffectiveFromByField((prev) => ({
-                            ...prev,
-                            laptopAllowance: e.target.value,
-                          }))
-                        }
-                        className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                      />
-                    </div>
-                  )}
-                </div>
+                {renderSalaryFieldWithHistory('basicSalary', 'Basic Salary', 'salary')}
+                {renderSalaryFieldWithHistory('laptopAllowance', 'Laptop Allowance', 'salary')}
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">Other Allowance</label>
                   <input
@@ -2648,56 +3021,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">Total Salary (P/M)</label>
-                  <input
-                    type="text"
-                    value={(formData as any).totalSalaryPerMonth || ''}
-                    onChange={(e) => handleInputChange('totalSalaryPerMonth' as keyof User, e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                  />
-                  {hasManagedFieldValue('totalSalaryPerMonth') && (
-                    <div className="mt-2">
-                      <label className="block text-[11px] text-slate-500 mb-1">Total Salary (P/M) Effective From</label>
-                      <input
-                        type="date"
-                        value={managedFieldsEffectiveFromByField.totalSalaryPerMonth}
-                        onChange={(e) =>
-                          setManagedFieldsEffectiveFromByField((prev) => ({
-                            ...prev,
-                            totalSalaryPerMonth: e.target.value,
-                          }))
-                        }
-                        className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                      />
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">Per Annum</label>
-                  <input
-                    type="text"
-                    value={(formData as any).totalSalaryPerAnnum || ''}
-                    onChange={(e) => handleInputChange('totalSalaryPerAnnum' as keyof User, e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                  />
-                  {hasManagedFieldValue('totalSalaryPerAnnum') && (
-                    <div className="mt-2">
-                      <label className="block text-[11px] text-slate-500 mb-1">Per Annum Effective From</label>
-                      <input
-                        type="date"
-                        value={managedFieldsEffectiveFromByField.totalSalaryPerAnnum}
-                        onChange={(e) =>
-                          setManagedFieldsEffectiveFromByField((prev) => ({
-                            ...prev,
-                            totalSalaryPerAnnum: e.target.value,
-                          }))
-                        }
-                        className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                      />
-                    </div>
-                  )}
-                </div>
+                {renderSalaryFieldWithHistory('totalSalaryPerMonth', 'Total Salary (P/M)', 'salary')}
+                {renderSalaryFieldWithHistory('totalSalaryPerAnnum', 'Per Annum', 'salary')}
                 
                 {/* Deductions */}
                 <div className="md:col-span-3">
@@ -2892,7 +3217,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     <label className="block text-xs text-slate-400 mb-1">Anniversary Date</label>
                     <input
                       type="date"
-                      value={(formData as any).anniversaryDate ? new Date((formData as any).anniversaryDate).toISOString().split('T')[0] : ''}
+                      value={toDateInputValue((formData as any).anniversaryDate)}
                       onChange={(e) => handleInputChange('anniversaryDate' as keyof User, e.target.value)}
                       className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
                     />
@@ -2973,42 +3298,10 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
 
                 {/* Salary Information */}
                 <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Basis Salary/Stipend/Fees</label>
-                    <input
-                      type="text"
-                      value={(formData as any).basicSalary || ''}
-                      onChange={(e) => handleInputChange('basicSalary' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Laptop Allowance</label>
-                    <input
-                      type="text"
-                      value={(formData as any).laptopAllowance || ''}
-                      onChange={(e) => handleInputChange('laptopAllowance' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Total Salary (P/M)</label>
-                    <input
-                      type="text"
-                      value={(formData as any).totalSalaryPerMonth || ''}
-                      onChange={(e) => handleInputChange('totalSalaryPerMonth' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Per Annum</label>
-                    <input
-                      type="text"
-                      value={(formData as any).totalSalaryPerAnnum || ''}
-                      onChange={(e) => handleInputChange('totalSalaryPerAnnum' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
-                    />
-                  </div>
+                  {renderSalaryFieldWithHistory('basicSalary', 'Basis Salary/Stipend/Fees', 'extended')}
+                  {renderSalaryFieldWithHistory('laptopAllowance', 'Laptop Allowance', 'extended')}
+                  {renderSalaryFieldWithHistory('totalSalaryPerMonth', 'Total Salary (P/M)', 'extended')}
+                  {renderSalaryFieldWithHistory('totalSalaryPerAnnum', 'Per Annum', 'extended')}
                 </div>
 
                 {/* Articleship & Professional */}
@@ -3039,7 +3332,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   <label className="block text-xs text-slate-400 mb-1">Articleship Start</label>
                   <input
                     type="date"
-                    value={formData.articleshipStartDate ? new Date(formData.articleshipStartDate).toISOString().split('T')[0] : ''}
+                    value={toDateInputValue(formData.articleshipStartDate)}
                     onChange={(e) => handleInputChange('articleshipStartDate', e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
                   />
@@ -3048,7 +3341,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   <label className="block text-xs text-slate-400 mb-1">Next Attempt Due</label>
                   <input
                     type="date"
-                    value={formData.nextAttemptDueDate ? new Date(formData.nextAttemptDueDate).toISOString().split('T')[0] : ''}
+                    value={toDateInputValue(formData.nextAttemptDueDate)}
                     onChange={(e) => handleInputChange('nextAttemptDueDate', e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
                   />
@@ -3171,7 +3464,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   // ============== ADD NEW EMPLOYEE FORM VIEW =================
   if (isAddingNew) {
     return (
-      <div className="bg-slate-900/50 rounded-lg border border-slate-800 p-6">
+      <div className="employee-edit-date-inputs bg-slate-900/50 rounded-lg border border-slate-800 p-6">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-semibold text-purple-400">Add New Employee</h2>
           <button onClick={() => setIsAddingNew(false)} className="text-slate-400 hover:text-slate-200">
@@ -3307,22 +3600,38 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   <label className="block text-xs text-slate-400 mb-1">Joining Date *</label>
                   <input
                     type="date"
-                    value={formData.joiningDate as string || ''}
+                    value={toDateInputValue(formData.joiningDate)}
                     onChange={(e) => handleInputChange('joiningDate', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    className="w-full min-h-10 rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 [color-scheme:light] focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500"
                     required
                   />
                 </div>
                 
-                 <div className="flex items-center gap-2 mt-4">
-                  <input
-                    type="checkbox"
-                    id="isActiveNew"
-                    checked={formData.isActive !== false} // Default to true for new employees
-                    onChange={(e) => handleInputChange('isActive', e.target.checked)}
-                    className="w-4 h-4 bg-slate-950 border-slate-800 rounded text-purple-500 focus:ring-0"
-                  />
-                  <label htmlFor="isActiveNew" className="text-sm text-slate-300">Active Employee</label>
+                 <div className="flex flex-col gap-3 mt-4">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="isActiveNew"
+                      checked={formData.isActive !== false}
+                      onChange={(e) => handleIsActiveChange(e.target.checked)}
+                      className="w-4 h-4 bg-slate-950 border-slate-800 rounded text-purple-500 focus:ring-0"
+                    />
+                    <label htmlFor="isActiveNew" className="text-sm text-slate-300">Active Employee</label>
+                  </div>
+                  {formData.isActive === false && (
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">
+                        Inactive as of (first day excluded from attendance &amp; summaries) *
+                      </label>
+                      <input
+                        type="date"
+                        value={toDateInputValue(formData.inactiveAsOf)}
+                        onChange={(e) => handleInputChange('inactiveAsOf', e.target.value)}
+                        className="w-full max-w-xs min-h-10 rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 [color-scheme:light] focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500"
+                        required
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -3351,9 +3660,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       <label className="text-sm text-slate-300">Effective From:</label>
                       <input
                         type="date"
-                        value={entry.effectiveFrom ? new Date(entry.effectiveFrom).toISOString().split('T')[0] : ''}
+                        value={toDateInputValue(entry.effectiveFrom)}
                         onChange={(e) => handleEffectiveFromChange(index, e.target.value)}
-                        className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded px-2 py-1"
+                        className="min-h-9 rounded border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 [color-scheme:light]"
                       />
                     </div>
                     <button
@@ -3828,7 +4137,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     <label className="block text-xs text-slate-400 mb-1">Anniversary Date</label>
                     <input
                       type="date"
-                      value={(formData as any).anniversaryDate ? new Date((formData as any).anniversaryDate).toISOString().split('T')[0] : ''}
+                      value={toDateInputValue((formData as any).anniversaryDate)}
                       onChange={(e) => handleInputChange('anniversaryDate' as keyof User, e.target.value)}
                       className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
                     />
@@ -3909,42 +4218,10 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
 
                 {/* Salary Information */}
                 <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Basis Salary/Stipend/Fees</label>
-                    <input
-                      type="text"
-                      value={(formData as any).basicSalary || ''}
-                      onChange={(e) => handleInputChange('basicSalary' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Laptop Allowance</label>
-                    <input
-                      type="text"
-                      value={(formData as any).laptopAllowance || ''}
-                      onChange={(e) => handleInputChange('laptopAllowance' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Total Salary (P/M)</label>
-                    <input
-                      type="text"
-                      value={(formData as any).totalSalaryPerMonth || ''}
-                      onChange={(e) => handleInputChange('totalSalaryPerMonth' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-400 mb-1">Per Annum</label>
-                    <input
-                      type="text"
-                      value={(formData as any).totalSalaryPerAnnum || ''}
-                      onChange={(e) => handleInputChange('totalSalaryPerAnnum' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
-                    />
-                  </div>
+                  {renderSalaryFieldWithHistory('basicSalary', 'Basis Salary/Stipend/Fees', 'extended')}
+                  {renderSalaryFieldWithHistory('laptopAllowance', 'Laptop Allowance', 'extended')}
+                  {renderSalaryFieldWithHistory('totalSalaryPerMonth', 'Total Salary (P/M)', 'extended')}
+                  {renderSalaryFieldWithHistory('totalSalaryPerAnnum', 'Per Annum', 'extended')}
                 </div>
 
                 {/* Articleship & Professional */}
@@ -3975,7 +4252,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   <label className="block text-xs text-slate-400 mb-1">Articleship Start</label>
                   <input
                     type="date"
-                    value={formData.articleshipStartDate ? new Date(formData.articleshipStartDate).toISOString().split('T')[0] : ''}
+                    value={toDateInputValue(formData.articleshipStartDate)}
                     onChange={(e) => handleInputChange('articleshipStartDate', e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
                   />
@@ -3984,7 +4261,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   <label className="block text-xs text-slate-400 mb-1">Next Attempt Due</label>
                   <input
                     type="date"
-                    value={formData.nextAttemptDueDate ? new Date(formData.nextAttemptDueDate).toISOString().split('T')[0] : ''}
+                    value={toDateInputValue(formData.nextAttemptDueDate)}
                     onChange={(e) => handleInputChange('nextAttemptDueDate', e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
                   />
@@ -4031,10 +4308,32 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 Employee Management
               </h1>
               <p className="text-slate-400 text-sm mt-1">Manage employee information, schedules, and records</p>
+              {!showInactiveEmployees && inactiveUserCount > 0 && (
+                <p className="text-xs text-amber-400/90 mt-2">
+                  Inactive employees are hidden from the table. Use &quot;Show inactive&quot; in the toolbar to list them (e.g. to re-activate).
+                </p>
+              )}
             </div>
 
             {/* Quick Stats */}
-            {!loading && (
+            {loading ? (
+              <div className="flex items-center gap-3 animate-pulse" aria-hidden>
+                <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl px-4 py-2.5 flex items-center gap-3 w-[9.5rem]">
+                  <div className="w-8 h-8 bg-slate-700/60 rounded-lg shrink-0" />
+                  <div className="flex-1 space-y-2 min-w-0">
+                    <div className="h-6 bg-slate-700/60 rounded w-10" />
+                    <div className="h-2.5 bg-slate-800 rounded w-24" />
+                  </div>
+                </div>
+                <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl px-4 py-2.5 flex items-center gap-3 w-[9.5rem]">
+                  <div className="w-8 h-8 bg-slate-700/60 rounded-lg shrink-0" />
+                  <div className="flex-1 space-y-2 min-w-0">
+                    <div className="h-6 bg-slate-700/60 rounded w-10" />
+                    <div className="h-2.5 bg-slate-800 rounded w-28" />
+                  </div>
+                </div>
+              </div>
+            ) : (
               <div className="flex items-center gap-3">
                 <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl px-4 py-2.5 flex items-center gap-3">
                   <div className="w-8 h-8 bg-emerald-500/20 rounded-lg flex items-center justify-center">
@@ -4208,7 +4507,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               <button
                 type="button"
                 onClick={() => {
-                  setFormData({ isActive: true });
+                  setFormData({ isActive: true, inactiveAsOf: undefined });
                   setIsAddingNew(true);
                 }}
                 className="flex items-center gap-2 px-5 py-2.5 bg-linear-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-purple-500/20"
@@ -4216,6 +4515,19 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 <Plus className="w-4 h-4" />
                 Add Employee
               </button>
+
+              <label className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-slate-300 bg-slate-800/50 border border-slate-700/50 cursor-pointer shrink-0 select-none">
+                <input
+                  type="checkbox"
+                  checked={showInactiveEmployees}
+                  onChange={(e) => setShowInactiveEmployees(e.target.checked)}
+                  className="rounded border-slate-600"
+                />
+                <span>
+                  Show inactive
+                  {inactiveUserCount > 0 ? ` (${inactiveUserCount})` : ''}
+                </span>
+              </label>
 
               <div className="h-8 w-px bg-slate-700 mx-1" />
 
@@ -4373,7 +4685,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                               if (!res.ok || !json.success) {
                                 throw new Error(json.error || 'Failed to remove field');
                               }
-                              fetchUsers();
+                              fetchUsers({ soft: true });
                             } catch (err) {
                               alert(err instanceof Error ? err.message : 'Failed to remove field');
                             }
@@ -4697,10 +5009,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           </div>
 
           {loading ? (
-            <div className="px-6 py-12 text-center">
-              <div className="animate-spin rounded-full h-10 w-10 border-2 border-slate-700 border-t-purple-500 mx-auto"></div>
-              <p className="mt-4 text-slate-400 text-sm">Loading employees...</p>
-            </div>
+            <EmployeeManagementTableSkeleton />
           ) : filteredUsers.length === 0 ? (
             <div className="px-6 py-12 text-center">
               <div className="w-16 h-16 bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -4739,7 +5048,14 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             </span>
                           </div>
                           <div>
-                            <p className="font-medium text-slate-200">{user.name}</p>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-medium text-slate-200">{user.name}</p>
+                              {isUserMarkedInactive(user) && (
+                                <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-800/60">
+                                  Inactive
+                                </span>
+                              )}
+                            </div>
                             <p className="text-xs text-slate-500 font-mono">{user.odId || user.employeeCode || '-'}</p>
                           </div>
                         </div>
@@ -4767,6 +5083,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       <td className="px-4 py-3.5 text-right">
                         <div className="inline-flex items-center gap-1">
                           <button
+                            type="button"
                             onClick={() => handleEditClick(user)}
                             className="p-2 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-all"
                             title="Edit Employee"
@@ -4774,9 +5091,10 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             <Edit2 className="w-4 h-4" />
                           </button>
                           <button
+                            type="button"
                             onClick={() => handleDeleteUser(user)}
                             className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all"
-                            title="Delete Employee"
+                            title="Deactivate employee"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>

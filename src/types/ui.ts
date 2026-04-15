@@ -172,6 +172,8 @@ export interface User {
   scheduleInOutTimeMonth?: ScheduleTime;
 
   isActive: boolean;
+  /** YYYY-MM-DD (or ISO) — no attendance/summary from this day onward when inactive */
+  inactiveAsOf?: string | Date | null;
 
   // Employment type history
   employmentTypeHistory?: {

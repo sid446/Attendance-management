@@ -41,6 +41,115 @@ body {
   animation: slide-up 0.3s ease-out;
 }
 
+/* Employee workspace splash (distinctive loader) */
+@keyframes workspace-logo-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.88;
+    filter: brightness(1);
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+    filter: brightness(1.12);
+  }
+}
+
+@keyframes workspace-dot-bounce {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  40% {
+    transform: translateY(-12px);
+    opacity: 1;
+  }
+}
+
+@keyframes workspace-shimmer {
+  0% {
+    background-position: 200% center;
+  }
+  100% {
+    background-position: -200% center;
+  }
+}
+
+@keyframes workspace-bar-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+.animate-workspace-logo {
+  animation: workspace-logo-breathe 2.2s ease-in-out infinite;
+}
+
+.animate-workspace-dot {
+  animation: workspace-dot-bounce 1.05s ease-in-out infinite;
+}
+
+.workspace-loading-shimmer {
+  background: linear-gradient(
+    105deg,
+    #52525b 0%,
+    #52525b 35%,
+    #f4f4f5 50%,
+    #52525b 65%,
+    #52525b 100%
+  );
+  background-size: 220% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: workspace-shimmer 2.4s linear infinite;
+}
+
+.workspace-loading-bar-track {
+  position: relative;
+  height: 3px;
+  width: 160px;
+  max-width: 70vw;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: rgb(39 39 42 / 0.85);
+}
+
+.workspace-loading-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 32%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #059669, #34d399, #22d3ee);
+  animation: workspace-bar-sweep 1.35s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-workspace-logo,
+  .animate-workspace-dot,
+  .workspace-loading-shimmer,
+  .workspace-loading-bar-fill {
+    animation: none !important;
+  }
+  .workspace-loading-shimmer {
+    color: #a1a1aa;
+    background: none;
+    -webkit-text-fill-color: unset;
+  }
+  .workspace-loading-bar-fill {
+    width: 100%;
+    transform: none;
+    left: 0;
+    right: 0;
+  }
+}
+
 /* Safe area for bottom action bars on iOS */
 .safe-area-bottom {
   padding-bottom: max(1rem, env(safe-area-inset-bottom));
@@ -53,4 +162,17 @@ body {
 .hide-scrollbar {
   -ms-overflow-style: none !important; /* IE and Edge */
   scrollbar-width: none !important; /* Firefox */
+}
+
+/* Employee add/edit forms: native date inputs stay readable and the calendar control works on dark UIs */
+.employee-edit-date-inputs input[type='date'] {
+  color-scheme: light;
+  background-color: #ffffff;
+  color: #0f172a;
+  border-color: #cbd5e1;
+  min-height: 2.25rem;
+}
+.employee-edit-date-inputs input[type='date']::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 1;
 }

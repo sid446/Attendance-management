@@ -13,7 +13,7 @@ interface ArticleCreditRow {
 }
 
 const fetchUsers = async (): Promise<User[]> => {
-  const res = await fetch('/api/users');
+  const res = await fetch('/api/users?listOnly=1');
   const json = await res.json();
   return json.success ? json.data : [];
 };

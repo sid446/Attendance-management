@@ -31,6 +31,8 @@ async function fetchAttendanceForUser(userId: string, monthYear: string) {
 }
 import { LocationAttendanceSection } from '@/components/LocationAttendanceSection';
 import { EmployeeDashboardOverview } from '@/components/EmployeeDashboardOverview';
+import { EmployeeSummaryMonthPicker } from '@/components/EmployeeSummaryMonthPicker';
+import { TeamAttendanceSkeleton } from '@/components/TeamAttendanceSkeleton';
 import {
   PartnerTeamOverview,
   type PartnerTeamRow,
@@ -48,6 +50,7 @@ import {
   PanelLeftClose,
   LayoutDashboard,
   CalendarDays,
+  MapPin,
   Users as UsersIcon,
   ClipboardList,
 } from 'lucide-react';
@@ -107,7 +110,9 @@ const TIMED_CATEGORIES = [
 ];
 
 export default function EmployeeDashboard() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'attendance' | 'employees'>('dashboard');
+  const [activeTab, setActiveTab] = useState<
+    'dashboard' | 'attendance' | 'clientPunch' | 'employees'
+  >('dashboard');
   // Mobile drawer open
   const [sidebarOpen, setSidebarOpen] = useState(false);
   /** Desktop: narrow icon rail vs full labels */
@@ -131,6 +136,8 @@ export default function EmployeeDashboard() {
     >
   >({});
   const [subLoading, setSubLoading] = useState(false);
+  /** Team overview + calendars refetching for a new month (after initial subordinate list exists). */
+  const [teamAttendanceLoading, setTeamAttendanceLoading] = useState(false);
   /** Team tab: scroll here after picking someone from the leaderboard (or overview). */
   const teamSubordinateCalendarRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -241,37 +248,44 @@ export default function EmployeeDashboard() {
       router.push('/employee/login');
       return;
     }
-    const userData = JSON.parse(stored) as Record<string, unknown>;
-    const u = sessionToUser(userData);
-    setUser(u);
-    setAttendanceUser(u);
-    setLoading(false);
+    let userData: Record<string, unknown>;
+    try {
+      userData = JSON.parse(stored) as Record<string, unknown>;
+    } catch {
+      router.push('/employee/login');
+      return;
+    }
 
-    // Initial Load
-    fetchAttendance(u._id, monthYear, u);
-
-    // Fetch subordinates if this user is a partner
-    // Try both by _id and by name
     (async () => {
+      const u = sessionToUser(userData);
+      setUser(u);
+      setAttendanceUser(u);
+
+      // Own attendance loads in parallel; do not reveal the shell until we know if this user has a team (sidebar).
+      fetchAttendance(u._id, monthYear, u);
+
       setSubLoading(true);
-      let subs: User[] = [];
-      // Try by _id
-      subs = await fetchSubordinates(String(userData._id ?? ''));
-      // If none, try by name
-      if (!subs.length && userData.name) {
-        subs = await fetchSubordinates(String(userData.name));
-      }
-      setSubordinates(subs);
-      setSubLoading(false);
-      // Fetch attendance for each subordinate
-      const att: Record<
-        string,
-        {
-          summary: AttendanceSummaryView | null;
-          employeeDays: AttendanceRecord[];
-          userForMetrics?: User;
+      try {
+        let subs: User[] = [];
+        try {
+          subs = await fetchSubordinates(String(userData._id ?? ''));
+          if (!subs.length && userData.name) {
+            subs = await fetchSubordinates(String(userData.name));
+          }
+        } catch {
+          subs = [];
         }
-      > = {};
+        setSubordinates(subs);
+        setLoading(false);
+
+        const att: Record<
+          string,
+          {
+            summary: AttendanceSummaryView | null;
+            employeeDays: AttendanceRecord[];
+            userForMetrics?: User;
+          }
+        > = {};
       for (const sub of subs) {
         const attData = await fetchAttendanceForUser(sub._id, monthYear);
         if (attData) {
@@ -368,7 +382,10 @@ export default function EmployeeDashboard() {
           att[sub._id] = { summary: null, employeeDays: [] };
         }
       }
-      setSubordinateAttendance(att);
+        setSubordinateAttendance(att);
+      } finally {
+        setSubLoading(false);
+      }
     })();
   }, []);
 
@@ -544,6 +561,11 @@ export default function EmployeeDashboard() {
           subs = await fetchSubordinates(user.name);
         }
       }
+      if (subs.length === 0) {
+        setSubordinateAttendance({});
+        return;
+      }
+      setTeamAttendanceLoading(true);
       const att: Record<
         string,
         {
@@ -552,6 +574,7 @@ export default function EmployeeDashboard() {
           userForMetrics?: User;
         }
       > = {};
+      try {
       for (const sub of subs) {
         const attData = await fetchAttendanceForUser(sub._id, val);
         if (attData) {
@@ -648,6 +671,9 @@ export default function EmployeeDashboard() {
         }
       }
       setSubordinateAttendance(att);
+      } finally {
+        setTeamAttendanceLoading(false);
+      }
     })();
   };
 
@@ -981,9 +1007,47 @@ export default function EmployeeDashboard() {
 
   if (loading || !user) {
     return (
-      <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center gap-3 text-zinc-300">
-        <Loader2 className="h-8 w-8 animate-spin text-zinc-500" aria-hidden />
-        <p className="text-sm">Loading your workspace…</p>
+      <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-zinc-950 px-6">
+        <div
+          className="flex flex-col items-center gap-6"
+          role="status"
+          aria-live="polite"
+          aria-label="Loading workspace"
+        >
+          <div className="animate-workspace-logo">
+            <img
+              src="/lg.png"
+              alt=""
+              width={72}
+              height={72}
+              className="h-[4.5rem] w-[4.5rem] object-contain drop-shadow-[0_0_28px_rgba(16,185,129,0.12)]"
+            />
+          </div>
+          <div className="flex items-center justify-center gap-1.5" aria-hidden>
+            <span
+              className="animate-workspace-dot h-2.5 w-2.5 rounded-full bg-emerald-400"
+              style={{ animationDelay: '0ms' }}
+            />
+            <span
+              className="animate-workspace-dot h-2.5 w-2.5 rounded-full bg-sky-400"
+              style={{ animationDelay: '120ms' }}
+            />
+            <span
+              className="animate-workspace-dot h-2.5 w-2.5 rounded-full bg-amber-400"
+              style={{ animationDelay: '240ms' }}
+            />
+            <span
+              className="animate-workspace-dot h-2.5 w-2.5 rounded-full bg-violet-400"
+              style={{ animationDelay: '360ms' }}
+            />
+          </div>
+          <p className="workspace-loading-shimmer text-center text-sm font-medium tracking-tight">
+            Loading your workspace
+          </p>
+          <div className="workspace-loading-bar-track" aria-hidden>
+            <div className="workspace-loading-bar-fill" />
+          </div>
+        </div>
       </div>
     );
   }
@@ -1084,7 +1148,9 @@ export default function EmployeeDashboard() {
                   ? 'Dashboard'
                   : activeTab === 'attendance'
                     ? 'Attendance'
-                    : 'Team'}
+                    : activeTab === 'clientPunch'
+                      ? 'Client location punch'
+                      : 'Team'}
               </h1>
               <p className="truncate text-[11px] text-zinc-500 sm:text-xs">
                 <span className="hidden sm:inline">Asija and Associates LLP · </span>
@@ -1206,10 +1272,23 @@ export default function EmployeeDashboard() {
               setActiveTab('attendance');
               setSidebarOpen(false);
             }}
-            title="Attendance"
+            title="Attendance — monthly calendar"
           >
             <CalendarDays className="h-5 w-5 shrink-0 opacity-90" aria-hidden />
             <span className={desktopSidebarCollapsed ? 'md:sr-only' : ''}>Attendance</span>
+          </button>
+
+          <button
+            type="button"
+            className={navItemClass(activeTab === 'clientPunch')}
+            onClick={() => {
+              setActiveTab('clientPunch');
+              setSidebarOpen(false);
+            }}
+            title="Client location punch"
+          >
+            <MapPin className="h-5 w-5 shrink-0 opacity-90" aria-hidden />
+            <span className={desktopSidebarCollapsed ? 'md:sr-only' : ''}>Client punch</span>
           </button>
 
           {subordinates.length > 0 && (
@@ -1264,16 +1343,7 @@ export default function EmployeeDashboard() {
             )}
 
             {activeTab === 'attendance' && (
-              <>
-                <div className="space-y-2">
-                  <div className="px-0.5">
-                    <h2 className="text-sm font-medium text-zinc-300">Client location punch</h2>
-                    <p className="mt-0.5 text-xs text-zinc-600">
-                      Mark in/out when visiting assigned client sites today.
-                    </p>
-                  </div>
-                  <LocationAttendanceSection userId={user._id} />
-                </div>
+              <section aria-label="Monthly calendar and attendance requests">
                 <EmployeeMonthView
                   summaries={summary ? [summary] : []}
                   users={[user]}
@@ -1291,28 +1361,52 @@ export default function EmployeeDashboard() {
                   onApplyFutureRequest={() => setShowFutureModal(true)}
                   approvedRequests={employeeRequests}
                   showSummaryStrip={false}
-                  sectionTitle="Calendar"
+                  sectionTitle="Monthly calendar"
                   subtitle="Past days: request a correction. Future days: select a range, then apply for leave or other status."
                   sectionClassName="!bg-zinc-900/30 !border-zinc-800/80"
                 />
-              </>
+              </section>
+            )}
+
+            {activeTab === 'clientPunch' && (
+              <section
+                aria-labelledby="client-location-punch-heading"
+                className="rounded-xl border border-zinc-800 bg-zinc-900/40 shadow-sm"
+              >
+                <header className="border-b border-zinc-800/80 bg-zinc-950/30 px-4 py-4 sm:px-5 sm:py-4">
+                  <h2
+                    id="client-location-punch-heading"
+                    className="text-lg font-semibold tracking-tight text-zinc-100"
+                  >
+                    Client location punch
+                  </h2>
+                  <p className="mt-1 text-sm text-zinc-500">
+                    Mark in/out when visiting assigned client sites today (GPS must be on).
+                  </p>
+                </header>
+                <div className="p-4 sm:p-5">
+                  <LocationAttendanceSection userId={user._id} embedded />
+                </div>
+              </section>
             )}
 
             {activeTab === 'employees' && (
               <>
-                <div>
-                  <h2 className="text-lg font-semibold text-zinc-100">Team attendance</h2>
-                  <p className="mt-1 text-sm text-zinc-500">
-                    View monthly calendars for people reporting to you.
-                  </p>
-                </div>
-                {subLoading && (
-                  <div className="flex items-center justify-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/40 py-12 text-sm text-zinc-400">
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                    Loading…
+                <div className="space-y-4">
+                  <div>
+                    <h2 className="text-lg font-semibold text-zinc-100">Team attendance</h2>
+                    <p className="mt-1 text-sm text-zinc-500">
+                      View monthly calendars for people reporting to you.
+                    </p>
                   </div>
-                )}
-                {!subLoading && subordinates.length > 0 && (
+                  <EmployeeSummaryMonthPicker
+                    monthYear={monthYear}
+                    onMonthYearChange={handleMonthChange}
+                    disabled={fetchLoading || subLoading || teamAttendanceLoading}
+                  />
+                </div>
+                {(subLoading || teamAttendanceLoading) && <TeamAttendanceSkeleton />}
+                {!subLoading && !teamAttendanceLoading && subordinates.length > 0 && (
                   <section className="space-y-6">
                     <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 sm:p-5">
                       <PartnerTeamOverview
@@ -1329,10 +1423,6 @@ export default function EmployeeDashboard() {
                           }, 80);
                         }}
                       />
-                      <p className="mt-4 border-t border-zinc-800/80 pt-3 text-[11px] text-zinc-600">
-                        Month matches your Dashboard and Attendance tabs — change the month there to
-                        refresh team data.
-                      </p>
                     </div>
                     <div className="flex max-w-md flex-col gap-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
                       <label htmlFor="search-subordinate" className="text-xs font-medium uppercase tracking-wide text-zinc-500">
@@ -1411,7 +1501,7 @@ export default function EmployeeDashboard() {
                     </div>
                   </section>
                 )}
-                {!subLoading && subordinates.length === 0 && (
+                {!subLoading && !teamAttendanceLoading && subordinates.length === 0 && (
                   <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 py-12 text-center text-sm text-zinc-500">
                     No team members are linked to your profile.
                   </div>
