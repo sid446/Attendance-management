@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AttendanceSummaryView, User, DailySchedule, ScheduleTime } from '@/types/ui';
-import { Search, Calendar, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, BarChart3, Users, Clock, AlertCircle, TrendingUp, UserX, UserCheck, Download, ListChecks, X, Eye } from 'lucide-react';
+import { Search, Calendar, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, BarChart3, Users, Clock, AlertCircle, UserX, Download, ListChecks, X, Eye, Filter, Maximize2, Minimize2 } from 'lucide-react';
 import { BulkLeaveManager } from './BulkLeaveManager';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -39,6 +39,8 @@ function sortRecordDetailsEntries<T>(recordDetails: Record<string, T> | undefine
   });
 }
 
+const SUMMARY_WORKFLOW_STEPS = ['Pick period', 'Search or filter', 'Export or drill in'] as const;
+
 interface DetailModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -49,40 +51,67 @@ interface DetailModalProps {
 const DetailModal: React.FC<DetailModalProps> = ({ isOpen, onClose, title, data }) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
-      <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
-        <div className="bg-slate-950 px-4 py-3 border-b border-slate-800 flex justify-between items-center shrink-0">
-            <h3 className="font-semibold text-slate-100">{title}</h3>
-            <button onClick={onClose} className="text-slate-500 hover:text-white"><X className="w-5 h-5"/></button>
+    <div
+      className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="summary-detail-modal-title"
+      >
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+          <h3 id="summary-detail-modal-title" className="text-sm font-semibold text-slate-900">
+            {title}
+          </h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
-        <div className="overflow-y-auto p-2 flex-1">
-            {data.length === 0 ? (
-                <div className="text-center py-6 text-slate-500">No records found</div>
-            ) : (
-                <div className="flex flex-col gap-1">
-                    {data.map((d, i) => (
-                        <div
-                          key={i}
-                          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-2 hover:bg-slate-800/50 rounded-lg text-sm transition-colors border border-transparent hover:border-slate-800"
-                        >
-                             <div className="flex items-center gap-3 shrink-0">
-                                <div className="font-mono text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded text-xs whitespace-nowrap">{d.date}</div>
-                                {d.subInfo && (
-                                  <span className="text-amber-400/70 text-[10px] bg-amber-400/5 px-1.5 py-0.5 rounded border border-amber-400/10 whitespace-nowrap">
-                                    {d.subInfo}
-                                  </span>
-                                )}
-                             </div>
-                             <div className="font-mono font-medium text-slate-300 flex-1 text-left wrap-break-word leading-relaxed">
-                               {d.info}
-                             </div>
-                        </div>
-                    ))}
+        <div className="max-h-[min(60vh,480px)] flex-1 overflow-y-auto p-3">
+          {data.length === 0 ? (
+            <div className="py-8 text-center text-sm text-slate-500">No records found</div>
+          ) : (
+            <div className="flex flex-col gap-0.5">
+              {data.map((d, i) => (
+                <div
+                  key={i}
+                  className="flex flex-col gap-2 rounded-md border border-transparent px-3 py-2.5 text-sm transition-colors hover:border-slate-200 hover:bg-slate-50 sm:flex-row sm:items-start sm:justify-between"
+                >
+                  <div className="flex shrink-0 items-center gap-2">
+                    <div className="whitespace-nowrap rounded border border-slate-200 bg-white px-2 py-0.5 font-mono text-xs text-slate-800">
+                      {d.date}
+                    </div>
+                    {d.subInfo && (
+                      <span className="whitespace-nowrap rounded border border-slate-200 px-1.5 py-0.5 text-[11px] text-slate-600">
+                        {d.subInfo}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex-1 text-left font-mono text-xs leading-relaxed text-slate-600 wrap-break-word">
+                    {d.info}
+                  </div>
                 </div>
-            )}
+              ))}
+            </div>
+          )}
         </div>
-        <div className="bg-slate-950 px-4 py-2 border-t border-slate-800 text-right shrink-0">
-            <button onClick={onClose} className="text-xs text-slate-400 hover:text-white px-3 py-1.5 rounded-md hover:bg-slate-800 transition-colors">Close</button>
+        <div className="flex shrink-0 justify-end border-t border-slate-200 bg-slate-50 px-4 py-2.5">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+          >
+            Close
+          </button>
         </div>
       </div>
     </div>
@@ -163,6 +192,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
   });
 
   const [isBulkManagerOpen, setIsBulkManagerOpen] = useState(false);
+  const [summaryTableFullscreen, setSummaryTableFullscreen] = useState(false);
 
   // Schedule Helper Function
   const getApplicableSchedule = (item: AttendanceSummaryView, date?: string): ScheduleEntry | undefined => {
@@ -1483,6 +1513,20 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     isLoading,
     displayedSummaries.length,
   ]);
+
+  useEffect(() => {
+    if (!summaryTableFullscreen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSummaryTableFullscreen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [summaryTableFullscreen]);
 
   // Calculate Aggregates for the Dashboard
   const stats = useMemo(() => {
@@ -3221,44 +3265,53 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     if (!isOpen) return null;
 
     return (
-      <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
-        <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
-          <div className="bg-slate-950 px-4 py-3 border-b border-slate-800 flex justify-between items-center shrink-0">
-              <h3 className="font-semibold text-slate-100">Select Date Range</h3>
-              <button onClick={onClose} className="text-slate-500 hover:text-white"><X className="w-5 h-5"/></button>
+      <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm" onClick={onClose} role="presentation">
+        <div
+          className="flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
+          onClick={(e) => e.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="summary-range-modal-title"
+        >
+          <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+              <h3 id="summary-range-modal-title" className="text-sm font-semibold text-slate-900">
+                Custom date range
+              </h3>
+              <button type="button" onClick={onClose} className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800" aria-label="Close"><X className="w-4 h-4"/></button>
           </div>
           <div className="p-4 flex-1">
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              <button onClick={setLast3Months} className="px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-md">Last 3 Months</button>
-              <button onClick={setLast6Months} className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm rounded-md">Last 6 Months</button>
-              <button onClick={setLast12Months} className="px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded-md">Last 12 Months</button>
-              <button onClick={setLastMonth} className="px-3 py-2 bg-orange-600 hover:bg-orange-500 text-white text-sm rounded-md">Last Month</button>
-              <button onClick={setCurrentMonth} className="px-3 py-2 bg-green-600 hover:bg-green-500 text-white text-sm rounded-md col-span-2">Current Month</button>
+            <p className="text-xs text-slate-500 mb-3">Pick a preset or choose start and end dates.</p>
+            <div className="grid grid-cols-2 gap-2 mb-5">
+              <button type="button" onClick={setLast3Months} className="px-3 py-2 text-sm rounded-md border border-slate-200 bg-white text-slate-800 hover:bg-slate-100 transition-colors">Last 3 months</button>
+              <button type="button" onClick={setLast6Months} className="px-3 py-2 text-sm rounded-md border border-slate-200 bg-white text-slate-800 hover:bg-slate-100 transition-colors">Last 6 months</button>
+              <button type="button" onClick={setLast12Months} className="px-3 py-2 text-sm rounded-md border border-slate-200 bg-white text-slate-800 hover:bg-slate-100 transition-colors">Last 12 months</button>
+              <button type="button" onClick={setLastMonth} className="px-3 py-2 text-sm rounded-md border border-slate-200 bg-white text-slate-800 hover:bg-slate-100 transition-colors">Last month</button>
+              <button type="button" onClick={setCurrentMonth} className="px-3 py-2 text-sm rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100/80 transition-colors col-span-2">This month</button>
             </div>
-            <div className="mb-4">
-              <h4 className="text-slate-300 mb-2">Custom Range</h4>
-              <div className="flex gap-2 mb-2">
+            <div className="space-y-3">
+              <h4 className="text-xs font-medium uppercase tracking-wide text-slate-500">Start and end</h4>
+              <div>
                 <DatePicker
                   selected={new Date(customStartDate)}
                   onChange={(date: Date | null) => date && setCustomStartDate(date.toISOString().split('T')[0])}
-                  className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-md px-3 py-2 w-full"
+                  className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                   dateFormat="yyyy-MM-dd"
                 />
               </div>
-              <div className="text-center text-slate-500 mb-2">to</div>
-              <div className="flex gap-2">
+              <div className="text-center text-xs text-slate-500">to</div>
+              <div>
                 <DatePicker
                   selected={new Date(customEndDate)}
                   onChange={(date: Date | null) => date && setCustomEndDate(date.toISOString().split('T')[0])}
-                  className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-md px-3 py-2 w-full"
+                  className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                   dateFormat="yyyy-MM-dd"
                 />
               </div>
-              <button onClick={applyCustom} className="w-full mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-md">Apply Custom Range</button>
+              <button type="button" onClick={applyCustom} className="w-full mt-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors">Apply range</button>
             </div>
           </div>
-          <div className="bg-slate-950 px-4 py-2 border-t border-slate-800 text-right shrink-0">
-              <button onClick={onClose} className="text-xs text-slate-400 hover:text-white px-3 py-1.5 rounded-md hover:bg-slate-800 transition-colors">Close</button>
+          <div className="px-4 py-2.5 border-t border-slate-200 flex justify-end shrink-0 bg-slate-50">
+              <button type="button" onClick={onClose} className="text-sm text-slate-600 hover:text-slate-800 px-3 py-1.5 rounded-md hover:bg-slate-100 transition-colors">Cancel</button>
           </div>
         </div>
       </div>
@@ -3274,12 +3327,12 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       onChange: (filter: {operator: string, value: number}) => void;
     }> = ({label, filter, onChange}) => (
       <div className="space-y-2">
-        <label className="block text-sm font-medium text-slate-300">{label}</label>
+        <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">{label}</label>
         <div className="flex gap-2">
           <select
             value={filter.operator}
             onChange={(e) => onChange({...filter, operator: e.target.value})}
-            className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-md px-2 py-1 flex-1"
+            className="flex-1 rounded-md border border-slate-200 bg-white px-2 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
           >
             <option value="all">All</option>
             <option value="equals">=</option>
@@ -3295,7 +3348,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
               step="0.5"
               value={filter.value}
               onChange={(e) => onChange({...filter, value: parseFloat(e.target.value) || 0})}
-              className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-md px-2 py-1 w-20"
+              className="w-24 rounded-md border border-slate-200 bg-white px-2 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
               placeholder="0"
             />
           )}
@@ -3304,26 +3357,37 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     );
 
     return (
-      <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
-        <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
-          <div className="bg-slate-950 px-4 py-3 border-b border-slate-800 flex justify-between items-center shrink-0">
-              <h3 className="font-semibold text-slate-100">Advanced Filters</h3>
-              <button onClick={onClose} className="text-slate-500 hover:text-white"><X className="w-5 h-5"/></button>
+      <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm" onClick={onClose} role="presentation">
+        <div
+          className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
+          onClick={(e) => e.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="summary-advanced-filters-title"
+        >
+          <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+              <h3 id="summary-advanced-filters-title" className="text-sm font-semibold text-slate-900">
+                Refine results
+              </h3>
+              <button type="button" onClick={onClose} className="rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800" aria-label="Close"><X className="w-4 h-4"/></button>
           </div>
           <div className="p-4 flex-1 overflow-y-auto">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Basic Filters */}
               <div className="space-y-4">
-                <h4 className="text-slate-200 font-medium border-b border-slate-700 pb-2">Basic Filters</h4>
+                <h4 className="text-xs font-medium uppercase tracking-wide text-slate-500 border-b border-slate-200 pb-2">Organization</h4>
                 
                 <div className="space-y-2">
-                  <label className="block text-sm font-medium text-slate-300">Team</label>
+                  <label htmlFor="summary-filter-team" className="block text-xs font-medium text-slate-600">
+                    Team
+                  </label>
                   <select
+                    id="summary-filter-team"
                     value={teamFilter}
                     onChange={(e) => setTeamFilter(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-md px-3 py-2"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                   >
-                    <option value="all">All Teams</option>
+                    <option value="all">All teams</option>
                     {getUniqueTeams().map(team => (
                       <option key={team} value={team}>{team}</option>
                     ))}
@@ -3331,13 +3395,16 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-medium text-slate-300">Designation</label>
+                  <label htmlFor="summary-filter-designation" className="block text-xs font-medium text-slate-600">
+                    Designation
+                  </label>
                   <select
+                    id="summary-filter-designation"
                     value={designationFilter}
                     onChange={(e) => setDesignationFilter(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-md px-3 py-2"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                   >
-                    <option value="all">All Designations</option>
+                    <option value="all">All designations</option>
                     {getUniqueDesignations().map(designation => (
                       <option key={designation} value={designation}>{designation}</option>
                     ))}
@@ -3347,7 +3414,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
 
               {/* Numeric Filters */}
               <div className="space-y-4">
-                <h4 className="text-slate-200 font-medium border-b border-slate-700 pb-2">Numeric Filters</h4>
+                <h4 className="text-xs font-medium uppercase tracking-wide text-slate-500 border-b border-slate-200 pb-2">Metrics</h4>
                 
                 <NumericFilterInput
                   label="Late Arrivals"
@@ -3393,25 +3460,28 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
               </div>
             </div>
           </div>
-          <div className="bg-slate-950 px-4 py-3 border-t border-slate-800 flex justify-between items-center shrink-0">
+          <div className="px-4 py-3 border-t border-slate-200 flex justify-between items-center shrink-0 bg-slate-50">
             <button
+              type="button"
               onClick={clearAllFilters}
-              className="px-4 py-2 text-slate-400 hover:text-slate-200 text-sm rounded-md hover:bg-slate-800 transition-colors"
+              className="px-3 py-2 text-sm text-slate-600 hover:text-slate-800 rounded-md hover:bg-slate-100 transition-colors"
             >
-              Clear All
+              Clear all
             </button>
             <div className="flex gap-2">
               <button
+                type="button"
                 onClick={onClose}
-                className="px-4 py-2 text-slate-400 hover:text-slate-200 text-sm rounded-md hover:bg-slate-800 transition-colors"
+                className="px-3 py-2 text-sm text-slate-600 hover:text-slate-800 rounded-md hover:bg-slate-100 transition-colors"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={onClose}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-md transition-colors"
+                className="px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
               >
-                Apply Filters
+                Done
               </button>
             </div>
           </div>
@@ -3421,320 +3491,387 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
   };
 
   return (
-    <div className="space-y-6">
-      {/* 1. Control Bar */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex flex-col md:flex-row justify-between items-center gap-4">
-        <div className="flex items-center gap-4">
-           {/* Date Navigation */}
-           <div className="flex items-center bg-slate-950 rounded-lg border border-slate-800 p-1">
-              <button onClick={filterType === 'week' ? handlePrevWeek : handlePrevMonth} className="p-2 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white transition-colors">
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              
-              <div className="px-4 flex items-center gap-2 font-medium text-slate-200 min-w-35 justify-center">
-                <Calendar className="w-4 h-4 text-emerald-500" />
-                <span>{currentPeriodLabel}</span>
-              </div>
+    <section className="space-y-5 text-slate-900" aria-labelledby="attendance-summary-heading">
+      {/* Page header — title, hint, workflow */}
+      <header className="space-y-2">
+        <h1 id="attendance-summary-heading" className="text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">
+          Attendance summary
+        </h1>
+        <p className="max-w-3xl text-sm text-slate-600">
+          Review team totals for the selected period. Search by name, open a row for the monthly calendar, or export for reporting.
+          <span className="text-slate-400"> · </span>
+          <span className="font-medium text-slate-800">{currentPeriodLabel}</span>
+        </p>
+        <ol className="flex list-none flex-wrap gap-2 text-xs text-slate-700" aria-label="Summary workflow">
+          {SUMMARY_WORKFLOW_STEPS.map((t, i) => (
+            <li
+              key={t}
+              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1"
+            >
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+                {i + 1}
+              </span>
+              {t}
+            </li>
+          ))}
+        </ol>
+      </header>
 
-              <button onClick={filterType === 'week' ? handleNextWeek : handleNextMonth} className="p-2 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white transition-colors">
-                <ChevronRight className="w-4 h-4" />
+      {/* Period + scope */}
+      <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+            <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5" role="group" aria-label="Period type">
+              <button
+                type="button"
+                onClick={switchToMonth}
+                className={`rounded px-3 py-1.5 text-sm font-medium transition-colors ${
+                  filterType === 'month' ? 'bg-slate-200 text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Month
               </button>
-           </div>
-           
-           {/* Year/Month Manual Selectors (Hidden in week mode) */}
-           {filterType !== 'week' && (
-             <div className="flex gap-2">
-               <select 
-                 value={selectedYear} 
-                 onChange={(e) => setSelectedYear(Number(e.target.value))}
-                 className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-md px-3 py-2 outline-none focus:border-emerald-500"
-               >
-                 {Array.from({ length: 5 }, (_, i) => currentDate.getFullYear() - 2 + i).map(y => (
-                   <option key={y} value={y}>{y}</option>
-                 ))}
-               </select>
-               <select 
-                  value={selectedMonth} 
+              <button
+                type="button"
+                onClick={() => setFilterType('week')}
+                className={`rounded px-3 py-1.5 text-sm font-medium transition-colors ${
+                  filterType === 'week' ? 'bg-slate-200 text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Week
+              </button>
+              <button
+                type="button"
+                onClick={() => setRangeModalOpen(true)}
+                className={`rounded px-3 py-1.5 text-sm font-medium transition-colors ${
+                  filterType === 'range' ? 'bg-slate-200 text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Custom range
+              </button>
+            </div>
+
+            <div className="flex items-center rounded-md border border-slate-200 bg-white">
+              <button
+                type="button"
+                onClick={filterType === 'week' ? handlePrevWeek : handlePrevMonth}
+                className="p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800 rounded-l-md transition-colors"
+                aria-label="Previous period"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <div className="flex min-w-0 items-center gap-2 px-3 py-2 text-sm text-slate-800">
+                <Calendar className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+                <span className="truncate font-medium">{currentPeriodLabel}</span>
+              </div>
+              <button
+                type="button"
+                onClick={filterType === 'week' ? handleNextWeek : handleNextMonth}
+                className="p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800 rounded-r-md transition-colors"
+                aria-label="Next period"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            {filterType !== 'week' && (
+              <div className="flex gap-2">
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                  aria-label="Year"
+                >
+                  {Array.from({ length: 5 }, (_, i) => currentDate.getFullYear() - 2 + i).map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={selectedMonth}
                   onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                  className="bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-md px-3 py-2 outline-none focus:border-emerald-500"
-               >
-                 {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
-                   <option key={m} value={m}>{new Date(2000, m-1, 1).toLocaleString('default', { month: 'short' })}</option>
-                 ))}
-               </select>
-             </div>
-           )}
-
-            {filterType === 'month' ? (
-              <div className="flex gap-2">
-                <div className="flex flex-col items-center gap-1">
-                  <button onClick={() => setFilterType('week')} className="p-2 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white transition-colors" title="Switch to Week View">
-                    <Calendar className="w-4 h-4" />
-                  </button>
-                  <span className="text-xs text-slate-400">Week</span>
-                </div>
-                <div className="flex flex-col items-center gap-1">
-                  <button onClick={() => setRangeModalOpen(true)} className="p-2 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white transition-colors" title="Switch to Range View">
-                    <Calendar className="w-4 h-4" />
-                  </button>
-                  <span className="text-xs text-slate-400">Range</span>
-                </div>
-              </div>
-            ) : filterType === 'week' ? (
-              <div className="flex gap-2">
-                <div className="flex flex-col items-center gap-1">
-                  <button onClick={switchToMonth} className="p-2 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white transition-colors" title="Switch to Month View">
-                    <Calendar className="w-4 h-4" />
-                  </button>
-                  <span className="text-xs text-slate-400">Month</span>
-                </div>
-                <div className="flex flex-col items-center gap-1">
-                  <button onClick={() => setRangeModalOpen(true)} className="p-2 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white transition-colors" title="Switch to Range View">
-                    <Calendar className="w-4 h-4" />
-                  </button>
-                  <span className="text-xs text-slate-400">Range</span>
-                </div>
-              </div>
-            ) : (
-              <div className="flex gap-2">
-                <div className="flex flex-col items-center gap-1">
-                  <button onClick={switchToMonth} className="p-2 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white transition-colors" title="Switch to Month View">
-                    <Calendar className="w-4 h-4" />
-                  </button>
-                  <span className="text-xs text-slate-400">Month</span>
-                </div>
-                <div className="flex flex-col items-center gap-1">
-                  <button onClick={() => setFilterType('week')} className="p-2 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white transition-colors" title="Switch to Week View">
-                    <Calendar className="w-4 h-4" />
-                  </button>
-                  <span className="text-xs text-slate-400">Week</span>
-                </div>
+                  className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                  aria-label="Month"
+                >
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                    <option key={m} value={m}>
+                      {new Date(2000, m - 1, 1).toLocaleString('default', { month: 'long' })}
+                    </option>
+                  ))}
+                </select>
               </div>
             )}
-        </div>
+          </div>
 
-        {/* Search & Export */}
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <div className="relative flex-1 md:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+          <div className="relative w-full lg:max-w-xs">
+            <label htmlFor="summary-employee-search" className="sr-only">
+              Search by employee name or code
+            </label>
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden />
             <input
-              type="text"
-              placeholder="Search employee..."
+              id="summary-employee-search"
+              type="search"
+              placeholder="Search by employee name or code"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-full pl-10 pr-4 py-2 outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 placeholder:text-slate-600"
+              className="w-full rounded-md border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-800 shadow-sm outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
             />
           </div>
-          <div className="flex flex-col items-center gap-1">
-            <button 
-              onClick={handleExport}
-              className="p-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-full transition-colors shadow-sm"
-              title="Export Summary to Excel"
-            >
-              <Download className="w-4 h-4" />
-            </button>
-            <span className="text-xs text-slate-400">Summary</span>
-          </div>
+        </div>
 
-          <div className="flex flex-col items-center gap-1">
-            <button 
-              onClick={handleDetailedExport}
-              className="p-2 bg-purple-600 hover:bg-purple-500 text-white rounded-full transition-colors shadow-sm"
-              title="Export Detailed Attendance Summary to Excel"
-            >
-              <Download className="w-4 h-4" />
-            </button>
-            <span className="text-xs text-slate-400">Detailed</span>
-          </div>
-
-          <div className="flex flex-col items-center gap-1">
-            <button 
-              onClick={handleDayWiseExport}
-              disabled={selectedEmployees.size === 0}
-              className="p-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-400 text-white rounded-full transition-colors shadow-sm"
-              title="Export Day-wise Attendance for Selected Employees"
-            >
-              <Download className="w-4 h-4" />
-            </button>
-            <span className="text-xs text-slate-400">Day-wise</span>
-          </div>
-          
-          <div className="flex flex-col items-center gap-1">
-            <button 
-              onClick={() => setIsBulkManagerOpen(true)}
-              className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-full transition-colors border border-slate-700"
-              title="Bulk Manage Absent/Leave"
-            >
-              <ListChecks className="w-4 h-4" />
-            </button>
-            <span className="text-xs text-slate-400">Status</span>
-          </div>
-
-          <div className="flex flex-col items-center gap-1">
-            <button 
-              onClick={() => setShowAdvancedFilters(true)}
-              className={`p-2 rounded-full transition-colors border shadow-sm ${
-                hasActiveFilters() 
-                  ? 'bg-blue-600 hover:bg-blue-500 text-white border-blue-600' 
-                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border-slate-700'
-              }`}
-              title="Advanced Filters"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-              </svg>
-            </button>
-            <span className="text-xs text-slate-400">Filters</span>
-          </div>
+        <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-200 pt-4">
+          <button
+            type="button"
+            onClick={handleExport}
+            className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 transition-colors"
+          >
+            <Download className="h-4 w-4 text-slate-500" />
+            Export summary
+          </button>
+          <button
+            type="button"
+            onClick={handleDetailedExport}
+            className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 transition-colors"
+          >
+            <Download className="h-4 w-4 text-slate-500" />
+            Export detailed
+          </button>
+          <button
+            type="button"
+            onClick={handleDayWiseExport}
+            disabled={selectedEmployees.size === 0}
+            className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
+            title={selectedEmployees.size === 0 ? 'Select one or more rows first' : undefined}
+          >
+            <Download className="h-4 w-4 text-slate-500" />
+            Day-wise (selected)
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsBulkManagerOpen(true)}
+            className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 transition-colors"
+          >
+            <ListChecks className="h-4 w-4 text-slate-500" />
+            Bulk status
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowAdvancedFilters(true)}
+            className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+              hasActiveFilters()
+                ? 'border-blue-500/50 bg-blue-50 text-blue-700 hover:bg-blue-100/80'
+                : 'border-slate-200 bg-white text-slate-800 hover:bg-slate-100'
+            }`}
+          >
+            <Filter className="h-4 w-4 text-slate-500" />
+            Filters
+          </button>
         </div>
       </div>
 
-      {/* 2. Dashboard Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-slate-900/40 border border-slate-800 rounded-lg p-4 flex items-center gap-4">
-           <div className="p-3 bg-emerald-500/10 rounded-full text-emerald-400">
-             <Users className="w-6 h-6" />
-           </div>
-           <div>
-             <div className="text-2xl font-bold text-slate-100">{stats.totalEmployees}</div>
-             <div className="text-xs text-slate-400 uppercase tracking-wider font-medium">Active Employees</div>
-           </div>
+      {/* KPI strip — calm metrics */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm">
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">People in view</p>
+            <Users className="h-4 w-4 text-slate-500" aria-hidden />
+          </div>
+          <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{stats.totalEmployees}</p>
         </div>
-
-        <div className="bg-slate-900/40 border border-slate-800 rounded-lg p-4 flex items-center gap-4">
-           <div className="p-3 bg-amber-500/10 rounded-full text-amber-400">
-             <AlertCircle className="w-6 h-6" />
-           </div>
-           <div>
-             <div className="text-2xl font-bold text-slate-100">{stats.totalLate}</div>
-             <div className="text-xs text-slate-400 uppercase tracking-wider font-medium">Late Arrivals</div>
-           </div>
+        <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm">
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Late arrivals</p>
+            <AlertCircle className="h-4 w-4 text-slate-500" aria-hidden />
+          </div>
+          <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{stats.totalLate}</p>
         </div>
-
-        <div className="bg-slate-900/40 border border-slate-800 rounded-lg p-4 flex items-center gap-4">
-           <div className="p-3 bg-rose-500/10 rounded-full text-rose-400">
-             <UserX className="w-6 h-6" />
-           </div>
-           <div>
-             <div className="text-2xl font-bold text-slate-100">{stats.totalAbsents}</div>
-             <div className="text-xs text-slate-400 uppercase tracking-wider font-medium">Absences</div>
-           </div>
+        <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm">
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Absence days</p>
+            <UserX className="h-4 w-4 text-slate-500" aria-hidden />
+          </div>
+          <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{stats.totalAbsents}</p>
         </div>
-
-         <div className="bg-slate-900/40 border border-slate-800 rounded-lg p-4 flex items-center gap-4">
-           <div className="p-3 bg-indigo-500/10 rounded-full text-indigo-400">
-             <Clock className="w-6 h-6" />
-           </div>
-           <div>
-             <div className="text-2xl font-bold text-slate-100">{formatHoursMinutes(stats.totalHours)}</div>
-             <div className="text-xs text-slate-400 uppercase tracking-wider font-medium">Total Man-Hours</div>
-           </div>
+        <div className="col-span-2 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm lg:col-span-1">
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Total hours logged</p>
+            <Clock className="h-4 w-4 text-slate-500" aria-hidden />
+          </div>
+          <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{formatHoursMinutes(stats.totalHours)}</p>
         </div>
       </div>
 
-      {/* 3. Detailed Data Table */}
-      <section className="bg-slate-900/60 border border-slate-800 rounded-xl shadow-sm overflow-hidden">
+      {/* Employee table */}
+      <section className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm" aria-labelledby="summary-employees-heading">
+        <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 id="summary-employees-heading" className="text-sm font-semibold text-slate-900">
+              Employees
+            </h2>
+            <p className="text-xs text-slate-500">
+              {isLoading ? 'Loading…' : `${filteredSummaries.length} in this period`}
+              {!isLoading && filteredSummaries.length > 0 && displayedSummaries.length < filteredSummaries.length && (
+                <span className="text-slate-500"> · Showing {displayedSummaries.length}</span>
+              )}
+            </p>
+          </div>
+          {!isLoading && filteredSummaries.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setSummaryTableFullscreen(true)}
+              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:border-slate-300 hover:bg-slate-100"
+              title="Open table full screen to scroll all columns"
+            >
+              <Maximize2 className="h-4 w-4 text-slate-500" aria-hidden />
+              Full screen
+            </button>
+          )}
+        </div>
         {isLoading ? (
-          <div className="p-12 text-center text-slate-500 flex flex-col items-center gap-3">
-             <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-             <p>Loading summary data...</p>
+          <div className="flex flex-col items-center gap-3 px-4 py-14 text-center text-sm text-slate-500">
+             <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" aria-hidden />
+             <p>Loading summary…</p>
           </div>
         ) : filteredSummaries.length === 0 ? (
-          <div className="p-12 text-center text-slate-500 flex flex-col items-center gap-3">
-            <BarChart3 className="w-10 h-10 opacity-20" />
-            <p>No attendance records found for {currentPeriodLabel}.</p>
-            {uploadTotal > 0 && <p className="text-xs opacity-60">Last upload: {uploadSaved} saved, {uploadFailed} failed.</p>}
+          <div className="flex flex-col items-center gap-3 px-4 py-14 text-center text-sm text-slate-500">
+            <BarChart3 className="h-10 w-10 text-slate-400" aria-hidden />
+            <p>No rows for <span className="text-slate-600">{currentPeriodLabel}</span>.</p>
+            {uploadTotal > 0 && (
+              <p className="text-xs text-slate-500">Last upload: {uploadSaved} saved, {uploadFailed} failed.</p>
+            )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className="bg-slate-950 border-b border-slate-800">
+          <>
+            {summaryTableFullscreen && (
+              <div className="min-h-[min(70dvh,520px)] rounded-md border border-dashed border-slate-200 bg-slate-50/70 px-4 py-8 text-center">
+                <p className="text-sm text-slate-500">Table is open in full screen.</p>
+                <button
+                  type="button"
+                  onClick={() => setSummaryTableFullscreen(false)}
+                  className="mt-2 text-sm font-medium text-blue-700 hover:underline"
+                >
+                  Return here
+                </button>
+              </div>
+            )}
+            <div
+              className={
+                summaryTableFullscreen
+                  ? 'fixed inset-0 z-50 flex flex-col bg-slate-100'
+                  : 'overflow-x-auto'
+              }
+            >
+              {summaryTableFullscreen && (
+                <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-900">Employees — full screen</p>
+                    <p className="truncate text-xs text-slate-500">
+                      Scroll horizontally for all columns · {currentPeriodLabel} · Esc to close
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSummaryTableFullscreen(false)}
+                    className="inline-flex shrink-0 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
+                  >
+                    <Minimize2 className="h-4 w-4 text-slate-500" aria-hidden />
+                    Exit
+                  </button>
+                </div>
+              )}
+              <div className={summaryTableFullscreen ? 'min-h-0 flex-1 overflow-auto' : undefined}>
+            <table className={`w-full text-left text-sm ${summaryTableFullscreen ? 'min-w-[1280px]' : 'min-w-[1100px]'}`}>
+              <thead className="border-b border-slate-200 bg-slate-50">
                 <tr>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-400">
+                  <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
                     <input
                       type="checkbox"
                       checked={selectedEmployees.size === filteredSummaries.length && filteredSummaries.length > 0}
                       onChange={(e) => handleSelectAll(e.target.checked)}
-                      className="rounded border-slate-600 text-emerald-600 focus:ring-emerald-500"
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500/40"
+                      aria-label="Select all rows"
                     />
                   </th>
-                  <th className="px-2 py-3 text-center font-semibold text-slate-400">View</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-400 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('employeeCode')}>
-                    <div className="flex items-center gap-1">Emp Code{sortField === 'employeeCode' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
+                  <th className="px-2 py-2.5 text-center text-xs font-medium uppercase tracking-wide text-slate-500">Open</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-slate-500 cursor-pointer hover:bg-slate-100 select-none" onClick={() => handleSort('employeeCode')}>
+                    <div className="flex items-center gap-1">Code{sortField === 'employeeCode' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-300 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('userName')}>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-slate-600 cursor-pointer hover:bg-slate-100 select-none" onClick={() => handleSort('userName')}>
                     <div className="flex items-center gap-1">Employee{sortField === 'userName' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-400 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('team')}>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-slate-500 cursor-pointer hover:bg-slate-100 select-none" onClick={() => handleSort('team')}>
                     <div className="flex items-center gap-1">Team{sortField === 'team' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-400 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('designation')}>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-slate-500 cursor-pointer hover:bg-slate-100 select-none" onClick={() => handleSort('designation')}>
                     <div className="flex items-center gap-1">Designation{sortField === 'designation' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
-                  <th className="px-4 py-3 text-right font-semibold text-slate-400">Total Days</th>
-                  <th className="px-4 py-3 text-right font-semibold text-slate-400">Holidays</th>
-                  <th className="px-4 py-3 text-right font-semibold text-slate-400">Working Days</th>
-                  <th className="px-4 py-3 text-right font-semibold text-emerald-300 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('totalPresent')}>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-slate-500">Days</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-slate-500">Holidays</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-slate-500">Working</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-slate-600 cursor-pointer hover:bg-slate-100 select-none" onClick={() => handleSort('totalPresent')}>
                     <div className="flex items-center gap-1 justify-end">Present{sortField === 'totalPresent' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
-                  <th className="px-4 py-3 text-right font-semibold text-slate-300 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('totalHalfDay')}>
-                    <div className="flex items-center gap-1 justify-end">Half Days{sortField === 'totalHalfDay' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-slate-500 cursor-pointer hover:bg-slate-100 select-none" onClick={() => handleSort('totalHalfDay')}>
+                    <div className="flex items-center gap-1 justify-end">Half{sortField === 'totalHalfDay' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
-                  <th className="px-4 py-3 text-right font-semibold text-rose-300 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('totalAbsent')}>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-slate-500 cursor-pointer hover:bg-slate-100 select-none" onClick={() => handleSort('totalAbsent')}>
                     <div className="flex items-center gap-1 justify-end">Absent{sortField === 'totalAbsent' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
-                  <th className="px-4 py-3 text-right font-semibold text-amber-300/90 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('calcLate')}>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-slate-500 cursor-pointer hover:bg-slate-100 select-none" onClick={() => handleSort('calcLate')}>
                     <div className="flex items-center gap-1 justify-end">Late{sortField === 'calcLate' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
-                  <th className="px-4 py-3 text-right font-semibold text-sky-400 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('totalLeave')}>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-slate-500 cursor-pointer hover:bg-slate-100 select-none" onClick={() => handleSort('totalLeave')}>
                     <div className="flex items-center gap-1 justify-end">Leave{sortField === 'totalLeave' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
-                  <th className="px-4 py-3 text-right font-semibold text-slate-400 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('calcScheduled')}>
-                    <div className="flex items-center gap-1 justify-end">Scheduled{sortField === 'calcScheduled' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-slate-500 cursor-pointer hover:bg-slate-100 select-none" onClick={() => handleSort('calcScheduled')}>
+                    <div className="flex items-center gap-1 justify-end">Sched.{sortField === 'calcScheduled' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
-                  <th className="px-4 py-3 text-right font-semibold text-blue-300/90 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('definedSchedule')}>
-                    <div className="flex items-center gap-1 justify-end">Defined Work Hour{sortField === 'definedSchedule' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-slate-500 cursor-pointer hover:bg-slate-100 select-none" onClick={() => handleSort('definedSchedule')}>
+                    <div className="flex items-center gap-1 justify-end">Defined{sortField === 'definedSchedule' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
-                  <th className="px-4 py-3 text-right font-semibold text-slate-300 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('totalHour')}>
-                    <div className="flex items-center gap-1 justify-end">Work Hours{sortField === 'totalHour' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-slate-500 cursor-pointer hover:bg-slate-100 select-none" onClick={() => handleSort('totalHour')}>
+                    <div className="flex items-center gap-1 justify-end">Worked{sortField === 'totalHour' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
-                  <th className="px-4 py-3 text-right font-semibold text-emerald-300/90 cursor-pointer hover:bg-slate-800/60 select-none" onClick={() => handleSort('calcExcessDeficit')}>
-                    <div className="flex items-center gap-1 justify-end">Excess{sortField === 'calcExcessDeficit' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-slate-600 cursor-pointer hover:bg-slate-100 select-none" onClick={() => handleSort('calcExcessDeficit')}>
+                    <div className="flex items-center gap-1 justify-end">+/− hrs{sortField === 'calcExcessDeficit' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60">
+              <tbody className="divide-y divide-slate-200">
                 {(displayedSummaries as any[]).map((item) => (
                   <tr
                     key={item.id}
-                    className="hover:bg-slate-800/40 transition-colors group"
+                    className="group transition-colors hover:bg-slate-50"
                   >
-                    <td className="px-4 py-3 text-left" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-4 py-2.5 text-left" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         checked={selectedEmployees.has(item.userId)}
                         onChange={(e) => handleSelectEmployee(item.userId, e.target.checked)}
-                        className="rounded border-slate-600 text-emerald-600 focus:ring-emerald-500"
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500/40"
+                        aria-label={`Select ${item.userName}`}
                       />
                     </td>
-                    <td className="px-2 py-3 text-center">
+                    <td className="px-2 py-2.5 text-center">
                       <button
+                        type="button"
                         onClick={() => onEmployeeClick(item.userId, item.monthYear)}
-                        className="p-1.5 rounded-md bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/40 hover:text-emerald-300 transition-colors"
-                        title={`View ${item.userName}'s month details`}
+                        className="rounded-md border border-slate-200 p-1.5 text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 transition-colors"
+                        title={`Monthly calendar for ${item.userName}`}
                       >
-                        <Eye className="w-4 h-4" />
+                        <Eye className="h-4 w-4" />
                       </button>
                     </td>
-                    <td className="px-4 py-3 text-left font-mono text-slate-400">{item.employeeCode || item.odId || '-'}</td>
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-slate-200 group-hover:text-white cursor-pointer" onClick={() => onEmployeeDetailClick?.(item.userId)}>{item.userName}</div>
-                      <div className="text-[10px] text-slate-500 font-mono hidden md:block">{item.employeeCode || item.odId || item.userId}</div>
+                    <td className="px-4 py-2.5 text-left font-mono text-xs text-slate-500">{item.employeeCode || item.odId || '-'}</td>
+                    <td className="px-4 py-2.5">
+                      <button type="button" className="text-left font-medium text-slate-800 hover:text-blue-700 cursor-pointer" onClick={() => onEmployeeDetailClick?.(item.userId)}>{item.userName}</button>
+                      <div className="font-mono text-[10px] text-slate-500 hidden md:block">{item.employeeCode || item.odId || item.userId}</div>
                     </td>
-                    <td className="px-4 py-3 text-left text-slate-400">{item.team || '-'}</td>
-                    <td className="px-4 py-3 text-left text-slate-400">{item.designation || '-'}</td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-400">{Object.keys(item.recordDetails || {}).length}</td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-400">
+                    <td className="px-4 py-2.5 text-left text-sm text-slate-500">{item.team || '—'}</td>
+                    <td className="px-4 py-2.5 text-left text-sm text-slate-500">{item.designation || '—'}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-500">{Object.keys(item.recordDetails || {}).length}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-500">
                         {(() => {
                           // Count holidays: Sundays + dates in holiday database
                           const records = item.recordDetails || {};
@@ -3753,7 +3890,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                           return holidayCount;
                         })()}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => openDetail(e, 'WorkingDays', item)}>
+                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-500 cursor-pointer hover:bg-slate-50" onClick={(e) => openDetail(e, 'WorkingDays', item)}>
                         {(() => {
                           // Count working days: exclude holidays (from DB), Sundays, and weekoff types
                           const records = item.recordDetails || {};
@@ -3766,58 +3903,58 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                             return true;
                           }).length;
                           return workingDays > 0 ? (
-                            <span className="hover:underline" title="Click to view calculation breakdown">{workingDays}</span>
+                            <span className="underline decoration-slate-300 decoration-dotted underline-offset-2 hover:text-slate-700" title="How working days were counted">{workingDays}</span>
                           ) : '-';
                         })()}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-emerald-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => item.summary.totalPresent > 0 && openDetail(e, 'Present', item)}>
+                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-800 cursor-pointer hover:bg-slate-50" onClick={(e) => item.summary.totalPresent > 0 && openDetail(e, 'Present', item)}>
                         {item.summary.totalPresent > 0 ? (
-                           <span className="hover:underline" title="Click to view details">{item.summary.totalPresent}</span>
+                           <span className="underline decoration-slate-300 decoration-dotted underline-offset-2" title="Day-by-day present">{item.summary.totalPresent}</span>
                         ) : '-'}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => item.summary.totalHalfDay > 0 && openDetail(e, 'HalfDay', item)}>
+                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-500 cursor-pointer hover:bg-slate-50" onClick={(e) => item.summary.totalHalfDay > 0 && openDetail(e, 'HalfDay', item)}>
                         {item.summary.totalHalfDay > 0 ? (
-                          <span className="hover:underline" title="Click to view details">
+                          <span className="underline decoration-slate-300 decoration-dotted underline-offset-2" title="Half-day breakdown">
                             {item.summary.totalHalfDay}
                             {(() => {
                               // Count 'Half Day - weekdays' in recordDetails
                               const halfDayWeekdays = Object.values(item.recordDetails || {}).filter((r: any) => r.typeOfPresence === 'Half Day - weekdays').length;
                               return halfDayWeekdays > 0 ? (
-                                <span className="block text-xs text-slate-500 font-normal">Half Day-weekdays: {halfDayWeekdays}</span>
+                                <span className="block text-xs font-normal text-slate-500">Weekdays: {halfDayWeekdays}</span>
                               ) : null;
                             })()}
                           </span>
                         ) : '-'}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-rose-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => item.summary.totalAbsent > 0 && openDetail(e, 'Absent', item)}>
+                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-600 cursor-pointer hover:bg-slate-50" onClick={(e) => item.summary.totalAbsent > 0 && openDetail(e, 'Absent', item)}>
                         {item.summary.totalAbsent > 0 ? (
-                           <span className="hover:underline" title="Click to view details">{item.summary.totalAbsent}</span>
+                           <span className="underline decoration-slate-300 decoration-dotted underline-offset-2" title="Absent days">{item.summary.totalAbsent}</span>
                         ) : '-'}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono" onClick={(e) => item.calcLate > 0 && openDetail(e, 'Late', item)}>
+                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums" onClick={(e) => item.calcLate > 0 && openDetail(e, 'Late', item)}>
                       {item.calcLate > 0 ? (
-                        <span className="text-amber-400 font-bold bg-amber-400/10 px-1.5 py-0.5 rounded cursor-pointer hover:bg-amber-400/20" title="Click to view details">{item.calcLate}</span>
+                        <span className="cursor-pointer rounded border border-slate-200 bg-white px-1.5 py-0.5 text-slate-800 hover:border-slate-300" title="Late arrival dates">{item.calcLate}</span>
                       ) : (
-                        <span className="text-slate-600">-</span>
+                        <span className="text-slate-400">-</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-sky-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => calculateLeaveConsumed(item) > 0 && openDetail(e, 'Leave', item)}>
+                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-500 cursor-pointer hover:bg-slate-50" onClick={(e) => calculateLeaveConsumed(item) > 0 && openDetail(e, 'Leave', item)}>
                         {calculateLeaveConsumed(item) > 0 ? (
-                           <span className="hover:underline" title="Click to view details">{calculateLeaveConsumed(item)}</span>
+                           <span className="underline decoration-slate-300 decoration-dotted underline-offset-2" title="Leave days">{calculateLeaveConsumed(item)}</span>
                         ) : '-'}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-400 cursor-pointer hover:bg-slate-800/60" onClick={(e) => item.calcScheduled > 0 && openDetail(e, 'ScheduledHours', item)}>
+                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-500 cursor-pointer hover:bg-slate-50" onClick={(e) => item.calcScheduled > 0 && openDetail(e, 'ScheduledHours', item)}>
                         {item.calcScheduled > 0 ? (
-                           <span className="hover:underline" title="Click to view daily breakdown">{formatHoursMinutes(item.calcScheduled)}</span>
+                           <span className="underline decoration-slate-300 decoration-dotted underline-offset-2" title="Scheduled hours breakdown">{formatHoursMinutes(item.calcScheduled)}</span>
                         ) : '-'}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-blue-400">
+                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-500">
                         {(() => {
                           const definedHours = calculateDefinedScheduleHours(item);
                           return definedHours > 0 ? (
                             <span 
-                              className="cursor-pointer hover:underline" 
-                              title="Click to view calculation breakdown"
+                              className="cursor-pointer underline decoration-slate-300 decoration-dotted underline-offset-2 hover:text-slate-700" 
+                              title="Defined schedule hours"
                               onClick={(e) => openDetail(e, 'DefinedSchedule', item)}
                             >
                               {formatHoursMinutes(definedHours)}
@@ -3825,23 +3962,23 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                           ) : '-';
                         })()}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-slate-300 cursor-pointer hover:bg-slate-800/60" onClick={(e) => item.summary.totalHour > 0 && openDetail(e, 'WorkHours', item)}>
+                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-700 cursor-pointer hover:bg-slate-50" onClick={(e) => item.summary.totalHour > 0 && openDetail(e, 'WorkHours', item)}>
                         {item.summary.totalHour > 0 ? (
-                           <span className="hover:underline" title="Click to view daily breakdown">{formatHoursMinutes(item.summary.totalHour)}</span>
+                           <span className="underline decoration-slate-300 decoration-dotted underline-offset-2" title="Worked hours by day">{formatHoursMinutes(item.summary.totalHour)}</span>
                         ) : '0h 0m'}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono cursor-pointer hover:bg-slate-800/60"
+                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums cursor-pointer hover:bg-slate-50"
                         onClick={() => {
                           const breakdown = getExcessResultForItem(item).breakdown;
                           setDetailModal({
                             isOpen: true,
-                            title: `Excess Calculation Details for ${item.userName}`,
+                            title: `Excess / deficit — ${item.userName}`,
                             data: breakdown
                           });
                         }}
                     >
                        {item.calcExcessDeficit !== undefined ? (
-                         <span className={item.calcExcessDeficit >= 0 ? "text-emerald-400" : "text-rose-400"}>
+                         <span className={item.calcExcessDeficit >= 0 ? "text-emerald-700" : "text-slate-500"}>
                            {/* Always use backend decimal value, format as H:MM */}
                            {item.calcExcessDeficit > 0 ? "+" : item.calcExcessDeficit < 0 ? "-" : ""}
                            {formatHoursMinutes(Math.abs(item.calcExcessDeficit))}
@@ -3852,14 +3989,14 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                 ))}
                 {filteredSummaries.length > displayedSummaries.length && (
                   <tr ref={tableLoadMoreSentinelRef}>
-                    <td colSpan={18} className="border-t border-slate-800/80 px-4 py-4 text-center text-xs text-slate-500">
+                    <td colSpan={18} className="border-t border-slate-200 px-4 py-4 text-center text-xs text-slate-500">
                       <div className="flex flex-col items-center justify-center gap-3 sm:flex-row sm:flex-wrap sm:justify-center">
                         <span className="inline-flex items-center gap-2">
                           <span
-                            className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent"
+                            className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600"
                             aria-hidden
                           />
-                          Showing {displayedSummaries.length} of {filteredSummaries.length} employees — scroll to load more
+                          Showing {displayedSummaries.length} of {filteredSummaries.length} — scroll for more
                         </span>
                         <button
                           type="button"
@@ -3871,7 +4008,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                               )
                             )
                           }
-                          className="rounded-md border border-slate-600 bg-slate-800 px-3 py-1.5 text-slate-200 hover:bg-slate-700"
+                          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-800 hover:bg-slate-100"
                         >
                           Load {SUMMARY_TABLE_CHUNK} more
                         </button>
@@ -3880,7 +4017,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                           onClick={() =>
                             setTableVisibleCount(filteredSummaries.length)
                           }
-                          className="rounded-md border border-emerald-700/60 bg-emerald-950/40 px-3 py-1.5 text-emerald-200 hover:bg-emerald-900/50"
+                          className="rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-100/80"
                         >
                           Show all
                         </button>
@@ -3890,7 +4027,9 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                 )}
               </tbody>
             </table>
-          </div>
+              </div>
+            </div>
+          </>
         )}
       </section>
 
@@ -3912,7 +4051,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       <RangeModal isOpen={rangeModalOpen} onClose={() => setRangeModalOpen(false)} />
 
       <AdvancedFiltersModal isOpen={showAdvancedFilters} onClose={() => setShowAdvancedFilters(false)} />
-    </div>
+    </section>
   );
 };
 

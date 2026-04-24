@@ -1,5 +1,24 @@
 import React from 'react';
-import { Clock, CheckCircle, XCircle, AlertTriangle, CalendarOff, Briefcase, ChevronLeft, ChevronRight, User as UserIcon, Calendar, Search, Edit3, FileCheck, Loader2 } from 'lucide-react';
+import {
+  Clock,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  CalendarOff,
+  Briefcase,
+  ChevronLeft,
+  ChevronRight,
+  User as UserIcon,
+  Calendar,
+  Search,
+  Edit3,
+  FileCheck,
+  Loader2,
+  Home,
+  Building2,
+  Plane,
+  Sun,
+} from 'lucide-react';
 import { AttendanceSummaryView, AttendanceRecord, User, DailySchedule } from '@/types/ui';
 import { ScheduleEntry } from '@/types/ui';
 interface ApprovedRequest {
@@ -11,6 +30,202 @@ interface ApprovedRequest {
   approvedByEmail?: string;
   approvedAt?: string;
   updatedAt?: string;
+}
+
+type CellStyleResult = {
+  borderClass: string;
+  bgClass: string;
+  badgeClass: string;
+  Icon: React.ElementType;
+  /** When set, replaces `status` for display (e.g. paid vs unpaid leave). */
+  statusLabel?: string;
+};
+
+/** Distinct calendar cell colours by `status`, `typeOfPresence`, and `halfDay`. */
+function resolveAttendanceCellStyle(input: {
+  status: any;
+  type?: string;
+  rec: AttendanceRecord;
+  isLate: boolean;
+}): CellStyleResult {
+  const { status, type = '', rec, isLate } = input;
+  const t = type.toLowerCase();
+  const s = String(status ?? '').toLowerCase();
+  const hay = `${s} ${t}`;
+
+  if (status === 'Leave' || status === 'On leave') {
+    let borderClass = 'border-sky-200';
+    let bgClass = 'bg-sky-50';
+    let badgeClass = 'border-sky-300 bg-sky-100 text-sky-900';
+    let statusLabel: string;
+    if (rec.value !== undefined && rec.value > 0) {
+      statusLabel = 'Paid Leave';
+    } else {
+      statusLabel = 'Unpaid Leave';
+      borderClass = 'border-rose-200';
+      bgClass = 'bg-rose-50';
+      badgeClass = 'border-rose-300 bg-rose-100 text-rose-900';
+    }
+    return { borderClass, bgClass, badgeClass, Icon: CalendarOff, statusLabel };
+  }
+
+  if (status === 'Holiday' || status === 'Week Off') {
+    return {
+      borderClass: 'border-cyan-200',
+      bgClass: 'bg-cyan-50',
+      badgeClass: 'border-cyan-300 bg-cyan-100 text-cyan-900',
+      Icon: Briefcase,
+    };
+  }
+
+  if (status === 'Absent') {
+    return {
+      borderClass: 'border-rose-200',
+      bgClass: 'bg-rose-50',
+      badgeClass: 'border-rose-300 bg-rose-100 text-rose-900',
+      Icon: XCircle,
+    };
+  }
+
+  const isHalfDay =
+    status === 'HalfDay' ||
+    status === 'Half Day (HD)' ||
+    t.includes('half day') ||
+    (rec.halfDay &&
+      status !== 'Leave' &&
+      status !== 'On leave' &&
+      status !== 'Holiday' &&
+      status !== 'Week Off' &&
+      status !== 'Absent' &&
+      !t.includes('holiday'));
+
+  if (isHalfDay) {
+    return {
+      borderClass: 'border-orange-200',
+      bgClass: 'bg-orange-50',
+      badgeClass: 'border-orange-300 bg-orange-100 text-orange-900',
+      Icon: AlertTriangle,
+    };
+  }
+
+  const isPresentLike =
+    status === 'Present' ||
+    hay.includes('present -') ||
+    hay.includes('present-') ||
+    t === 'thumbmachine' ||
+    t === 'manual' ||
+    t === 'remote' ||
+    hay.includes('thumb machine');
+
+  if (isPresentLike) {
+    if (t === 'thumbmachine' || t === 'manual' || t === 'remote' || hay.includes('thumb machine')) {
+      return {
+        borderClass: 'border-zinc-200',
+        bgClass: 'bg-zinc-50',
+        badgeClass: 'border-zinc-300 bg-zinc-100 text-zinc-900',
+        Icon: Clock,
+      };
+    }
+    if (t.includes('client') || hay.includes('clientplace')) {
+      return {
+        borderClass: 'border-teal-200',
+        bgClass: 'bg-teal-50',
+        badgeClass: 'border-teal-300 bg-teal-100 text-teal-900',
+        Icon: Building2,
+      };
+    }
+    if (t.includes('outstation') || hay.includes('out station')) {
+      return {
+        borderClass: 'border-sky-200',
+        bgClass: 'bg-sky-50',
+        badgeClass: 'border-sky-300 bg-sky-100 text-sky-900',
+        Icon: Plane,
+      };
+    }
+    if (t.includes('wfh') || hay.includes('work from home') || (hay.includes('weekly off') && hay.includes('wfh')) || hay.includes('wo-wfh')) {
+      return {
+        borderClass: 'border-violet-200',
+        bgClass: 'bg-violet-50',
+        badgeClass: 'border-violet-300 bg-violet-100 text-violet-900',
+        Icon: Home,
+      };
+    }
+    if (t.includes('ohd') || hay.includes('official holiday duty')) {
+      return {
+        borderClass: 'border-yellow-200',
+        bgClass: 'bg-yellow-50',
+        badgeClass: 'border-yellow-300 bg-yellow-100 text-yellow-900',
+        Icon: Sun,
+      };
+    }
+    if ((t.includes('weekoff') || t.includes('week off')) && (t.includes('present') || status === 'Present')) {
+      return {
+        borderClass: 'border-lime-200',
+        bgClass: 'bg-lime-50',
+        badgeClass: 'border-lime-300 bg-lime-100 text-lime-900',
+        Icon: Calendar,
+      };
+    }
+
+    return {
+      borderClass: isLate ? 'border-amber-200' : 'border-emerald-200',
+      bgClass: isLate ? 'bg-amber-50' : 'bg-emerald-50',
+      badgeClass: isLate
+        ? 'border-amber-300 bg-amber-100 text-amber-900'
+        : 'border-emerald-300 bg-emerald-100 text-emerald-900',
+      Icon: CheckCircle,
+    };
+  }
+
+  if (typeof status === 'string') {
+    if (hay.includes('wfh') || hay.includes('work from home') || hay.includes('wo-wfh')) {
+      return {
+        borderClass: 'border-violet-200',
+        bgClass: 'bg-violet-50',
+        badgeClass: 'border-violet-300 bg-violet-100 text-violet-900',
+        Icon: Home,
+      };
+    }
+    if (hay.includes('ohd') || hay.includes('official holiday duty')) {
+      return {
+        borderClass: 'border-yellow-200',
+        bgClass: 'bg-yellow-50',
+        badgeClass: 'border-yellow-300 bg-yellow-100 text-yellow-900',
+        Icon: Sun,
+      };
+    }
+    if (hay.includes('client') || hay.includes('clientplace')) {
+      return {
+        borderClass: 'border-teal-200',
+        bgClass: 'bg-teal-50',
+        badgeClass: 'border-teal-300 bg-teal-100 text-teal-900',
+        Icon: Building2,
+      };
+    }
+    if (hay.includes('outstation')) {
+      return {
+        borderClass: 'border-sky-200',
+        bgClass: 'bg-sky-50',
+        badgeClass: 'border-sky-300 bg-sky-100 text-sky-900',
+        Icon: Plane,
+      };
+    }
+    if (hay.includes('half day')) {
+      return {
+        borderClass: 'border-orange-200',
+        bgClass: 'bg-orange-50',
+        badgeClass: 'border-orange-300 bg-orange-100 text-orange-900',
+        Icon: AlertTriangle,
+      };
+    }
+  }
+
+  return {
+    borderClass: 'border-indigo-200',
+    bgClass: 'bg-indigo-50',
+    badgeClass: 'border-indigo-300 bg-indigo-100 text-indigo-900',
+    Icon: Briefcase,
+  };
 }
 
 interface EmployeeMonthViewProps {
@@ -340,8 +555,15 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
   const resolvedSubtitle =
     subtitleProp === undefined ? defaultSubtitle : subtitleProp;
 
+  const fieldCls =
+    'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
+  const navBtnCls =
+    'rounded-lg border border-slate-200 bg-white p-1.5 text-slate-700 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50 sm:p-2';
+
   return (
-    <section className={`bg-slate-900/60 border border-slate-800 rounded-xl shadow-sm p-4 sm:p-6 space-y-3 sm:space-y-4 ${sectionClassName}`.trim()}>
+    <section
+      className={`space-y-4 rounded-xl border border-slate-200 bg-white p-4 text-slate-900 shadow-sm sm:space-y-5 sm:p-6 ${sectionClassName}`.trim()}
+    >
       {/* Monthly summary row */}
       {showSummaryStrip && summaryFromList && summaryFromList.summary && (
         (() => {
@@ -368,27 +590,30 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
             }
           }
           return (
-            <div className="mb-2 flex flex-wrap gap-4 items-center text-sm text-slate-200">
+            <div className="mb-2 flex flex-wrap items-center gap-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800">
               <div>
-                <span className="font-semibold">Total Hours:</span> {summaryFromList.summary.totalHour?.toFixed(2)}
+                <span className="font-semibold text-slate-900">Total Hours:</span>{' '}
+                {summaryFromList.summary.totalHour?.toFixed(2)}
               </div>
               <div>
-                <span className="font-semibold">Late Arrivals:</span> {summaryFromList.summary.totalLateArrival}
+                <span className="font-semibold text-slate-900">Late Arrivals:</span>{' '}
+                {summaryFromList.summary.totalLateArrival}
               </div>
               <div>
-                <span className="font-semibold">Half Days:</span> {summaryFromList.summary.totalHalfDay}
+                <span className="font-semibold text-slate-900">Half Days:</span> {summaryFromList.summary.totalHalfDay}
               </div>
               <div>
-                <span className="font-semibold">Presents:</span> {summaryFromList.summary.totalPresent}
+                <span className="font-semibold text-slate-900">Presents:</span> {summaryFromList.summary.totalPresent}
               </div>
               <div>
-                <span className="font-semibold">Absents:</span> {calcAbsentLocal}
+                <span className="font-semibold text-slate-900">Absents:</span> {calcAbsentLocal}
               </div>
               <div>
-                <span className="font-semibold">Leaves:</span> {summaryFromList.summary.totalLeave}
+                <span className="font-semibold text-slate-900">Leaves:</span> {summaryFromList.summary.totalLeave}
               </div>
               <div>
-                <span className="font-semibold">Excess/Short Hours:</span> {(() => {
+                <span className="font-semibold text-slate-900">Excess/Short Hours:</span>{' '}
+                {(() => {
                   const val = summaryFromList.summary.excessHour;
                   const sign = val < 0 ? '-' : '';
                   const abs = Math.abs(val);
@@ -401,29 +626,27 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
           );
         })()
       )}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-4">
+      <div className="flex flex-col items-start justify-between gap-2 sm:flex-row sm:items-center sm:gap-4">
         <div>
-          <h2 className="text-base sm:text-lg font-semibold text-slate-50 flex items-center gap-2">
-            <Calendar className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
+          <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-slate-900 sm:text-lg">
+            <Calendar className="h-4 w-4 shrink-0 text-blue-600 sm:h-5 sm:w-5" aria-hidden />
             {sectionTitle}
           </h2>
           {resolvedSubtitle !== null && resolvedSubtitle !== '' && (
-            <p className="text-xs text-slate-400 mt-1 sm:max-w-xl">
-              {resolvedSubtitle}
-            </p>
+            <p className="mt-1 max-w-xl text-xs text-slate-600 sm:text-sm">{resolvedSubtitle}</p>
           )}
         </div>
       </div>
 
                   {/* Admin Edit Modal (portal-like inline) */}
                   {editModalOpen && editDate && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center">
-                      <div className="absolute inset-0 bg-black/50" onClick={() => setEditModalOpen(false)} />
-                      <div className="relative w-[min(620px,95%)] bg-slate-900 border border-slate-700 rounded-lg p-4 text-sm text-slate-200">
-                        <h3 className="font-semibold mb-2">Edit Attendance — {editDate}</h3>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setEditModalOpen(false)} />
+                      <div className="relative w-[min(620px,95%)] rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-900 shadow-xl">
+                        <h3 className="mb-2 font-semibold text-slate-900">Edit attendance — {editDate}</h3>
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                           <div>
-                            <label className="text-xs text-slate-400">Status</label>
+                            <label className="text-xs font-medium text-slate-700">Status</label>
                             <select
                               value={formStatus}
                               onChange={(e) => {
@@ -432,7 +655,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                                 // Determine editDate when in modal
                                 if (editDate) applyStatusAutoFill(v, editDate);
                               }}
-                              className="w-full mt-1 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-sm"
+                              className={`${fieldCls} mt-1`}
                             >
                               <option>Present</option>
                               <option>Absent</option>
@@ -449,40 +672,62 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                             </select>
                           </div>
                           <div>
-                            <label className="text-xs text-slate-400">Value (e.g. 1 or 0.5)</label>
-                            <input type="number" step="0.1" min="0" value={formValue ?? ''} onChange={(e) => setFormValue(e.target.value === '' ? undefined : Number(e.target.value))} className="w-full mt-1 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-sm" />
+                            <label className="text-xs font-medium text-slate-700">Value (e.g. 1 or 0.5)</label>
+                            <input
+                              type="number"
+                              step="0.1"
+                              min="0"
+                              value={formValue ?? ''}
+                              onChange={(e) => setFormValue(e.target.value === '' ? undefined : Number(e.target.value))}
+                              className={`${fieldCls} mt-1`}
+                            />
                           </div>
                           <div>
-                            <label className="text-xs text-slate-400">Start Time (HH:MM)</label>
+                            <label className="text-xs font-medium text-slate-700">Start time (HH:MM)</label>
                             <input
                               value={formStartTime}
                               onChange={(e) => setFormStartTime(e.target.value)}
                               placeholder="09:00"
                               disabled={formStatus === 'Absent' || STATUS_USE_SCHEDULE.has(formStatus) || formStatus.startsWith('Half Day')}
-                              className={`w-full mt-1 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-sm ${formStatus === 'Absent' || STATUS_USE_SCHEDULE.has(formStatus) || formStatus.startsWith('Half Day') ? 'opacity-60 cursor-not-allowed' : ''}`}
+                              className={`${fieldCls} mt-1 ${formStatus === 'Absent' || STATUS_USE_SCHEDULE.has(formStatus) || formStatus.startsWith('Half Day') ? 'cursor-not-allowed opacity-60' : ''}`}
                             />
                           </div>
                           <div>
-                            <label className="text-xs text-slate-400">End Time (HH:MM)</label>
+                            <label className="text-xs font-medium text-slate-700">End time (HH:MM)</label>
                             <input
                               value={formEndTime}
                               onChange={(e) => setFormEndTime(e.target.value)}
                               placeholder="18:00"
                               disabled={formStatus === 'Absent' || STATUS_USE_SCHEDULE.has(formStatus) || formStatus.startsWith('Half Day')}
-                              className={`w-full mt-1 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-sm ${formStatus === 'Absent' || STATUS_USE_SCHEDULE.has(formStatus) || formStatus.startsWith('Half Day') ? 'opacity-60 cursor-not-allowed' : ''}`}
+                              className={`${fieldCls} mt-1 ${formStatus === 'Absent' || STATUS_USE_SCHEDULE.has(formStatus) || formStatus.startsWith('Half Day') ? 'cursor-not-allowed opacity-60' : ''}`}
                             />
                           </div>
                           <div className="sm:col-span-2">
-                            <label className="text-xs text-slate-400">Remarks</label>
-                            <input value={formRemarks} onChange={(e) => setFormRemarks(e.target.value)} className="w-full mt-1 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-sm" />
+                            <label className="text-xs font-medium text-slate-700">Remarks</label>
+                            <input
+                              value={formRemarks}
+                              onChange={(e) => setFormRemarks(e.target.value)}
+                              className={`${fieldCls} mt-1`}
+                            />
                           </div>
                         </div>
 
-                        {editError && <div className="text-rose-400 text-xs mt-2">{editError}</div>}
+                        {editError && (
+                          <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                            {editError}
+                          </div>
+                        )}
 
                         <div className="mt-3 flex items-center justify-end gap-2">
-                          <button onClick={() => setEditModalOpen(false)} className="px-3 py-1.5 bg-slate-800 border border-slate-700 rounded text-sm">Cancel</button>
                           <button
+                            type="button"
+                            onClick={() => setEditModalOpen(false)}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
                             onClick={async () => {
                               if (!selectedEmployeeId || !selectedMonthYear || !editDate) return setEditError('Missing employee or month');
                               setSavingEdit(true);
@@ -523,7 +768,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                               }
                             }}
                             disabled={savingEdit}
-                            className="px-3 py-1.5 bg-emerald-500 text-slate-900 rounded text-sm disabled:opacity-60"
+                            className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700 disabled:opacity-60"
                           >
                             {savingEdit ? 'Saving…' : 'Save'}
                           </button>
@@ -534,38 +779,44 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
 
                   {requestDetailModal && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                      <div className="absolute inset-0 bg-black/50" onClick={() => setRequestDetailModal(null)} aria-hidden />
+                      <div
+                        className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+                        onClick={() => setRequestDetailModal(null)}
+                        aria-hidden
+                      />
                       <div
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="request-detail-title"
-                        className="relative w-[min(420px,95%)] bg-slate-900 border border-slate-700 rounded-lg p-4 text-sm text-slate-200 shadow-xl"
+                        className="relative w-[min(420px,95%)] rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-900 shadow-xl"
                       >
-                        <h3 id="request-detail-title" className="font-semibold text-slate-50 mb-3">
+                        <h3 id="request-detail-title" className="mb-3 font-semibold text-slate-900">
                           Request details
                         </h3>
                         <dl className="space-y-2 text-xs">
                           <div className="flex justify-between gap-4">
-                            <dt className="text-slate-500 shrink-0">Status</dt>
-                            <dd className="text-slate-200 text-right">{requestDetailModal.status || 'Unknown'}</dd>
+                            <dt className="shrink-0 text-slate-600">Status</dt>
+                            <dd className="text-right text-slate-900">{requestDetailModal.status || 'Unknown'}</dd>
                           </div>
                           <div className="flex justify-between gap-4">
-                            <dt className="text-slate-500 shrink-0">Requested</dt>
-                            <dd className="text-slate-200 text-right break-words">{requestDetailModal.requestedStatus || 'Unknown'}</dd>
+                            <dt className="shrink-0 text-slate-600">Requested</dt>
+                            <dd className="break-words text-right text-slate-900">
+                              {requestDetailModal.requestedStatus || 'Unknown'}
+                            </dd>
                           </div>
                           {requestDetailModal.status === 'Approved' && (
                             <>
                               <div className="flex justify-between gap-4">
-                                <dt className="text-slate-500 shrink-0">Approved by</dt>
-                                <dd className="text-slate-200 text-right">{requestDetailModal.approvedBy || 'Unknown'}</dd>
+                                <dt className="shrink-0 text-slate-600">Approved by</dt>
+                                <dd className="text-right text-slate-900">{requestDetailModal.approvedBy || 'Unknown'}</dd>
                               </div>
                               <div className="flex justify-between gap-4">
-                                <dt className="text-slate-500 shrink-0">Email</dt>
-                                <dd className="text-slate-200 text-right break-all">{requestDetailModal.approvedByEmail || '—'}</dd>
+                                <dt className="shrink-0 text-slate-600">Email</dt>
+                                <dd className="break-all text-right text-slate-900">{requestDetailModal.approvedByEmail || '—'}</dd>
                               </div>
                               <div className="flex justify-between gap-4">
-                                <dt className="text-slate-500 shrink-0">Date</dt>
-                                <dd className="text-slate-200 text-right">
+                                <dt className="shrink-0 text-slate-600">Date</dt>
+                                <dd className="text-right text-slate-900">
                                   {requestDetailModal.approvedAt
                                     ? new Date(requestDetailModal.approvedAt).toLocaleString('en-US', {
                                         year: 'numeric',
@@ -580,17 +831,17 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                             </>
                           )}
                           {requestDetailModal.status === 'Pending' && (
-                            <p className="text-slate-400 pt-1">Awaiting approval from partner/HR.</p>
+                            <p className="pt-1 text-slate-600">Awaiting approval from partner/HR.</p>
                           )}
                           {requestDetailModal.status === 'Rejected' && (
-                            <p className="text-slate-400 pt-1">This request was rejected.</p>
+                            <p className="pt-1 text-slate-600">This request was rejected.</p>
                           )}
                         </dl>
                         <div className="mt-4 flex justify-end">
                           <button
                             type="button"
                             onClick={() => setRequestDetailModal(null)}
-                            className="px-3 py-1.5 bg-slate-800 border border-slate-700 rounded text-sm hover:bg-slate-700"
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
                           >
                             Close
                           </button>
@@ -599,31 +850,31 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                     </div>
                   )}
       {/* Navigation Controls */}
-      <div className="flex flex-col gap-3 p-3 sm:p-4 bg-slate-800/50 rounded-lg border border-slate-700">
+      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3 shadow-sm sm:p-4">
         {/* Employee Selection - Show if showEmployeeSelector is true OR if multiple employees in summaries */}
         {(showEmployeeSelector || summaries.length > 1) && (
           <div className="flex flex-col gap-2">
-            <label className="text-xs font-medium text-slate-300 flex items-center gap-1">
-              <UserIcon className="w-3 h-3" />
+            <label className="flex items-center gap-1 text-xs font-medium text-slate-700">
+              <UserIcon className="h-3 w-3 text-slate-500" aria-hidden />
               Employee
             </label>
-            
+
             {/* Search bar for admin view */}
             {showEmployeeSelector && (
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
                 <input
                   type="text"
-                  placeholder="Search employees..."
+                  placeholder="Search employees…"
                   value={employeeSearch}
                   onChange={(e) => setEmployeeSearch(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-md pl-9 pr-3 py-2 text-slate-100 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50"
+                  className={`${fieldCls} pl-9`}
                 />
               </div>
             )}
-            
+
             <select
-              className="bg-slate-950 border border-slate-700 rounded-md px-3 py-2.5 text-slate-100 text-sm disabled:bg-slate-800 disabled:cursor-not-allowed disabled:text-slate-500 touch-manipulation"
+              className={`${fieldCls} touch-manipulation py-2.5 disabled:cursor-not-allowed disabled:opacity-60`}
               value={selectedEmployeeId ?? ''}
               onChange={(e) => setSelectedEmployeeId(e.target.value || null)}
               disabled={isLoading}
@@ -673,41 +924,44 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
           {/* Year Navigation */}
           <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
             <button
+              type="button"
               onClick={handlePrevYear}
               disabled={isLoading}
-              className="p-1.5 sm:p-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:cursor-not-allowed rounded text-slate-300 hover:text-white disabled:text-slate-500 transition-colors touch-manipulation active:scale-95"
+              className={`${navBtnCls} touch-manipulation active:scale-95`}
               title="Previous Year"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="h-4 w-4" aria-hidden />
             </button>
-            <span className="px-1.5 sm:px-3 py-1.5 sm:py-2 bg-slate-950 border border-slate-700 rounded-md text-slate-100 text-xs sm:text-sm min-w-[50px] sm:min-w-[80px] text-center font-medium">
+            <span className="min-w-[50px] rounded-lg border border-slate-200 bg-white px-1.5 py-1.5 text-center text-xs font-semibold text-slate-900 shadow-sm sm:min-w-[80px] sm:px-3 sm:py-2 sm:text-sm">
               {selectedYear}
             </span>
             <button
+              type="button"
               onClick={handleNextYear}
               disabled={isLoading}
-              className="p-1.5 sm:p-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:cursor-not-allowed rounded text-slate-300 hover:text-white disabled:text-slate-500 transition-colors touch-manipulation active:scale-95"
+              className={`${navBtnCls} touch-manipulation active:scale-95`}
               title="Next Year"
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="h-4 w-4" aria-hidden />
             </button>
           </div>
 
           {/* Month Navigation */}
           <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
             <button
+              type="button"
               onClick={handlePrevMonth}
               disabled={isLoading}
-              className="p-1.5 sm:p-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:cursor-not-allowed rounded text-slate-300 hover:text-white disabled:text-slate-500 transition-colors touch-manipulation active:scale-95"
+              className={`${navBtnCls} touch-manipulation active:scale-95`}
               title="Previous Month"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="h-4 w-4" aria-hidden />
             </button>
             <select
               value={selectedMonth}
               onChange={handleMonthChange}
               disabled={isLoading}
-              className="px-1 sm:px-3 py-1.5 sm:py-2 bg-slate-950 border border-slate-700 rounded-md text-slate-100 text-xs sm:text-sm w-[70px] sm:w-[120px] disabled:bg-slate-800 disabled:cursor-not-allowed disabled:text-slate-500 touch-manipulation"
+              className={`${fieldCls} w-[70px] touch-manipulation px-1 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-60 sm:w-[120px] sm:px-3 sm:py-2 sm:text-sm`}
             >
               {months.map((m) => (
                 <option key={m.value} value={m.value}>
@@ -716,12 +970,13 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
               ))}
             </select>
             <button
+              type="button"
               onClick={handleNextMonth}
               disabled={isLoading}
-              className="p-1.5 sm:p-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:cursor-not-allowed rounded text-slate-300 hover:text-white disabled:text-slate-500 transition-colors touch-manipulation active:scale-95"
+              className={`${navBtnCls} touch-manipulation active:scale-95`}
               title="Next Month"
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="h-4 w-4" aria-hidden />
             </button>
           </div>
         </div>
@@ -735,10 +990,10 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
             }
           }}
           disabled={!selectedEmployeeId || !selectedMonthYear || isLoading}
-          className="w-full px-4 py-2.5 bg-emerald-500 text-slate-950 font-medium rounded-md hover:bg-emerald-400 disabled:bg-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 touch-manipulation active:scale-[0.98]"
+          className="flex w-full touch-manipulation items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 font-medium text-white shadow-sm transition-colors hover:bg-blue-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <Clock className="w-4 h-4" />
-          {isLoading ? 'Loading…' : 'Load Attendance'}
+          <Clock className="h-4 w-4" aria-hidden />
+          {isLoading ? 'Loading…' : 'Load attendance'}
         </button>
 
         {/* Apply Future Request Button */}
@@ -746,37 +1001,40 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
           <button
             type="button"
             onClick={onApplyFutureRequest}
-            className="w-full px-4 py-2.5 bg-indigo-600 text-white font-medium rounded-md hover:bg-indigo-500 transition-colors flex items-center justify-center gap-2 touch-manipulation active:scale-[0.98]"
+            className="flex w-full touch-manipulation items-center justify-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-4 py-2.5 font-medium text-violet-900 shadow-sm transition-colors hover:bg-violet-100 active:scale-[0.98]"
           >
-            <Calendar className="w-4 h-4" />
-            Apply Future Request
+            <Calendar className="h-4 w-4" aria-hidden />
+            Apply future request
           </button>
         )}
       </div>
 
       {error && (
-        <div className="bg-rose-950/40 border border-rose-700/60 text-rose-100 px-3 sm:px-4 py-3 rounded-md text-xs mx-2 sm:mx-0">
+        <div
+          role="alert"
+          className="mx-2 rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-xs text-red-900 shadow-sm sm:mx-0 sm:px-4"
+        >
           {error}
         </div>
       )}
 
       {selectedEmployeeId && selectedMonthYear && (
-        <div className="text-xs text-slate-400 mb-2 sm:mb-4 px-2 sm:px-0">
-          Showing records for <span className="text-slate-200 font-medium">{displayUserName}</span> in
-          <span className="text-slate-200 font-medium ml-1">
+        <div className="mb-2 px-2 text-xs text-slate-600 sm:mb-4 sm:px-0">
+          Showing records for <span className="font-medium text-slate-900">{displayUserName}</span> in
+          <span className="ml-1 font-medium text-slate-900">
             {months.find(m => m.value === selectedMonth)?.label} {selectedYear}
           </span>
           {!employeeDays.length && !isLoading && (
-            <span className="text-amber-400 ml-2 block sm:inline">(No attendance records found for this month)</span>
+            <span className="ml-2 block text-amber-800 sm:inline">(No attendance records found for this month)</span>
           )}
         </div>
       )}
 
-      <div className="border border-slate-800 rounded-lg p-2 sm:p-4">
+      <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-2 shadow-inner sm:p-4">
         {!calendarData ? (
-          <div className="text-center py-6 sm:py-8">
-            <Calendar className="w-8 h-8 sm:w-12 sm:h-12 text-slate-600 mx-auto mb-3" />
-            <div className="text-sm text-slate-500 px-4">
+          <div className="py-6 text-center sm:py-8">
+            <Calendar className="mx-auto mb-3 h-8 w-8 text-slate-300 sm:h-12 sm:w-12" aria-hidden />
+            <div className="px-4 text-sm text-slate-600">
               {selectedEmployeeId && selectedMonthYear 
                 ? 'Select an employee and click "Load Attendance" to view their monthly calendar.'
                 : 'Select an employee and month to view their attendance calendar.'
@@ -787,26 +1045,26 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
           <div className="relative">
             {isLoading && selectedEmployeeId && selectedMonthYear && (
               <div
-                className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-slate-950/60 backdrop-blur-[1px]"
+                className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/70 backdrop-blur-sm"
                 aria-live="polite"
                 aria-busy="true"
               >
-                <div className="flex items-center gap-2 rounded-md border border-slate-700 bg-slate-900/90 px-4 py-3 text-sm text-slate-200 shadow-lg">
-                  <Loader2 className="h-5 w-5 animate-spin text-emerald-400" aria-hidden />
+                <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 shadow-lg">
+                  <Loader2 className="h-5 w-5 animate-spin text-blue-600" aria-hidden />
                   <span>Loading attendance…</span>
                 </div>
               </div>
             )}
 
-            <div className="mb-3 sm:mb-4 px-1 text-center">
-              <h3 className="text-lg font-semibold text-slate-200">
+            <div className="mb-3 px-1 text-center sm:mb-4">
+              <h3 className="text-lg font-semibold text-slate-900">
                 {months.find(m => m.value === selectedMonth)?.label} {selectedYear}
               </h3>
               <p className="mt-1 text-[11px] text-slate-500 sm:hidden">Use the controls above to change month</p>
             </div>
 
             {/* Day name headers - hidden on mobile since 2-col layout */}
-            <div className="hidden sm:grid grid-cols-7 gap-2 mb-2 text-[11px] text-slate-400">
+            <div className="mb-2 hidden grid-cols-7 gap-2 text-[11px] font-medium text-slate-600 sm:grid">
               {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
                 <div key={d} className="text-center font-medium py-2">
                   {d}
@@ -864,75 +1122,37 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                   return dateObj >= start && dateObj <= end;
                 })();
 
-                let borderClass = 'border-slate-700';
-                let bgClass = 'bg-slate-950/40';
-                let badgeClass = 'border-slate-700 bg-slate-800 text-slate-400';
-                let Icon = XCircle;
+                let borderClass = 'border-slate-200';
+                let bgClass = 'bg-white';
+                let badgeClass = 'border-slate-200 bg-slate-100 text-slate-600';
+                let Icon: React.ElementType = XCircle;
 
                 // Apply selection highlighting
                 if (isSelectionStart) {
-                  borderClass = 'border-dashed border-2 border-blue-400';
-                  bgClass = 'bg-blue-500/10';
+                  borderClass = 'border-dashed border-2 border-blue-500';
+                  bgClass = 'bg-blue-50';
                 } else if (isInRange && isFutureDate) {
-                  borderClass = 'border-blue-300/50';
-                  bgClass = 'bg-blue-500/5';
+                  borderClass = 'border-blue-200';
+                  bgClass = 'bg-blue-50/80';
                 } else if (isCustomRequestType) {
-                  // Custom/Other request type - use teal color for the whole cell
                   if (approvedReq.status === 'Approved') {
-                    borderClass = 'border-teal-500/50';
-                    bgClass = 'bg-teal-500/15';
+                    borderClass = 'border-teal-200';
+                    bgClass = 'bg-teal-50';
                   } else if (approvedReq.status === 'Pending') {
-                    borderClass = 'border-teal-400/40';
-                    bgClass = 'bg-teal-500/10';
+                    borderClass = 'border-teal-200';
+                    bgClass = 'bg-teal-50/70';
                   } else {
-                    borderClass = 'border-teal-500/30';
-                    bgClass = 'bg-teal-500/5';
+                    borderClass = 'border-teal-200';
+                    bgClass = 'bg-teal-50/40';
                   }
-                } else {
-                  // Original status-based styling
-                  if (status === 'Present') {
-                      borderClass = isLate ? 'border-amber-500/50' : 'border-emerald-500/50'; // Amber border if late
-                      bgClass = isLate ? 'bg-amber-500/5' : 'bg-emerald-500/5';
-                      badgeClass = 'border-emerald-500/60 bg-emerald-500/15 text-emerald-100';
-                      Icon = CheckCircle;
-                  } else if (status === 'Absent') {
-                      borderClass = 'border-rose-500/50';
-                      bgClass = 'bg-rose-500/5';
-                      badgeClass = 'border-rose-500/60 bg-rose-500/15 text-rose-100';
-                      Icon = XCircle;
-                  } else if (status === 'Leave' || status === 'On leave') {
-                      borderClass = 'border-sky-500/50';
-                      bgClass = 'bg-sky-500/5';
-                      badgeClass = 'border-sky-500/60 bg-sky-500/15 text-sky-100';
-                      Icon = CalendarOff;
-                      // Determine if paid or unpaid leave
-                      if (rec && rec.value !== undefined && rec.value > 0) {
-                        status = 'Paid Leave';
-                      } else {
-                        // If value is 0 or undefined, treat as unpaid leave
-                        status = 'Unpaid Leave';
-                        borderClass = 'border-rose-500/50';
-                        bgClass = 'bg-rose-500/5';
-                        badgeClass = 'border-rose-500/60 bg-rose-500/15 text-rose-100';
-                      }
-                  } else if (status === 'Holiday' || status === 'Week Off') {
-                      borderClass = 'border-cyan-500/50';
-                      bgClass = 'bg-cyan-500/5';
-                      badgeClass = 'border-cyan-500/60 bg-cyan-500/15 text-cyan-100';
-                      Icon = Briefcase;
-                  } else if (status === 'HalfDay' || status === 'Half Day (HD)') {
-                      borderClass = 'border-orange-500/50';
-                      bgClass = 'bg-orange-500/5';
-                      badgeClass = 'border-orange-500/60 bg-orange-500/15 text-orange-100';
-                      Icon = AlertTriangle;
-                  } else if (typeof status === 'string') {
-                      // Fallback for new types (OHD, WFH, OS-P, etc.)
-                      // Treat them generally as "Provisional/Special" - Blue/Purple?
-                      // Let's use a Generic Present-like style but maybe different color
-                      borderClass = 'border-indigo-500/50';
-                      bgClass = 'bg-indigo-500/5';
-                      badgeClass = 'border-indigo-500/60 bg-indigo-500/15 text-indigo-100';
-                      Icon = Briefcase;
+                } else if (rec) {
+                  const cell = resolveAttendanceCellStyle({ status, type, rec, isLate });
+                  borderClass = cell.borderClass;
+                  bgClass = cell.bgClass;
+                  badgeClass = cell.badgeClass;
+                  Icon = cell.Icon;
+                  if (cell.statusLabel !== undefined) {
+                    status = cell.statusLabel;
                   }
                 }
 
@@ -953,12 +1173,12 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                     onMouseLeave={() => {
                       setHoveredDate(null);
                     }}
-                    className={`min-h-[90px] sm:h-24 rounded-lg border px-2.5 py-2 flex flex-col gap-0.5 ${borderClass} ${bgClass} ${onDayClick ? 'cursor-pointer hover:ring-2 hover:ring-emerald-500/50 transition-all active:scale-[0.97]' : ''} touch-manipulation`}
+                    className={`flex min-h-[90px] flex-col gap-0.5 rounded-lg border px-2.5 py-2 shadow-sm ${borderClass} ${bgClass} ${onDayClick ? 'cursor-pointer transition-all hover:ring-2 hover:ring-blue-500/25 active:scale-[0.97]' : ''} touch-manipulation`}
                   >
                     {/* Day number and day name on mobile */}
-                    <div className="flex items-center justify-between text-slate-300 mb-0.5">
+                    <div className="mb-0.5 flex items-center justify-between text-slate-800">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-base sm:text-lg">{day}</span>
+                        <span className="text-base font-bold sm:text-lg">{day}</span>
                         <span className="text-[10px] text-slate-500 sm:hidden">
                           {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dateObj.getDay()]}
                         </span>
@@ -967,18 +1187,18 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                         {/* Request status indicator - shows Pending, Approved, or Rejected */}
                         {approvedReq && (
                           <span 
-                            className={`inline-flex items-center px-1 py-0.5 rounded text-[9px] font-bold cursor-pointer ${
+                            className={`inline-flex cursor-pointer items-center rounded px-1 py-0.5 text-[9px] font-bold ${
                               isCustomRequestType
-                                ? approvedReq.status === 'Pending' 
-                                  ? 'bg-teal-500/20 text-teal-400 border border-teal-500/30 hover:bg-teal-500/30 active:bg-teal-500/40'
+                                ? approvedReq.status === 'Pending'
+                                  ? 'border border-teal-200 bg-teal-50 text-teal-900 hover:bg-teal-100'
                                   : approvedReq.status === 'Rejected'
-                                    ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:bg-rose-500/30 active:bg-rose-500/40'
-                                    : 'bg-teal-500/20 text-teal-400 border border-teal-500/30 hover:bg-teal-500/30 active:bg-teal-500/40'
-                                : approvedReq.status === 'Pending' 
-                                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 active:bg-amber-500/40'
+                                    ? 'border border-rose-200 bg-rose-50 text-rose-900 hover:bg-rose-100'
+                                    : 'border border-teal-200 bg-teal-50 text-teal-900 hover:bg-teal-100'
+                                : approvedReq.status === 'Pending'
+                                  ? 'border border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100'
                                   : approvedReq.status === 'Rejected'
-                                    ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:bg-rose-500/30 active:bg-rose-500/40'
-                                    : 'bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30 active:bg-purple-500/40'
+                                    ? 'border border-rose-200 bg-rose-50 text-rose-900 hover:bg-rose-100'
+                                    : 'border border-violet-200 bg-violet-50 text-violet-900 hover:bg-violet-100'
                             }`}
                             title={`Request: ${approvedReq.status}${isCustomRequestType ? ` (${approvedReq.requestedStatus})` : ''}${approvedReq.status === 'Approved' ? ` by ${approvedReq.approvedBy || 'Unknown'}` : ''}${approvedReq.approvedByEmail ? ` (${approvedReq.approvedByEmail})` : ''}${approvedReq.approvedAt ? ` on ${new Date(approvedReq.approvedAt).toLocaleDateString()}` : ''}`}
                             onClick={(e) => {
@@ -1018,13 +1238,14 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                               setEditModalOpen(true);
                             }}
                             title="Edit day"
-                            className="p-1 rounded hover:bg-slate-700 text-slate-300"
+                            type="button"
+                            className="rounded p-1 text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
                           >
-                            <Edit3 className="w-3.5 h-3.5" />
+                            <Edit3 className="h-3.5 w-3.5" aria-hidden />
                           </button>
                         )}
                         {isLate && (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 text-[9px] font-bold border border-amber-500/30">
+                          <span className="inline-flex items-center rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-900">
                             LATE
                           </span>
                         )}
@@ -1039,31 +1260,54 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                         <Icon className="w-3 h-3" />
                         <span className="hidden sm:inline">{status}</span>
                         <span className="sm:hidden">
-                          {status === 'Present' ? 'Present' : 
-                           status === 'Absent' ? 'Absent' : 
-                           status === 'Leave' || status === 'On leave' ? 'Leave' :
-                           status === 'Paid Leave' ? 'Paid Leave' :
-                           status === 'Unpaid Leave' ? 'Unpaid Leave' :
-                           status === 'Holiday' || status === 'Week Off' ? 'Holiday' :
-                           status === 'HalfDay' || status === 'Half Day (HD)' ? 'Half Day' :
-                           status || '?'}
+                          {(() => {
+                            const tl = (type || '').toLowerCase();
+                            if (status === 'Present') {
+                              if (tl.includes('client') || tl.includes('clientplace')) return 'Client';
+                              if (tl.includes('outstation')) return 'OS';
+                              if (tl.includes('wfh') || tl.includes('work from home') || tl.includes('wo-wfh'))
+                                return 'WFH';
+                              if (tl.includes('ohd') || tl.includes('official holiday duty')) return 'OHD';
+                              if (tl.includes('half day') || rec?.halfDay) return '½ day';
+                              if ((tl.includes('weekoff') || tl.includes('week off')) && tl.includes('present'))
+                                return 'WO+';
+                              if (tl === 'thumbmachine' || tl === 'manual' || tl === 'remote') return 'Punch';
+                              return isLate ? 'Late' : 'In';
+                            }
+                            if (status === 'Absent') return 'Absent';
+                            if (status === 'Leave' || status === 'On leave') return 'Leave';
+                            if (status === 'Paid Leave') return 'Paid Lv';
+                            if (status === 'Unpaid Leave') return 'Unpaid';
+                            if (status === 'Holiday' || status === 'Week Off') return 'Hol';
+                            if (status === 'HalfDay' || status === 'Half Day (HD)' || tl.includes('half day'))
+                              return '½ day';
+                            return typeof status === 'string' && status.length > 10
+                              ? `${status.slice(0, 9)}…`
+                              : status || '?';
+                          })()}
                         </span>
                       </span>
                     )}
                     
                     {/* Time info */}
                     {rec && (
-                      <div className="mt-auto space-y-0 text-slate-300 text-[11px]">
-                        {status !== 'Leave' && status !== 'Paid Leave' && status !== 'Unpaid Leave' && status !== 'Holiday' && (
+                      <div className="mt-auto space-y-0 text-[11px] text-slate-600">
+                        {status !== 'Leave' &&
+                          status !== 'Paid Leave' &&
+                          status !== 'Unpaid Leave' &&
+                          status !== 'Holiday' &&
+                          status !== 'Week Off' && (
                           <div className="flex items-center gap-2">
-                            <span className={`${isLate ? 'text-amber-200' : 'text-slate-400'}`}>
+                            <span className={isLate ? 'font-medium text-amber-800' : 'text-slate-600'}>
                               {rec.inTime || '--:--'} → {rec.outTime || '--:--'}
                             </span>
                           </div>
                         )}
                         {/* Show type if different from status */}
                         {type && type !== status && status !== 'Leave' && status !== 'Holiday' && (
-                          <div className="text-[10px] text-slate-500 truncate" title={type}>{type}</div>
+                          <div className="truncate text-[10px] text-slate-500" title={type}>
+                            {type}
+                          </div>
                         )}
                       </div>
                     )}
@@ -1076,66 +1320,94 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
       </div>
 
       {/* Legend */}
-      <div className="mt-6 p-4 bg-slate-800/50 rounded-lg border border-slate-700">
-        <h3 className="text-sm font-semibold text-slate-200 mb-3">Legend</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+      <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50/80 p-4 shadow-sm">
+        <h3 className="mb-3 text-sm font-semibold text-slate-900">Legend</h3>
+        <div className="grid grid-cols-2 gap-3 text-xs md:grid-cols-3 lg:grid-cols-4">
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded border border-emerald-500/60 bg-emerald-500/15"></div>
-            <span className="text-slate-300">Present</span>
+            <div className="h-4 w-4 rounded border border-emerald-300 bg-emerald-100" />
+            <span className="text-slate-700">Present (in office)</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded border border-red-500/60 bg-red-500/15"></div>
-            <span className="text-slate-300">Absent</span>
+            <div className="h-4 w-4 rounded border border-amber-300 bg-amber-100" />
+            <span className="text-slate-700">Late (in office)</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded border border-blue-500/60 bg-blue-500/15"></div>
-            <span className="text-slate-300">Paid Leave</span>
+            <div className="h-4 w-4 rounded border border-orange-300 bg-orange-100" />
+            <span className="text-slate-700">Half day</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded border border-red-500/60 bg-red-500/15"></div>
-            <span className="text-slate-300">Unpaid Leave</span>
+            <div className="h-4 w-4 rounded border border-teal-300 bg-teal-100" />
+            <span className="text-slate-700">Client place</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded border border-cyan-500/60 bg-cyan-500/15"></div>
-            <span className="text-slate-300">Holiday</span>
+            <div className="h-4 w-4 rounded border border-sky-300 bg-sky-100" />
+            <span className="text-slate-700">Outstation</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded border border-amber-500/60 bg-amber-500/15"></div>
-            <span className="text-slate-300">Late</span>
+            <div className="h-4 w-4 rounded border border-violet-300 bg-violet-100" />
+            <span className="text-slate-700">WFH</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded border border-slate-500/60 bg-slate-800/50"></div>
-            <span className="text-slate-300">No Record</span>
+            <div className="h-4 w-4 rounded border border-yellow-300 bg-yellow-100" />
+            <span className="text-slate-700">OHD</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded border border-indigo-500/60 bg-indigo-500/15"></div>
-            <span className="text-slate-300">WFH / OHD / other special</span>
+            <div className="h-4 w-4 rounded border border-lime-300 bg-lime-100" />
+            <span className="text-slate-700">Present (week off)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-4 w-4 rounded border border-zinc-300 bg-zinc-100" />
+            <span className="text-slate-700">Manual / remote / machine</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-4 w-4 rounded border border-rose-300 bg-rose-100" />
+            <span className="text-slate-700">Absent</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-4 w-4 rounded border border-sky-300 bg-sky-100" />
+            <span className="text-slate-700">Paid leave</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-4 w-4 rounded border border-rose-300 bg-rose-100" />
+            <span className="text-slate-700">Unpaid leave</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-4 w-4 rounded border border-cyan-300 bg-cyan-100" />
+            <span className="text-slate-700">Holiday / week off</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-4 w-4 rounded border border-slate-300 bg-white" />
+            <span className="text-slate-700">No record</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-4 w-4 rounded border border-indigo-300 bg-indigo-100" />
+            <span className="text-slate-700">Other / unmapped type</span>
           </div>
           {approvedRequests.length > 0 && (
             <>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded border border-amber-500/60 bg-amber-500/15 flex items-center justify-center">
-                  <FileCheck className="w-2.5 h-2.5 text-amber-400" />
+                <div className="flex h-4 w-4 items-center justify-center rounded border border-amber-300 bg-amber-100">
+                  <FileCheck className="h-2.5 w-2.5 text-amber-800" aria-hidden />
                 </div>
-                <span className="text-slate-300">Pending Request</span>
+                <span className="text-slate-700">Pending request</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded border border-purple-500/60 bg-purple-500/15 flex items-center justify-center">
-                  <FileCheck className="w-2.5 h-2.5 text-purple-400" />
+                <div className="flex h-4 w-4 items-center justify-center rounded border border-violet-300 bg-violet-100">
+                  <FileCheck className="h-2.5 w-2.5 text-violet-800" aria-hidden />
                 </div>
-                <span className="text-slate-300">Approved</span>
+                <span className="text-slate-700">Approved</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded border border-rose-500/60 bg-rose-500/15 flex items-center justify-center">
-                  <FileCheck className="w-2.5 h-2.5 text-rose-400" />
+                <div className="flex h-4 w-4 items-center justify-center rounded border border-rose-300 bg-rose-100">
+                  <FileCheck className="h-2.5 w-2.5 text-rose-800" aria-hidden />
                 </div>
-                <span className="text-slate-300">Rejected</span>
+                <span className="text-slate-700">Rejected</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded border border-teal-500/60 bg-teal-500/15 flex items-center justify-center">
-                  <FileCheck className="w-2.5 h-2.5 text-teal-400" />
+                <div className="flex h-4 w-4 items-center justify-center rounded border border-teal-300 bg-teal-100">
+                  <FileCheck className="h-2.5 w-2.5 text-teal-800" aria-hidden />
                 </div>
-                <span className="text-slate-300">Custom/Other</span>
+                <span className="text-slate-700">Custom / other</span>
               </div>
             </>
           )}

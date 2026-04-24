@@ -22,6 +22,8 @@ interface LeaveManagementSectionProps {
   onRefresh: () => void;
 }
 
+const LEAVE_MANAGEMENT_WORKFLOW_STEPS = ['Pick tab & filters', 'Review balances', 'Refresh from server'] as const;
+
 export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
   isLoading,
   error,
@@ -100,261 +102,329 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
     { totalBalanceAsOfJan26: 0, totalEarned: 0, totalUsed: 0, totalUsedAfterJan26: 0, totalRemaining: 0 }
   );
 
+  const selectCls =
+    'rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20';
+
+  const handleRefresh = () => {
+    void fetchLeaveBalances();
+    onRefresh();
+  };
+
   return (
-    <div className="flex-1 p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-slate-100 flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-emerald-400" />
-            Leave Management
+    <section className="space-y-5 text-slate-900" aria-labelledby="leave-management-heading">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 space-y-2">
+          <h2 id="leave-management-heading" className="flex items-center gap-2 text-xl font-semibold text-slate-900">
+            <Calendar className="h-5 w-5 shrink-0 text-blue-600" aria-hidden />
+            Leave management
           </h2>
-          <p className="text-sm text-slate-400 mt-1">
-            {activeTab === 'all' && 'Track earned, used, and remaining leave balances for all employees'}
-            {activeTab === 'articles' && 'Track leave balances for articles (no earning after Jan 26)'}
-            {activeTab === 'employees' && 'Track earned, used, and remaining leave balances for regular employees'}
+          <p className="max-w-2xl text-sm text-slate-600">
+            {activeTab === 'all' && 'Track earned, used, and remaining leave balances for everyone in view.'}
+            {activeTab === 'articles' &&
+              'Article staff: opening balance and usage; no monthly earn after 1 Jan 2026 in this view.'}
+            {activeTab === 'employees' && 'Regular employees: full earned / used / remaining picture.'}
           </p>
+          <ol className="flex list-none flex-wrap gap-2 text-xs text-slate-700" aria-label="Leave management workflow">
+            {LEAVE_MANAGEMENT_WORKFLOW_STEPS.map((t, i) => (
+              <li
+                key={t}
+                className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1"
+              >
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+                  {i + 1}
+                </span>
+                {t}
+              </li>
+            ))}
+          </ol>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={fetchLeaveBalances}
-            className="px-4 py-2 bg-slate-700 text-slate-300 font-medium rounded-md hover:bg-slate-600 transition-colors flex items-center gap-2"
-            disabled={loading}
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-        </div>
-      </div>
-
-      {/* Tab Navigation */}
-      <div className="flex space-x-1 bg-slate-800/40 p-1 rounded-lg border border-slate-700">
         <button
+          type="button"
+          onClick={handleRefresh}
+          className="inline-flex shrink-0 items-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50"
+          disabled={loading || isLoading}
+        >
+          <RefreshCw className={`h-4 w-4 ${loading || isLoading ? 'animate-spin text-blue-600' : 'text-slate-600'}`} aria-hidden />
+          Refresh
+        </button>
+      </header>
+
+      <div
+        className="inline-flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm"
+        role="tablist"
+        aria-label="Employee category"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'all'}
           onClick={() => setActiveTab('all')}
-          className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-            activeTab === 'all'
-              ? 'bg-slate-700 text-slate-100'
-              : 'text-slate-400 hover:text-slate-300 hover:bg-slate-700/50'
+          className={`rounded-md px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/30 ${
+            activeTab === 'all' ? 'bg-slate-200 text-slate-900 shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
           }`}
         >
-          All Employees ({leaveBalances.length})
+          All ({leaveBalances.length})
         </button>
         <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'articles'}
           onClick={() => setActiveTab('articles')}
-          className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-            activeTab === 'articles'
-              ? 'bg-slate-700 text-slate-100'
-              : 'text-slate-400 hover:text-slate-300 hover:bg-slate-700/50'
+          className={`rounded-md px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/30 ${
+            activeTab === 'articles' ? 'bg-slate-200 text-slate-900 shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
           }`}
         >
-          Articles ({leaveBalances.filter(b => b.employmentType?.toLowerCase() === 'article').length})
+          Articles ({leaveBalances.filter((b) => b.employmentType?.toLowerCase() === 'article').length})
         </button>
         <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'employees'}
           onClick={() => setActiveTab('employees')}
-          className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-            activeTab === 'employees'
-              ? 'bg-slate-700 text-slate-100'
-              : 'text-slate-400 hover:text-slate-300 hover:bg-slate-700/50'
+          className={`rounded-md px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/30 ${
+            activeTab === 'employees' ? 'bg-slate-200 text-slate-900 shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
           }`}
         >
-          Regular Employees ({leaveBalances.filter(b => b.employmentType?.toLowerCase() !== 'article').length})
+          Regular ({leaveBalances.filter((b) => b.employmentType?.toLowerCase() !== 'article').length})
         </button>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <div className="bg-slate-800/60 border border-slate-700 rounded-lg p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <Calendar className="w-5 h-5 text-blue-400" />
-            <span className="text-sm font-medium text-slate-300">Balance as of Jan 26</span>
+      <div
+        className={`grid grid-cols-1 gap-3 ${activeTab === 'articles' ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-2 lg:grid-cols-5'}`}
+      >
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm">
+          <div className="mb-2 flex items-center gap-2">
+            <Calendar className="h-5 w-5 text-blue-700" aria-hidden />
+            <span className="text-sm font-medium text-slate-700">Balance as of 1 Jan 26</span>
           </div>
-          <div className="text-2xl font-bold text-blue-400">{totalStats.totalBalanceAsOfJan26}</div>
-          <div className="text-xs text-slate-500 mt-1">Opening balance</div>
+          <div className="text-2xl font-bold tabular-nums text-slate-900">{totalStats.totalBalanceAsOfJan26}</div>
+          <div className="mt-1 text-xs text-slate-500">Opening balance</div>
         </div>
 
         {activeTab !== 'articles' && (
-          <div className="bg-slate-800/60 border border-slate-700 rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <TrendingUp className="w-5 h-5 text-emerald-400" />
-              <span className="text-sm font-medium text-slate-300">Earned (after Jan)</span>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm">
+            <div className="mb-2 flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-emerald-700" aria-hidden />
+              <span className="text-sm font-medium text-slate-700">Earned (after Jan)</span>
             </div>
-            <div className="text-2xl font-bold text-emerald-400">{totalStats.totalEarned}</div>
-            <div className="text-xs text-slate-500 mt-1">Earned after 1st Jan 2026</div>
+            <div className="text-2xl font-bold tabular-nums text-slate-900">{totalStats.totalEarned}</div>
+            <div className="mt-1 text-xs text-slate-500">Earned after 1 Jan 2026</div>
           </div>
         )}
 
-        <div className="bg-slate-800/60 border border-slate-700 rounded-lg p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <TrendingDown className="w-5 h-5 text-rose-400" />
-            <span className="text-sm font-medium text-slate-300">Used (before 1 Jan)</span>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm">
+          <div className="mb-2 flex items-center gap-2">
+            <TrendingDown className="h-5 w-5 text-rose-700" aria-hidden />
+            <span className="text-sm font-medium text-slate-700">Used (before 1 Jan)</span>
           </div>
-          <div className="text-2xl font-bold text-rose-400">{totalStats.totalUsed}</div>
-          <div className="text-xs text-slate-500 mt-1">Leave before 1st Jan 2026</div>
+          <div className="text-2xl font-bold tabular-nums text-slate-900">{totalStats.totalUsed}</div>
+          <div className="mt-1 text-xs text-slate-500">Leave before 1 Jan 2026</div>
         </div>
 
-        <div className="bg-slate-800/60 border border-slate-700 rounded-lg p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <TrendingDown className="w-5 h-5 text-orange-400" />
-            <span className="text-sm font-medium text-slate-300">Used (after 1 Jan)</span>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm">
+          <div className="mb-2 flex items-center gap-2">
+            <TrendingDown className="h-5 w-5 text-amber-800" aria-hidden />
+            <span className="text-sm font-medium text-slate-700">Used (after 1 Jan)</span>
           </div>
-          <div className="text-2xl font-bold text-orange-400">{totalStats.totalUsedAfterJan26}</div>
-          <div className="text-xs text-slate-500 mt-1">Leave after 1st Jan 2026</div>
+          <div className="text-2xl font-bold tabular-nums text-slate-900">{totalStats.totalUsedAfterJan26}</div>
+          <div className="mt-1 text-xs text-slate-500">Leave on/after 1 Jan 2026</div>
         </div>
 
-        <div className="bg-slate-800/60 border border-slate-700 rounded-lg p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <Calendar className="w-5 h-5 text-sky-400" />
-            <span className="text-sm font-medium text-slate-300">Total Remaining</span>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm">
+          <div className="mb-2 flex items-center gap-2">
+            <Calendar className="h-5 w-5 text-sky-700" aria-hidden />
+            <span className="text-sm font-medium text-slate-700">Total remaining</span>
           </div>
-          <div className="text-2xl font-bold text-sky-400">{totalStats.totalRemaining}</div>
-          <div className="text-xs text-slate-500 mt-1">Available leave balance</div>
+          <div className="text-2xl font-bold tabular-nums text-slate-900">{totalStats.totalRemaining}</div>
+          <div className="mt-1 text-xs text-slate-500">Available leave balance</div>
         </div>
       </div>
 
-      {/* Filters and Sort */}
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          <Search className="w-4 h-4 text-slate-400" />
+      <div className="flex flex-col flex-wrap gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-end">
+        <div className="relative min-w-[200px] flex-1 md:max-w-xs">
+          <label htmlFor="leave-management-search" className="sr-only">
+            Search by name or employee code
+          </label>
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
+            aria-hidden
+          />
           <input
-            type="text"
+            id="leave-management-search"
+            type="search"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by name or code"
-            className="px-3 py-1 bg-slate-800 border border-slate-700 rounded-md text-slate-100 text-sm"
+            placeholder="Search by name or code…"
+            className="w-full rounded-md border border-slate-200 bg-white py-2 pl-10 pr-3 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           />
         </div>
 
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-slate-300">Team:</label>
+        <div className="flex flex-col gap-1">
+          <label htmlFor="leave-management-team" className="text-xs font-medium text-slate-600">
+            Team
+          </label>
           <select
+            id="leave-management-team"
             value={filterTeam}
             onChange={(e) => setFilterTeam(e.target.value)}
-            className="px-3 py-1 bg-slate-800 border border-slate-700 rounded-md text-slate-100 text-sm"
+            className={selectCls}
           >
-            <option value="all">All Teams</option>
-            {teams.map(team => (
-              <option key={team} value={team}>{team}</option>
+            <option value="all">All teams</option>
+            {teams.map((team) => (
+              <option key={team} value={team}>
+                {team}
+              </option>
             ))}
           </select>
         </div>
 
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-slate-300">Sort by:</label>
+        <div className="flex flex-col gap-1">
+          <label htmlFor="leave-management-sort" className="text-xs font-medium text-slate-600">
+            Sort by
+          </label>
           <select
+            id="leave-management-sort"
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as any)}
-            className="px-3 py-1 bg-slate-800 border border-slate-700 rounded-md text-slate-100 text-sm"
+            onChange={(e) => setSortBy(e.target.value as 'name' | 'balanceAsOfJan26' | 'earned' | 'remaining' | 'used')}
+            className={selectCls}
           >
             <option value="name">Name</option>
             <option value="balanceAsOfJan26">Balance as of Jan 26</option>
             <option value="earned">Earned</option>
             <option value="remaining">Remaining</option>
-            <option value="used">Used</option>
+            <option value="used">Used (before Jan)</option>
           </select>
         </div>
       </div>
 
-      {/* Leave Balances Table */}
-      <div className="bg-slate-800/60 border border-slate-700 rounded-lg overflow-hidden">
+      <section
+        className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+        aria-labelledby="leave-balances-table-heading"
+      >
+        <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+          <h3 id="leave-balances-table-heading" className="text-sm font-semibold text-slate-900">
+            Leave balances
+          </h3>
+          <p className="text-xs text-slate-600">Totals above respect the current tab, team, and search.</p>
+        </div>
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-slate-900/60">
+          <table className="w-full min-w-[900px] text-sm">
+            <thead className="border-b border-slate-200 bg-slate-50">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Employee</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Type</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Team</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Balance as of Jan 26</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Earned (after Jan)</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Used (before 1 Jan)</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Used (after 1 Jan)</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider">Balance</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">Last Updated</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Employee
+                </th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Type
+                </th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Team
+                </th>
+                <th scope="col" className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Balance 1 Jan 26
+                </th>
+                <th scope="col" className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Earned (after Jan)
+                </th>
+                <th scope="col" className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Used (before 1 Jan)
+                </th>
+                <th scope="col" className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Used (after 1 Jan)
+                </th>
+                <th scope="col" className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Balance
+                </th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Last updated
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-700">
-              {loading ? (
+            <tbody>
+              {loading || isLoading ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
-                    <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2" />
-                    Loading leave balances...
+                  <td colSpan={9} className="px-4 py-10 text-center text-slate-600">
+                    <RefreshCw className="mx-auto mb-2 h-6 w-6 animate-spin text-blue-600" aria-hidden />
+                    <span role="status">Loading leave balances…</span>
                   </td>
                 </tr>
               ) : filteredAndSortedBalances.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
-                    <AlertCircle className="w-6 h-6 mx-auto mb-2" />
-                    No leave balances found
+                  <td colSpan={9} className="px-4 py-10 text-center text-slate-600">
+                    <AlertCircle className="mx-auto mb-2 h-6 w-6 text-slate-400" aria-hidden />
+                    No leave balances match your filters.
                   </td>
                 </tr>
               ) : (
                 filteredAndSortedBalances.map((balance) => (
-                  <tr key={balance.userId} className="hover:bg-slate-700/30">
+                  <tr key={balance.userId} className="border-b border-slate-200 transition-colors hover:bg-slate-50/90">
                     <td className="px-4 py-3">
                       <div>
-                        <div className="text-sm font-medium text-slate-100">{balance.userName}</div>
-                        {balance.employeeCode && (
-                          <div className="text-xs text-slate-400">{balance.employeeCode}</div>
-                        )}
+                        <div className="font-medium text-slate-900">{balance.userName}</div>
+                        {balance.employeeCode && <div className="text-xs text-slate-500">{balance.employeeCode}</div>}
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                        balance.employmentType?.toLowerCase() === 'article'
-                          ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
-                          : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
-                      }`}>
+                      <span
+                        className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium ${
+                          balance.employmentType?.toLowerCase() === 'article'
+                            ? 'border-violet-200 bg-violet-50 text-violet-900'
+                            : 'border-blue-200 bg-blue-50 text-blue-900'
+                        }`}
+                      >
                         {balance.employmentType?.toLowerCase() === 'article' ? 'Article' : 'Employee'}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm text-slate-300">{balance.team || '-'}</td>
+                    <td className="px-4 py-3 text-slate-700">{balance.team || '—'}</td>
                     <td className="px-4 py-3 text-center">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                      <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-medium tabular-nums text-blue-900">
                         {balance.balanceAsOfJan26}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center">
                       {balance.employmentType?.toLowerCase() === 'article' ? (
-                        <span className="text-xs text-slate-500 italic">N/A</span>
+                        <span className="text-xs italic text-slate-500">N/A</span>
                       ) : (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-medium tabular-nums text-emerald-900">
                           {balance.earned}
                         </span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                      <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-0.5 text-xs font-medium tabular-nums text-rose-900">
                         {balance.used}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-500/10 text-orange-400 border border-orange-500/20">
+                      <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-medium tabular-nums text-amber-950">
                         {balance.usedAfterJan26 || 0}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        balance.remaining > 0
-                          ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20'
-                          : 'bg-slate-500/10 text-slate-400 border border-slate-500/20'
-                      }`}>
+                      <span
+                        className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium tabular-nums ${
+                          balance.remaining > 0
+                            ? 'border-sky-200 bg-sky-50 text-sky-900'
+                            : 'border-slate-200 bg-slate-100 text-slate-700'
+                        }`}
+                      >
                         {balance.remaining}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm text-slate-400">
-                      {new Date(balance.lastUpdated).toLocaleDateString()}
-                    </td>
+                    <td className="px-4 py-3 text-slate-600">{new Date(balance.lastUpdated).toLocaleDateString()}</td>
                   </tr>
                 ))
               )}
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
       {error && (
-        <div className="bg-rose-950/40 border border-rose-700/60 text-rose-100 px-4 py-3 rounded-md text-sm">
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900" role="alert">
           {error}
         </div>
       )}
-    </div>
+    </section>
   );
 };

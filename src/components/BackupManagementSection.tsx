@@ -1,5 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Download, Upload, Trash2, Database, Clock, FileText, AlertTriangle, CheckCircle, RefreshCw } from 'lucide-react';
+import {
+  Download,
+  Upload,
+  Database,
+  Clock,
+  FileText,
+  AlertTriangle,
+  CheckCircle,
+  RefreshCw,
+  X,
+} from 'lucide-react';
 
 interface BackupFile {
   _id: string;
@@ -16,6 +26,8 @@ interface BackupStats {
   newestBackup: Date | null;
   collections: string[];
 }
+
+const BACKUP_MANAGEMENT_WORKFLOW_STEPS = ['Review backups & stats', 'Create a new snapshot', 'Restore only when necessary'] as const;
 
 export const BackupManagementSection: React.FC = () => {
   const [backups, setBackups] = useState<BackupFile[]>([]);
@@ -149,150 +161,194 @@ export const BackupManagementSection: React.FC = () => {
     });
   };
 
+  const statCardCls = 'rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm';
+
   return (
-    <div className="bg-slate-900/50 rounded-lg border border-slate-800 p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-semibold text-blue-400 flex items-center gap-2">
-          <Database className="w-6 h-6" />
-          Database Backup & Restore
-        </h2>
+    <section className="space-y-5 p-6 text-slate-900" aria-labelledby="backup-management-heading">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-2">
+          <h2 id="backup-management-heading" className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900">
+            <Database className="h-7 w-7 text-blue-600" aria-hidden />
+            Database backup &amp; restore
+          </h2>
+          <p className="max-w-2xl text-sm text-slate-600">
+            Create compressed snapshots and restore when you need to roll back data.
+          </p>
+          <ol className="flex flex-wrap gap-2" aria-label="Workflow">
+            {BACKUP_MANAGEMENT_WORKFLOW_STEPS.map((label, i) => (
+              <li
+                key={label}
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700"
+              >
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+                  {i + 1}
+                </span>
+                {label}
+              </li>
+            ))}
+          </ol>
+        </div>
         <button
+          type="button"
           onClick={fetchBackupData}
-          className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-sm transition-colors"
+          className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
         >
-          <RefreshCw className="w-4 h-4" />
+          <RefreshCw className={`h-4 w-4 text-slate-600 ${loading ? 'animate-spin' : ''}`} aria-hidden />
           Refresh
         </button>
-      </div>
+      </header>
 
       {error && (
-        <div className="bg-rose-500/10 text-rose-300 px-4 py-3 rounded-md mb-6 border border-rose-500/20 flex items-center gap-2">
-          <AlertTriangle className="w-5 h-5" />
-          {error}
+        <div
+          role="alert"
+          className="mb-2 flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 shadow-sm"
+        >
+          <AlertTriangle className="h-5 w-5 shrink-0 text-red-600" aria-hidden />
+          <span className="min-w-0 flex-1">{error}</span>
+          <button
+            type="button"
+            onClick={() => setError(null)}
+            className="shrink-0 rounded-lg p-1.5 text-red-800 transition-colors hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500/25"
+            aria-label="Dismiss error"
+          >
+            <X className="h-4 w-4" aria-hidden />
+          </button>
         </div>
       )}
 
       {success && (
-        <div className="bg-emerald-500/10 text-emerald-300 px-4 py-3 rounded-md mb-6 border border-emerald-500/20 flex items-center gap-2">
-          <CheckCircle className="w-5 h-5" />
-          {success}
+        <div
+          role="status"
+          className="mb-2 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 shadow-sm"
+        >
+          <CheckCircle className="h-5 w-5 shrink-0 text-emerald-600" aria-hidden />
+          <span className="min-w-0 flex-1">{success}</span>
+          <button
+            type="button"
+            onClick={() => setSuccess(null)}
+            className="shrink-0 rounded-lg p-1.5 text-emerald-900 transition-colors hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/25"
+            aria-label="Dismiss message"
+          >
+            <X className="h-4 w-4" aria-hidden />
+          </button>
         </div>
       )}
 
-      {/* Backup Statistics */}
       {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-slate-800/50 rounded-lg p-4">
-            <div className="text-2xl font-bold text-blue-400">{stats.totalBackups}</div>
-            <div className="text-sm text-slate-400">Total Backups</div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <div className={statCardCls}>
+            <div className="text-2xl font-bold text-blue-700">{stats.totalBackups}</div>
+            <div className="text-sm font-medium text-slate-700">Total backups</div>
           </div>
-          <div className="bg-slate-800/50 rounded-lg p-4">
-            <div className="text-2xl font-bold text-green-400">{formatFileSize(stats.totalSize)}</div>
-            <div className="text-sm text-slate-400">Total Size</div>
+          <div className={statCardCls}>
+            <div className="text-2xl font-bold text-emerald-700">{formatFileSize(stats.totalSize)}</div>
+            <div className="text-sm font-medium text-slate-700">Total size</div>
           </div>
-          <div className="bg-slate-800/50 rounded-lg p-4">
-            <div className="text-lg font-bold text-purple-400">{stats.collections.length}</div>
-            <div className="text-sm text-slate-400">Collections</div>
+          <div className={statCardCls}>
+            <div className="text-2xl font-bold text-violet-700">{stats.collections.length}</div>
+            <div className="text-sm font-medium text-slate-700">Collections</div>
           </div>
-          <div className="bg-slate-800/50 rounded-lg p-4">
-            <div className="text-sm font-bold text-orange-400">
+          <div className={statCardCls}>
+            <div className="text-sm font-bold leading-snug text-amber-800">
               {stats.newestBackup ? formatDate(stats.newestBackup) : 'None'}
             </div>
-            <div className="text-sm text-slate-400">Latest Backup</div>
+            <div className="text-sm font-medium text-slate-700">Latest backup</div>
           </div>
         </div>
       )}
 
-      {/* Create Backup Button */}
-      <div className="mb-6">
+      <div>
         <button
+          type="button"
           onClick={handleCreateBackup}
           disabled={creatingBackup}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50"
         >
           {creatingBackup ? (
-            <RefreshCw className="w-4 h-4 animate-spin" />
+            <RefreshCw className="h-4 w-4 animate-spin" aria-hidden />
           ) : (
-            <Download className="w-4 h-4" />
+            <Download className="h-4 w-4" aria-hidden />
           )}
-          {creatingBackup ? 'Creating Backup...' : 'Create New Backup'}
+          {creatingBackup ? 'Creating backup…' : 'Create new backup'}
         </button>
       </div>
 
-      {/* Backup Files List */}
-      <div className="bg-slate-800/50 rounded-lg border border-slate-700">
-        <div className="p-4 border-b border-slate-700">
-          <h3 className="text-lg font-semibold text-slate-200">Available Backups</h3>
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+          <h3 className="text-base font-semibold text-slate-900">Available backups</h3>
         </div>
 
         {loading ? (
-          <div className="p-8 text-center">
-            <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2 text-slate-400" />
-            <div className="text-slate-400">Loading backups...</div>
+          <div className="flex flex-col items-center justify-center gap-2 px-4 py-12" aria-live="polite">
+            <RefreshCw className="h-8 w-8 animate-spin text-blue-600" aria-hidden />
+            <span className="text-sm text-slate-600">Loading backups…</span>
+            <span className="sr-only">Loading backup list</span>
           </div>
         ) : backups.length === 0 ? (
-          <div className="p-8 text-center">
-            <Database className="w-12 h-12 mx-auto mb-4 text-slate-600" />
-            <div className="text-slate-400">No backups found</div>
-            <div className="text-sm text-slate-500 mt-2">Create your first backup to get started</div>
+          <div className="px-4 py-12 text-center">
+            <Database className="mx-auto mb-4 h-12 w-12 text-slate-300" aria-hidden />
+            <p className="font-medium text-slate-800">No backups found</p>
+            <p className="mt-2 text-sm text-slate-600">Create your first backup to get started.</p>
           </div>
         ) : (
-          <div className="divide-y divide-slate-700">
-            {backups.map((backup, index) => (
-              <div key={index} className="p-4 hover:bg-slate-800/30">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <FileText className="w-4 h-4 text-slate-400" />
-                      <span className="font-medium text-slate-200">{backup.fileName}</span>
+          <ul className="divide-y divide-slate-100">
+            {backups.map((backup) => (
+              <li key={backup._id} className="p-4 transition-colors hover:bg-slate-50">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex items-center gap-2">
+                      <FileText className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+                      <span className="truncate font-medium text-slate-900">{backup.fileName}</span>
                     </div>
-                    <div className="flex items-center gap-4 text-sm text-slate-400">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-600">
                       <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
+                        <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden />
                         {formatDate(backup.created)}
                       </span>
                       <span>{formatFileSize(backup.size)}</span>
-                      <span>{backup.collections.length} collections</span>
+                      <span>
+                        {backup.collections.length} collection{backup.collections.length !== 1 ? 's' : ''}
+                      </span>
                     </div>
                     {backup.collections.length > 0 && (
-                      <div className="mt-2 text-xs text-slate-500">
-                        Collections: {backup.collections.join(', ')}
+                      <div className="mt-2 text-xs text-slate-600">
+                        <span className="font-medium text-slate-700">Collections:</span> {backup.collections.join(', ')}
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex shrink-0 items-center gap-2">
                     <button
+                      type="button"
                       onClick={() => handleRestoreBackup(backup._id, backup.fileName)}
                       disabled={restoringBackup === backup._id}
-                      className="flex items-center gap-1 px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs transition-colors disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-900 transition-colors hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/25 disabled:opacity-50"
                     >
-                      {restoringBackup === backup.fileName ? (
-                        <RefreshCw className="w-3 h-3 animate-spin" />
+                      {restoringBackup === backup._id ? (
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden />
                       ) : (
-                        <Upload className="w-3 h-3" />
+                        <Upload className="h-3.5 w-3.5" aria-hidden />
                       )}
                       Restore
                     </button>
                   </div>
                 </div>
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
         )}
       </div>
 
-      {/* Backup Information */}
-      <div className="mt-6 p-4 bg-slate-800/30 rounded-lg border border-slate-700">
-        <h4 className="text-sm font-semibold text-slate-200 mb-2">Backup Information</h4>
-        <ul className="text-sm text-slate-400 space-y-1">
-          <li>• Backups are stored securely in your MongoDB database</li>
-          <li>• Each backup contains all collections and their data</li>
-          <li>• Restore operations will overwrite existing data</li>
-          <li>• Backups are automatically cleaned up after 90 days</li>
-          <li>• Only the 10 most recent backups are kept automatically</li>
-          <li>• Backups include metadata about creation time and collections</li>
+      <div className="rounded-xl border border-blue-100 bg-blue-50/80 p-4 shadow-sm">
+        <h4 className="mb-2 text-sm font-semibold text-slate-900">Backup information</h4>
+        <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
+          <li>Backups are stored securely in your MongoDB database.</li>
+          <li>Each backup contains all collections and their data.</li>
+          <li>Restore operations will overwrite existing data.</li>
+          <li>Backups are automatically cleaned up after 90 days.</li>
+          <li>Only the 10 most recent backups are kept automatically.</li>
+          <li>Backups include metadata about creation time and collections.</li>
         </ul>
       </div>
-    </div>
+    </section>
   );
 };

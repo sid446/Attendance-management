@@ -66,6 +66,8 @@ interface AttendanceRequestsSectionProps {
   onRequestUpdate?: () => void;
 }
 
+const REQUESTS_WORKFLOW_STEPS = ['Set filters', 'Table or cards', 'Export or act on pending'] as const;
+
 // Component for displaying a range of consecutive dates as a single block
 const DateRangeRequestBlock: React.FC<{
   rangeGroup: DateRangeGroup;
@@ -77,26 +79,26 @@ const DateRangeRequestBlock: React.FC<{
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'Approved':
-        return <CheckCircle className="w-5 h-5 text-green-500" />;
+        return <CheckCircle className="h-5 w-5 text-emerald-600" aria-hidden />;
       case 'Rejected':
-        return <XCircle className="w-5 h-5 text-red-500" />;
+        return <XCircle className="h-5 w-5 text-rose-600" aria-hidden />;
       case 'Pending':
-        return <Clock className="w-5 h-5 text-yellow-500" />;
+        return <Clock className="h-5 w-5 text-amber-600" aria-hidden />;
       default:
-        return <AlertCircle className="w-5 h-5 text-gray-500" />;
+        return <AlertCircle className="h-5 w-5 text-slate-500" aria-hidden />;
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Approved':
-        return 'border-green-200 bg-green-50';
+        return 'border-emerald-200 bg-emerald-50';
       case 'Rejected':
-        return 'border-red-200 bg-red-50';
+        return 'border-rose-200 bg-rose-50';
       case 'Pending':
-        return 'border-yellow-200 bg-yellow-50';
+        return 'border-amber-200 bg-amber-50';
       default:
-        return 'border-gray-200 bg-gray-50';
+        return 'border-slate-200 bg-slate-50';
     }
   };
 
@@ -124,33 +126,33 @@ const DateRangeRequestBlock: React.FC<{
   };
 
   return (
-    <div className={`p-4 rounded-lg border-2 ${getStatusColor(rangeGroup.status)} mb-4`}>
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-2">
-            <Calendar className="w-4 h-4 text-gray-600" />
-            <span className="font-medium text-gray-900">
+    <div className={`mb-4 rounded-lg border p-4 shadow-sm ${getStatusColor(rangeGroup.status)}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <Calendar className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+            <span className="font-medium text-slate-900">
               {rangeGroup.userName}
               {rangeGroup.designation && (
-                <span className="text-sm text-gray-600 ml-1">({rangeGroup.designation})</span>
+                <span className="ml-1 text-sm font-normal text-slate-600">({rangeGroup.designation})</span>
               )}
             </span>
-            <span className="text-sm text-gray-600">via {rangeGroup.partnerName}</span>
+            <span className="text-sm text-slate-600">via {rangeGroup.partnerName}</span>
           </div>
 
           <div className="mb-2">
-            <span className="font-medium text-gray-700">Date Range: </span>
-            <span className="text-gray-900">{formatDateRange(rangeGroup.startDate, rangeGroup.endDate)}</span>
-            <span className="text-sm text-gray-600 ml-2">
+            <span className="font-medium text-slate-700">Date range: </span>
+            <span className="text-slate-900">{formatDateRange(rangeGroup.startDate, rangeGroup.endDate)}</span>
+            <span className="ml-2 text-sm text-slate-600">
               ({rangeGroup.dates.length} {rangeGroup.dates.length === 1 ? 'day' : 'days'})
             </span>
           </div>
 
           <div className="mb-2">
-            <span className="font-medium text-gray-700">Requested: </span>
-            <span className="text-gray-900">{rangeGroup.requestedStatus}</span>
+            <span className="font-medium text-slate-700">Requested: </span>
+            <span className="text-slate-900">{rangeGroup.requestedStatus}</span>
             {rangeGroup.startTime && rangeGroup.endTime && (
-              <span className="text-sm text-gray-600 ml-2">
+              <span className="ml-2 text-sm text-slate-600">
                 ({rangeGroup.startTime} - {rangeGroup.endTime})
               </span>
             )}
@@ -158,26 +160,26 @@ const DateRangeRequestBlock: React.FC<{
 
           {rangeGroup.reason && (
             <div className="mb-2">
-              <span className="font-medium text-gray-700">Reason: </span>
-              <span className="text-gray-900">{rangeGroup.reason}</span>
+              <span className="font-medium text-slate-700">Reason: </span>
+              <span className="text-slate-900">{rangeGroup.reason}</span>
             </div>
           )}
 
           {rangeGroup.partnerRemarks && (
             <div className="mb-2">
-              <span className="font-medium text-gray-700">Partner Remarks: </span>
-              <span className="text-gray-900">{rangeGroup.partnerRemarks}</span>
+              <span className="font-medium text-slate-700">Partner remarks: </span>
+              <span className="text-slate-900">{rangeGroup.partnerRemarks}</span>
             </div>
           )}
 
           {(rangeGroup.approvedBy || rangeGroup.rejectedBy) && (
             <div className="mb-2">
-              <span className="font-medium text-gray-700">
+              <span className="font-medium text-slate-700">
                 {rangeGroup.status === 'Approved' ? 'Approved' : 'Rejected'} by: </span>
-              <span className="text-gray-900">
+              <span className="text-slate-900">
                 {rangeGroup.approvedBy || rangeGroup.rejectedBy}
                 {(rangeGroup.approvedAt || rangeGroup.rejectedAt) && (
-                  <span className="text-xs text-gray-500 ml-2">
+                  <span className="ml-2 text-xs text-slate-500">
                     on {new Date(rangeGroup.approvedAt || rangeGroup.rejectedAt!).toLocaleDateString('en-US', {
                       year: 'numeric',
                       month: 'short',
@@ -191,7 +193,7 @@ const DateRangeRequestBlock: React.FC<{
             </div>
           )}
 
-          <div className="text-xs text-gray-500">
+          <div className="text-xs text-slate-500">
             Requested on {new Date(rangeGroup.createdAt).toLocaleDateString('en-US', {
               year: 'numeric',
               month: 'short',
@@ -202,28 +204,36 @@ const DateRangeRequestBlock: React.FC<{
           </div>
         </div>
 
-        <div className="flex items-center gap-2 ml-4">
-          {getStatusIcon(rangeGroup.status)}
-          <span className={`text-sm font-medium ${
-            rangeGroup.status === 'Approved' ? 'text-green-700' :
-            rangeGroup.status === 'Rejected' ? 'text-red-700' :
-            'text-yellow-700'
-          }`}>
-            {rangeGroup.status}
-          </span>
+        <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
+          <div className="flex items-center gap-2">
+            {getStatusIcon(rangeGroup.status)}
+            <span
+              className={`text-sm font-medium ${
+                rangeGroup.status === 'Approved'
+                  ? 'text-emerald-800'
+                  : rangeGroup.status === 'Rejected'
+                    ? 'text-rose-800'
+                    : 'text-amber-800'
+              }`}
+            >
+              {rangeGroup.status}
+            </span>
+          </div>
           {isAdminView && rangeGroup.status === 'Pending' && (
-            <div className="flex gap-2 ml-4">
+            <div className="flex gap-2">
               <button
+                type="button"
                 onClick={() => openApprovalModal && openApprovalModal(rangeGroup.ids[0], 'approve')}
                 disabled={processingRequest === rangeGroup.ids[0]}
-                className="px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 disabled:opacity-50"
+                className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-50"
               >
                 {processingRequest === rangeGroup.ids[0] ? 'Processing...' : 'Approve'}
               </button>
               <button
+                type="button"
                 onClick={() => openApprovalModal && openApprovalModal(rangeGroup.ids[0], 'reject')}
                 disabled={processingRequest === rangeGroup.ids[0]}
-                className="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 disabled:opacity-50"
+                className="rounded-md bg-rose-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500/40 disabled:opacity-50"
               >
                 {processingRequest === rangeGroup.ids[0] ? 'Processing...' : 'Reject'}
               </button>
@@ -341,125 +351,100 @@ const AttendanceRequestsTable: React.FC<{
   processingRequest?: string | null;
   openApprovalModal?: (requestId: string | string[], action: 'approve' | 'reject') => void;
 }> = ({ rangeGroups, individualRequests, getStatusIcon, getStatusColor, isAdminView = false, onApproveReject, processingRequest, openApprovalModal }) => {
+  const thCls =
+    'border-b border-slate-200 px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500';
+  const tdCls = 'border-b border-slate-200 px-4 py-3 align-top';
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse">
-        <thead>
-          <tr className="bg-slate-800/50">
-            <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider border-b border-slate-700">
-              Employee
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider border-b border-slate-700">
-              Date Range
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider border-b border-slate-700">
-              Requested Status
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider border-b border-slate-700">
-              Time
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider border-b border-slate-700">
-              Reason
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider border-b border-slate-700">
-              Status
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider border-b border-slate-700">
-              Action By
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider border-b border-slate-700">
-              Email
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider border-b border-slate-700">
-              Value
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider border-b border-slate-700">
-              Partner
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider border-b border-slate-700">
-              Submitted
-            </th>
-            {isAdminView && (
-              <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider border-b border-slate-700">
-                Actions
-              </th>
-            )}
+    <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
+      <table className="w-full min-w-[1100px] border-collapse text-left text-sm">
+        <thead className="bg-slate-50">
+          <tr>
+            <th className={thCls}>Employee</th>
+            <th className={thCls}>Date range</th>
+            <th className={thCls}>Requested status</th>
+            <th className={thCls}>Time</th>
+            <th className={thCls}>Reason</th>
+            <th className={thCls}>Status</th>
+            <th className={thCls}>Action by</th>
+            <th className={thCls}>Email</th>
+            <th className={thCls}>Value</th>
+            <th className={thCls}>Partner</th>
+            <th className={thCls}>Submitted</th>
+            {isAdminView && <th className={thCls}>Actions</th>}
           </tr>
         </thead>
-        <tbody className="bg-slate-900/30">
+        <tbody className="bg-white">
           {rangeGroups.map((group) => (
-            <tr key={`range-${group.ids.join('-')}`} className="hover:bg-slate-800/30 transition-colors">
-              <td className="px-4 py-3 border-b border-slate-700">
+            <tr key={`range-${group.ids.join('-')}`} className="transition-colors hover:bg-slate-50/80">
+              <td className={tdCls}>
                 <div>
-                  <div className="text-sm font-medium text-slate-200">{group.userName}</div>
-                  <div className="text-xs text-slate-400">{group.designation || 'Employee'}</div>
+                  <div className="font-medium text-slate-900">{group.userName}</div>
+                  <div className="text-xs text-slate-500">{group.designation || 'Employee'}</div>
                 </div>
               </td>
-              <td className="px-4 py-3 border-b border-slate-700">
-                <div className="text-sm text-slate-200">
-                  {new Date(group.startDate).toLocaleDateString()} - {new Date(group.endDate).toLocaleDateString()}
+              <td className={tdCls}>
+                <div className="text-slate-800">
+                  {new Date(group.startDate).toLocaleDateString()} – {new Date(group.endDate).toLocaleDateString()}
                 </div>
               </td>
-              <td className="px-4 py-3 border-b border-slate-700">
-                <span className="text-sm text-slate-200 font-medium">{group.requestedStatus}</span>
+              <td className={tdCls}>
+                <span className="font-medium text-slate-900">{group.requestedStatus}</span>
               </td>
-              <td className="px-4 py-3 border-b border-slate-700">
-                <span className="text-sm text-slate-300">
-                  {group.startTime && group.endTime ? `${group.startTime} - ${group.endTime}` : '-'}
+              <td className={tdCls}>
+                <span className="text-slate-600">
+                  {group.startTime && group.endTime ? `${group.startTime} - ${group.endTime}` : '—'}
                 </span>
               </td>
-              <td className="px-4 py-3 border-b border-slate-700">
-                <span className="text-sm text-slate-300 max-w-xs truncate block" title={group.reason}>
-                  {group.reason || '-'}
+              <td className={tdCls}>
+                <span className="block max-w-xs truncate text-slate-600" title={group.reason}>
+                  {group.reason || '—'}
                 </span>
               </td>
-              <td className="px-4 py-3 border-b border-slate-700">
-                <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(group.status)}`}>
+              <td className={tdCls}>
+                <div
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${getStatusColor(group.status)}`}
+                >
                   {getStatusIcon(group.status)}
                   {group.status}
                 </div>
               </td>
-              <td className="px-4 py-3 border-b border-slate-700">
-                <span className="text-sm text-slate-300">
-                  {group.approvedBy || group.rejectedBy || group.partnerName}
-                </span>
+              <td className={tdCls}>
+                <span className="text-slate-600">{group.approvedBy || group.rejectedBy || group.partnerName}</span>
               </td>
-              <td className="px-4 py-3 border-b border-slate-700">
-                <span className="text-sm text-slate-300">
-                  {group.approvedByEmail || group.rejectedByEmail || '-'}
-                </span>
+              <td className={tdCls}>
+                <span className="text-slate-600">{group.approvedByEmail || group.rejectedByEmail || '—'}</span>
               </td>
-              <td className="px-4 py-3 border-b border-slate-700">
-                <span className="text-sm text-slate-300">
-                  {group.hrValue || '-'}
-                </span>
+              <td className={tdCls}>
+                <span className="text-slate-600">{group.hrValue || '—'}</span>
               </td>
-              <td className="px-4 py-3 border-b border-slate-700">
-                <span className="text-sm text-slate-300">{group.partnerName}</span>
+              <td className={tdCls}>
+                <span className="text-slate-600">{group.partnerName}</span>
               </td>
-              <td className="px-4 py-3 border-b border-slate-700">
-                <div className="text-sm text-slate-400">
+              <td className={tdCls}>
+                <div className="text-slate-600">
                   <div>{new Date(group.createdAt).toLocaleDateString()}</div>
-                  <div className="text-xs">{new Date(group.createdAt).toLocaleTimeString()}</div>
+                  <div className="text-xs text-slate-500">{new Date(group.createdAt).toLocaleTimeString()}</div>
                 </div>
               </td>
               {isAdminView && (
-                <td className="px-4 py-3 border-b border-slate-700">
+                <td className={tdCls}>
                   {group.status === 'Pending' && (
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <button
+                        type="button"
                         onClick={() => openApprovalModal && openApprovalModal(group.ids, 'approve')}
                         disabled={processingRequest === group.ids[0]}
-                        className="px-2 py-1 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700 disabled:opacity-50"
+                        className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-50"
                       >
-                        {processingRequest === group.ids[0] ? '...' : 'Approve'}
+                        {processingRequest === group.ids[0] ? '…' : 'Approve'}
                       </button>
                       <button
+                        type="button"
                         onClick={() => openApprovalModal && openApprovalModal(group.ids, 'reject')}
                         disabled={processingRequest === group.ids[0]}
-                        className="px-2 py-1 bg-rose-600 text-white text-xs rounded hover:bg-rose-700 disabled:opacity-50"
+                        className="rounded-md bg-rose-600 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500/40 disabled:opacity-50"
                       >
-                        {processingRequest === group.ids[0] ? '...' : 'Reject'}
+                        {processingRequest === group.ids[0] ? '…' : 'Reject'}
                       </button>
                     </div>
                   )}
@@ -468,80 +453,75 @@ const AttendanceRequestsTable: React.FC<{
             </tr>
           ))}
 
-          {/* Individual Requests */}
           {individualRequests.map((request) => (
-            <tr key={request._id} className="hover:bg-slate-800/30 transition-colors">
-              <td className="px-4 py-3 border-b border-slate-700">
+            <tr key={request._id} className="transition-colors hover:bg-slate-50/80">
+              <td className={tdCls}>
                 <div>
-                  <div className="text-sm font-medium text-slate-200">{request.userName}</div>
-                  <div className="text-xs text-slate-400">{request.userId?.designation || 'Employee'}</div>
+                  <div className="font-medium text-slate-900">{request.userName}</div>
+                  <div className="text-xs text-slate-500">{request.userId?.designation || 'Employee'}</div>
                 </div>
               </td>
-              <td className="px-4 py-3 border-b border-slate-700">
-                <div className="text-sm text-slate-200">
-                  {new Date(request.date).toLocaleDateString()}
-                </div>
+              <td className={tdCls}>
+                <div className="text-slate-800">{new Date(request.date).toLocaleDateString()}</div>
               </td>
-              <td className="px-4 py-3 border-b border-slate-700">
-                <span className="text-sm text-slate-200 font-medium">{request.requestedStatus}</span>
+              <td className={tdCls}>
+                <span className="font-medium text-slate-900">{request.requestedStatus}</span>
               </td>
-              <td className="px-4 py-3 border-b border-slate-700">
-                <span className="text-sm text-slate-300">
-                  {request.startTime && request.endTime ? `${request.startTime} - ${request.endTime}` : '-'}
+              <td className={tdCls}>
+                <span className="text-slate-600">
+                  {request.startTime && request.endTime ? `${request.startTime} - ${request.endTime}` : '—'}
                 </span>
               </td>
-              <td className="px-4 py-3 border-b border-slate-700">
-                <span className="text-sm text-slate-300 max-w-xs truncate block" title={request.reason}>
-                  {request.reason || '-'}
+              <td className={tdCls}>
+                <span className="block max-w-xs truncate text-slate-600" title={request.reason}>
+                  {request.reason || '—'}
                 </span>
               </td>
-              <td className="px-4 py-3 border-b border-slate-700">
-                <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(request.status)}`}>
+              <td className={tdCls}>
+                <div
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${getStatusColor(request.status)}`}
+                >
                   {getStatusIcon(request.status)}
                   {request.status}
                 </div>
               </td>
-              <td className="px-4 py-3 border-b border-slate-700">
-                <span className="text-sm text-slate-300">
-                  {request.approvedBy || request.rejectedBy || request.partnerName}
-                </span>
+              <td className={tdCls}>
+                <span className="text-slate-600">{request.approvedBy || request.rejectedBy || request.partnerName}</span>
               </td>
-              <td className="px-4 py-3 border-b border-slate-700">
-                <span className="text-sm text-slate-300">
-                  {request.approvedByEmail || request.rejectedByEmail || '-'}
-                </span>
+              <td className={tdCls}>
+                <span className="text-slate-600">{request.approvedByEmail || request.rejectedByEmail || '—'}</span>
               </td>
-              <td className="px-4 py-3 border-b border-slate-700">
-                <span className="text-sm text-slate-300">
-                  {request.hrValue || '-'}
-                </span>
+              <td className={tdCls}>
+                <span className="text-slate-600">{request.hrValue || '—'}</span>
               </td>
-              <td className="px-4 py-3 border-b border-slate-700">
-                <span className="text-sm text-slate-300">{request.partnerName}</span>
+              <td className={tdCls}>
+                <span className="text-slate-600">{request.partnerName}</span>
               </td>
-              <td className="px-4 py-3 border-b border-slate-700">
-                <div className="text-sm text-slate-400">
+              <td className={tdCls}>
+                <div className="text-slate-600">
                   <div>{new Date(request.createdAt).toLocaleDateString()}</div>
-                  <div className="text-xs">{new Date(request.createdAt).toLocaleTimeString()}</div>
+                  <div className="text-xs text-slate-500">{new Date(request.createdAt).toLocaleTimeString()}</div>
                 </div>
               </td>
               {isAdminView && (
-                <td className="px-4 py-3 border-b border-slate-700">
+                <td className={tdCls}>
                   {request.status === 'Pending' && (
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <button
+                        type="button"
                         onClick={() => openApprovalModal && openApprovalModal(request._id, 'approve')}
                         disabled={processingRequest === request._id}
-                        className="px-2 py-1 bg-emerald-600 text-white text-xs rounded hover:bg-emerald-700 disabled:opacity-50"
+                        className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-50"
                       >
-                        {processingRequest === request._id ? '...' : 'Approve'}
+                        {processingRequest === request._id ? '…' : 'Approve'}
                       </button>
                       <button
+                        type="button"
                         onClick={() => openApprovalModal && openApprovalModal(request._id, 'reject')}
                         disabled={processingRequest === request._id}
-                        className="px-2 py-1 bg-rose-600 text-white text-xs rounded hover:bg-rose-700 disabled:opacity-50"
+                        className="rounded-md bg-rose-600 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500/40 disabled:opacity-50"
                       >
-                        {processingRequest === request._id ? '...' : 'Reject'}
+                        {processingRequest === request._id ? '…' : 'Reject'}
                       </button>
                     </div>
                   )}
@@ -795,23 +775,46 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
   // Approval Modal UI (improved, always rendered)
   const renderApprovalModal = () => {
     if (!showApprovalModal) return null;
+    const modalTitleId = 'attendance-request-approval-title';
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3">
-        <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
-          <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950">
-            <span className="font-semibold text-lg text-slate-100">
-              {approvalAction === 'approve' ? 'Approve Request' : 'Reject Request'}
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-3 backdrop-blur-sm"
+        onClick={closeApprovalModal}
+        role="presentation"
+      >
+        <div
+          className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl"
+          onClick={(e) => e.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={modalTitleId}
+        >
+          <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+            <span id={modalTitleId} className="text-lg font-semibold text-slate-900">
+              {approvalAction === 'approve' ? 'Approve request' : 'Reject request'}
             </span>
-            <button onClick={closeApprovalModal} className="text-slate-400 hover:text-red-400 text-xl">&times;</button>
+            <button
+              type="button"
+              onClick={closeApprovalModal}
+              className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+              aria-label="Close"
+            >
+              <span className="text-xl leading-none" aria-hidden>
+                &times;
+              </span>
+            </button>
           </div>
-          <div className="p-4 space-y-4">
+          <div className="space-y-4 p-4">
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Remarks</label>
+              <label htmlFor="approval-remarks" className="mb-1 block text-sm font-medium text-slate-700">
+                Remarks
+              </label>
               <textarea
-                className="w-full rounded border border-slate-700 bg-slate-800 text-slate-100 p-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                id="approval-remarks"
+                className="w-full rounded-md border border-slate-200 bg-white p-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 rows={3}
                 value={approvalRemarks}
-                onChange={e => setApprovalRemarks(e.target.value)}
+                onChange={(e) => setApprovalRemarks(e.target.value)}
                 placeholder={approvalAction === 'approve' ? 'Approval remarks (optional)' : 'Reason for rejection'}
               />
             </div>
@@ -831,17 +834,17 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
                 // For half-day, show fixed value display
                 if (req.requestedStatus.toLowerCase().includes('half')) {
                   return (
-                    <div className="p-3 bg-slate-800/50 rounded-lg border border-slate-700">
-                      <span className="text-sm text-slate-300">Attendance Value: </span>
-                      <span className="text-sm font-medium text-white">0.5 days</span>
-                      <span className="text-xs text-slate-500 ml-2">(fixed for half-day)</span>
+                    <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                      <span className="text-sm text-slate-600">Attendance value: </span>
+                      <span className="text-sm font-medium text-slate-900">0.5 days</span>
+                      <span className="ml-2 text-xs text-slate-500">(fixed for half-day)</span>
                     </div>
                   );
                 }
                 // For On leave, no value needed
                 return (
-                  <div className="p-3 bg-slate-800/50 rounded-lg border border-slate-700">
-                    <span className="text-sm text-slate-400">No attendance value required for leave requests</span>
+                  <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                    <span className="text-sm text-slate-600">No attendance value required for leave requests</span>
                   </div>
                 );
               }
@@ -851,19 +854,21 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
               
               return (
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">
-                    Value {maxVal ? <span className="text-slate-500">(max: {maxVal})</span> : '(if applicable)'}
+                  <label htmlFor="approval-value" className="mb-1 block text-sm font-medium text-slate-700">
+                    Value {maxVal ? <span className="font-normal text-slate-500">(max: {maxVal})</span> : <span className="font-normal text-slate-500">(if applicable)</span>}
                   </label>
                   <input
+                    id="approval-value"
                     type="number"
                     step="0.01"
                     min="0"
                     max={maxVal || undefined}
-                    className={`w-full rounded border ${approvalValueError ? 'border-red-500' : 'border-slate-700'} bg-slate-800 text-slate-100 p-2 focus:outline-none focus:ring-2 focus:ring-emerald-500`}
+                    className={`w-full rounded-md border bg-white p-2 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
+                      approvalValueError ? 'border-red-500 focus:border-red-500' : 'border-slate-200 focus:border-blue-500'
+                    }`}
                     value={approvalValue}
-                    onChange={e => {
+                    onChange={(e) => {
                       let val = e.target.value;
-                      // Enforce max value
                       if (maxVal && parseFloat(val) > maxVal) {
                         val = maxVal.toString();
                       }
@@ -872,17 +877,19 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
                     }}
                     placeholder={maxVal ? `0.00 - ${maxVal}` : 'Enter value (optional)'}
                   />
-                  {approvalValueError && <div className="text-red-400 text-xs mt-1">{approvalValueError}</div>}
-                  {maxVal && (
-                    <div className="text-xs text-amber-400 mt-1">Max value allowed: {maxVal}</div>
+                  {approvalValueError && (
+                    <div className="mt-1 text-xs text-red-800" role="alert">
+                      {approvalValueError}
+                    </div>
                   )}
+                  {maxVal && <div className="mt-1 text-xs text-amber-800">Max value allowed: {maxVal}</div>}
                 </div>
               );
             })()}
-            <div className="flex justify-end gap-2 mt-4">
+            <div className="mt-4 flex justify-end gap-2 border-t border-slate-200 pt-4">
               <button
                 onClick={closeApprovalModal}
-                className="px-4 py-2 rounded bg-slate-700 text-slate-200 hover:bg-slate-800"
+                className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50"
                 type="button"
               >
                 Cancel
@@ -890,10 +897,14 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
               <button
                 onClick={handleModalSubmit}
                 disabled={modalProcessing}
-                className={`px-4 py-2 rounded ${approvalAction === 'approve' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'} text-white font-semibold ${modalProcessing ? 'opacity-60 cursor-not-allowed' : ''}`}
+                className={`rounded-md px-4 py-2 text-sm font-semibold text-white transition-colors focus:outline-none focus:ring-2 ${
+                  approvalAction === 'approve'
+                    ? 'bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-500/40'
+                    : 'bg-rose-600 hover:bg-rose-700 focus:ring-rose-500/40'
+                } ${modalProcessing ? 'cursor-not-allowed opacity-60' : ''}`}
                 type="button"
               >
-                {modalProcessing ? 'Processing...' : (approvalAction === 'approve' ? 'Approve' : 'Reject')}
+                {modalProcessing ? 'Processing...' : approvalAction === 'approve' ? 'Approve' : 'Reject'}
               </button>
             </div>
           </div>
@@ -1023,82 +1034,111 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'Approved':
-        return <CheckCircle className="w-4 h-4 text-emerald-400" />;
+        return <CheckCircle className="h-4 w-4 text-emerald-600" aria-hidden />;
       case 'Rejected':
-        return <XCircle className="w-4 h-4 text-rose-400" />;
+        return <XCircle className="h-4 w-4 text-rose-600" aria-hidden />;
       case 'Pending':
-        return <Clock className="w-4 h-4 text-amber-400" />;
+        return <Clock className="h-4 w-4 text-amber-600" aria-hidden />;
       default:
-        return <AlertCircle className="w-4 h-4 text-slate-400" />;
+        return <AlertCircle className="h-4 w-4 text-slate-500" aria-hidden />;
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Approved':
-        return 'text-emerald-400 bg-emerald-950/40 border-emerald-700/60';
+        return 'border-emerald-200 bg-emerald-50 text-emerald-900';
       case 'Rejected':
-        return 'text-rose-400 bg-rose-950/40 border-rose-700/60';
+        return 'border-rose-200 bg-rose-50 text-rose-900';
       case 'Pending':
-        return 'text-amber-400 bg-amber-950/40 border-amber-700/60';
+        return 'border-amber-200 bg-amber-50 text-amber-900';
       default:
-        return 'text-slate-400 bg-slate-950/40 border-slate-700/60';
+        return 'border-slate-200 bg-slate-50 text-slate-800';
     }
   };
 
+  const selectCls =
+    'rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20';
+
   if (loading) {
     return (
-      <section className="bg-slate-900/60 border border-slate-800 rounded-xl shadow-sm p-6">
-        <div className="flex items-center justify-center py-8">
-          <RefreshCw className="w-6 h-6 text-slate-400 animate-spin" />
-          <span className="ml-2 text-slate-400">Loading requests...</span>
+      <section
+        className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+        aria-busy="true"
+        aria-label="Loading attendance requests"
+      >
+        <div className="flex items-center justify-center gap-2 py-12 text-slate-600">
+          <RefreshCw className="h-6 w-6 animate-spin text-blue-600" aria-hidden />
+          <span role="status">Loading requests…</span>
         </div>
       </section>
     );
   }
 
   return (
-    <section className="bg-slate-900/60 border border-slate-800 rounded-xl shadow-sm p-6">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-50">
-            {isEmployeeView ? 'My Attendance Requests' : 'Attendance Requests'}
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            {isEmployeeView
-              ? 'Track the status of your attendance correction requests'
-              : 'Review and manage employee attendance correction requests'
-            }
-          </p>
-        </div>
+    <section
+      className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+      aria-labelledby="attendance-requests-heading"
+    >
+      <header className="mb-5 space-y-3">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <h1 id="attendance-requests-heading" className="text-xl font-semibold text-slate-900">
+              {isEmployeeView ? 'My attendance requests' : 'Attendance requests'}
+            </h1>
+            <p className="mt-1 max-w-2xl text-sm text-slate-600">
+              {isEmployeeView
+                ? 'Track the status of your attendance correction requests.'
+                : 'Review and manage employee attendance correction requests.'}
+            </p>
+            <ol className="mt-3 flex list-none flex-wrap gap-2 text-xs text-slate-700" aria-label="Requests workflow">
+              {REQUESTS_WORKFLOW_STEPS.map((t, i) => (
+                <li
+                  key={t}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1"
+                >
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+                    {i + 1}
+                  </span>
+                  {t}
+                </li>
+              ))}
+            </ol>
+          </div>
 
-        <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="sr-only">View layout</span>
+            <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5 shadow-sm" role="group" aria-label="View layout">
           <button
+            type="button"
             onClick={() => setViewMode('cards')}
-            className={`p-2 rounded-md transition-colors ${
+            className={`rounded-md p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/30 ${
               viewMode === 'cards'
-                ? 'bg-emerald-600 text-white'
-                : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
             }`}
-            title="Card View"
+            title="Card view"
           >
-            <LayoutGrid className="w-4 h-4" />
+            <LayoutGrid className="h-4 w-4" aria-hidden />
           </button>
           <button
+            type="button"
             onClick={() => setViewMode('table')}
-            className={`p-2 rounded-md transition-colors ${
+            className={`rounded-md p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/30 ${
               viewMode === 'table'
-                ? 'bg-emerald-600 text-white'
-                : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
             }`}
-            title="Table View"
+            title="Table view"
           >
-            <Table className="w-4 h-4" />
+            <Table className="h-4 w-4" aria-hidden />
           </button>
+            </div>
           <select
             value={monthFilter}
             onChange={(e) => setMonthFilter(e.target.value)}
-            className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-sm text-slate-200 focus:border-emerald-500 focus:outline-none"
+            className={selectCls}
+            aria-label="Filter by month"
           >
             <option value="all">All Months</option>
             {Array.from(new Set(requests.map(r => r.monthYear)))
@@ -1117,7 +1157,8 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
           <select
             value={leaveTypeFilter}
             onChange={(e) => setLeaveTypeFilter(e.target.value)}
-            className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-sm text-slate-200 focus:border-emerald-500 focus:outline-none"
+            className={selectCls}
+            aria-label="Filter by request type"
           >
             <option value="all">All Leave Types</option>
             {Array.from(new Set(requests.map(r => r.requestedStatus)))
@@ -1131,7 +1172,8 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
           <select
             value={filter}
             onChange={(e) => setFilter(e.target.value as any)}
-            className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-sm text-slate-200 focus:border-emerald-500 focus:outline-none"
+            className={selectCls}
+            aria-label="Filter by status"
           >
             <option value="all">All Status</option>
             <option value="Pending">Pending</option>
@@ -1139,26 +1181,28 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
             <option value="Rejected">Rejected</option>
           </select>
           <button
+            type="button"
             onClick={exportToExcel}
-            className="flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-sm font-medium transition-colors"
+            className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             title="Export to Excel"
           >
-            <Download className="w-4 h-4" />
+            <Download className="h-4 w-4 text-slate-500" aria-hidden />
             Export Excel
           </button>
         </div>
-      </div>
+        </div>
+      </header>
 
       {error && (
-        <div className="mb-4 bg-rose-950/40 border border-rose-700/60 text-rose-100 px-4 py-3 rounded-md text-sm">
+        <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900" role="alert">
           {error}
         </div>
       )}
 
       {filteredRangeGroups.length === 0 && filteredIndividualRequests.length === 0 ? (
-        <div className="text-center py-8">
-          <AlertCircle className="w-12 h-12 text-slate-500 mx-auto mb-3" />
-          <p className="text-slate-400">
+        <div className="py-10 text-center">
+          <AlertCircle className="mx-auto mb-3 h-12 w-12 text-slate-400" aria-hidden />
+          <p className="text-slate-600">
             {filter === 'all' && monthFilter === 'all' && leaveTypeFilter === 'all'
               ? 'No attendance requests found'
               : 'No requests found for selected filters'}
@@ -1192,22 +1236,27 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
           {filteredIndividualRequests.map((request) => (
             <div
               key={request._id}
-              className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 hover:bg-slate-800/70 transition-colors"
+              className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50/60"
             >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <h3 className="font-medium text-slate-200">{request.userName}</h3>
-                    <span className="text-xs text-slate-400">•</span>
-                    <span className="text-xs text-slate-400">{request.userId?.designation || 'Employee'}</span>
+              <div className="mb-3 flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
+                    <h3 className="font-medium text-slate-900">{request.userName}</h3>
+                    <span className="text-xs text-slate-400" aria-hidden>
+                      •
+                    </span>
+                    <span className="text-xs text-slate-600">{request.userId?.designation || 'Employee'}</span>
                   </div>
-                  <p className="text-sm text-slate-300">
-                    Requested: <span className="font-medium">{request.requestedStatus}</span>
+                  <p className="text-sm text-slate-700">
+                    Requested: <span className="font-medium text-slate-900">{request.requestedStatus}</span>
                     {request.originalStatus && (
-                      <> from <span className="text-slate-400">{request.originalStatus}</span></>
+                      <>
+                        {' '}
+                        from <span className="text-slate-600">{request.originalStatus}</span>
+                      </>
                     )}
                   </p>
-                  <p className="text-xs text-slate-400 mt-1">
+                  <p className="mt-1 text-xs text-slate-500">
                     Date: {new Date(request.date).toLocaleDateString()}
                     {request.startTime && request.endTime && (
                       <> • {request.startTime} - {request.endTime}</>
@@ -1215,7 +1264,9 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
                   </p>
                 </div>
 
-                <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(request.status)}`}>
+                <div
+                  className={`flex shrink-0 items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${getStatusColor(request.status)}`}
+                >
                   {getStatusIcon(request.status)}
                   {request.status}
                 </div>
@@ -1223,8 +1274,8 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
 
               {request.reason && (
                 <div className="mb-3">
-                  <p className="text-xs font-medium text-slate-300 mb-1">Reason:</p>
-                  <p className="text-sm text-slate-400 bg-slate-900/50 rounded px-3 py-2">
+                  <p className="mb-1 text-xs font-medium text-slate-600">Reason</p>
+                  <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
                     {request.reason}
                   </p>
                 </div>
@@ -1232,8 +1283,8 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
 
               {request.partnerRemarks && request.status !== 'Pending' && (
                 <div className="mb-3">
-                  <p className="text-xs font-medium text-slate-300 mb-1">Partner Remarks:</p>
-                  <p className="text-sm text-slate-400 bg-slate-900/50 rounded px-3 py-2 border-l-2 border-emerald-600/50">
+                  <p className="mb-1 text-xs font-medium text-slate-600">Partner remarks</p>
+                  <p className="rounded-md border border-slate-200 border-l-4 border-l-emerald-500 bg-slate-50 px-3 py-2 text-sm text-slate-800">
                     {request.partnerRemarks}
                   </p>
                 </div>
@@ -1241,13 +1292,13 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
 
               {(request.approvedBy || request.rejectedBy) && (
                 <div className="mb-3">
-                  <p className="text-xs font-medium text-slate-300 mb-1">
-                    {request.status === 'Approved' ? 'Approved' : 'Rejected'} by:
+                  <p className="mb-1 text-xs font-medium text-slate-600">
+                    {request.status === 'Approved' ? 'Approved' : 'Rejected'} by
                   </p>
-                  <p className="text-sm text-slate-400 bg-slate-900/50 rounded px-3 py-2">
+                  <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
                     {request.approvedBy || request.rejectedBy}
                     {(request.approvedAt || request.rejectedAt) && (
-                      <span className="text-xs text-slate-500 ml-2">
+                      <span className="ml-2 text-xs text-slate-500">
                         on {new Date(request.approvedAt || request.rejectedAt!).toLocaleDateString('en-US', {
                           year: 'numeric',
                           month: 'short',
@@ -1261,24 +1312,26 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
                 </div>
               )}
 
-              <div className="flex items-center justify-between text-xs text-slate-500">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
                 <span>Partner: {request.partnerName}</span>
                 <span>Submitted: {new Date(request.createdAt).toLocaleDateString()}</span>
               </div>
 
               {isAdminView && request.status === 'Pending' && (
-                <div className="flex gap-2 mt-3 pt-3 border-t border-slate-700">
+                <div className="mt-3 flex gap-2 border-t border-slate-200 pt-3">
                   <button
+                    type="button"
                     onClick={() => openApprovalModal(request._id, 'approve')}
                     disabled={processingRequest === request._id}
-                    className="flex-1 px-3 py-2 bg-emerald-600 text-white text-sm rounded hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                    className="flex-1 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-50"
                   >
                     {processingRequest === request._id ? 'Processing...' : 'Approve'}
                   </button>
                   <button
+                    type="button"
                     onClick={() => openApprovalModal(request._id, 'reject')}
                     disabled={processingRequest === request._id}
-                    className="flex-1 px-3 py-2 bg-rose-600 text-white text-sm rounded hover:bg-rose-700 disabled:opacity-50 transition-colors"
+                    className="flex-1 rounded-md bg-rose-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500/40 disabled:opacity-50"
                   >
                     {processingRequest === request._id ? 'Processing...' : 'Reject'}
                   </button>

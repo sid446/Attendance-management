@@ -21,12 +21,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout
 }) => {
   return (
-    <aside className="w-64 border-r border-slate-800 bg-slate-900/60 flex flex-col">
-      <div className="px-4 py-3 border-b border-slate-800 flex items-center gap-2">
+    <aside className="flex w-64 flex-col border-r border-slate-200/90 bg-white shadow-[1px_0_0_0_rgb(226_232_240_/_0.6)]">
+      <div className="flex items-center gap-2 border-b border-slate-200/90 px-4 py-3">
         <img src="/lg.png" alt="Logo" className="w-12 h-12 object-contain flex-shrink-0" />
         <div>
-          <div className="text-sm font-semibold tracking-wide text-slate-100">Asija and Associates LLP</div>
-          <div className="text-xs text-slate-400">Attendance Console</div>
+          <div className="text-sm font-semibold tracking-wide text-slate-800">Asija and Associates LLP</div>
+          <div className="text-xs text-slate-500">Attendance Console</div>
         </div>
       </div>
 
@@ -36,8 +36,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onClick={() => setActiveSection('employees')}
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'employees'
-              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
-              : 'text-slate-300 hover:bg-slate-800/60'
+              ? 'border border-blue-200 bg-blue-50 text-blue-900'
+              : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
           <Users className="w-4 h-4" />
@@ -49,8 +49,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onClick={() => setActiveSection('employeeMasterUpload')}
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'employeeMasterUpload'
-              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
-              : 'text-slate-300 hover:bg-slate-800/60'
+              ? 'border border-blue-200 bg-blue-50 text-blue-900'
+              : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
           <FileSpreadsheet className="w-4 h-4" />
@@ -62,8 +62,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onClick={() => setActiveSection('summary')}
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'summary'
-              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
-              : 'text-slate-300 hover:bg-slate-800/60'
+              ? 'border border-blue-200 bg-blue-50 text-blue-900'
+              : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
           <CheckCircle className="w-4 h-4" />
@@ -75,8 +75,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onClick={() => setActiveSection('employee')}
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'employee'
-              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
-              : 'text-slate-300 hover:bg-slate-800/60'
+              ? 'border border-blue-200 bg-blue-50 text-blue-900'
+              : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
           <Clock className="w-4 h-4" />
@@ -88,8 +88,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onClick={() => setActiveSection('requests')}
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'requests'
-              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
-              : 'text-slate-300 hover:bg-slate-800/60'
+              ? 'border border-blue-200 bg-blue-50 text-blue-900'
+              : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
           <Clock className="w-4 h-4" />
@@ -101,8 +101,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onClick={() => setActiveSection('invalid')}
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'invalid'
-              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
-              : 'text-slate-300 hover:bg-slate-800/60'
+              ? 'border border-blue-200 bg-blue-50 text-blue-900'
+              : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
           <AlertTriangle className="w-4 h-4" />
@@ -114,8 +114,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onClick={() => setActiveSection('leave')}
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'leave'
-              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
-              : 'text-slate-300 hover:bg-slate-800/60'
+              ? 'border border-blue-200 bg-blue-50 text-blue-900'
+              : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
           <TrendingUp className="w-4 h-4" />
@@ -127,8 +127,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onClick={() => setActiveSection('articleCredits')}
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'articleCredits'
-              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
-              : 'text-slate-300 hover:bg-slate-800/60'
+              ? 'border border-blue-200 bg-blue-50 text-blue-900'
+              : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
           <FileSpreadsheet className="w-4 h-4" />
@@ -140,8 +140,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onClick={() => setActiveSection('fines')}
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'fines'
-              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
-              : 'text-slate-300 hover:bg-slate-800/60'
+              ? 'border border-blue-200 bg-blue-50 text-blue-900'
+              : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
           <IndianRupee className="w-4 h-4" />
@@ -153,8 +153,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onClick={() => setActiveSection('holidays')}
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'holidays'
-              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
-              : 'text-slate-300 hover:bg-slate-800/60'
+              ? 'border border-blue-200 bg-blue-50 text-blue-900'
+              : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
           <Calendar className="w-4 h-4" />
@@ -166,8 +166,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onClick={() => setActiveSection('clientPlaces')}
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'clientPlaces'
-              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
-              : 'text-slate-300 hover:bg-slate-800/60'
+              ? 'border border-blue-200 bg-blue-50 text-blue-900'
+              : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
           <MapPin className="w-4 h-4" />
@@ -179,8 +179,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onClick={() => setActiveSection('upload')}
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'upload'
-              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
-              : 'text-slate-300 hover:bg-slate-800/60'
+              ? 'border border-blue-200 bg-blue-50 text-blue-900'
+              : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
           <Upload className="w-4 h-4" />
@@ -192,8 +192,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onClick={() => setActiveSection('backup')}
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'backup'
-              ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
-              : 'text-slate-300 hover:bg-slate-800/60'
+              ? 'border border-blue-200 bg-blue-50 text-blue-900'
+              : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
           <Database className="w-4 h-4" />
@@ -202,24 +202,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </nav>
 
       {uploadTotal > 0 && (
-        <div className="px-4 py-3 border-t border-slate-800 text-xs text-slate-400">
-          <div className="flex justify-between mb-1">
+        <div className="border-t border-slate-200/90 px-4 py-3 text-xs text-slate-500">
+          <div className="mb-1 flex justify-between">
             <span>Last upload</span>
             <span>
               {uploadSaved}/{uploadTotal} saved
               {uploadFailed > 0 && `, ${uploadFailed} failed`}
             </span>
           </div>
-          {currentMonthYear && <div className="text-slate-500">Month: {currentMonthYear}</div>}
+          {currentMonthYear && <div className="text-slate-600">Month: {currentMonthYear}</div>}
         </div>
       )}
 
       {/* Logout button */}
-      <div className="px-3 py-3 border-t border-slate-800">
+      <div className="border-t border-slate-200/90 px-3 py-3">
         <button
           type="button"
           onClick={onLogout}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-left text-sm text-slate-400 hover:bg-slate-800/60 hover:text-rose-300 transition-colors"
+          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-700"
         >
           <LogOut className="w-4 h-4" />
           <span>Logout</span>

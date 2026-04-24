@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { Search, Download, Loader2, X, Newspaper, CreditCard, Award } from 'lucide-react';
 import { User } from '@/types/ui';
+
+const ARTICLE_CREDITS_WORKFLOW_STEPS = ['Set attendance period', 'Search or sort table', 'Export or view breakdown'] as const;
 
 interface ArticleCreditRow {
   empId: string;
@@ -203,51 +206,96 @@ export const ArticleCreditsManager: React.FC = () => {
       onClose();
     };
     if (!isOpen) return null;
+    const rangeTitleId = 'article-credits-range-modal-title';
+    const selectCls =
+      'w-full rounded-md border border-slate-200 bg-white px-2 py-2 font-mono text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20';
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-        <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
-          <div className="bg-slate-950 px-4 py-3 border-b border-slate-800 flex justify-between items-center">
-            <h3 className="font-semibold text-slate-100">Select Custom Month Range</h3>
-            <button onClick={onClose} className="text-slate-500 hover:text-white"><span>X</span></button>
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm"
+        onClick={onClose}
+        role="presentation"
+      >
+        <div
+          className="flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
+          onClick={(e) => e.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={rangeTitleId}
+        >
+          <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+            <h3 id={rangeTitleId} className="text-sm font-semibold text-slate-900">
+              Custom month range
+            </h3>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+              aria-label="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
-          <div className="p-4 flex-1">
-            <div className="flex flex-col md:flex-row gap-6 justify-between">
-              {/* Start Month Dropdown */}
+          <div className="flex-1 p-4">
+            <p className="mb-4 text-xs text-slate-600">Attendance months included in excess-hour totals must fall in this range.</p>
+            <div className="flex flex-col justify-between gap-6 md:flex-row">
               <div className="flex-1">
-                <div className="mb-2 text-slate-300 font-medium">From</div>
+                <label htmlFor="article-credits-range-start" className="mb-2 block text-sm font-medium text-slate-700">
+                  From
+                </label>
                 <select
-                  className="w-full bg-slate-950 border border-slate-800 text-slate-300 rounded-md px-2 py-2 font-mono"
+                  id="article-credits-range-start"
+                  className={selectCls}
                   value={start}
-                  onChange={e => setStart(e.target.value)}
+                  onChange={(e) => setStart(e.target.value)}
                 >
                   <option value="">Select month</option>
-                  {months.map(m => (
-                    <option key={m+':start'} value={m}>{m}</option>
+                  {months.map((m) => (
+                    <option key={`${m}:start`} value={m}>
+                      {m}
+                    </option>
                   ))}
                 </select>
               </div>
-              {/* End Month Dropdown */}
               <div className="flex-1">
-                <div className="mb-2 text-slate-300 font-medium">To</div>
+                <label htmlFor="article-credits-range-end" className="mb-2 block text-sm font-medium text-slate-700">
+                  To
+                </label>
                 <select
-                  className="w-full bg-slate-950 border border-slate-800 text-slate-300 rounded-md px-2 py-2 font-mono"
+                  id="article-credits-range-end"
+                  className={selectCls}
                   value={end}
-                  onChange={e => setEnd(e.target.value)}
+                  onChange={(e) => setEnd(e.target.value)}
                 >
                   <option value="">Select month</option>
-                  {months.map(m => (
-                    <option key={m+':end'} value={m}>{m}</option>
+                  {months.map((m) => (
+                    <option key={`${m}:end`} value={m}>
+                      {m}
+                    </option>
                   ))}
                 </select>
               </div>
             </div>
-            <div className="mt-6 flex gap-2 items-center justify-between">
-              <div className="text-xs text-slate-400 font-mono">{start && end ? `Selected: ${start} to ${end}` : 'Select start and end months.'}</div>
-              <button onClick={apply} className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-md font-semibold">Apply</button>
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="font-mono text-xs text-slate-500">
+                {start && end ? `Selected: ${start} → ${end}` : 'Select start and end months.'}
+              </div>
+              <button
+                type="button"
+                onClick={apply}
+                className="rounded-md bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+              >
+                Apply
+              </button>
             </div>
           </div>
-          <div className="bg-slate-950 px-4 py-2 border-t border-slate-800 text-right">
-            <button onClick={onClose} className="text-xs text-slate-400 hover:text-white px-3 py-1.5 rounded-md hover:bg-slate-800 transition-colors">Close</button>
+          <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-right">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md px-3 py-1.5 text-xs text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
+            >
+              Close
+            </button>
           </div>
         </div>
       </div>
@@ -262,161 +310,380 @@ export const ArticleCreditsManager: React.FC = () => {
     const leaveAfter = row.leaveTakenAfterJan26;
     const excess = row.totalExcessHours;
     const excessDays = row.totalExcessDays;
+    const calcTitleId = 'article-credits-calc-modal-title';
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-        <div className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
-          <div className="bg-slate-950 px-4 py-3 border-b border-slate-800 flex justify-between items-center">
-            <h3 className="font-semibold text-slate-100">Credit Calculation for {row.name}</h3>
-            <button onClick={onClose} className="text-slate-500 hover:text-white"><span>X</span></button>
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm"
+        onClick={onClose}
+        role="presentation"
+      >
+        <div
+          className="flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
+          onClick={(e) => e.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={calcTitleId}
+        >
+          <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+            <h3 id={calcTitleId} className="text-sm font-semibold text-slate-900">
+              Credit calculation — {row.name}
+            </h3>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+              aria-label="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
-          <div className="p-5 text-slate-200 text-sm space-y-2">
-            <div><span className="font-semibold">Base Credit (as on 1 Jan 26):</span> <span className="font-mono">{base}</span></div>
-            <div><span className="font-semibold">Leave Taken After 1 Jan 2026:</span> <span className="font-mono text-rose-400">- {leaveAfter}</span></div>
-            <div><span className="font-semibold">Excess Hours (from Jan 2026):</span> <span className={`font-mono ${excess >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{excess >= 0 ? '+' : ''}{excess}</span></div>
-            <div><span className="font-semibold">Excess Days (from Jan 2026):</span> <span className={`font-mono ${excessDays >= 0 ? 'text-orange-400' : 'text-rose-400'}`}>{excessDays >= 0 ? '+' : ''}{excessDays}</span></div>
-            <hr className="my-2 border-slate-700" />
-            <div className="font-bold text-lg">Final Credit: <span className="font-mono text-emerald-300">{row.finalCredit}</span></div>
-            <div className="text-xs text-slate-400 mt-2">Formula: Credit (Jan 26) - Leave After Jan 26 + Excess Days</div>
+          <div className="space-y-3 p-5 text-sm text-slate-800">
+            <div>
+              <span className="font-semibold text-slate-900">Base credit (as on 1 Jan 26):</span>{' '}
+              <span className="font-mono tabular-nums">{base}</span>
+            </div>
+            <div>
+              <span className="font-semibold text-slate-900">Leave taken on/after 1 Jan 2026:</span>{' '}
+              <span className="font-mono tabular-nums text-rose-700">− {leaveAfter}</span>
+            </div>
+            <div>
+              <span className="font-semibold text-slate-900">Excess hours (from Jan 2026):</span>{' '}
+              <span className={`font-mono tabular-nums ${excess >= 0 ? 'text-emerald-800' : 'text-rose-700'}`}>
+                {excess >= 0 ? '+' : ''}
+                {excess}
+              </span>
+            </div>
+            <div>
+              <span className="font-semibold text-slate-900">Excess days (from Jan 2026):</span>{' '}
+              <span className={`font-mono tabular-nums ${excessDays >= 0 ? 'text-amber-800' : 'text-rose-700'}`}>
+                {excessDays >= 0 ? '+' : ''}
+                {excessDays}
+              </span>
+            </div>
+            <hr className="my-2 border-slate-200" />
+            <div className="text-lg font-bold text-slate-900">
+              Final credit: <span className="font-mono text-emerald-800 tabular-nums">{row.finalCredit}</span>
+            </div>
+            <p className="mt-2 text-xs text-slate-600">
+              Formula: credit (1 Jan 26) − leave after Jan 26 + excess days (from weekday hours).
+            </p>
           </div>
-          <div className="bg-slate-950 px-4 py-2 border-t border-slate-800 text-right">
-            <button onClick={onClose} className="text-xs text-slate-400 hover:text-white px-3 py-1.5 rounded-md hover:bg-slate-800 transition-colors">Close</button>
+          <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-right">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+            >
+              Close
+            </button>
           </div>
         </div>
       </div>
     );
   };
 
+  const periodBtnOn = 'rounded-md bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-900 shadow-sm transition-colors';
+  const periodBtnOff =
+    'rounded-md px-3 py-1 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900';
+  const periodBtnCustomOn = 'rounded-md bg-blue-600 px-3 py-1 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-blue-700';
+
+  const thBase =
+    'cursor-pointer px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 transition-colors hover:bg-slate-100';
+  const thRight = `${thBase} text-right`;
+  const tdMono = 'px-4 py-3 text-right font-mono text-sm tabular-nums text-slate-700';
+
   return (
-    <div className="space-y-6 p-6">
-      {/* Control Bar */}
-      <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex flex-col md:flex-row justify-between items-center gap-4">
-        {/* Period Selector */}
-        <div className="flex flex-col gap-2 md:flex-row md:items-center">
-          <div className="flex items-center gap-2">
-            <span className="text-slate-400 font-medium mr-2">Period:</span>
-            <div className="flex gap-1 bg-slate-950 border border-slate-800 rounded-lg p-1">
+    <section className="space-y-5 text-slate-900" aria-labelledby="article-credits-heading">
+      <header className="space-y-2">
+        <h2 id="article-credits-heading" className="text-lg font-semibold text-slate-900 sm:text-xl">
+          Article credits
+        </h2>
+        <p className="max-w-3xl text-sm text-slate-600">
+          Credits for <span className="font-medium text-slate-800">Article</span> category staff: base credit from
+          master data, leave after 1 Jan 2026, and excess hours from Jan 2026 onward (by selected attendance period).
+        </p>
+        <ol className="flex list-none flex-wrap gap-2 text-xs text-slate-700" aria-label="Article credits workflow">
+          {ARTICLE_CREDITS_WORKFLOW_STEPS.map((t, i) => (
+            <li
+              key={t}
+              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1"
+            >
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+                {i + 1}
+              </span>
+              {t}
+            </li>
+          ))}
+        </ol>
+      </header>
+
+      <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+        <div className="flex min-w-0 flex-col gap-2">
+          <span className="text-xs font-medium text-slate-600">Attendance period (for excess totals)</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <div
+              className="inline-flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm"
+              role="group"
+              aria-label="Period preset"
+            >
               <button
-                className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${!range.start && !range.end ? 'bg-emerald-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
+                type="button"
+                className={!range.start && !range.end ? periodBtnOn : periodBtnOff}
                 onClick={() => setRange({ start: '', end: '' })}
-              >All</button>
+              >
+                All
+              </button>
               <button
-                className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${(() => { const now = new Date(); const ym = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`; return range.start === ym && range.end === ym; })() ? 'bg-emerald-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
-                onClick={() => { const now = new Date(); const ym = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`; setRange({ start: ym, end: ym }); }}
-              >Current Month</button>
+                type="button"
+                className={
+                  (() => {
+                    const now = new Date();
+                    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                    return range.start === ym && range.end === ym;
+                  })()
+                    ? periodBtnOn
+                    : periodBtnOff
+                }
+                onClick={() => {
+                  const now = new Date();
+                  const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                  setRange({ start: ym, end: ym });
+                }}
+              >
+                Current month
+              </button>
               <button
-                className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${(() => { const now = new Date(); const end = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`; const startDate = new Date(now.getFullYear(), now.getMonth()-2, 1); const start = `${startDate.getFullYear()}-${String(startDate.getMonth()+1).padStart(2,'0')}`; return range.start === start && range.end === end; })() ? 'bg-emerald-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
-                onClick={() => { const now = new Date(); const end = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`; const startDate = new Date(now.getFullYear(), now.getMonth()-2, 1); const start = `${startDate.getFullYear()}-${String(startDate.getMonth()+1).padStart(2,'0')}`; setRange({ start, end }); }}
-              >Last 3 Months</button>
+                type="button"
+                className={
+                  (() => {
+                    const now = new Date();
+                    const end = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                    const startDate = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+                    const start = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}`;
+                    return range.start === start && range.end === end;
+                  })()
+                    ? periodBtnOn
+                    : periodBtnOff
+                }
+                onClick={() => {
+                  const now = new Date();
+                  const end = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                  const startDate = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+                  const start = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}`;
+                  setRange({ start, end });
+                }}
+              >
+                Last 3 months
+              </button>
               <button
-                className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${(() => { const now = new Date(); const end = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`; const startDate = new Date(now.getFullYear(), now.getMonth()-5, 1); const start = `${startDate.getFullYear()}-${String(startDate.getMonth()+1).padStart(2,'0')}`; return range.start === start && range.end === end; })() ? 'bg-emerald-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
-                onClick={() => { const now = new Date(); const end = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`; const startDate = new Date(now.getFullYear(), now.getMonth()-5, 1); const start = `${startDate.getFullYear()}-${String(startDate.getMonth()+1).padStart(2,'0')}`; setRange({ start, end }); }}
-              >Last 6 Months</button>
+                type="button"
+                className={
+                  (() => {
+                    const now = new Date();
+                    const end = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                    const startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+                    const start = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}`;
+                    return range.start === start && range.end === end;
+                  })()
+                    ? periodBtnOn
+                    : periodBtnOff
+                }
+                onClick={() => {
+                  const now = new Date();
+                  const end = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                  const startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+                  const start = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}`;
+                  setRange({ start, end });
+                }}
+              >
+                Last 6 months
+              </button>
               <button
-                className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${(() => { const now = new Date(); const end = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`; const startDate = new Date(now.getFullYear()-1, now.getMonth()+1, 1); const start = `${startDate.getFullYear()}-${String(startDate.getMonth()+1).padStart(2,'0')}`; return range.start === start && range.end === end; })() ? 'bg-emerald-600 text-white' : 'text-slate-300 hover:bg-slate-800'}`}
-                onClick={() => { const now = new Date(); const end = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`; const startDate = new Date(now.getFullYear()-1, now.getMonth()+1, 1); const start = `${startDate.getFullYear()}-${String(startDate.getMonth()+1).padStart(2,'0')}`; setRange({ start, end }); }}
-              >Last 12 Months</button>
+                type="button"
+                className={
+                  (() => {
+                    const now = new Date();
+                    const end = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                    const startDate = new Date(now.getFullYear() - 1, now.getMonth() + 1, 1);
+                    const start = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}`;
+                    return range.start === start && range.end === end;
+                  })()
+                    ? periodBtnOn
+                    : periodBtnOff
+                }
+                onClick={() => {
+                  const now = new Date();
+                  const end = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                  const startDate = new Date(now.getFullYear() - 1, now.getMonth() + 1, 1);
+                  const start = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}`;
+                  setRange({ start, end });
+                }}
+              >
+                Last 12 months
+              </button>
               <button
-                className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${range.start && range.end && !(range.start === range.end) && 'bg-blue-600 text-white'}`}
+                type="button"
+                className={
+                  range.start && range.end && range.start !== range.end ? periodBtnCustomOn : periodBtnOff
+                }
                 onClick={() => setShowRangeModal(true)}
-              >Custom</button>
+              >
+                Custom
+              </button>
             </div>
-            <span className="ml-4 text-slate-500 text-xs font-mono">{range.start && range.end ? `${range.start} to ${range.end}` : 'All Data'}</span>
+            <span className="font-mono text-xs text-slate-500">
+              {range.start && range.end ? `${range.start} → ${range.end}` : 'All months'}
+            </span>
           </div>
         </div>
-        {/* Search & Export */}
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <div className="relative flex-1 md:w-64">
+
+        <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center md:w-auto md:max-w-md">
+          <label htmlFor="article-credits-search" className="sr-only">
+            Search by name or employee ID
+          </label>
+          <div className="relative flex-1">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
+              aria-hidden
+            />
             <input
-              type="text"
-              placeholder="Search article..."
+              id="article-credits-search"
+              type="search"
+              placeholder="Search by name or ID…"
               value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 text-slate-300 text-sm rounded-full pl-4 pr-4 py-2 outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/20 placeholder:text-slate-600"
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full rounded-md border border-slate-200 bg-white py-2 pl-10 pr-3 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             />
           </div>
-          <button 
+          <button
+            type="button"
             onClick={handleExport}
-            className="p-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-full transition-colors shadow-sm"
-            title="Export Article Credits to Excel"
+            disabled={rows.length === 0}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Export article credits to Excel"
           >
-            <span role="img" aria-label="download">⬇️</span>
+            <Download className="h-4 w-4 text-slate-600" aria-hidden />
+            Export
           </button>
         </div>
       </div>
 
-      {/* Dashboard Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div className="bg-slate-900/40 border border-slate-800 rounded-lg p-4 flex items-center gap-4">
-          <div className="p-3 bg-emerald-500/10 rounded-full text-emerald-400">
-            <span role="img" aria-label="article">📰</span>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="flex items-center gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700">
+            <Newspaper className="h-6 w-6" aria-hidden />
           </div>
           <div>
-            <div className="text-2xl font-bold text-slate-100">{stats.totalArticles}</div>
-            <div className="text-xs text-slate-400 uppercase tracking-wider font-medium">Total Articles</div>
+            <div className="text-2xl font-bold tabular-nums text-slate-900">{stats.totalArticles}</div>
+            <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Article employees</div>
           </div>
         </div>
-        <div className="bg-slate-900/40 border border-slate-800 rounded-lg p-4 flex items-center gap-4">
-          <div className="p-3 bg-blue-500/10 rounded-full text-blue-400">
-            <span role="img" aria-label="credit">💳</span>
+        <div className="flex items-center gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-blue-700">
+            <CreditCard className="h-6 w-6" aria-hidden />
           </div>
           <div>
-            <div className="text-2xl font-bold text-slate-100">{stats.sumCredits}</div>
-            <div className="text-xs text-slate-400 uppercase tracking-wider font-medium">Sum of Credits (Jan 26)</div>
+            <div className="text-2xl font-bold tabular-nums text-slate-900">{stats.sumCredits}</div>
+            <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Sum credits (1 Jan 26)</div>
           </div>
         </div>
-        <div className="bg-slate-900/40 border border-slate-800 rounded-lg p-4 flex items-center gap-4">
-          <div className="p-3 bg-indigo-500/10 rounded-full text-indigo-400">
-            <span role="img" aria-label="final">🏅</span>
+        <div className="flex items-center gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700">
+            <Award className="h-6 w-6" aria-hidden />
           </div>
           <div>
-            <div className="text-2xl font-bold text-slate-100">{stats.sumFinalCredits.toFixed(2)}</div>
-            <div className="text-xs text-slate-400 uppercase tracking-wider font-medium">Sum of Final Credits</div>
+            <div className="text-2xl font-bold tabular-nums text-slate-900">{stats.sumFinalCredits.toFixed(2)}</div>
+            <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Sum final credits</div>
           </div>
         </div>
       </div>
 
-      {/* Data Table */}
-      <section className="bg-slate-900/60 border border-slate-800 rounded-xl shadow-sm overflow-hidden">
+      <section
+        className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+        aria-labelledby="article-credits-table-heading"
+      >
+        <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+          <h3 id="article-credits-table-heading" className="text-sm font-semibold text-slate-900">
+            Detail by employee
+          </h3>
+          <p className="text-xs text-slate-600">Click final credit to see the calculation breakdown.</p>
+        </div>
         {loading ? (
-          <div className="p-12 text-center text-slate-500 flex flex-col items-center gap-3">
-            <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-            <p>Loading article credits...</p>
+          <div className="flex flex-col items-center justify-center gap-2 px-4 py-14 text-center text-slate-600">
+            <Loader2 className="h-8 w-8 animate-spin text-blue-600" aria-hidden />
+            <p role="status">Loading article credits…</p>
           </div>
         ) : sortedRows.length === 0 ? (
-          <div className="p-12 text-center text-slate-500 flex flex-col items-center gap-3">
-            <p>No article employees found for selected period.</p>
+          <div className="px-4 py-14 text-center text-slate-600">
+            <p>No article-category employees for this view, or no rows match your search.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-full text-xs">
-              <thead className="bg-slate-950 border-b border-slate-800 sticky top-0">
+            <table className="min-w-full text-sm">
+              <thead className="sticky top-0 border-b border-slate-200 bg-slate-50">
                 <tr>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-400 cursor-pointer" onClick={() => { setSortField('empId'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>Emp ID</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-300 cursor-pointer" onClick={() => { setSortField('name'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>Name</th>
-                  <th className="px-4 py-3 text-right font-semibold text-blue-400 cursor-pointer" onClick={() => { setSortField('creditAsOnJan26'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>Credit (as on 1 Jan 26)</th>
-                  <th className="px-4 py-3 text-right font-semibold text-rose-400 cursor-pointer" onClick={() => { setSortField('leaveTakenBeforeJan26'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>Leave Taken Before 1 Jan 2026</th>
-                  <th className="px-4 py-3 text-right font-semibold text-sky-400 cursor-pointer" onClick={() => { setSortField('leaveTakenAfterJan26'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>Leave Taken On/After 1 Jan 2026</th>
-                  <th className="px-4 py-3 text-right font-semibold text-amber-400 cursor-pointer" onClick={() => { setSortField('totalExcessHours'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>Excess Hours (from Jan 2026)</th>
-                  <th className="px-4 py-3 text-right font-semibold text-orange-400 cursor-pointer" onClick={() => { setSortField('totalExcessDays'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>Excess Days (from Jan 2026)</th>
-                  <th className="px-4 py-3 text-right font-semibold text-emerald-300 cursor-pointer" onClick={() => { setSortField('finalCredit'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>Final Credit</th>
+                  <th
+                    scope="col"
+                    className={`${thBase} text-left`}
+                    onClick={() => {
+                      setSortField('empId');
+                      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+                    }}
+                  >
+                    Emp ID
+                  </th>
+                  <th
+                    scope="col"
+                    className={`${thBase} text-left text-slate-600`}
+                    onClick={() => {
+                      setSortField('name');
+                      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+                    }}
+                  >
+                    Name
+                  </th>
+                  <th scope="col" className={thRight} onClick={() => { setSortField('creditAsOnJan26'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>
+                    Credit (1 Jan 26)
+                  </th>
+                  <th scope="col" className={thRight} onClick={() => { setSortField('leaveTakenBeforeJan26'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>
+                    Leave before 1 Jan 2026
+                  </th>
+                  <th scope="col" className={thRight} onClick={() => { setSortField('leaveTakenAfterJan26'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>
+                    Leave on/after 1 Jan 2026
+                  </th>
+                  <th scope="col" className={thRight} onClick={() => { setSortField('totalExcessHours'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>
+                    Excess hours (Jan 2026+)
+                  </th>
+                  <th scope="col" className={thRight} onClick={() => { setSortField('totalExcessDays'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>
+                    Excess days (Jan 2026+)
+                  </th>
+                  <th scope="col" className={thRight} onClick={() => { setSortField('finalCredit'); setSortDir(sortDir === 'asc' ? 'desc' : 'asc'); }}>
+                    Final credit
+                  </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60">
+              <tbody>
                 {sortedRows.map((row, idx) => (
-                  <tr key={idx} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="px-4 py-3 text-left font-mono text-slate-400">{row.empId}</td>
-                    <td className="px-4 py-3 font-medium text-slate-200">{row.name}</td>
-                    <td className="px-4 py-3 text-right font-mono text-blue-400">{row.creditAsOnJan26}</td>
-                    <td className="px-4 py-3 text-right font-mono text-rose-400">{row.leaveTakenBeforeJan26}</td>
-                    <td className="px-4 py-3 text-right font-mono text-sky-400">{row.leaveTakenAfterJan26}</td>
-                    <td className="px-4 py-3 text-right font-mono text-amber-400">{row.totalExcessHours}</td>
-                    <td className="px-4 py-3 text-right font-mono text-orange-400">{row.totalExcessDays}</td>
-                    <td
-                      className="px-4 py-3 text-right font-mono text-emerald-300 font-bold cursor-pointer underline decoration-dotted hover:bg-slate-800/60"
-                      title="Show calculation"
-                      onClick={() => { setCalcRow(row); setShowCalcModal(true); }}
-                    >
-                      {row.finalCredit}
+                  <tr key={idx} className="border-b border-slate-200 transition-colors hover:bg-slate-50/90">
+                    <td className="px-4 py-3 text-left font-mono text-xs text-slate-600">{row.empId}</td>
+                    <td className="px-4 py-3 font-medium text-slate-900">{row.name}</td>
+                    <td className={`${tdMono} text-blue-800`}>{row.creditAsOnJan26}</td>
+                    <td className={`${tdMono} text-rose-800`}>{row.leaveTakenBeforeJan26}</td>
+                    <td className={`${tdMono} text-sky-800`}>{row.leaveTakenAfterJan26}</td>
+                    <td className={`${tdMono} text-amber-900`}>{row.totalExcessHours}</td>
+                    <td className={`${tdMono} text-orange-900`}>{row.totalExcessDays}</td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        className="font-mono text-sm font-semibold tabular-nums text-emerald-800 underline decoration-dotted underline-offset-2 transition-colors hover:text-blue-800"
+                        title="Show calculation"
+                        onClick={() => {
+                          setCalcRow(row);
+                          setShowCalcModal(true);
+                        }}
+                      >
+                        {row.finalCredit}
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -428,6 +695,6 @@ export const ArticleCreditsManager: React.FC = () => {
 
       <RangeModal isOpen={showRangeModal} onClose={() => setShowRangeModal(false)} />
       <CalculationModal row={calcRow} isOpen={showCalcModal} onClose={() => setShowCalcModal(false)} />
-    </div>
+    </section>
   );
 };

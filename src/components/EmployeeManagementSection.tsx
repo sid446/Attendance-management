@@ -118,47 +118,63 @@ function formatSalaryHistoryRowDate(value: unknown): string {
 
 const USERS_LIST_ENDPOINT = '/api/users?listOnly=1&includeInactive=1';
 
+/** Shown under edit/add titles; matches roster “numbered chips” pattern. */
+const EDIT_EMPLOYEE_WORKFLOW_STEPS = ['Choose tab', 'Update fields', 'Save changes'] as const;
+const ADD_EMPLOYEE_WORKFLOW_STEPS = ['Basic details', 'Schedule if needed', 'Create employee'] as const;
+
 function EmployeeManagementTableSkeleton() {
   const rowCount = 8;
   return (
     <div className="overflow-x-auto" aria-busy="true" aria-label="Loading employees">
       <table className="w-full text-left text-sm">
-        <thead className="bg-slate-800/50 text-slate-400 font-medium text-xs uppercase tracking-wide">
+        <thead className="bg-slate-100 text-xs font-medium uppercase tracking-wide text-slate-600">
           <tr>
-            <th className="px-4 py-3.5">Employee</th>
-            <th className="px-4 py-3.5 hidden md:table-cell">Email</th>
-            <th className="px-4 py-3.5 hidden lg:table-cell">Team</th>
-            <th className="px-4 py-3.5 hidden sm:table-cell">Designation</th>
-            <th className="px-4 py-3.5 hidden xl:table-cell">Joined</th>
-            <th className="px-4 py-3.5 text-right">Actions</th>
+            <th className="px-4 py-3.5" scope="col">
+              Employee
+            </th>
+            <th className="hidden px-4 py-3.5 md:table-cell" scope="col">
+              Email
+            </th>
+            <th className="hidden px-4 py-3.5 lg:table-cell" scope="col">
+              Team
+            </th>
+            <th className="hidden px-4 py-3.5 sm:table-cell" scope="col">
+              Designation
+            </th>
+            <th className="hidden px-4 py-3.5 xl:table-cell" scope="col">
+              Joined
+            </th>
+            <th className="px-4 py-3.5 text-right" scope="col">
+              Actions
+            </th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-800/50 animate-pulse">
+        <tbody className="divide-y divide-slate-200 animate-pulse">
           {Array.from({ length: rowCount }, (_, i) => (
-            <tr key={i} className={i % 2 === 0 ? 'bg-slate-900/20' : ''}>
+            <tr key={i} className={i % 2 === 0 ? 'bg-slate-50/80' : 'bg-white'}>
               <td className="px-4 py-3.5">
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-slate-700/60 shrink-0" />
-                  <div className="space-y-2 flex-1 min-w-0">
-                    <div className="h-3.5 bg-slate-700/60 rounded w-36 max-w-full" />
-                    <div className="h-2.5 bg-slate-800 rounded w-24 max-w-full" />
+                  <div className="h-9 w-9 shrink-0 rounded-xl bg-slate-200/80" />
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="h-3.5 max-w-full w-36 rounded bg-slate-200" />
+                    <div className="h-2.5 max-w-full w-24 rounded bg-slate-100" />
                   </div>
                 </div>
               </td>
-              <td className="px-4 py-3.5 hidden md:table-cell">
-                <div className="h-3 bg-slate-700/50 rounded w-40" />
+              <td className="hidden px-4 py-3.5 md:table-cell">
+                <div className="h-3 w-40 rounded bg-slate-200" />
               </td>
-              <td className="px-4 py-3.5 hidden lg:table-cell">
-                <div className="h-3 bg-slate-700/50 rounded w-28" />
+              <td className="hidden px-4 py-3.5 lg:table-cell">
+                <div className="h-3 w-28 rounded bg-slate-200" />
               </td>
-              <td className="px-4 py-3.5 hidden sm:table-cell">
-                <div className="h-3 bg-slate-700/50 rounded w-24" />
+              <td className="hidden px-4 py-3.5 sm:table-cell">
+                <div className="h-3 w-24 rounded bg-slate-200" />
               </td>
-              <td className="px-4 py-3.5 hidden xl:table-cell">
-                <div className="h-3 bg-slate-700/50 rounded w-20" />
+              <td className="hidden px-4 py-3.5 xl:table-cell">
+                <div className="h-3 w-20 rounded bg-slate-200" />
               </td>
               <td className="px-4 py-3.5 text-right">
-                <div className="h-8 bg-slate-700/50 rounded-lg w-20 ml-auto" />
+                <div className="ml-auto h-8 w-20 rounded-lg bg-slate-200" />
               </td>
             </tr>
           ))}
@@ -1848,17 +1864,13 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
 
   const renderSalaryFieldWithHistory = (field: SalaryHistoryFieldKey, label: string, theme: 'salary' | 'extended' = 'salary') => {
     const inputCls =
-      theme === 'extended'
-        ? 'w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50'
-        : 'w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50';
+      'w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
     const dateCls =
-      theme === 'extended'
-        ? 'w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-purple-500/50'
-        : 'w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50';
-    const panelBorder = theme === 'extended' ? 'border-purple-900/50' : 'border-emerald-900/50';
-    const panelTitle = theme === 'extended' ? 'text-purple-400/90' : 'text-emerald-400/90';
+      'w-full min-h-9 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 [color-scheme:light] shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
+    const panelBorder = theme === 'extended' ? 'border-blue-200' : 'border-slate-200';
+    const panelTitle = theme === 'extended' ? 'text-blue-900' : 'text-slate-800';
     const panelBtn =
-      theme === 'extended' ? 'rounded bg-purple-600/80 px-2 py-1 text-[11px] text-white hover:bg-purple-600' : 'rounded bg-emerald-600/80 px-2 py-1 text-[11px] text-white hover:bg-emerald-600';
+      'rounded-md bg-blue-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40';
 
     const histAll = sortSalaryHistoryDesc((formData as any)?.fieldHistories?.[field]);
     const historyOpen = Boolean(salaryHistoryExpanded[field]);
@@ -1874,7 +1886,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               [field]: !prev[field],
             }))
           }
-          className="mb-2 flex w-full items-center justify-between gap-2 rounded border border-slate-700 bg-slate-900/80 px-2.5 py-2 text-left text-[11px] text-slate-300 hover:border-slate-600 hover:bg-slate-900"
+          className="mb-2 flex w-full items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-left text-[11px] text-slate-700 hover:border-slate-300 hover:bg-slate-100"
           aria-expanded={historyOpen}
         >
           <span className="flex items-center gap-2">
@@ -1889,19 +1901,21 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           <span className="text-[10px] text-slate-500 shrink-0">Effective from · End date</span>
         </button>
         {historyOpen && (
-          <div className="mb-3 rounded border border-slate-800 bg-slate-950/90 p-2">
+          <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 p-2">
             {historyCount === 0 ? (
-              <p className="text-[11px] text-slate-500 py-1">No saved history for this field yet. After you add a new salary and save, previous amounts appear here with start and end dates.</p>
+              <p className="py-1 text-[11px] text-slate-600">
+                No saved history for this field yet. After you add a new salary and save, previous amounts appear here with
+                start and end dates.
+              </p>
             ) : (
-              <ul className="max-h-56 space-y-0 overflow-y-auto text-[11px] divide-y divide-slate-800/80">
+              <ul className="max-h-56 space-y-0 overflow-y-auto divide-y divide-slate-200 text-[11px]">
                 {histAll.map((row, idx) => {
                   const isOpenEnded = row.effectiveTo == null || row.effectiveTo === '';
-                  const currentCls =
-                    theme === 'extended' ? 'text-purple-400/90' : 'text-emerald-500/90';
+                  const currentCls = 'font-medium text-blue-800';
                   return (
                     <li key={`${String(row.effectiveFrom)}-${idx}`} className="flex flex-col gap-0.5 py-2 first:pt-0">
-                      <div className="font-medium text-slate-200">{row.value ?? '—'}</div>
-                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-slate-400">
+                      <div className="font-medium text-slate-900">{row.value ?? '—'}</div>
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-slate-600">
                         <span>
                           <span className="text-slate-500">From </span>
                           {formatSalaryHistoryRowDate(row.effectiveFrom)}
@@ -1918,7 +1932,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
             )}
           </div>
         )}
-        <label className="block text-xs text-slate-400 mb-1">{label}</label>
+        <label className="block text-xs font-medium text-slate-600 mb-1">{label}</label>
         <input
           type="text"
           value={(formData as any)[field] || ''}
@@ -1942,13 +1956,13 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         <button
           type="button"
           onClick={() => openSalaryRevisionPanel(field)}
-          className="mt-2 inline-flex items-center gap-1 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-300 hover:border-slate-600 hover:text-white"
+          className="mt-2 inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm hover:border-blue-200 hover:bg-blue-50/60 hover:text-blue-900"
         >
           <Plus className="w-3.5 h-3.5" />
           Add new salary
         </button>
         {salaryRevisionPanel?.field === field && (
-          <div className={`mt-2 space-y-2 rounded border ${panelBorder} bg-slate-950 p-2`}>
+          <div className={`mt-2 space-y-2 rounded-md border ${panelBorder} bg-slate-50 p-2`}>
             <div className={`text-[11px] ${panelTitle}`}>New amount (applies to the form; save employee to persist)</div>
             <input
               type="text"
@@ -1974,7 +1988,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               <button
                 type="button"
                 onClick={() => setSalaryRevisionPanel(null)}
-                className="rounded border border-slate-600 px-2 py-1 text-[11px] text-slate-300 hover:bg-slate-800"
+                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
               >
                 Cancel
               </button>
@@ -1988,16 +2002,48 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   // ============== EDIT FORM VIEW =================
   if (editingUser) {
     return (
-      <div className="employee-edit-date-inputs bg-slate-900/50 rounded-lg border border-slate-800 p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-semibold text-emerald-400">Edit Employee</h2>
-          <button onClick={handleCancelEdit} className="text-slate-400 hover:text-slate-200">
-            <X className="w-5 h-5" />
+      <section
+        className="employee-edit-date-inputs rounded-lg border border-slate-200 bg-white p-6 shadow-sm"
+        aria-labelledby="edit-employee-heading"
+      >
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 flex-1 space-y-2">
+            <h2 id="edit-employee-heading" className="text-xl font-semibold tracking-tight text-slate-900">
+              Edit employee
+            </h2>
+            <p className="max-w-2xl text-sm text-slate-600">
+              Work through the tabs (basic, schedule, bank, salary, history), then use Save changes. Salary fields can
+              record history before you save.
+            </p>
+            <ol className="flex list-none flex-wrap gap-2 text-xs text-slate-700" aria-label="Suggested workflow">
+              {EDIT_EMPLOYEE_WORKFLOW_STEPS.map((t, i) => (
+                <li
+                  key={t}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1"
+                >
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+                    {i + 1}
+                  </span>
+                  {t}
+                </li>
+              ))}
+            </ol>
+          </div>
+          <button
+            type="button"
+            onClick={handleCancelEdit}
+            className="shrink-0 self-start rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 sm:self-auto"
+            aria-label="Close edit form"
+          >
+            <X className="h-5 w-5" />
           </button>
         </div>
 
         {error && (
-          <div className="bg-rose-500/10 text-rose-300 px-4 py-3 rounded-md mb-6 border border-rose-500/20">
+          <div
+            className="mb-6 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900"
+            role="alert"
+          >
             {error}
           </div>
         )}
@@ -2005,63 +2051,69 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Tab Navigation */}
           <div className="md:col-span-2 mb-4">
-            <div className="flex space-x-1 bg-slate-950/50 p-1 rounded-lg border border-slate-800">
+            <div className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1">
               <button
+                type="button"
                 onClick={() => setActiveTab('basic')}
                 className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                   activeTab === 'basic'
-                    ? 'bg-emerald-600 text-white'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-600 hover:bg-slate-200/70 hover:text-slate-900'
                 }`}
               >
                 Basic Info
               </button>
               <button
+                type="button"
                 onClick={() => setActiveTab('schedule')}
                 className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                   activeTab === 'schedule'
-                    ? 'bg-emerald-600 text-white'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-600 hover:bg-slate-200/70 hover:text-slate-900'
                 }`}
               >
                 Schedule
               </button>
               <button
+                type="button"
                 onClick={() => setActiveTab('extended')}
                 className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                   activeTab === 'extended'
-                    ? 'bg-emerald-600 text-white'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-600 hover:bg-slate-200/70 hover:text-slate-900'
                 }`}
               >
                 Extended
               </button>
               <button
+                type="button"
                 onClick={() => setActiveTab('bank')}
                 className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                   activeTab === 'bank'
-                    ? 'bg-emerald-600 text-white'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-600 hover:bg-slate-200/70 hover:text-slate-900'
                 }`}
               >
                 Bank Details
               </button>
               <button
+                type="button"
                 onClick={() => setActiveTab('salary')}
                 className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                   activeTab === 'salary'
-                    ? 'bg-emerald-600 text-white'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-600 hover:bg-slate-200/70 hover:text-slate-900'
                 }`}
               >
                 Salary & Leave
               </button>
               <button
+                type="button"
                 onClick={() => setActiveTab('history')}
                 className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                   activeTab === 'history'
-                    ? 'bg-emerald-600 text-white'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-600 hover:bg-slate-200/70 hover:text-slate-900'
                 }`}
               >
                 History
@@ -2073,67 +2125,67 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           {activeTab === 'basic' && (
             <>
               <div className="space-y-4">
-                <h3 className="text-sm font-medium text-slate-300 border-b border-slate-800 pb-2">Basic Information</h3>
+                <h3 className="text-sm font-medium border-b border-slate-200 text-slate-900 pb-2">Basic Information</h3>
                 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">OD ID</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">OD ID</label>
                   <input
                     type="text"
                     value={formData.odId || ''}
                     onChange={(e) => handleInputChange('odId', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Name</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Name</label>
                   <input
                     type="text"
                     value={formData.name || ''}
                     onChange={(e) => handleInputChange('name', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Email</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Email</label>
                   <input
                     type="email"
                     value={formData.email || ''}
                     onChange={(e) => handleInputChange('email', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Attendance Email</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Attendance Email</label>
                   <input
                     type="email"
                     value={formData.attendanceEmail || ''}
                     onChange={(e) => handleInputChange('attendanceEmail', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
 
                 {formData.category === 'Article' && (
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Credits for Articles (as on 1st Jan 26)</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Credits for Articles (as on 1st Jan 26)</label>
                     <input
                       type="number"
                       value={formData.articleCreditsAsOnJan26 ?? ''}
                       onChange={(e) => handleInputChange('articleCreditsAsOnJan26', e.target.value === '' ? undefined : Number(e.target.value))}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                       min="0"
                     />
                   </div>
                 )}
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Designation</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Designation</label>
                   <select
                     value={formData.designation || ''}
                     onChange={(e) => handleInputChange('designation', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   >
                     <option value="">Select designation</option>
                     {predefinedValues.designations.map((designation) => (
@@ -2143,14 +2195,14 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Work Partner</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Work Partner</label>
                   <select
                     value={formData.workingUnderPartner || ''}
                     onChange={(e) => {
                       handleInputChange('workingUnderPartner', e.target.value);
                       handleInputChange('team', e.target.value); // Auto-fill team from work partner
                     }}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   >
                     <option value="">Select work partner</option>
                     {predefinedValues.teams.map((team) => (
@@ -2169,31 +2221,33 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             workingUnderPartner: e.target.value,
                           }))
                         }
-                        className="w-full min-h-9 rounded border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 [color-scheme:light] focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500"
+                        className="w-full min-h-9 rounded border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 [color-scheme:light] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25"
                       />
                     </div>
                   )}
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Team <span className="text-slate-500">(auto-filled from Work Partner)</span></label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Team <span className="text-slate-500">(auto-filled from Work Partner)</span></label>
                   <input
                     type="text"
                     value={formData.team || ''}
                     disabled
-                    className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-slate-400 cursor-not-allowed"
+                    className="w-full cursor-not-allowed rounded-md border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-500"
                     title="Team automatically matches Work Partner"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Employment Type History</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Employment Type History</label>
                   <div className="space-y-2 mb-2">
                       {Array.isArray(formData.employmentTypeHistory)
                         ? formData.employmentTypeHistory.map((entry: { employmentType: string; effectiveFrom: string | number | Date }, idx: number) => (
                             <div key={String(idx)} className="flex items-center gap-2 text-xs">
-                            <span className="px-2 py-1 bg-slate-700 rounded text-slate-200">{entry.employmentType}</span>
-                            <span className="px-2 py-1 bg-slate-800 rounded text-slate-400">From: {new Date(entry.effectiveFrom).toLocaleDateString()}</span>
+                            <span className="rounded-md bg-slate-200 px-2 py-1 font-medium text-slate-800">{entry.employmentType}</span>
+                            <span className="rounded-md bg-slate-100 px-2 py-1 text-slate-600">
+                              From: {new Date(entry.effectiveFrom).toLocaleDateString()}
+                            </span>
                             <button
                               type="button"
                               className="px-2 py-1 bg-red-600 text-white rounded"
@@ -2210,7 +2264,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     <select
                       value={newEmploymentType}
                       onChange={e => setNewEmploymentType(e.target.value)}
-                      className="px-2 py-1 rounded bg-slate-700 text-slate-200"
+                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900 shadow-sm"
                     >
                       <option value="">Select Type</option>
                       <option value="fulltime">Full Time</option>
@@ -2226,7 +2280,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     <button
                       type="button"
                       onClick={handleAddEmploymentTypeHistory}
-                      className="px-3 py-1 bg-emerald-600 text-white rounded"
+                      className="rounded-md bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-700"
                     >
                       Add
                     </button>
@@ -2234,12 +2288,12 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Joining Date</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Joining Date</label>
                   <input
                     type="date"
                     value={toDateInputValue(formData.joiningDate)}
                     onChange={(e) => handleInputChange('joiningDate', e.target.value)}
-                    className="w-full min-h-10 rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 [color-scheme:light] focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500"
+                    className="w-full min-h-10 rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 [color-scheme:light] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25"
                   />
                 </div>
                 
@@ -2250,13 +2304,15 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       id="isActive"
                       checked={formData.isActive !== false}
                       onChange={(e) => handleIsActiveChange(e.target.checked)}
-                      className="w-4 h-4 bg-slate-950 border-slate-800 rounded text-emerald-500 focus:ring-0"
+                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500/40"
                     />
-                    <label htmlFor="isActive" className="text-sm text-slate-300">Active Employee</label>
+                    <label htmlFor="isActive" className="text-sm text-slate-800">
+                      Active employee
+                    </label>
                   </div>
                   {formData.isActive === false && (
                     <div>
-                      <label htmlFor="inactiveAsOf" className="block text-xs text-slate-400 mb-1">
+                      <label htmlFor="inactiveAsOf" className="block text-xs font-medium text-slate-600 mb-1">
                         Inactive as of (first day excluded from attendance &amp; summaries)
                       </label>
                       <input
@@ -2283,21 +2339,22 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           {/* Schedule Tab */}
           {activeTab === 'schedule' && (
             <div className="md:col-span-2 space-y-6">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                <h3 className="text-sm font-medium text-slate-300">Work Schedule Entries</h3>
+              <div className="flex flex-col gap-3 border-b border-slate-200 pb-3 sm:flex-row sm:items-center sm:justify-between">
+                <h3 className="text-sm font-semibold text-slate-900">Work schedule entries</h3>
                 <button
+                  type="button"
                   onClick={handleAddScheduleEntry}
-                  className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-sm rounded"
+                  className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                 >
-                  Add New Schedule Entry
+                  Add schedule entry
                 </button>
               </div>
 
               {(formData.schedules || []).map((entry, index) => (
-                <div key={index} className="border border-slate-800 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-4">
+                <div key={index} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="mb-4 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <label className="text-sm text-slate-300">Effective From:</label>
+                      <label className="text-sm font-medium text-slate-700">Effective from</label>
                       <input
                         type="date"
                         value={toDateInputValue(entry.effectiveFrom)}
@@ -2306,8 +2363,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       />
                     </div>
                     <button
+                      type="button"
                       onClick={() => handleRemoveScheduleEntry(index)}
-                      className="px-2 py-1 bg-rose-600 hover:bg-rose-500 text-white text-sm rounded"
+                      className="rounded-md bg-rose-600 px-2 py-1 text-sm font-medium text-white hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500/40"
                     >
                       Remove
                     </button>
@@ -2315,9 +2373,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
 
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {/* Monday */}
-                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                    <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/90 p-3">
                       <div className="flex items-center justify-between">
-                        <label className="text-sm font-semibold text-emerald-400">Monday</label>
+                        <label className="text-sm font-semibold text-slate-800">Monday</label>
                         <div className="flex gap-2">
                           <label className="flex items-center gap-1 text-xs">
                             <input
@@ -2346,7 +2404,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.monday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'monday', 'inTime', e.target.value)}
-                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm "
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.monday?.isHoliday}
                           />
                         </div>
@@ -2356,7 +2414,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.monday?.outTime || '19:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'monday', 'outTime', e.target.value)}
-                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm "
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.monday?.isHoliday}
                           />
                         </div>
@@ -2364,9 +2422,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     </div>
 
                     {/* Tuesday */}
-                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                    <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/90 p-3">
                       <div className="flex items-center justify-between">
-                        <label className="text-sm font-semibold text-emerald-400">Tuesday</label>
+                        <label className="text-sm font-semibold text-slate-800">Tuesday</label>
                         <div className="flex gap-2">
                           <label className="flex items-center gap-1 text-xs">
                             <input
@@ -2395,7 +2453,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.tuesday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'tuesday', 'inTime', e.target.value)}
-                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm "
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.tuesday?.isHoliday}
                           />
                         </div>
@@ -2405,7 +2463,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.tuesday?.outTime || '19:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'tuesday', 'outTime', e.target.value)}
-                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm "
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.tuesday?.isHoliday}
                           />
                         </div>
@@ -2413,9 +2471,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     </div>
 
                     {/* Wednesday */}
-                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                    <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/90 p-3">
                       <div className="flex items-center justify-between">
-                        <label className="text-sm font-semibold text-emerald-400">Wednesday</label>
+                        <label className="text-sm font-semibold text-slate-800">Wednesday</label>
                         <div className="flex gap-2">
                           <label className="flex items-center gap-1 text-xs">
                             <input
@@ -2444,7 +2502,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.wednesday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'wednesday', 'inTime', e.target.value)}
-                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm "
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.wednesday?.isHoliday}
                           />
                         </div>
@@ -2454,7 +2512,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.wednesday?.outTime || '19:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'wednesday', 'outTime', e.target.value)}
-                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm"
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.wednesday?.isHoliday}
                           />
                         </div>
@@ -2462,9 +2520,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     </div>
 
                     {/* Thursday */}
-                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                    <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/90 p-3">
                       <div className="flex items-center justify-between">
-                        <label className="text-sm font-semibold text-emerald-400">Thursday</label>
+                        <label className="text-sm font-semibold text-slate-800">Thursday</label>
                         <div className="flex gap-2">
                           <label className="flex items-center gap-1 text-xs">
                             <input
@@ -2493,7 +2551,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.thursday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'thursday', 'inTime', e.target.value)}
-                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm"
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.thursday?.isHoliday}
                           />
                         </div>
@@ -2503,7 +2561,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.thursday?.outTime || '19:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'thursday', 'outTime', e.target.value)}
-                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm"
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.thursday?.isHoliday}
                           />
                         </div>
@@ -2511,9 +2569,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     </div>
 
                     {/* Friday */}
-                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                    <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/90 p-3">
                       <div className="flex items-center justify-between">
-                        <label className="text-sm font-semibold text-emerald-400">Friday</label>
+                        <label className="text-sm font-semibold text-slate-800">Friday</label>
                         <div className="flex gap-2">
                           <label className="flex items-center gap-1 text-xs">
                             <input
@@ -2542,7 +2600,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.friday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'friday', 'inTime', e.target.value)}
-                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm"
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.friday?.isHoliday}
                           />
                         </div>
@@ -2552,7 +2610,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.friday?.outTime || '19:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'friday', 'outTime', e.target.value)}
-                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm"
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.friday?.isHoliday}
                           />
                         </div>
@@ -2560,9 +2618,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     </div>
 
                     {/* Saturday */}
-                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                    <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/90 p-3">
                       <div className="flex items-center justify-between">
-                        <label className="text-sm font-semibold text-emerald-400">Saturday</label>
+                        <label className="text-sm font-semibold text-slate-800">Saturday</label>
                         <div className="flex gap-2">
                           <label className="flex items-center gap-1 text-xs">
                             <input
@@ -2591,7 +2649,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.saturday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'saturday', 'inTime', e.target.value)}
-                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm"
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.saturday?.isHoliday}
                           />
                         </div>
@@ -2601,7 +2659,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.saturday?.outTime || '13:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'saturday', 'outTime', e.target.value)}
-                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm"
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.saturday?.isHoliday}
                           />
                         </div>
@@ -2609,9 +2667,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     </div>
 
                     {/* Sunday */}
-                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                    <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/90 p-3">
                       <div className="flex items-center justify-between">
-                        <label className="text-sm font-semibold text-emerald-400">Sunday</label>
+                        <label className="text-sm font-semibold text-slate-800">Sunday</label>
                         <div className="flex gap-2">
                           <label className="flex items-center gap-1 text-xs">
                             <input
@@ -2640,7 +2698,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.sunday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'sunday', 'inTime', e.target.value)}
-                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm"
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.sunday?.isHoliday}
                           />
                         </div>
@@ -2650,7 +2708,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.sunday?.outTime || '19:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'sunday', 'outTime', e.target.value)}
-                            className="w-full text-black bg-zinc-300 border border-slate-800 rounded px-2 py-1.5 text-sm"
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.sunday?.isHoliday}
                           />
                         </div>
@@ -2665,7 +2723,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           {/* Extended Tab */}
           {activeTab === 'extended' && (
             <div className="md:col-span-2">
-              <h3 className="text-sm font-medium text-slate-300 border-b border-slate-800 pb-2 mb-4">Extended Details</h3>
+              <h3 className="text-sm font-medium border-b border-slate-200 text-slate-900 pb-2 mb-4">Extended Details</h3>
               
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 
@@ -2688,11 +2746,11 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   if (field.key === 'designation') {
                     return (
                       <div key={field.key}>
-                        <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">{field.label}</label>
                         <select
                           value={(formData as any)[field.key] || ''}
                           onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         >
                           <option value="">Select {field.label.toLowerCase()}</option>
                           {predefinedValues.designations.map((value) => (
@@ -2704,11 +2762,11 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   } else if (field.key === 'paidFrom') {
                     return (
                       <div key={field.key}>
-                        <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">{field.label}</label>
                         <select
                           value={(formData as any)[field.key] || ''}
                           onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         >
                           <option value="">Select {field.label.toLowerCase()}</option>
                           {predefinedValues.paidFrom.map((value) => (
@@ -2720,11 +2778,11 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   } else if (field.key === 'category') {
                     return (
                       <div key={field.key}>
-                        <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">{field.label}</label>
                         <select
                           value={(formData as any)[field.key] || ''}
                           onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         >
                           <option value="">Select {field.label.toLowerCase()}</option>
                           {predefinedValues.categories.map((value) => (
@@ -2736,12 +2794,12 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   } else {
                     return (
                       <div key={field.key}>
-                        <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">{field.label}</label>
                         <input
                           type="text"
                           value={(formData as any)[field.key] || ''}
                           onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         />
                       </div>
                     );
@@ -2750,21 +2808,21 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
 
                 <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
                      <div>
-                        <label className="block text-xs text-slate-400 mb-1">Address Line 1</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Address Line 1</label>
                         <input
                           type="text"
                           value={formData.address1 || ''}
                           onChange={(e) => handleInputChange('address1', e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Address Line 2</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Address Line 2</label>
                         <input
                           type="text"
                           value={formData.address2 || ''}
                           onChange={(e) => handleInputChange('address2', e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         />
                       </div>
                 </div>
@@ -2772,48 +2830,48 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 {/* Emergency Contact & Banking */}
                 <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Emergency Contact No.</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Emergency Contact No.</label>
                     <input
                       type="text"
                       value={(formData as any).emergencyContactNo || ''}
                       onChange={(e) => handleInputChange('emergencyContactNo' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Relation</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Relation</label>
                     <input
                       type="text"
                       value={(formData as any).emergencyContactRelation || ''}
                       onChange={(e) => handleInputChange('emergencyContactRelation' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Anniversary Date</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Anniversary Date</label>
                     <input
                       type="date"
                       value={toDateInputValue((formData as any).anniversaryDate)}
                       onChange={(e) => handleInputChange('anniversaryDate' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Aadhar No.</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Aadhar No.</label>
                     <input
                       type="text"
                       value={(formData as any).aadhaarNumber || ''}
                       onChange={(e) => handleInputChange('aadhaarNumber' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">PAN</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">PAN</label>
                     <input
                       type="text"
                       value={(formData as any).panNumber || ''}
                       onChange={(e) => handleInputChange('panNumber' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                 </div>
@@ -2835,12 +2893,12 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   { label: 'Work Timing (Text)', key: 'workingTiming' },
                 ].map((field) => (
                   <div key={field.key}>
-                     <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                     <label className="block text-xs font-medium text-slate-600 mb-1">{field.label}</label>
                     <input
                       type="text"
                       value={(formData as any)[field.key] || ''}
                       onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                 ))}
@@ -2857,28 +2915,28 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                           registeredUnderPartner: e.target.value,
                         }))
                       }
-                      className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                      className="w-full min-h-9 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 [color-scheme:light] shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                 )}
 
                 {/* Dates */}
                  <div>
-                  <label className="block text-xs text-slate-400 mb-1">Articleship Start</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Articleship Start</label>
                   <input
                     type="date"
                     value={toDateInputValue(formData.articleshipStartDate)}
                     onChange={(e) => handleInputChange('articleshipStartDate', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                  <div>
-                  <label className="block text-xs text-slate-400 mb-1">Next Attempt Due</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Next Attempt Due</label>
                   <input
                     type="date"
                     value={toDateInputValue(formData.nextAttemptDueDate)}
                     onChange={(e) => handleInputChange('nextAttemptDueDate', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
 
@@ -2887,7 +2945,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               {/* Flexible Additional Info */}
               <div className="mt-6 md:col-span-3">
                 <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Additional Info (PAN, Aadhaar, etc.)</h4>
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-800">
+                    Additional info (PAN, Aadhaar, etc.)
+                  </h4>
                   <p className="text-[11px] text-slate-500">Fields are managed from the main page.</p>
                 </div>
                 <div className="space-y-2">
@@ -2897,14 +2957,14 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                         type="text"
                         value={item.label}
                         disabled
-                        className="col-span-4 bg-slate-950 border border-slate-800 rounded px-3 py-2 text-xs text-slate-500 cursor-not-allowed"
+                        className="col-span-4 cursor-not-allowed rounded-md border border-slate-200 bg-slate-100 px-3 py-2 text-xs text-slate-500"
                       />
                       <input
                         type="text"
                         placeholder="Value"
                         value={item.value}
                         onChange={(e) => handleExtraInfoChange(idx, 'value', e.target.value)}
-                        className="col-span-8 bg-slate-950 border border-slate-800 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                        className="col-span-8 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                       />
                     </div>
                   ))}
@@ -2919,61 +2979,61 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           {/* Bank Details Tab */}
           {activeTab === 'bank' && (
             <div className="md:col-span-2">
-              <h3 className="text-sm font-medium text-slate-300 border-b border-slate-800 pb-2 mb-4">Bank Details</h3>
+              <h3 className="text-sm font-medium border-b border-slate-200 text-slate-900 pb-2 mb-4">Bank Details</h3>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Bank Name</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Bank Name</label>
                   <input
                     type="text"
                     value={(formData as any).bankName || ''}
                     onChange={(e) => handleInputChange('bankName' as keyof User, e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Branch Name</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Branch Name</label>
                   <input
                     type="text"
                     value={(formData as any).branchName || ''}
                     onChange={(e) => handleInputChange('branchName' as keyof User, e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Account Number</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Account Number</label>
                   <input
                     type="text"
                     value={(formData as any).accountNumber || ''}
                     onChange={(e) => handleInputChange('accountNumber' as keyof User, e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">IFSC Code</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">IFSC Code</label>
                   <input
                     type="text"
                     value={(formData as any).ifscCode || ''}
                     onChange={(e) => handleInputChange('ifscCode' as keyof User, e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Account Type</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Account Type</label>
                   <input
                     type="text"
                     value={(formData as any).accountType || ''}
                     onChange={(e) => handleInputChange('accountType' as keyof User, e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Account Holder Name</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Account Holder Name</label>
                   <input
                     type="text"
                     value={(formData as any).accountHolderName || ''}
                     onChange={(e) => handleInputChange('accountHolderName' as keyof User, e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
               </div>
@@ -2983,42 +3043,42 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           {/* Salary & Leave Tab */}
           {activeTab === 'salary' && (
             <div className="md:col-span-2">
-              <h3 className="text-sm font-medium text-slate-300 border-b border-slate-800 pb-2 mb-4">Salary & Leave Information</h3>
+              <h3 className="text-sm font-medium border-b border-slate-200 text-slate-900 pb-2 mb-4">Salary & Leave Information</h3>
               
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 
                 {/* Salary Details */}
                 <div className="md:col-span-3">
-                  <h4 className="text-sm font-medium text-slate-400 mb-3 border-b border-slate-700 pb-1">Salary Details</h4>
+                  <h4 className="mb-3 border-b border-slate-200 pb-1 text-sm font-semibold text-slate-800">Salary Details</h4>
                 </div>
                 
                 {renderSalaryFieldWithHistory('basicSalary', 'Basic Salary', 'salary')}
                 {renderSalaryFieldWithHistory('laptopAllowance', 'Laptop Allowance', 'salary')}
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Other Allowance</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Other Allowance</label>
                   <input
                     type="text"
                     value={(formData as any).otherAllowance || ''}
                     onChange={(e) => handleInputChange('otherAllowance' as keyof User, e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Bonus</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Bonus</label>
                   <input
                     type="text"
                     value={(formData as any).bonus || ''}
                     onChange={(e) => handleInputChange('bonus' as keyof User, e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Incentive</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Incentive</label>
                   <input
                     type="text"
                     value={(formData as any).incentive || ''}
                     onChange={(e) => handleInputChange('incentive' as keyof User, e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                 {renderSalaryFieldWithHistory('totalSalaryPerMonth', 'Total Salary (P/M)', 'salary')}
@@ -3026,71 +3086,75 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 
                 {/* Deductions */}
                 <div className="md:col-span-3">
-                  <h4 className="text-sm font-medium text-slate-400 mb-3 border-b border-slate-700 pb-1">Deductions</h4>
+                  <h4 className="mb-3 border-b border-slate-200 pb-1 text-sm font-semibold text-slate-800">Deductions</h4>
                 </div>
                 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">PF (Provident Fund)</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">PF (Provident Fund)</label>
                   <input
                     type="text"
                     value={(formData as any).pf || ''}
                     onChange={(e) => handleInputChange('pf' as keyof User, e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">ESI</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">ESI</label>
                   <input
                     type="text"
                     value={(formData as any).esi || ''}
                     onChange={(e) => handleInputChange('esi' as keyof User, e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Gratuity</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Gratuity</label>
                   <input
                     type="text"
                     value={(formData as any).gratuity || ''}
                     onChange={(e) => handleInputChange('gratuity' as keyof User, e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                 
                 {/* Leave Information */}
                 <div className="md:col-span-3">
-                  <h4 className="text-sm font-medium text-slate-400 mb-3 border-b border-slate-700 pb-1">Leave Information</h4>
+                  <h4 className="mb-3 border-b border-slate-200 pb-1 text-sm font-semibold text-slate-800">Leave Information</h4>
                 </div>
                 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Total Earned</label>
-                  <div className="text-sm text-slate-200 font-medium bg-slate-950 border border-slate-800 rounded px-3 py-2">
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Total Earned</label>
+                  <div className="text-sm font-medium rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-slate-800">
                     {(formData as any).leaveBalance?.earned || 0} days
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Total Used</label>
-                  <div className="text-sm text-slate-200 font-medium bg-slate-950 border border-slate-800 rounded px-3 py-2">
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Total Used</label>
+                  <div className="text-sm font-medium rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-slate-800">
                     {(formData as any).leaveBalance?.used || 0} days
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Balance Available</label>
-                  <div className={`text-sm font-medium bg-slate-950 border border-slate-800 rounded px-3 py-2 ${
-                    ((formData as any).leaveBalance?.remaining || 0) > 0 ? 'text-sky-400' : 'text-slate-400'
-                  }`}>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Balance Available</label>
+                  <div
+                    className={`text-sm font-medium rounded-md border px-3 py-2 ${
+                      ((formData as any).leaveBalance?.remaining || 0) > 0
+                        ? 'border-blue-200 bg-blue-50 text-blue-900'
+                        : 'border-slate-200 bg-slate-50 text-slate-600'
+                    }`}
+                  >
                     {(formData as any).leaveBalance?.remaining || 0} days
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Monthly Earned Rate</label>
-                  <div className="text-sm text-slate-200 font-medium bg-slate-950 border border-slate-800 rounded px-3 py-2">
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Monthly Earned Rate</label>
+                  <div className="text-sm font-medium rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-slate-800">
                     {(formData as any).leaveBalance?.monthlyEarned || 2} days/month
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Last Updated</label>
-                  <div className="text-sm text-slate-200 font-medium bg-slate-950 border border-slate-800 rounded px-3 py-2">
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Last Updated</label>
+                  <div className="text-sm font-medium rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-slate-800">
                     {(formData as any).leaveBalance?.lastUpdated 
                       ? new Date((formData as any).leaveBalance.lastUpdated).toLocaleDateString()
                       : 'Never'
@@ -3105,7 +3169,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           {/* Extended Tab */}
           {activeTab === 'extended' && (
             <div className="md:col-span-2">
-              <h3 className="text-sm font-medium text-slate-300 border-b border-slate-800 pb-2 mb-4">Extended Details (Optional)</h3>
+              <h3 className="text-sm font-medium border-b border-slate-200 text-slate-900 pb-2 mb-4">Extended Details (Optional)</h3>
               
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 
@@ -3128,11 +3192,11 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   if (field.key === 'paidFrom') {
                     return (
                       <div key={field.key}>
-                        <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">{field.label}</label>
                         <select
                           value={(formData as any)[field.key] || ''}
                           onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         >
                           <option value="">Select {field.label.toLowerCase()}</option>
                           {predefinedValues.paidFrom.map((value) => (
@@ -3144,11 +3208,11 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   } else if (field.key === 'category') {
                     return (
                       <div key={field.key}>
-                        <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">{field.label}</label>
                         <select
                           value={(formData as any)[field.key] || ''}
                           onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         >
                           <option value="">Select {field.label.toLowerCase()}</option>
                           {predefinedValues.categories.map((value) => (
@@ -3160,12 +3224,12 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   } else {
                     return (
                       <div key={field.key}>
-                        <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">{field.label}</label>
                         <input
                           type="text"
                           value={(formData as any)[field.key] || ''}
                           onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         />
                       </div>
                     );
@@ -3174,21 +3238,21 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
 
                 <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
                      <div>
-                        <label className="block text-xs text-slate-400 mb-1">Address Line 1</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Address Line 1</label>
                         <input
                           type="text"
                           value={formData.address1 || ''}
                           onChange={(e) => handleInputChange('address1', e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Address Line 2</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Address Line 2</label>
                         <input
                           type="text"
                           value={formData.address2 || ''}
                           onChange={(e) => handleInputChange('address2', e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         />
                       </div>
                 </div>
@@ -3196,102 +3260,102 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 {/* Emergency Contact & Banking */}
                 <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Emergency Contact No.</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Emergency Contact No.</label>
                     <input
                       type="text"
                       value={(formData as any).emergencyContactNo || ''}
                       onChange={(e) => handleInputChange('emergencyContactNo' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Relation</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Relation</label>
                     <input
                       type="text"
                       value={(formData as any).emergencyContactRelation || ''}
                       onChange={(e) => handleInputChange('emergencyContactRelation' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Anniversary Date</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Anniversary Date</label>
                     <input
                       type="date"
                       value={toDateInputValue((formData as any).anniversaryDate)}
                       onChange={(e) => handleInputChange('anniversaryDate' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Bank Name</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Bank Name</label>
                     <input
                       type="text"
                       value={(formData as any).bankName || ''}
                       onChange={(e) => handleInputChange('bankName' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Branch Name</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Branch Name</label>
                     <input
                       type="text"
                       value={(formData as any).branchName || ''}
                       onChange={(e) => handleInputChange('branchName' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Account No.</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Account No.</label>
                     <input
                       type="text"
                       value={(formData as any).accountNumber || ''}
                       onChange={(e) => handleInputChange('accountNumber' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">IFSC</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">IFSC</label>
                     <input
                       type="text"
                       value={(formData as any).ifscCode || ''}
                       onChange={(e) => handleInputChange('ifscCode' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Type of Account</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Type of Account</label>
                     <input
                       type="text"
                       value={(formData as any).accountType || ''}
                       onChange={(e) => handleInputChange('accountType' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Name of Account Holder</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Name of Account Holder</label>
                     <input
                       type="text"
                       value={(formData as any).accountHolderName || ''}
                       onChange={(e) => handleInputChange('accountHolderName' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Aadhar No.</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Aadhar No.</label>
                     <input
                       type="text"
                       value={(formData as any).aadhaarNumber || ''}
                       onChange={(e) => handleInputChange('aadhaarNumber' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">PAN</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">PAN</label>
                     <input
                       type="text"
                       value={(formData as any).panNumber || ''}
                       onChange={(e) => handleInputChange('panNumber' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                 </div>
@@ -3317,33 +3381,33 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   { label: 'Work Timing (Text)', key: 'workingTiming' },
                 ].map((field) => (
                   <div key={field.key}>
-                     <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                     <label className="block text-xs font-medium text-slate-600 mb-1">{field.label}</label>
                     <input
                       type="text"
                       value={(formData as any)[field.key] || ''}
                       onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                 ))}
 
                 {/* Dates */}
                  <div>
-                  <label className="block text-xs text-slate-400 mb-1">Articleship Start</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Articleship Start</label>
                   <input
                     type="date"
                     value={toDateInputValue(formData.articleshipStartDate)}
                     onChange={(e) => handleInputChange('articleshipStartDate', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                  <div>
-                  <label className="block text-xs text-slate-400 mb-1">Next Attempt Due</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Next Attempt Due</label>
                   <input
                     type="date"
                     value={toDateInputValue(formData.nextAttemptDueDate)}
                     onChange={(e) => handleInputChange('nextAttemptDueDate', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
 
@@ -3354,81 +3418,100 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           {/* History Tab */}
           {activeTab === 'history' && (
             <div className="md:col-span-2">
-              <div className="bg-slate-900/50 rounded-lg border border-slate-800 p-4">
-                <h3 className="text-lg font-semibold text-slate-200 mb-4">Change History</h3>
+              <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4">
+                <h3 className="mb-4 text-lg font-semibold text-slate-900">Change history</h3>
 
                 {/* Change Reason Input */}
                 <div className="mb-6">
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
+                  <label className="mb-2 block text-sm font-medium text-slate-800">
                     Reason for Changes (Optional)
                   </label>
                   <textarea
                     value={changeReason}
                     onChange={(e) => setChangeReason(e.target.value)}
                     placeholder="Enter reason for the changes being made..."
-                    className="w-full bg-slate-950 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     rows={3}
                   />
                 </div>
 
                 {/* History Table */}
                 {historyLoading ? (
-                  <div className="text-center py-8">
-                    <div className="text-slate-400">Loading history...</div>
+                  <div className="py-8 text-center">
+                    <div className="text-sm text-slate-600">Loading history…</div>
                   </div>
                 ) : employeeHistory.length === 0 ? (
-                  <div className="text-center py-8">
-                    <div className="text-slate-400">No change history found</div>
+                  <div className="py-8 text-center">
+                    <div className="text-sm text-slate-600">No change history found</div>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm text-slate-300">
-                      <thead className="bg-slate-950/50 text-slate-400 font-medium border-b border-slate-800">
+                  <div className="overflow-x-auto rounded-md border border-slate-200">
+                    <table className="w-full text-left text-sm text-slate-800">
+                      <caption className="sr-only">Field change history for this employee</caption>
+                      <thead className="border-b border-slate-200 bg-slate-100 text-xs font-medium uppercase tracking-wide text-slate-600">
                         <tr>
-                          <th className="px-4 py-3">Field</th>
-                          <th className="px-4 py-3">Old Value</th>
-                          <th className="px-4 py-3">New Value</th>
-                          <th className="px-4 py-3">Changed By</th>
-                          <th className="px-4 py-3">Date</th>
-                          <th className="px-4 py-3">Reason</th>
+                          <th scope="col" className="px-4 py-3">
+                            Field
+                          </th>
+                          <th scope="col" className="px-4 py-3">
+                            Old value
+                          </th>
+                          <th scope="col" className="px-4 py-3">
+                            New value
+                          </th>
+                          <th scope="col" className="px-4 py-3">
+                            Changed by
+                          </th>
+                          <th scope="col" className="px-4 py-3">
+                            Date
+                          </th>
+                          <th scope="col" className="px-4 py-3">
+                            Reason
+                          </th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-800">
+                      <tbody className="divide-y divide-slate-200">
                         {employeeHistory.map((entry, index) => (
-                          <tr key={index} className="hover:bg-slate-800/30">
+                          <tr key={index} className="hover:bg-slate-50/90">
                             <td className="px-4 py-3">
-                              <span className="text-slate-200 font-medium">
-                                {entry.fieldName === 'workingUnderPartner' ? 'Work Partner' :
-                                 entry.fieldName === 'designation' ? 'Designation' :
-                                 entry.fieldName === 'paidFrom' ? 'Paid From' :
-                                 entry.fieldName === 'category' ? 'Category' :
-                                 entry.fieldName === 'qualificationLevel' ? 'Qualification' :
-                                 entry.fieldName === 'registeredUnderPartner' ? 'Reg. Partner' :
-                                 entry.fieldName}
+                              <span className="font-medium text-slate-900">
+                                {entry.fieldName === 'workingUnderPartner'
+                                  ? 'Work Partner'
+                                  : entry.fieldName === 'designation'
+                                    ? 'Designation'
+                                    : entry.fieldName === 'paidFrom'
+                                      ? 'Paid From'
+                                      : entry.fieldName === 'category'
+                                        ? 'Category'
+                                        : entry.fieldName === 'qualificationLevel'
+                                          ? 'Qualification'
+                                          : entry.fieldName === 'registeredUnderPartner'
+                                            ? 'Reg. Partner'
+                                            : entry.fieldName}
                               </span>
                             </td>
                             <td className="px-4 py-3">
-                              <span className="text-slate-400 line-through">{entry.oldValue || 'N/A'}</span>
+                              <span className="text-slate-500 line-through">{entry.oldValue || 'N/A'}</span>
                             </td>
                             <td className="px-4 py-3">
-                              <span className="text-emerald-400 font-medium">{entry.newValue || 'N/A'}</span>
+                              <span className="font-medium text-blue-800">{entry.newValue || 'N/A'}</span>
                             </td>
                             <td className="px-4 py-3">
-                              <span className="text-slate-300">{entry.changedBy}</span>
+                              <span className="text-slate-700">{entry.changedBy}</span>
                             </td>
                             <td className="px-4 py-3">
-                              <span className="text-slate-400 text-xs">
+                              <span className="text-xs text-slate-600">
                                 {new Date(entry.changedAt).toLocaleDateString('en-US', {
                                   year: 'numeric',
                                   month: 'short',
                                   day: 'numeric',
                                   hour: '2-digit',
-                                  minute: '2-digit'
+                                  minute: '2-digit',
                                 })}
                               </span>
                             </td>
                             <td className="px-4 py-3">
-                              <span className="text-slate-400 text-xs">{entry.changeReason || 'N/A'}</span>
+                              <span className="text-xs text-slate-600">{entry.changeReason || 'N/A'}</span>
                             </td>
                           </tr>
                         ))}
@@ -3441,73 +3524,107 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           )}
         </div>
 
-        <div className="mt-8 flex justify-end gap-3 pt-4 border-t border-slate-800">
+        <div className="mt-8 flex justify-end gap-3 border-t border-slate-200 pt-4">
           <button
+            type="button"
             onClick={handleCancelEdit}
-            className="px-4 py-2 rounded text-sm text-slate-300 hover:text-white transition-colors"
+            className="rounded-md px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-400/30"
           >
             Cancel
           </button>
           <button
+            type="button"
             onClick={handleSave}
             disabled={saveLoading}
-            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-sm transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Save className="w-4 h-4" />
-            {saveLoading ? 'Saving...' : 'Save Changes'}
+            <Save className="h-4 w-4" aria-hidden />
+            {saveLoading ? 'Saving…' : 'Save changes'}
           </button>
         </div>
-      </div>
+      </section>
     );
   }
 
   // ============== ADD NEW EMPLOYEE FORM VIEW =================
   if (isAddingNew) {
     return (
-      <div className="employee-edit-date-inputs bg-slate-900/50 rounded-lg border border-slate-800 p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-semibold text-purple-400">Add New Employee</h2>
-          <button onClick={() => setIsAddingNew(false)} className="text-slate-400 hover:text-slate-200">
-            <X className="w-5 h-5" />
+      <section
+        className="employee-edit-date-inputs rounded-lg border border-slate-200 bg-white p-6 shadow-sm"
+        aria-labelledby="add-employee-heading"
+      >
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 flex-1 space-y-2">
+            <h2 id="add-employee-heading" className="text-xl font-semibold tracking-tight text-slate-900">
+              Add new employee
+            </h2>
+            <p className="max-w-2xl text-sm text-slate-600">
+              Enter required details on Basic, add schedule rows if timings apply, then create the record. You can return
+              later to fill Extended from the roster.
+            </p>
+            <ol className="flex list-none flex-wrap gap-2 text-xs text-slate-700" aria-label="Suggested workflow">
+              {ADD_EMPLOYEE_WORKFLOW_STEPS.map((t, i) => (
+                <li
+                  key={t}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1"
+                >
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+                    {i + 1}
+                  </span>
+                  {t}
+                </li>
+              ))}
+            </ol>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsAddingNew(false)}
+            className="shrink-0 self-start rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 sm:self-auto"
+            aria-label="Close add employee form"
+          >
+            <X className="h-5 w-5" />
           </button>
         </div>
 
         {error && (
-          <div className="bg-rose-500/10 text-rose-300 px-4 py-3 rounded-md mb-6 border border-rose-500/20">
+          <div className="mb-6 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900" role="alert">
             {error}
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           {/* Tab Navigation */}
-          <div className="md:col-span-2 mb-4">
-            <div className="flex space-x-1 bg-slate-950/50 p-1 rounded-lg border border-slate-800">
+          <div className="mb-4 md:col-span-2">
+            <div className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1">
               <button
+                type="button"
                 onClick={() => setActiveTab('basic')}
                 className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                   activeTab === 'basic'
-                    ? 'bg-purple-600 text-white'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-600 hover:bg-slate-200/70 hover:text-slate-900'
                 }`}
               >
                 Basic Info
               </button>
               <button
+                type="button"
                 onClick={() => setActiveTab('schedule')}
                 className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                   activeTab === 'schedule'
-                    ? 'bg-purple-600 text-white'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-600 hover:bg-slate-200/70 hover:text-slate-900'
                 }`}
               >
                 Schedule
               </button>
               <button
+                type="button"
                 onClick={() => setActiveTab('extended')}
                 className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                   activeTab === 'extended'
-                    ? 'bg-purple-600 text-white'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-600 hover:bg-slate-200/70 hover:text-slate-900'
                 }`}
               >
                 Extended
@@ -3519,47 +3636,47 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           {activeTab === 'basic' && (
             <>
               <div className="space-y-4">
-                <h3 className="text-sm font-medium text-slate-300 border-b border-slate-800 pb-2">Basic Information</h3>
+                <h3 className="text-sm font-medium border-b border-slate-200 text-slate-900 pb-2">Basic Information</h3>
                 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">OD ID *</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">OD ID *</label>
                   <input
                     type="text"
                     value={formData.odId || ''}
                     onChange={(e) => handleInputChange('odId', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Name *</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Name *</label>
                   <input
                     type="text"
                     value={formData.name || ''}
                     onChange={(e) => handleInputChange('name', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Email *</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Email *</label>
                   <input
                     type="email"
                     value={formData.email || ''}
                     onChange={(e) => handleInputChange('email', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Designation</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Designation</label>
                   <select
                     value={formData.designation || ''}
                     onChange={(e) => handleInputChange('designation', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   >
                     <option value="">Select designation</option>
                     {predefinedValues.designations.map((designation) => (
@@ -3569,14 +3686,14 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Work Partner</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Work Partner</label>
                   <select
                     value={formData.workingUnderPartner || ''}
                     onChange={(e) => {
                       handleInputChange('workingUnderPartner', e.target.value);
                       handleInputChange('team', e.target.value); // Auto-fill team from work partner
                     }}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   >
                     <option value="">Select work partner</option>
                     {predefinedValues.teams.map((team) => (
@@ -3586,18 +3703,18 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Team <span className="text-slate-500">(auto-filled from Work Partner)</span></label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Team <span className="text-slate-500">(auto-filled from Work Partner)</span></label>
                   <input
                     type="text"
                     value={formData.team || ''}
                     disabled
-                    className="w-full bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-slate-400 cursor-not-allowed"
+                    className="w-full cursor-not-allowed rounded-md border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-500"
                     title="Team automatically matches Work Partner"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-400 mb-1">Joining Date *</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Joining Date *</label>
                   <input
                     type="date"
                     value={toDateInputValue(formData.joiningDate)}
@@ -3614,13 +3731,15 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       id="isActiveNew"
                       checked={formData.isActive !== false}
                       onChange={(e) => handleIsActiveChange(e.target.checked)}
-                      className="w-4 h-4 bg-slate-950 border-slate-800 rounded text-purple-500 focus:ring-0"
+                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500/40"
                     />
-                    <label htmlFor="isActiveNew" className="text-sm text-slate-300">Active Employee</label>
+                    <label htmlFor="isActiveNew" className="text-sm text-slate-800">
+                      Active employee
+                    </label>
                   </div>
                   {formData.isActive === false && (
                     <div>
-                      <label className="block text-xs text-slate-400 mb-1">
+                      <label className="block text-xs font-medium text-slate-600 mb-1">
                         Inactive as of (first day excluded from attendance &amp; summaries) *
                       </label>
                       <input
@@ -3643,21 +3762,22 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           {/* Schedule Tab */}
           {activeTab === 'schedule' && (
             <div className="md:col-span-2 space-y-6">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                <h3 className="text-sm font-medium text-slate-300">Work Schedule Entries</h3>
+              <div className="flex flex-col gap-3 border-b border-slate-200 pb-3 sm:flex-row sm:items-center sm:justify-between">
+                <h3 className="text-sm font-semibold text-slate-900">Work schedule entries</h3>
                 <button
+                  type="button"
                   onClick={handleAddScheduleEntry}
-                  className="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded"
+                  className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                 >
-                  Add New Schedule Entry
+                  Add schedule entry
                 </button>
               </div>
 
               {(formData.schedules || []).map((entry, index) => (
-                <div key={index} className="border border-slate-800 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-4">
+                <div key={index} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="mb-4 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <label className="text-sm text-slate-300">Effective From:</label>
+                      <label className="text-sm font-medium text-slate-700">Effective from</label>
                       <input
                         type="date"
                         value={toDateInputValue(entry.effectiveFrom)}
@@ -3666,8 +3786,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       />
                     </div>
                     <button
+                      type="button"
                       onClick={() => handleRemoveScheduleEntry(index)}
-                      className="px-2 py-1 bg-rose-600 hover:bg-rose-500 text-white text-sm rounded"
+                      className="rounded-md bg-rose-600 px-2 py-1 text-sm font-medium text-white hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500/40"
                     >
                       Remove
                     </button>
@@ -3675,9 +3796,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
 
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {/* Monday */}
-                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                    <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/90 p-3">
                       <div className="flex items-center justify-between">
-                        <label className="text-sm font-semibold text-purple-400">Monday</label>
+                        <label className="text-sm font-semibold text-slate-800">Monday</label>
                         <div className="flex gap-2">
                           <label className="flex items-center gap-1 text-xs">
                             <input
@@ -3706,7 +3827,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.monday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'monday', 'inTime', e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.monday?.isHoliday}
                           />
                         </div>
@@ -3716,7 +3837,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.monday?.outTime || '19:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'monday', 'outTime', e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.monday?.isHoliday}
                           />
                         </div>
@@ -3724,9 +3845,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     </div>
 
                     {/* Tuesday */}
-                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                    <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/90 p-3">
                       <div className="flex items-center justify-between">
-                        <label className="text-sm font-semibold text-purple-400">Tuesday</label>
+                        <label className="text-sm font-semibold text-slate-800">Tuesday</label>
                         <div className="flex gap-2">
                           <label className="flex items-center gap-1 text-xs">
                             <input
@@ -3755,7 +3876,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.tuesday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'tuesday', 'inTime', e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.tuesday?.isHoliday}
                           />
                         </div>
@@ -3765,7 +3886,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.tuesday?.outTime || '19:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'tuesday', 'outTime', e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.tuesday?.isHoliday}
                           />
                         </div>
@@ -3773,9 +3894,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     </div>
 
                     {/* Wednesday */}
-                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                    <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/90 p-3">
                       <div className="flex items-center justify-between">
-                        <label className="text-sm font-semibold text-purple-400">Wednesday</label>
+                        <label className="text-sm font-semibold text-slate-800">Wednesday</label>
                         <div className="flex gap-2">
                           <label className="flex items-center gap-1 text-xs">
                             <input
@@ -3804,7 +3925,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.wednesday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'wednesday', 'inTime', e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.wednesday?.isHoliday}
                           />
                         </div>
@@ -3814,7 +3935,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.wednesday?.outTime || '19:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'wednesday', 'outTime', e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.wednesday?.isHoliday}
                           />
                         </div>
@@ -3822,9 +3943,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     </div>
 
                     {/* Thursday */}
-                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                    <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/90 p-3">
                       <div className="flex items-center justify-between">
-                        <label className="text-sm font-semibold text-purple-400">Thursday</label>
+                        <label className="text-sm font-semibold text-slate-800">Thursday</label>
                         <div className="flex gap-2">
                           <label className="flex items-center gap-1 text-xs">
                             <input
@@ -3853,7 +3974,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.thursday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'thursday', 'inTime', e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.thursday?.isHoliday}
                           />
                         </div>
@@ -3863,7 +3984,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.thursday?.outTime || '19:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'thursday', 'outTime', e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.thursday?.isHoliday}
                           />
                         </div>
@@ -3871,9 +3992,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     </div>
 
                     {/* Friday */}
-                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                    <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/90 p-3">
                       <div className="flex items-center justify-between">
-                        <label className="text-sm font-semibold text-purple-400">Friday</label>
+                        <label className="text-sm font-semibold text-slate-800">Friday</label>
                         <div className="flex gap-2">
                           <label className="flex items-center gap-1 text-xs">
                             <input
@@ -3902,7 +4023,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.friday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'friday', 'inTime', e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.friday?.isHoliday}
                           />
                         </div>
@@ -3912,7 +4033,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.friday?.outTime || '19:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'friday', 'outTime', e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.friday?.isHoliday}
                           />
                         </div>
@@ -3920,9 +4041,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     </div>
 
                     {/* Saturday */}
-                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                    <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/90 p-3">
                       <div className="flex items-center justify-between">
-                        <label className="text-sm font-semibold text-purple-400">Saturday</label>
+                        <label className="text-sm font-semibold text-slate-800">Saturday</label>
                         <div className="flex gap-2">
                           <label className="flex items-center gap-1 text-xs">
                             <input
@@ -3951,7 +4072,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.saturday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'saturday', 'inTime', e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.saturday?.isHoliday}
                           />
                         </div>
@@ -3961,7 +4082,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.saturday?.outTime || '13:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'saturday', 'outTime', e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.saturday?.isHoliday}
                           />
                         </div>
@@ -3969,9 +4090,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     </div>
 
                     {/* Sunday */}
-                    <div className="space-y-3 p-3 bg-slate-900/30 rounded-lg border border-slate-800">
+                    <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/90 p-3">
                       <div className="flex items-center justify-between">
-                        <label className="text-sm font-semibold text-purple-400">Sunday</label>
+                        <label className="text-sm font-semibold text-slate-800">Sunday</label>
                         <div className="flex gap-2">
                           <label className="flex items-center gap-1 text-xs">
                             <input
@@ -4000,7 +4121,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.sunday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'sunday', 'inTime', e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.sunday?.isHoliday}
                           />
                         </div>
@@ -4010,7 +4131,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.sunday?.outTime || '19:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'sunday', 'outTime', e.target.value)}
-                            className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-sm text-slate-300"
+                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.sunday?.isHoliday}
                           />
                         </div>
@@ -4025,7 +4146,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           {/* Extended Tab */}
           {activeTab === 'extended' && (
             <div className="md:col-span-2">
-              <h3 className="text-sm font-medium text-slate-300 border-b border-slate-800 pb-2 mb-4">Extended Details (Optional)</h3>
+              <h3 className="text-sm font-medium border-b border-slate-200 text-slate-900 pb-2 mb-4">Extended Details (Optional)</h3>
               
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 
@@ -4048,11 +4169,11 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   if (field.key === 'paidFrom') {
                     return (
                       <div key={field.key}>
-                        <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">{field.label}</label>
                         <select
                           value={(formData as any)[field.key] || ''}
                           onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         >
                           <option value="">Select {field.label.toLowerCase()}</option>
                           {predefinedValues.paidFrom.map((value) => (
@@ -4064,11 +4185,11 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   } else if (field.key === 'category') {
                     return (
                       <div key={field.key}>
-                        <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">{field.label}</label>
                         <select
                           value={(formData as any)[field.key] || ''}
                           onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         >
                           <option value="">Select {field.label.toLowerCase()}</option>
                           {predefinedValues.categories.map((value) => (
@@ -4080,12 +4201,12 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   } else {
                     return (
                       <div key={field.key}>
-                        <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">{field.label}</label>
                         <input
                           type="text"
                           value={(formData as any)[field.key] || ''}
                           onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         />
                       </div>
                     );
@@ -4094,21 +4215,21 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
 
                 <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
                      <div>
-                        <label className="block text-xs text-slate-400 mb-1">Address Line 1</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Address Line 1</label>
                         <input
                           type="text"
                           value={formData.address1 || ''}
                           onChange={(e) => handleInputChange('address1', e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-slate-400 mb-1">Address Line 2</label>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Address Line 2</label>
                         <input
                           type="text"
                           value={formData.address2 || ''}
                           onChange={(e) => handleInputChange('address2', e.target.value)}
-                          className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         />
                       </div>
                 </div>
@@ -4116,102 +4237,102 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 {/* Emergency Contact & Banking */}
                 <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Emergency Contact No.</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Emergency Contact No.</label>
                     <input
                       type="text"
                       value={(formData as any).emergencyContactNo || ''}
                       onChange={(e) => handleInputChange('emergencyContactNo' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Relation</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Relation</label>
                     <input
                       type="text"
                       value={(formData as any).emergencyContactRelation || ''}
                       onChange={(e) => handleInputChange('emergencyContactRelation' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Anniversary Date</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Anniversary Date</label>
                     <input
                       type="date"
                       value={toDateInputValue((formData as any).anniversaryDate)}
                       onChange={(e) => handleInputChange('anniversaryDate' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Bank Name</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Bank Name</label>
                     <input
                       type="text"
                       value={(formData as any).bankName || ''}
                       onChange={(e) => handleInputChange('bankName' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Branch Name</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Branch Name</label>
                     <input
                       type="text"
                       value={(formData as any).branchName || ''}
                       onChange={(e) => handleInputChange('branchName' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Account No.</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Account No.</label>
                     <input
                       type="text"
                       value={(formData as any).accountNumber || ''}
                       onChange={(e) => handleInputChange('accountNumber' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">IFSC</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">IFSC</label>
                     <input
                       type="text"
                       value={(formData as any).ifscCode || ''}
                       onChange={(e) => handleInputChange('ifscCode' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Type of Account</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Type of Account</label>
                     <input
                       type="text"
                       value={(formData as any).accountType || ''}
                       onChange={(e) => handleInputChange('accountType' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Name of Account Holder</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Name of Account Holder</label>
                     <input
                       type="text"
                       value={(formData as any).accountHolderName || ''}
                       onChange={(e) => handleInputChange('accountHolderName' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Aadhar No.</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Aadhar No.</label>
                     <input
                       type="text"
                       value={(formData as any).aadhaarNumber || ''}
                       onChange={(e) => handleInputChange('aadhaarNumber' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">PAN</label>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">PAN</label>
                     <input
                       type="text"
                       value={(formData as any).panNumber || ''}
                       onChange={(e) => handleInputChange('panNumber' as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                 </div>
@@ -4237,33 +4358,33 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   { label: 'Work Timing (Text)', key: 'workingTiming' },
                 ].map((field) => (
                   <div key={field.key}>
-                     <label className="block text-xs text-slate-400 mb-1">{field.label}</label>
+                     <label className="block text-xs font-medium text-slate-600 mb-1">{field.label}</label>
                     <input
                       type="text"
                       value={(formData as any)[field.key] || ''}
                       onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                 ))}
 
                 {/* Dates */}
                  <div>
-                  <label className="block text-xs text-slate-400 mb-1">Articleship Start</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Articleship Start</label>
                   <input
                     type="date"
                     value={toDateInputValue(formData.articleshipStartDate)}
                     onChange={(e) => handleInputChange('articleshipStartDate', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                  <div>
-                  <label className="block text-xs text-slate-400 mb-1">Next Attempt Due</label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Next Attempt Due</label>
                   <input
                     type="date"
                     value={toDateInputValue(formData.nextAttemptDueDate)}
                     onChange={(e) => handleInputChange('nextAttemptDueDate', e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-purple-500/50"
+                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
 
@@ -4272,146 +4393,182 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           )}
         </div>
 
-        <div className="mt-8 flex justify-end gap-3 pt-4 border-t border-slate-800">
+        <div className="mt-8 flex justify-end gap-3 border-t border-slate-200 pt-4">
           <button
+            type="button"
             onClick={() => setIsAddingNew(false)}
-            className="px-4 py-2 rounded text-sm text-slate-300 hover:text-white transition-colors"
+            className="rounded-md px-4 py-2 text-sm text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400/40"
           >
             Cancel
           </button>
           <button
+            type="button"
             onClick={handleCreateNew}
             disabled={saveLoading || !formData.name || !formData.email || !formData.odId || !formData.joiningDate}
-            className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Plus className="w-4 h-4" />
-            {saveLoading ? 'Creating...' : 'Create Employee'}
+            <Plus className="h-4 w-4" aria-hidden />
+            {saveLoading ? 'Creating…' : 'Create employee'}
           </button>
         </div>
-      </div>
+      </section>
     );
   }
 
   // ============== LIST VIEW =================
+  const employeeListWorkflowSteps = ['Filter or search', 'Open a person', 'Save or export'] as const;
+
   return (
-    <div className="min-h-screen bg-slate-950">
-      {/* Header Section */}
-      <div className="bg-linear-to-r from-slate-900 via-slate-900 to-slate-800 border-b border-slate-800">
-        <div className="px-6 py-6">
-          {/* Title Row */}
-          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
-            <div>
-              <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-                <div className="w-10 h-10 bg-linear-to-br from-purple-500 to-purple-700 rounded-xl flex items-center justify-center">
-                  <Users className="w-5 h-5 text-white" />
-                </div>
-                Employee Management
+    <section
+      className="w-full space-y-5 text-slate-900"
+      aria-labelledby="employee-management-heading"
+    >
+      {/* Header: hierarchy, plain language, numbered workflow (orientation before action) */}
+      <div className="rounded-md border border-slate-200 bg-white px-4 py-5 shadow-sm sm:px-6">
+        <div className="space-y-4">
+          <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start lg:gap-6">
+            <header className="min-w-0 flex-1 space-y-2">
+              <h1
+                id="employee-management-heading"
+                className="flex items-center gap-2 text-lg font-semibold tracking-tight text-slate-900 sm:text-xl"
+              >
+                <span className="flex h-9 w-9 items-center justify-center rounded-md bg-blue-600 text-white">
+                  <Users className="h-5 w-5" aria-hidden />
+                </span>
+                Employee management
               </h1>
-              <p className="text-slate-400 text-sm mt-1">Manage employee information, schedules, and records</p>
+              <p className="max-w-2xl text-sm text-slate-600">
+                Search and filter the roster, open someone to edit tabs (basic, schedule, salary), or move data with Excel.
+              </p>
+              <ol className="flex list-none flex-wrap gap-2 text-xs text-slate-700" aria-label="Suggested workflow">
+                {employeeListWorkflowSteps.map((t, i) => (
+                  <li
+                    key={t}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1"
+                  >
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+                      {i + 1}
+                    </span>
+                    {t}
+                  </li>
+                ))}
+              </ol>
               {!showInactiveEmployees && inactiveUserCount > 0 && (
-                <p className="text-xs text-amber-400/90 mt-2">
-                  Inactive employees are hidden from the table. Use &quot;Show inactive&quot; in the toolbar to list them (e.g. to re-activate).
+                <p className="text-xs text-amber-800">
+                  Inactive employees are hidden from the table. Turn on &quot;Show inactive&quot; in the toolbar to find or
+                  re-activate them.
                 </p>
               )}
-            </div>
+            </header>
 
-            {/* Quick Stats */}
+            {/* Quick stats — calm contrast on white */}
             {loading ? (
-              <div className="flex items-center gap-3 animate-pulse" aria-hidden>
-                <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl px-4 py-2.5 flex items-center gap-3 w-[9.5rem]">
-                  <div className="w-8 h-8 bg-slate-700/60 rounded-lg shrink-0" />
-                  <div className="flex-1 space-y-2 min-w-0">
-                    <div className="h-6 bg-slate-700/60 rounded w-10" />
-                    <div className="h-2.5 bg-slate-800 rounded w-24" />
+              <div className="flex animate-pulse items-center gap-3" aria-hidden>
+                <div className="flex w-[9.5rem] items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5">
+                  <div className="h-8 w-8 shrink-0 rounded-lg bg-slate-200" />
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="h-6 w-10 rounded bg-slate-200" />
+                    <div className="h-2.5 w-24 rounded bg-slate-100" />
                   </div>
                 </div>
-                <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl px-4 py-2.5 flex items-center gap-3 w-[9.5rem]">
-                  <div className="w-8 h-8 bg-slate-700/60 rounded-lg shrink-0" />
-                  <div className="flex-1 space-y-2 min-w-0">
-                    <div className="h-6 bg-slate-700/60 rounded w-10" />
-                    <div className="h-2.5 bg-slate-800 rounded w-28" />
+                <div className="flex w-[9.5rem] items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5">
+                  <div className="h-8 w-8 shrink-0 rounded-lg bg-slate-200" />
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="h-6 w-10 rounded bg-slate-200" />
+                    <div className="h-2.5 w-28 rounded bg-slate-100" />
                   </div>
                 </div>
               </div>
             ) : (
-              <div className="flex items-center gap-3">
-                <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl px-4 py-2.5 flex items-center gap-3">
-                  <div className="w-8 h-8 bg-emerald-500/20 rounded-lg flex items-center justify-center">
-                    <Users className="w-4 h-4 text-emerald-400" />
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100">
+                    <Users className="h-4 w-4 text-blue-700" aria-hidden />
                   </div>
                   <div>
-                    <p className="text-xl font-bold text-white">{users.length}</p>
-                    <p className="text-xs text-slate-400">Total Employees</p>
+                    <p className="text-xl font-bold text-slate-900">{users.length}</p>
+                    <p className="text-xs text-slate-600">Total employees</p>
                   </div>
                 </div>
-                <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl px-4 py-2.5 flex items-center gap-3">
-                  <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center">
-                    <Briefcase className="w-4 h-4 text-blue-400" />
+                <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-200/80">
+                    <Briefcase className="h-4 w-4 text-slate-700" aria-hidden />
                   </div>
                   <div>
-                    <p className="text-xl font-bold text-white">{uniqueDesignations.length}</p>
-                    <p className="text-xs text-slate-400">Designations</p>
+                    <p className="text-xl font-bold text-slate-900">{uniqueDesignations.length}</p>
+                    <p className="text-xs text-slate-600">Designations</p>
                   </div>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Search and Actions Row */}
-          <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-4">
-            {/* Search and Filter */}
-            <div className="flex flex-1 items-center gap-3">
-              <div className="relative flex-1 max-w-md">
+          {/* Search and actions — familiar controls, visible focus, responsive stack */}
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 flex-1 flex-col flex-wrap gap-3 sm:flex-row sm:items-center">
+              <div className="relative max-w-md flex-1">
+                <label htmlFor="employee-list-search" className="sr-only">
+                  Search employees by name, email, or code
+                </label>
                 <input
-                  type="text"
-                  placeholder="Search by name, email, code..."
+                  id="employee-list-search"
+                  type="search"
+                  placeholder="Search by name, email, code…"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full bg-slate-800/50 border border-slate-700 text-slate-200 text-sm rounded-xl pl-10 pr-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 placeholder-slate-500 transition-all"
+                  className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-10 pr-10 text-sm text-slate-900 shadow-sm transition-colors placeholder:text-slate-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25"
                 />
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden />
                 {searchTerm && (
                   <button
+                    type="button"
                     onClick={() => setSearchTerm('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+                    aria-label="Clear search"
                   >
-                    <X className="w-4 h-4" />
+                    <X className="h-4 w-4" />
                   </button>
                 )}
               </div>
 
-              {/* Multi-select Designation Filter */}
-              {/* Designation Dropdown Filter */}
-              <div className="relative min-w-45">
+              <div className="relative min-w-[10rem] flex-1 sm:max-w-[11rem]">
                 <button
                   type="button"
-                  className="w-full bg-slate-800/50 border border-slate-700 text-slate-200 text-sm rounded-xl px-4 py-2.5 flex justify-between items-center focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50"
-                  onClick={() => setShowDesignationDropdown(v => !v)}
+                  className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm text-slate-800 shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/25"
+                  onClick={() => setShowDesignationDropdown((v) => !v)}
+                  aria-expanded={showDesignationDropdown}
+                  aria-haspopup="listbox"
                 >
-                  <span>{filterDesignations.length > 0 ? `${filterDesignations.length} selected` : 'Designations'}</span>
-                  <ChevronDown className="w-4 h-4 ml-2 text-slate-400" />
+                  <span>{filterDesignations.length > 0 ? `${filterDesignations.length} designations` : 'Designations'}</span>
+                  <ChevronDown className="ml-2 h-4 w-4 shrink-0 text-slate-500" aria-hidden />
                 </button>
                 {showDesignationDropdown && (
-                  <div className="absolute z-20 mt-2 w-full bg-slate-900 border border-slate-700 rounded-xl shadow-lg max-h-56 overflow-y-auto">
+                  <div
+                    className="absolute z-20 mt-2 max-h-56 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+                    role="listbox"
+                    aria-label="Filter by designation"
+                  >
                     <div className="p-2">
-                      <label className="flex items-center gap-2 text-slate-300 text-sm mb-1 cursor-pointer">
+                      <label className="mb-1 flex cursor-pointer items-center gap-2 text-sm text-slate-700">
                         <input
                           type="checkbox"
                           checked={filterDesignations.length === 0}
                           onChange={() => setFilterDesignations([])}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500/40"
                         />
-                        All
+                        All designations
                       </label>
-                      {uniqueDesignations.map(opt => (
-                        <label key={opt} className="flex items-center gap-2 text-slate-200 text-sm mb-1 cursor-pointer">
+                      {uniqueDesignations.map((opt) => (
+                        <label key={opt} className="mb-1 flex cursor-pointer items-center gap-2 text-sm text-slate-800">
                           <input
                             type="checkbox"
                             checked={filterDesignations.includes(opt)}
                             onChange={() => {
-                              setFilterDesignations(prev => prev.includes(opt)
-                                ? prev.filter(d => d !== opt)
-                                : [...prev, opt]);
+                              setFilterDesignations((prev) =>
+                                prev.includes(opt) ? prev.filter((d) => d !== opt) : [...prev, opt]
+                              );
                             }}
+                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500/40"
                           />
                           {opt}
                         </label>
@@ -4421,37 +4578,44 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 )}
               </div>
 
-              {/* Team Dropdown Filter */}
-              <div className="relative min-w-45">
+              <div className="relative min-w-[10rem] flex-1 sm:max-w-[11rem]">
                 <button
                   type="button"
-                  className="w-full bg-slate-800/50 border border-slate-700 text-slate-200 text-sm rounded-xl px-4 py-2.5 flex justify-between items-center focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50"
-                  onClick={() => setShowTeamDropdown(v => !v)}
+                  className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm text-slate-800 shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/25"
+                  onClick={() => setShowTeamDropdown((v) => !v)}
+                  aria-expanded={showTeamDropdown}
+                  aria-haspopup="listbox"
                 >
-                  <span>{filterTeams.length > 0 ? `${filterTeams.length} selected` : 'Teams'}</span>
-                  <ChevronDown className="w-4 h-4 ml-2 text-slate-400" />
+                  <span>{filterTeams.length > 0 ? `${filterTeams.length} teams` : 'Teams'}</span>
+                  <ChevronDown className="ml-2 h-4 w-4 shrink-0 text-slate-500" aria-hidden />
                 </button>
                 {showTeamDropdown && (
-                  <div className="absolute z-20 mt-2 w-full bg-slate-900 border border-slate-700 rounded-xl shadow-lg max-h-56 overflow-y-auto">
+                  <div
+                    className="absolute z-20 mt-2 max-h-56 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+                    role="listbox"
+                    aria-label="Filter by team"
+                  >
                     <div className="p-2">
-                      <label className="flex items-center gap-2 text-slate-300 text-sm mb-1 cursor-pointer">
+                      <label className="mb-1 flex cursor-pointer items-center gap-2 text-sm text-slate-700">
                         <input
                           type="checkbox"
                           checked={filterTeams.length === 0}
                           onChange={() => setFilterTeams([])}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500/40"
                         />
-                        All
+                        All teams
                       </label>
-                      {uniqueTeams.map(opt => (
-                        <label key={opt} className="flex items-center gap-2 text-slate-200 text-sm mb-1 cursor-pointer">
+                      {uniqueTeams.map((opt) => (
+                        <label key={opt} className="mb-1 flex cursor-pointer items-center gap-2 text-sm text-slate-800">
                           <input
                             type="checkbox"
                             checked={filterTeams.includes(opt)}
                             onChange={() => {
-                              setFilterTeams(prev => prev.includes(opt)
-                                ? prev.filter(t => t !== opt)
-                                : [...prev, opt]);
+                              setFilterTeams((prev) =>
+                                prev.includes(opt) ? prev.filter((t) => t !== opt) : [...prev, opt]
+                              );
                             }}
+                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500/40"
                           />
                           {opt}
                         </label>
@@ -4461,37 +4625,44 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 )}
               </div>
 
-              {/* User Dropdown Filter */}
-              <div className="relative min-w-45">
+              <div className="relative min-w-[10rem] flex-1 sm:max-w-[11rem]">
                 <button
                   type="button"
-                  className="w-full bg-slate-800/50 border border-slate-700 text-slate-200 text-sm rounded-xl px-4 py-2.5 flex justify-between items-center focus:outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50"
-                  onClick={() => setShowUserDropdown(v => !v)}
+                  className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm text-slate-800 shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/25"
+                  onClick={() => setShowUserDropdown((v) => !v)}
+                  aria-expanded={showUserDropdown}
+                  aria-haspopup="listbox"
                 >
-                  <span>{filterUsers.length > 0 ? `${filterUsers.length} selected` : 'Users'}</span>
-                  <ChevronDown className="w-4 h-4 ml-2 text-slate-400" />
+                  <span>{filterUsers.length > 0 ? `${filterUsers.length} names` : 'Names'}</span>
+                  <ChevronDown className="ml-2 h-4 w-4 shrink-0 text-slate-500" aria-hidden />
                 </button>
                 {showUserDropdown && (
-                  <div className="absolute z-20 mt-2 w-full bg-slate-900 border border-slate-700 rounded-xl shadow-lg max-h-56 overflow-y-auto">
+                  <div
+                    className="absolute z-20 mt-2 max-h-56 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+                    role="listbox"
+                    aria-label="Filter by employee name"
+                  >
                     <div className="p-2">
-                      <label className="flex items-center gap-2 text-slate-300 text-sm mb-1 cursor-pointer">
+                      <label className="mb-1 flex cursor-pointer items-center gap-2 text-sm text-slate-700">
                         <input
                           type="checkbox"
                           checked={filterUsers.length === 0}
                           onChange={() => setFilterUsers([])}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500/40"
                         />
-                        All
+                        All names
                       </label>
-                      {uniqueUserNames.map(opt => (
-                        <label key={opt} className="flex items-center gap-2 text-slate-200 text-sm mb-1 cursor-pointer">
+                      {uniqueUserNames.map((opt) => (
+                        <label key={opt} className="mb-1 flex cursor-pointer items-center gap-2 text-sm text-slate-800">
                           <input
                             type="checkbox"
                             checked={filterUsers.includes(opt)}
                             onChange={() => {
-                              setFilterUsers(prev => prev.includes(opt)
-                                ? prev.filter(u => u !== opt)
-                                : [...prev, opt]);
+                              setFilterUsers((prev) =>
+                                prev.includes(opt) ? prev.filter((u) => u !== opt) : [...prev, opt]
+                              );
                             }}
+                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500/40"
                           />
                           {opt}
                         </label>
@@ -4502,26 +4673,25 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               </div>
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => {
                   setFormData({ isActive: true, inactiveAsOf: undefined });
                   setIsAddingNew(true);
                 }}
-                className="flex items-center gap-2 px-5 py-2.5 bg-linear-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-purple-500/20"
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
               >
-                <Plus className="w-4 h-4" />
-                Add Employee
+                <Plus className="h-4 w-4" aria-hidden />
+                Add employee
               </button>
 
-              <label className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-slate-300 bg-slate-800/50 border border-slate-700/50 cursor-pointer shrink-0 select-none">
+              <label className="inline-flex h-10 min-w-0 shrink-0 cursor-pointer select-none items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 text-xs text-slate-700">
                 <input
                   type="checkbox"
                   checked={showInactiveEmployees}
                   onChange={(e) => setShowInactiveEmployees(e.target.checked)}
-                  className="rounded border-slate-600"
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500/40"
                 />
                 <span>
                   Show inactive
@@ -4529,39 +4699,41 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 </span>
               </label>
 
-              <div className="h-8 w-px bg-slate-700 mx-1" />
+              <div className="mx-1 hidden h-8 w-px bg-slate-200 sm:block" aria-hidden />
 
               <button
                 type="button"
                 onClick={() => setShowSettingsPanel(!showSettingsPanel)}
-                className={`p-2.5 rounded-xl text-sm transition-all ${
+                className={`rounded-lg border p-2.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/30 ${
                   showSettingsPanel
-                    ? 'bg-slate-700 text-white ring-2 ring-slate-600'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800 bg-slate-800/50'
+                    ? 'border-blue-200 bg-blue-50 text-blue-900'
+                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
                 }`}
-                title="Settings: Custom Fields, Predefined Values, Excel Format"
+                aria-pressed={showSettingsPanel}
+                aria-label="Settings: custom fields, predefined values, Excel format"
               >
-                <Settings className="w-4 h-4" />
+                <Settings className="h-4 w-4" aria-hidden />
               </button>
 
               <button
                 type="button"
                 onClick={handleExportToExcel}
-                className="p-2.5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 bg-slate-800/50 rounded-xl text-sm transition-all"
-                title="Export to Excel"
+                className="rounded-lg border border-slate-200 bg-white p-2.5 text-slate-600 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                aria-label="Export roster to Excel"
               >
-                <Download className="w-4 h-4" />
+                <Download className="h-4 w-4" aria-hidden />
               </button>
 
               <label
-                className={`p-2.5 rounded-xl text-sm transition-all cursor-pointer ${
+                className={`rounded-lg border p-2.5 text-sm transition-colors focus-within:ring-2 focus-within:ring-blue-500/30 ${
                   isUploading
-                    ? 'text-slate-500 cursor-not-allowed bg-slate-800/30'
-                    : 'text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 bg-slate-800/50'
+                    ? 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400'
+                    : 'cursor-pointer border-slate-200 bg-white text-slate-600 hover:bg-blue-50/80 hover:text-blue-800'
                 }`}
-                title={isUploading ? 'Uploading...' : 'Bulk Upload from Excel'}
+                title={isUploading ? 'Uploading…' : 'Bulk upload from Excel'}
               >
-                <Upload className="w-4 h-4" />
+                <span className="sr-only">Bulk upload Excel file</span>
+                <Upload className="h-4 w-4" aria-hidden />
                 <input
                   type="file"
                   accept=".xlsx,.xls"
@@ -4575,420 +4747,468 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         </div>
       </div>
 
-      {/* Filter Tags */}
+      {/* Active filters — explicit feedback, easy reset */}
       {(searchTerm || filterDesignations.length > 0 || filterTeams.length > 0 || filterUsers.length > 0) && (
-        <div className="px-6 py-3 bg-slate-900/50 border-b border-slate-800 flex items-center gap-2">
-          <span className="text-xs text-slate-500">Active filters:</span>
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
+          <span className="text-xs font-medium text-slate-600">Active filters</span>
           {searchTerm && (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-purple-500/10 text-purple-400 text-xs rounded-lg border border-purple-500/20">
-              Search: "{searchTerm}"
-              <button onClick={() => setSearchTerm('')} className="hover:text-purple-300">
-                <X className="w-3 h-3" />
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs text-blue-900">
+              Search: &quot;{searchTerm}&quot;
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="rounded p-0.5 text-blue-800 hover:bg-blue-100"
+                aria-label="Remove search filter"
+              >
+                <X className="h-3 w-3" />
               </button>
             </span>
           )}
-          {filterDesignations.map(designation => (
-            <span key={designation} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-500/10 text-blue-400 text-xs rounded-lg border border-blue-500/20">
+          {filterDesignations.map((designation) => (
+            <span
+              key={designation}
+              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-800"
+            >
               {designation}
-              <button onClick={() => setFilterDesignations(filterDesignations.filter(d => d !== designation))} className="hover:text-blue-300">
-                <X className="w-3 h-3" />
+              <button
+                type="button"
+                onClick={() => setFilterDesignations(filterDesignations.filter((d) => d !== designation))}
+                className="rounded p-0.5 text-slate-600 hover:bg-slate-100"
+                aria-label={`Remove designation ${designation}`}
+              >
+                <X className="h-3 w-3" />
               </button>
             </span>
           ))}
-          {filterTeams.map(team => (
-            <span key={team} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/10 text-emerald-400 text-xs rounded-lg border border-emerald-500/20">
+          {filterTeams.map((team) => (
+            <span
+              key={team}
+              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-800"
+            >
               {team}
-              <button onClick={() => setFilterTeams(filterTeams.filter(t => t !== team))} className="hover:text-emerald-300">
-                <X className="w-3 h-3" />
+              <button
+                type="button"
+                onClick={() => setFilterTeams(filterTeams.filter((t) => t !== team))}
+                className="rounded p-0.5 text-slate-600 hover:bg-slate-100"
+                aria-label={`Remove team ${team}`}
+              >
+                <X className="h-3 w-3" />
               </button>
             </span>
           ))}
-          {filterUsers.map(user => (
-            <span key={user} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-pink-500/10 text-pink-400 text-xs rounded-lg border border-pink-500/20">
+          {filterUsers.map((user) => (
+            <span
+              key={user}
+              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-800"
+            >
               {user}
-              <button onClick={() => setFilterUsers(filterUsers.filter(u => u !== user))} className="hover:text-pink-300">
-                <X className="w-3 h-3" />
+              <button
+                type="button"
+                onClick={() => setFilterUsers(filterUsers.filter((u) => u !== user))}
+                className="rounded p-0.5 text-slate-600 hover:bg-slate-100"
+                aria-label={`Remove name filter ${user}`}
+              >
+                <X className="h-3 w-3" />
               </button>
             </span>
           ))}
           <button
-            onClick={() => { setSearchTerm(''); setFilterDesignations([]); setFilterTeams([]); setFilterUsers([]); }}
-            className="text-xs text-slate-500 hover:text-slate-300 ml-2"
+            type="button"
+            onClick={() => {
+              setSearchTerm('');
+              setFilterDesignations([]);
+              setFilterTeams([]);
+              setFilterUsers([]);
+            }}
+            className="ml-auto text-xs font-medium text-blue-700 hover:text-blue-900 focus:outline-none focus:underline"
           >
             Clear all
           </button>
         </div>
       )}
 
-      {/* Settings Panel - Only visible when Settings button is clicked */}
+      {/* Settings — same light system as the rest of the console */}
       {showSettingsPanel && (
-        <div className="bg-slate-900/30 border-b border-slate-800">
-          {/* Panel Header */}
-          <div className="px-6 py-3 bg-slate-800/30 border-b border-slate-800/50 flex items-center justify-between">
+        <div className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3 sm:px-5">
             <div className="flex items-center gap-2">
-              <Settings className="w-4 h-4 text-slate-400" />
-              <span className="text-sm font-medium text-slate-300">Settings & Configuration</span>
+              <Settings className="h-4 w-4 text-slate-600" aria-hidden />
+              <h2 className="text-sm font-semibold text-slate-900">Settings and configuration</h2>
             </div>
             <button
+              type="button"
               onClick={() => setShowSettingsPanel(false)}
-              className="p-1 text-slate-500 hover:text-slate-300 hover:bg-slate-700/50 rounded-lg transition-colors"
+              className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-200/80 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              aria-label="Close settings panel"
             >
-              <X className="w-4 h-4" />
+              <X className="h-4 w-4" />
             </button>
           </div>
 
-          {/* Additional Info Fields - Collapsible */}
-          <div className="border-b border-slate-800/50">
-          <button
-            onClick={() => setShowAdditionalFields(!showAdditionalFields)}
-            className="w-full px-6 py-3 flex items-center justify-between text-left hover:bg-slate-800/20 transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center">
-                <Tag className="w-4 h-4 text-slate-400" />
-              </div>
-              <div>
-                <div className="text-sm font-medium text-slate-200">Custom Fields</div>
-                <div className="text-xs text-slate-500">
-                  {allExtraLabels.length} additional fields configured
-                </div>
-              </div>
-            </div>
-            <div className={`p-1 rounded-lg transition-transform ${showAdditionalFields ? 'rotate-180' : ''}`}>
-              <ChevronDown className="w-4 h-4 text-slate-400" />
-            </div>
-          </button>
-          
-          {showAdditionalFields && (
-            <div className="px-6 pb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-              <div className="flex-1">
-                {allExtraLabels.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {allExtraLabels.map((label) => (
-                      <span
-                        key={label}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/50 text-xs text-slate-200 border border-slate-700/50 group"
-                      >
-                        <span>{label}</span>
-                        <button
-                          type="button"
-                          className="text-slate-500 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={async () => {
-                            if (!window.confirm(`Remove field "${label}" from all employees?`)) return;
-                            try {
-                              const res = await fetch('/api/users/extra-info', {
-                                method: 'DELETE',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ label }),
-                              });
-                              const json = await res.json();
-                              if (!res.ok || !json.success) {
-                                throw new Error(json.error || 'Failed to remove field');
-                              }
-                              fetchUsers({ soft: true });
-                            } catch (err) {
-                              alert(err instanceof Error ? err.message : 'Failed to remove field');
-                            }
-                          }}
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </span>
-                    ))}
+          <div className="divide-y divide-slate-200">
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowAdditionalFields(!showAdditionalFields)}
+                className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-slate-50 sm:px-5"
+                aria-expanded={showAdditionalFields}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50">
+                    <Tag className="h-4 w-4 text-slate-600" aria-hidden />
                   </div>
-                ) : (
-                  <p className="text-sm text-slate-500">No custom fields configured. Add one to get started.</p>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  placeholder="New field name..."
-                  value={newExtraLabel}
-                  onChange={(e) => setNewExtraLabel(e.target.value)}
-                  className="bg-slate-800/50 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 min-w-40"
+                  <div>
+                    <div className="text-sm font-medium text-slate-900">Custom fields</div>
+                    <div className="text-xs text-slate-600">
+                      {allExtraLabels.length} additional field{allExtraLabels.length === 1 ? '' : 's'} on the roster
+                    </div>
+                  </div>
+                </div>
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${showAdditionalFields ? 'rotate-180' : ''}`}
+                  aria-hidden
                 />
-                <button
-                  type="button"
-                  onClick={handleAddGlobalExtraLabel}
-                  disabled={isSavingExtraLabel || !newExtraLabel.trim()}
-                  className="px-4 py-2.5 rounded-lg text-sm bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
-                >
-                  {isSavingExtraLabel ? 'Adding...' : 'Add Field'}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+              </button>
 
-        {/* Predefined Values Management - Collapsible */}
-        <div className="border-b border-slate-800/50">
-          <button
-            onClick={() => setShowPredefinedValues(!showPredefinedValues)}
-            className="w-full px-6 py-3 flex items-center justify-between text-left hover:bg-slate-800/20 transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center">
-                <Settings className="w-4 h-4 text-slate-400" />
-              </div>
-              <div>
-                <div className="text-sm font-medium text-slate-200">Predefined Values</div>
-                <div className="text-xs text-slate-500">
-                  Manage dropdown options for Team, Designation, Paid From, and Category
-                </div>
-              </div>
-            </div>
-            <div className={`p-1 rounded-lg transition-transform ${showPredefinedValues ? 'rotate-180' : ''}`}>
-              <ChevronDown className="w-4 h-4 text-slate-400" />
-            </div>
-          </button>
-
-          {showPredefinedValues && (
-            <div className="px-6 pb-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                {/* Teams */}
-                <button
-                  onClick={() => setPredefinedModal({ type: 'team', isOpen: true })}
-                  className="flex items-center justify-between p-4 bg-slate-800/30 hover:bg-slate-800/50 border border-slate-700/50 rounded-xl transition-all group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center">
-                      <Users className="w-5 h-5 text-blue-400" />
-                    </div>
-                    <div className="text-left">
-                      <div className="text-sm font-medium text-slate-200">Teams</div>
-                      <div className="text-xs text-slate-500">{predefinedValues.teams.length} values</div>
-                    </div>
+              {showAdditionalFields && (
+                <div className="flex flex-col gap-4 border-t border-slate-100 px-4 pb-4 pt-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                  <div className="min-w-0 flex-1">
+                    {allExtraLabels.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {allExtraLabels.map((label) => (
+                          <span
+                            key={label}
+                            className="group inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-800"
+                          >
+                            <span>{label}</span>
+                            <button
+                              type="button"
+                              className="rounded p-0.5 text-slate-500 opacity-100 transition-opacity hover:bg-rose-50 hover:text-rose-700 sm:opacity-0 sm:group-hover:opacity-100"
+                              aria-label={`Remove custom field ${label}`}
+                              onClick={async () => {
+                                if (!window.confirm(`Remove field "${label}" from all employees?`)) return;
+                                try {
+                                  const res = await fetch('/api/users/extra-info', {
+                                    method: 'DELETE',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ label }),
+                                  });
+                                  const json = await res.json();
+                                  if (!res.ok || !json.success) {
+                                    throw new Error(json.error || 'Failed to remove field');
+                                  }
+                                  fetchUsers({ soft: true });
+                                } catch (err) {
+                                  alert(err instanceof Error ? err.message : 'Failed to remove field');
+                                }
+                              }}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-slate-600">No custom fields yet. Add a label below to use it on profiles.</p>
+                    )}
                   </div>
-                  <ChevronDown className="w-4 h-4 text-slate-500 group-hover:text-slate-300 -rotate-90" />
-                </button>
-
-                {/* Designations */}
-                <button
-                  onClick={() => setPredefinedModal({ type: 'designation', isOpen: true })}
-                  className="flex items-center justify-between p-4 bg-slate-800/30 hover:bg-slate-800/50 border border-slate-700/50 rounded-xl transition-all group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-purple-500/10 rounded-lg flex items-center justify-center">
-                      <Briefcase className="w-5 h-5 text-purple-400" />
-                    </div>
-                    <div className="text-left">
-                      <div className="text-sm font-medium text-slate-200">Designations</div>
-                      <div className="text-xs text-slate-500">{predefinedValues.designations.length} values</div>
-                    </div>
-                  </div>
-                  <ChevronDown className="w-4 h-4 text-slate-500 group-hover:text-slate-300 -rotate-90" />
-                </button>
-
-                {/* Paid From */}
-                <button
-                  onClick={() => setPredefinedModal({ type: 'paidFrom', isOpen: true })}
-                  className="flex items-center justify-between p-4 bg-slate-800/30 hover:bg-slate-800/50 border border-slate-700/50 rounded-xl transition-all group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-emerald-500/10 rounded-lg flex items-center justify-center">
-                      <CreditCard className="w-5 h-5 text-emerald-400" />
-                    </div>
-                    <div className="text-left">
-                      <div className="text-sm font-medium text-slate-200">Paid From</div>
-                      <div className="text-xs text-slate-500">{predefinedValues.paidFrom.length} values</div>
-                    </div>
-                  </div>
-                  <ChevronDown className="w-4 h-4 text-slate-500 group-hover:text-slate-300 -rotate-90" />
-                </button>
-
-                {/* Categories */}
-                <button
-                  onClick={() => setPredefinedModal({ type: 'category', isOpen: true })}
-                  className="flex items-center justify-between p-4 bg-slate-800/30 hover:bg-slate-800/50 border border-slate-700/50 rounded-xl transition-all group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-amber-500/10 rounded-lg flex items-center justify-center">
-                      <Tag className="w-5 h-5 text-amber-400" />
-                    </div>
-                    <div className="text-left">
-                      <div className="text-sm font-medium text-slate-200">Categories</div>
-                      <div className="text-xs text-slate-500">{predefinedValues.categories.length} values</div>
-                    </div>
-                  </div>
-                  <ChevronDown className="w-4 h-4 text-slate-500 group-hover:text-slate-300 -rotate-90" />
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Bulk Upload Format - Collapsible */}
-        <div className="border-b border-slate-800/50">
-          <button
-            onClick={() => setShowBulkUploadFormat(!showBulkUploadFormat)}
-            className="w-full px-6 py-3 flex items-center justify-between text-left hover:bg-slate-800/20 transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center">
-                <FileSpreadsheet className="w-4 h-4 text-slate-400" />
-              </div>
-              <div>
-                <div className="text-sm font-medium text-slate-200">Excel Upload Format</div>
-                <div className="text-xs text-slate-500">
-                  View expected column headers for bulk import
-                </div>
-              </div>
-            </div>
-            <div className={`p-1 rounded-lg transition-transform ${showBulkUploadFormat ? 'rotate-180' : ''}`}>
-              <ChevronDown className="w-4 h-4 text-slate-400" />
-            </div>
-          </button>
-
-          {showBulkUploadFormat && (
-            <div className="px-6 pb-4">
-              <div className="bg-slate-800/30 rounded-xl p-4 mb-3 border border-slate-700/30">
-                <h4 className="text-sm font-medium text-slate-200 mb-3">Expected Column Headers</h4>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
-                  {[
-                    'Name',
-                    'Registration / Membership No.',
-                    'Employee Code',
-                    'Paid From',
-                    'Designation',
-                    'Category',
-                    'Tally Name',
-                    'Gender',
-                    'Asija Mail ID',
-                    'Attendance Approver',
-                    'Parents/Guardians Names',
-                    'Parents/Guardians Occupation',
-                    'Cell No.',
-                    'Alternate No.',
-                    'Alternate Mail Id',
-                    'Address 1',
-                    'Address 2',
-                    'Emergency Contact No.',
-                    'Relation',
-                    'Anniversary Date',
-                    'Bank Name',
-                    'Branch Name',
-                    'Account No.',
-                    'IFSC',
-                    'Type of Account',
-                    'Name of Account Holder',
-                    'Aadhar No.',
-                    'PAN',
-                    'Basis Salary/Stipend/Fees',
-                    'Laptop Allowance',
-                    'Total Salary (P/M)',
-                    'Per Annum',
-                    'Date of Joining -in Asija',
-                    'Articleship Start Date',
-                    'Transfer Case',
-                    '1st Yr of Articleship',
-                    '2nd Yr of Articleship',
-                    '3rd Yr of Articleship',
-                    'Filled Scholarship',
-                    'Qualification Level',
-                    'Next Attempt Due Date',
-                    'Registered Under Partner',
-                    'Working Under Partner',
-                    'Work Timings'
-                  ].map((column, index) => (
-                    <div
-                      key={index}
-                      className={`text-xs px-3 py-2 rounded-lg border ${
-                        column === 'Name' 
-                          ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30' 
-                          : 'text-slate-300 bg-slate-800/40 border-slate-700/50'
-                      }`}
-                    >
-                      {column}
-                      {column === 'Name' && <span className="ml-1 text-emerald-400">*</span>}
-                    </div>
-                  ))}
-                </div>
-                <p className="text-xs text-slate-500 mt-3">
-                  <span className="text-emerald-400">*</span> Required field. All other columns are optional.
-                </p>
-              </div>
-              <div className="bg-blue-500/5 rounded-xl p-4 border border-blue-500/20">
-                <p className="text-sm text-blue-300">
-                  <strong className="text-blue-400">💡 Pro Tip:</strong> Use the Export button to download a template with all current employees, then modify it and upload the updated data.
-                </p>
-              </div>
-
-              {/* Leave Balance Upload Section */}
-              <div className="mt-4 pt-4 border-t border-slate-700/50">
-                <h4 className="text-sm font-medium text-slate-200 mb-3">Leave Balance Upload</h4>
-                <div className="bg-slate-800/30 rounded-xl p-4 border border-slate-700/30">
-                  <p className="text-xs text-slate-400 mb-3">
-                    Upload an Excel file with leave balance data. Required columns:
-                  </p>
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    <span className="text-xs px-3 py-2 rounded-lg text-emerald-300 bg-emerald-500/10 border border-emerald-500/30">
-                      Name <span className="text-emerald-400">*</span>
-                    </span>
-                    <span className="text-xs px-3 py-2 rounded-lg text-emerald-300 bg-emerald-500/10 border border-emerald-500/30">
-                      Leaves Allowed <span className="text-emerald-400">*</span>
-                    </span>
-                    <span className="text-xs px-3 py-2 rounded-lg text-emerald-300 bg-emerald-500/10 border border-emerald-500/30">
-                      Total Leaves Taken (Current+Previous Years) <span className="text-emerald-400">*</span>
-                    </span>
-                  </div>
-                  <label
-                    className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm cursor-pointer transition-all ${
-                      isUploading
-                        ? 'text-slate-500 cursor-not-allowed bg-slate-800/30'
-                        : 'text-white bg-amber-600 hover:bg-amber-500'
-                    }`}
-                  >
-                    <Upload className="w-4 h-4" />
-                    {isUploading ? 'Uploading...' : 'Upload Leave Balance Excel'}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label htmlFor="new-extra-label" className="sr-only">
+                      New custom field name
+                    </label>
                     <input
-                      type="file"
-                      accept=".xlsx,.xls"
-                      onChange={handleLeaveBalanceUpload}
-                      className="hidden"
-                      disabled={isUploading}
+                      id="new-extra-label"
+                      type="text"
+                      placeholder="New field name…"
+                      value={newExtraLabel}
+                      onChange={(e) => setNewExtraLabel(e.target.value)}
+                      className="min-w-[10rem] flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25 sm:max-w-xs"
                     />
-                  </label>
+                    <button
+                      type="button"
+                      onClick={handleAddGlobalExtraLabel}
+                      disabled={isSavingExtraLabel || !newExtraLabel.trim()}
+                      className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                    >
+                      {isSavingExtraLabel ? 'Adding…' : 'Add field'}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
-          )}
-        </div>
-      </div>
-      )}
 
-      {/* Error/Success Messages */}
-      {error && (
-        <div className="mx-6 mt-4 bg-rose-500/10 text-rose-300 px-4 py-3 rounded-xl border border-rose-500/20 flex items-center gap-3">
-          <div className="w-8 h-8 bg-rose-500/20 rounded-lg flex items-center justify-center shrink-0">
-            <X className="w-4 h-4 text-rose-400" />
-          </div>
-          <span className="text-sm">{error}</span>
-        </div>
-      )}
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowPredefinedValues(!showPredefinedValues)}
+                className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-slate-50 sm:px-5"
+                aria-expanded={showPredefinedValues}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50">
+                    <Settings className="h-4 w-4 text-slate-600" aria-hidden />
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium text-slate-900">Predefined values</div>
+                    <div className="text-xs text-slate-600">
+                      Dropdown options for team, designation, paid from, and category
+                    </div>
+                  </div>
+                </div>
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${showPredefinedValues ? 'rotate-180' : ''}`}
+                  aria-hidden
+                />
+              </button>
 
-      {uploadStats && (
-        <div className="mx-6 mt-4">
-          <div className="bg-emerald-500/10 text-emerald-300 px-4 py-3 rounded-xl border border-emerald-500/20 flex items-center gap-3">
-            <div className="w-8 h-8 bg-emerald-500/20 rounded-lg flex items-center justify-center shrink-0">
-              <Upload className="w-4 h-4 text-emerald-400" />
+              {showPredefinedValues && (
+                <div className="border-t border-slate-100 px-4 pb-4 pt-3 sm:px-5">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
+                    <button
+                      type="button"
+                      onClick={() => setPredefinedModal({ type: 'team', isOpen: true })}
+                      className="group flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/80 p-4 text-left transition-colors hover:border-blue-200 hover:bg-blue-50/40"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100">
+                          <Users className="h-5 w-5 text-blue-700" aria-hidden />
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-slate-900">Teams</div>
+                          <div className="text-xs text-slate-600">{predefinedValues.teams.length} values</div>
+                        </div>
+                      </div>
+                      <ChevronDown className="h-4 w-4 shrink-0 -rotate-90 text-slate-400 group-hover:text-slate-600" aria-hidden />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setPredefinedModal({ type: 'designation', isOpen: true })}
+                      className="group flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/80 p-4 text-left transition-colors hover:border-blue-200 hover:bg-blue-50/40"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-200/80">
+                          <Briefcase className="h-5 w-5 text-slate-700" aria-hidden />
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-slate-900">Designations</div>
+                          <div className="text-xs text-slate-600">{predefinedValues.designations.length} values</div>
+                        </div>
+                      </div>
+                      <ChevronDown className="h-4 w-4 shrink-0 -rotate-90 text-slate-400 group-hover:text-slate-600" aria-hidden />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setPredefinedModal({ type: 'paidFrom', isOpen: true })}
+                      className="group flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/80 p-4 text-left transition-colors hover:border-blue-200 hover:bg-blue-50/40"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100">
+                          <CreditCard className="h-5 w-5 text-emerald-800" aria-hidden />
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-slate-900">Paid from</div>
+                          <div className="text-xs text-slate-600">{predefinedValues.paidFrom.length} values</div>
+                        </div>
+                      </div>
+                      <ChevronDown className="h-4 w-4 shrink-0 -rotate-90 text-slate-400 group-hover:text-slate-600" aria-hidden />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setPredefinedModal({ type: 'category', isOpen: true })}
+                      className="group flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/80 p-4 text-left transition-colors hover:border-blue-200 hover:bg-blue-50/40"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100">
+                          <Tag className="h-5 w-5 text-amber-900" aria-hidden />
+                        </div>
+                        <div>
+                          <div className="text-sm font-medium text-slate-900">Categories</div>
+                          <div className="text-xs text-slate-600">{predefinedValues.categories.length} values</div>
+                        </div>
+                      </div>
+                      <ChevronDown className="h-4 w-4 shrink-0 -rotate-90 text-slate-400 group-hover:text-slate-600" aria-hidden />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="text-sm">
-              <strong>Upload Complete:</strong> {uploadStats.updated} updated, {uploadStats.created} created
-              {uploadStats.failed > 0 && <span className="text-rose-400 ml-2">, {uploadStats.failed} failed</span>}
-              {uploadStats.message && (
-                <div className="text-xs text-emerald-400/80 mt-1 italic">
-                  {uploadStats.message}
+
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowBulkUploadFormat(!showBulkUploadFormat)}
+                className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-slate-50 sm:px-5"
+                aria-expanded={showBulkUploadFormat}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50">
+                    <FileSpreadsheet className="h-4 w-4 text-slate-600" aria-hidden />
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium text-slate-900">Excel upload format</div>
+                    <div className="text-xs text-slate-600">Expected column headers for bulk import</div>
+                  </div>
+                </div>
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${showBulkUploadFormat ? 'rotate-180' : ''}`}
+                  aria-hidden
+                />
+              </button>
+
+              {showBulkUploadFormat && (
+                <div className="border-t border-slate-100 px-4 pb-4 pt-3 sm:px-5">
+                  <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <h4 className="mb-3 text-sm font-semibold text-slate-900">Expected column headers</h4>
+                    <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                      {[
+                        'Name',
+                        'Registration / Membership No.',
+                        'Employee Code',
+                        'Paid From',
+                        'Designation',
+                        'Category',
+                        'Tally Name',
+                        'Gender',
+                        'Asija Mail ID',
+                        'Attendance Approver',
+                        'Parents/Guardians Names',
+                        'Parents/Guardians Occupation',
+                        'Cell No.',
+                        'Alternate No.',
+                        'Alternate Mail Id',
+                        'Address 1',
+                        'Address 2',
+                        'Emergency Contact No.',
+                        'Relation',
+                        'Anniversary Date',
+                        'Bank Name',
+                        'Branch Name',
+                        'Account No.',
+                        'IFSC',
+                        'Type of Account',
+                        'Name of Account Holder',
+                        'Aadhar No.',
+                        'PAN',
+                        'Basis Salary/Stipend/Fees',
+                        'Laptop Allowance',
+                        'Total Salary (P/M)',
+                        'Per Annum',
+                        'Date of Joining -in Asija',
+                        'Articleship Start Date',
+                        'Transfer Case',
+                        '1st Yr of Articleship',
+                        '2nd Yr of Articleship',
+                        '3rd Yr of Articleship',
+                        'Filled Scholarship',
+                        'Qualification Level',
+                        'Next Attempt Due Date',
+                        'Registered Under Partner',
+                        'Working Under Partner',
+                        'Work Timings',
+                      ].map((column, index) => (
+                        <div
+                          key={index}
+                          className={`rounded-lg border px-3 py-2 text-xs ${
+                            column === 'Name'
+                              ? 'border-emerald-200 bg-emerald-50 font-medium text-emerald-900'
+                              : 'border-slate-200 bg-white text-slate-700'
+                          }`}
+                        >
+                          {column}
+                          {column === 'Name' && <span className="ml-1 text-emerald-700">*</span>}
+                        </div>
+                      ))}
+                    </div>
+                    <p className="mt-3 text-xs text-slate-600">
+                      <span className="font-medium text-emerald-800">*</span> Required column. All others are optional.
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4">
+                    <p className="text-sm text-slate-800">
+                      <strong className="text-blue-900">Tip:</strong> Export the roster first, edit the spreadsheet, then
+                      upload so column names stay aligned.
+                    </p>
+                  </div>
+
+                  <div className="mt-4 border-t border-slate-200 pt-4">
+                    <h4 className="mb-3 text-sm font-semibold text-slate-900">Leave balance upload</h4>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="mb-3 text-xs text-slate-600">Required columns in the Excel file:</p>
+                      <div className="mb-3 flex flex-wrap gap-2">
+                        <span className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                          Name <span className="text-emerald-800">*</span>
+                        </span>
+                        <span className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                          Leaves Allowed <span className="text-emerald-800">*</span>
+                        </span>
+                        <span className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                          Total Leaves Taken (Current+Previous Years) <span className="text-emerald-800">*</span>
+                        </span>
+                      </div>
+                      <label
+                        className={`inline-flex cursor-pointer items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
+                          isUploading
+                            ? 'cursor-not-allowed bg-slate-100 text-slate-400'
+                            : 'bg-amber-600 text-white hover:bg-amber-700 focus-within:ring-2 focus-within:ring-amber-500/40'
+                        }`}
+                      >
+                        <Upload className="h-4 w-4" aria-hidden />
+                        {isUploading ? 'Uploading…' : 'Upload leave balance Excel'}
+                        <input
+                          type="file"
+                          accept=".xlsx,.xls"
+                          onChange={handleLeaveBalanceUpload}
+                          className="hidden"
+                          disabled={isUploading}
+                        />
+                      </label>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Error / success — high contrast, semantic roles */}
+      {error && (
+        <div
+          className="flex items-start gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-red-900"
+          role="alert"
+        >
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-100">
+            <X className="h-4 w-4 text-red-700" aria-hidden />
+          </div>
+          <span className="text-sm leading-relaxed">{error}</span>
+        </div>
+      )}
+
+      {uploadStats && (
+        <div className="space-y-2">
+          <div
+            className="flex items-start gap-3 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-950"
+            role="status"
+            aria-live="polite"
+          >
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100">
+              <Upload className="h-4 w-4 text-emerald-800" aria-hidden />
+            </div>
+            <div className="text-sm">
+              <strong>Upload complete:</strong> {uploadStats.updated} updated, {uploadStats.created} created
+              {uploadStats.failed > 0 && <span className="ml-2 font-medium text-red-800">, {uploadStats.failed} failed</span>}
+              {uploadStats.message && <div className="mt-1 text-xs text-emerald-900/90">{uploadStats.message}</div>}
+            </div>
+          </div>
           {uploadStats.errors && uploadStats.errors.length > 0 && (
-            <div className="mt-2 bg-rose-950/20 border border-rose-900/30 rounded-xl p-4 max-h-40 overflow-y-auto">
-              <p className="text-xs font-semibold text-rose-300 mb-2">Error Details:</p>
-              <ul className="text-xs text-rose-400/80 space-y-1">
-                {uploadStats.errors.map((err: string | number | bigint | boolean | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | React.ReactPortal | Promise<string | number | bigint | boolean | React.ReactPortal | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | null | undefined> | null | undefined, idx: React.Key | null | undefined) => (
-                  <li key={idx}>{err}</li>
+            <div className="max-h-40 overflow-y-auto rounded-md border border-red-200 bg-red-50/80 p-4">
+              <p className="mb-2 text-xs font-semibold text-red-900">Error details</p>
+              <ul className="space-y-1 text-xs text-red-800">
+                {uploadStats.errors.map((err: unknown, idx: React.Key | null | undefined) => (
+                  <li key={idx}>{String(err)}</li>
                 ))}
               </ul>
             </div>
@@ -4996,234 +5216,296 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         </div>
       )}
 
-      {/* Employee Table */}
-      <div className="p-6">
-        <div className="bg-slate-900/50 rounded-2xl border border-slate-800 overflow-hidden">
-          {/* Table Header */}
-          <div className="px-4 py-3 bg-slate-800/30 border-b border-slate-800 flex items-center justify-between">
-            <span className="text-sm font-medium text-slate-300">
-              {filteredUsers.length === users.length 
-                ? `${users.length} employees` 
-                : `Showing ${filteredUsers.length} of ${users.length} employees`}
-            </span>
-          </div>
-
-          {loading ? (
-            <EmployeeManagementTableSkeleton />
-          ) : filteredUsers.length === 0 ? (
-            <div className="px-6 py-12 text-center">
-              <div className="w-16 h-16 bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <Users className="w-8 h-8 text-slate-600" />
-              </div>
-              <p className="text-slate-400 text-sm">
-                {users.length === 0 
-                  ? 'No employees found. Add an employee or upload from Excel to get started.' 
-                  : 'No employees match your search criteria.'}
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-800/50 text-slate-400 font-medium text-xs uppercase tracking-wide">
-                  <tr>
-                    <th className="px-4 py-3.5">Employee</th>
-                    <th className="px-4 py-3.5 hidden md:table-cell">Email</th>
-                    <th className="px-4 py-3.5 hidden lg:table-cell">Team</th>
-                    <th className="px-4 py-3.5 hidden sm:table-cell">Designation</th>
-                    <th className="px-4 py-3.5 hidden xl:table-cell">Joined</th>
-                    <th className="px-4 py-3.5 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/50">
-                  {filteredUsers.map((user, index) => (
-                    <tr 
-                      key={user._id} 
-                      className={`hover:bg-slate-800/30 transition-colors ${index % 2 === 0 ? 'bg-slate-900/20' : ''}`}
-                    >
-                      <td className="px-4 py-3.5">
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 bg-linear-to-br from-purple-500/20 to-purple-700/20 rounded-xl flex items-center justify-center border border-purple-500/20">
-                            <span className="text-sm font-semibold text-purple-400">
-                              {user.name?.charAt(0).toUpperCase() || '?'}
-                            </span>
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className="font-medium text-slate-200">{user.name}</p>
-                              {isUserMarkedInactive(user) && (
-                                <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-800/60">
-                                  Inactive
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-xs text-slate-500 font-mono">{user.odId || user.employeeCode || '-'}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3.5 hidden md:table-cell">
-                        <span className="text-slate-400">{user.email || '-'}</span>
-                      </td>
-                      <td className="px-4 py-3.5 hidden lg:table-cell">
-                        <span className="text-slate-400">{user.workingUnderPartner || user.team || '-'}</span>
-                      </td>
-                      <td className="px-4 py-3.5 hidden sm:table-cell">
-                        {user.designation ? (
-                          <span className="inline-flex px-2.5 py-1 bg-slate-800/50 text-slate-300 text-xs rounded-lg border border-slate-700/50">
-                            {user.designation}
-                          </span>
-                        ) : (
-                          <span className="text-slate-500">-</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3.5 hidden xl:table-cell">
-                        <span className="text-slate-400">
-                          {user.joiningDate ? new Date(user.joiningDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3.5 text-right">
-                        <div className="inline-flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleEditClick(user)}
-                            className="p-2 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-all"
-                            title="Edit Employee"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteUser(user)}
-                            className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all"
-                            title="Deactivate employee"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+      {/* Employee table */}
+      <div className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
+        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+          <p className="text-sm font-medium text-slate-800" id="employee-table-summary">
+            {filteredUsers.length === users.length
+              ? `${users.length} employees`
+              : `Showing ${filteredUsers.length} of ${users.length} employees`}
+          </p>
         </div>
+
+        {loading ? (
+          <EmployeeManagementTableSkeleton />
+        ) : filteredUsers.length === 0 ? (
+          <div className="px-6 py-12 text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50">
+              <Users className="h-8 w-8 text-slate-500" aria-hidden />
+            </div>
+            <p className="text-sm text-slate-600">
+              {users.length === 0
+                ? 'No employees yet. Add someone or bulk-upload from Excel to get started.'
+                : 'No rows match your filters. Try clearing search or filters.'}
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm" aria-describedby="employee-table-summary">
+              <caption className="sr-only">Employee roster with edit and deactivate actions</caption>
+              <thead className="border-b border-slate-200 bg-slate-100 text-xs font-medium uppercase tracking-wide text-slate-600">
+                <tr>
+                  <th scope="col" className="px-4 py-3.5">
+                    Employee
+                  </th>
+                  <th scope="col" className="hidden px-4 py-3.5 md:table-cell">
+                    Email
+                  </th>
+                  <th scope="col" className="hidden px-4 py-3.5 lg:table-cell">
+                    Team
+                  </th>
+                  <th scope="col" className="hidden px-4 py-3.5 sm:table-cell">
+                    Designation
+                  </th>
+                  <th scope="col" className="hidden px-4 py-3.5 xl:table-cell">
+                    Joined
+                  </th>
+                  <th scope="col" className="px-4 py-3.5 text-right">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {filteredUsers.map((user, index) => (
+                  <tr
+                    key={user._id}
+                    className={`transition-colors hover:bg-slate-50/90 ${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}`}
+                  >
+                    <td className="px-4 py-3.5">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-blue-200 bg-blue-50">
+                          <span className="text-sm font-semibold text-blue-800">
+                            {user.name?.charAt(0).toUpperCase() || '?'}
+                          </span>
+                        </div>
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-medium text-slate-900">{user.name}</p>
+                            {isUserMarkedInactive(user) && (
+                              <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-900">
+                                Inactive
+                              </span>
+                            )}
+                          </div>
+                          <p className="font-mono text-xs text-slate-600">{user.odId || user.employeeCode || '—'}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="hidden px-4 py-3.5 md:table-cell">
+                      <span className="text-slate-700">{user.email || '—'}</span>
+                    </td>
+                    <td className="hidden px-4 py-3.5 lg:table-cell">
+                      <span className="text-slate-700">{user.workingUnderPartner || user.team || '—'}</span>
+                    </td>
+                    <td className="hidden px-4 py-3.5 sm:table-cell">
+                      {user.designation ? (
+                        <span className="inline-flex rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-800">
+                          {user.designation}
+                        </span>
+                      ) : (
+                        <span className="text-slate-500">—</span>
+                      )}
+                    </td>
+                    <td className="hidden px-4 py-3.5 xl:table-cell">
+                      <span className="text-slate-700">
+                        {user.joiningDate
+                          ? new Date(user.joiningDate).toLocaleDateString('en-IN', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric',
+                            })
+                          : '—'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3.5 text-right">
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleEditClick(user)}
+                          className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                          aria-label={`Edit ${user.name ?? 'employee'}`}
+                        >
+                          <Edit2 className="h-4 w-4" aria-hidden />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteUser(user)}
+                          className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-rose-50 hover:text-rose-800 focus:outline-none focus:ring-2 focus:ring-rose-500/30"
+                          aria-label={`Deactivate ${user.name ?? 'employee'}`}
+                        >
+                          <Trash2 className="h-4 w-4" aria-hidden />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {/* Predefined Values Modal */}
+      {/* Predefined values modal — dialog pattern, focus-friendly */}
       {predefinedModal.isOpen && predefinedModal.type && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl max-w-md w-full max-h-[80vh] overflow-hidden">
-            <div className="flex items-center justify-between p-5 border-b border-slate-700/50 bg-slate-800/30">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setPredefinedModal({ type: null, isOpen: false });
+          }}
+        >
+          <div
+            className="max-h-[80vh] w-full max-w-md overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="predefined-modal-title"
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4">
               <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                  predefinedModal.type === 'team' ? 'bg-blue-500/10' :
-                  predefinedModal.type === 'designation' ? 'bg-purple-500/10' :
-                  predefinedModal.type === 'paidFrom' ? 'bg-emerald-500/10' : 'bg-amber-500/10'
-                }`}>
-                  {predefinedModal.type === 'team' && <Users className="w-5 h-5 text-blue-400" />}
-                  {predefinedModal.type === 'designation' && <Briefcase className="w-5 h-5 text-purple-400" />}
-                  {predefinedModal.type === 'paidFrom' && <CreditCard className="w-5 h-5 text-emerald-400" />}
-                  {predefinedModal.type === 'category' && <Tag className="w-5 h-5 text-amber-400" />}
+                <div
+                  className={`flex h-10 w-10 items-center justify-center rounded-xl ${
+                    predefinedModal.type === 'team'
+                      ? 'bg-blue-100'
+                      : predefinedModal.type === 'designation'
+                        ? 'bg-slate-200'
+                        : predefinedModal.type === 'paidFrom'
+                          ? 'bg-emerald-100'
+                          : 'bg-amber-100'
+                  }`}
+                >
+                  {predefinedModal.type === 'team' && <Users className="h-5 w-5 text-blue-800" aria-hidden />}
+                  {predefinedModal.type === 'designation' && <Briefcase className="h-5 w-5 text-slate-800" aria-hidden />}
+                  {predefinedModal.type === 'paidFrom' && <CreditCard className="h-5 w-5 text-emerald-800" aria-hidden />}
+                  {predefinedModal.type === 'category' && <Tag className="h-5 w-5 text-amber-900" aria-hidden />}
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-slate-200">
-                    {predefinedModal.type === 'team' ? 'Teams' :
-                     predefinedModal.type === 'designation' ? 'Designations' :
-                     predefinedModal.type === 'paidFrom' ? 'Paid From' : 'Categories'}
+                  <h3 id="predefined-modal-title" className="text-lg font-semibold text-slate-900">
+                    {predefinedModal.type === 'team'
+                      ? 'Teams'
+                      : predefinedModal.type === 'designation'
+                        ? 'Designations'
+                        : predefinedModal.type === 'paidFrom'
+                          ? 'Paid from'
+                          : 'Categories'}
                   </h3>
-                  <p className="text-xs text-slate-500">Manage dropdown options</p>
+                  <p className="text-xs text-slate-600">Values appear in employee dropdowns</p>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setPredefinedModal({ type: null, isOpen: false })}
-                className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 rounded-lg transition-colors"
+                className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-200/80 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                aria-label="Close"
               >
-                <X className="w-5 h-5" />
+                <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="p-5 max-h-80 overflow-y-auto">
+            <div className="max-h-80 overflow-y-auto p-5">
               <div className="space-y-2">
                 {(() => {
-                  const values = predefinedModal.type === 'team' ? predefinedValues.teams :
-                                predefinedModal.type === 'designation' ? predefinedValues.designations :
-                                predefinedModal.type === 'paidFrom' ? predefinedValues.paidFrom :
-                                predefinedValues.categories;
+                  const values =
+                    predefinedModal.type === 'team'
+                      ? predefinedValues.teams
+                      : predefinedModal.type === 'designation'
+                        ? predefinedValues.designations
+                        : predefinedModal.type === 'paidFrom'
+                          ? predefinedValues.paidFrom
+                          : predefinedValues.categories;
 
                   return values.length > 0 ? (
                     values.map((value) => (
                       <div
                         key={value}
-                        className="flex items-center justify-between p-3 bg-slate-800/50 hover:bg-slate-800 rounded-xl border border-slate-700/50 group transition-colors"
+                        className="group flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/80 p-3 transition-colors hover:bg-slate-50"
                       >
-                        <span className="text-sm text-slate-200">{value}</span>
+                        <span className="text-sm text-slate-900">{value}</span>
                         <button
                           type="button"
-                          className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
-                          onClick={() => handleRemovePredefinedValue(
-                            predefinedModal.type === 'team' ? 'teams' :
-                            predefinedModal.type === 'designation' ? 'designations' :
-                            predefinedModal.type === 'paidFrom' ? 'paidFrom' : 'categories',
-                            value
-                          )}
+                          className="rounded-lg p-1.5 text-slate-500 transition-all hover:bg-rose-50 hover:text-rose-700 sm:opacity-0 sm:group-hover:opacity-100"
+                          aria-label={`Remove ${value}`}
+                          onClick={() =>
+                            handleRemovePredefinedValue(
+                              predefinedModal.type === 'team'
+                                ? 'teams'
+                                : predefinedModal.type === 'designation'
+                                  ? 'designations'
+                                  : predefinedModal.type === 'paidFrom'
+                                    ? 'paidFrom'
+                                    : 'categories',
+                              value
+                            )
+                          }
                         >
-                          <X className="w-4 h-4" />
+                          <X className="h-4 w-4" />
                         </button>
                       </div>
                     ))
                   ) : (
-                    <div className="text-center py-8">
-                      <div className="w-12 h-12 bg-slate-800 rounded-xl flex items-center justify-center mx-auto mb-3">
-                        {predefinedModal.type === 'team' && <Users className="w-6 h-6 text-slate-600" />}
-                        {predefinedModal.type === 'designation' && <Briefcase className="w-6 h-6 text-slate-600" />}
-                        {predefinedModal.type === 'paidFrom' && <CreditCard className="w-6 h-6 text-slate-600" />}
-                        {predefinedModal.type === 'category' && <Tag className="w-6 h-6 text-slate-600" />}
+                    <div className="py-8 text-center">
+                      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-slate-50">
+                        {predefinedModal.type === 'team' && <Users className="h-6 w-6 text-slate-500" aria-hidden />}
+                        {predefinedModal.type === 'designation' && <Briefcase className="h-6 w-6 text-slate-500" aria-hidden />}
+                        {predefinedModal.type === 'paidFrom' && <CreditCard className="h-6 w-6 text-slate-500" aria-hidden />}
+                        {predefinedModal.type === 'category' && <Tag className="h-6 w-6 text-slate-500" aria-hidden />}
                       </div>
-                      <p className="text-sm text-slate-500">
-                        No {predefinedModal.type === 'team' ? 'teams' :
-                            predefinedModal.type === 'designation' ? 'designations' :
-                            predefinedModal.type === 'paidFrom' ? 'paid from values' : 'categories'} yet
+                      <p className="text-sm text-slate-600">
+                        No{' '}
+                        {predefinedModal.type === 'team'
+                          ? 'teams'
+                          : predefinedModal.type === 'designation'
+                            ? 'designations'
+                            : predefinedModal.type === 'paidFrom'
+                              ? 'paid from values'
+                              : 'categories'}{' '}
+                        yet
                       </p>
-                      <p className="text-xs text-slate-600 mt-1">Add one below to get started</p>
+                      <p className="mt-1 text-xs text-slate-500">Add one below</p>
                     </div>
                   );
                 })()}
               </div>
             </div>
 
-            <div className="p-5 border-t border-slate-700/50 bg-slate-800/20">
+            <div className="border-t border-slate-200 bg-slate-50/80 p-5">
               <div className="flex gap-2">
                 <input
                   type="text"
-                  placeholder={`Add ${predefinedModal.type === 'team' ? 'team' :
-                                      predefinedModal.type === 'designation' ? 'designation' :
-                                      predefinedModal.type === 'paidFrom' ? 'paid from' : 'category'}...`}
+                  placeholder={`Add ${predefinedModal.type === 'team' ? 'team' : predefinedModal.type === 'designation' ? 'designation' : predefinedModal.type === 'paidFrom' ? 'paid from' : 'category'}…`}
                   value={newPredefinedValue.type === predefinedModal.type ? newPredefinedValue.value : ''}
-                  onChange={(e) => setNewPredefinedValue({
-                    type: predefinedModal.type!,
-                    value: e.target.value
-                  })}
-                  className="flex-1 bg-slate-800/50 border border-slate-700 text-slate-200 text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50"
-                  onKeyPress={(e) => e.key === 'Enter' && handleAddPredefinedValue()}
+                  onChange={(e) =>
+                    setNewPredefinedValue({
+                      type: predefinedModal.type!,
+                      value: e.target.value,
+                    })
+                  }
+                  className="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleAddPredefinedValue();
+                  }}
                 />
                 <button
+                  type="button"
                   onClick={() => {
                     setNewPredefinedValue({
                       type: predefinedModal.type!,
-                      value: newPredefinedValue.type === predefinedModal.type ? newPredefinedValue.value : ''
+                      value: newPredefinedValue.type === predefinedModal.type ? newPredefinedValue.value : '',
                     });
                     handleAddPredefinedValue();
                   }}
-                  disabled={isSavingPredefinedValue || (newPredefinedValue.type === predefinedModal.type && !newPredefinedValue.value.trim())}
-                  className="px-5 py-2.5 bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  disabled={
+                    isSavingPredefinedValue ||
+                    (newPredefinedValue.type === predefinedModal.type && !newPredefinedValue.value.trim())
+                  }
+                  className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                 >
-                  {isSavingPredefinedValue ? 'Adding...' : 'Add'}
+                  {isSavingPredefinedValue ? 'Adding…' : 'Add'}
                 </button>
               </div>
             </div>
           </div>
         </div>
       )}
-    </div>
+    </section>
   );
 };

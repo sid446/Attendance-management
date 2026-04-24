@@ -17,6 +17,9 @@ const EXCLUDED_COLUMNS = [
   'Work Timings (Mon to Fri)',
 ];
 
+const BASIC_MASTER_WORKFLOW_STEPS = ['Mode & effective date', 'Choose Excel', 'Review result'] as const;
+const SCHEDULE_UPLOAD_WORKFLOW_STEPS = ['Schedule effective date', 'Choose Excel', 'Review result'] as const;
+
 export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionProps> = ({ onRefreshUsers }) => {
   const [mode, setMode] = useState<UploadMode>('update');
   const [effectiveFrom, setEffectiveFrom] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -328,85 +331,113 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
   };
 
   return (
-    <section className="bg-slate-900/60 border border-slate-800 rounded-xl shadow-sm p-6">
-      <div className="flex items-start justify-between mb-4">
-        <div>
-          <h2 className="text-xl font-semibold text-slate-100">Employee Master Upload</h2>
-          <p className="text-xs text-slate-400 mt-1">
-            Basic master upload for employee records. Excludes leave/schedule-specific columns.
+    <section
+      className="rounded-md border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
+      aria-labelledby="employee-master-upload-heading"
+    >
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <header className="min-w-0 flex-1 space-y-2">
+          <h2 id="employee-master-upload-heading" className="text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">
+            Employee master upload
+          </h2>
+          <p className="max-w-2xl text-sm text-slate-600">
+            Bulk update or add rows from one spreadsheet. Leave-only and some schedule columns are not read here—see the
+            excluded list and use the schedule section below for timings.
           </p>
-        </div>
-        <div className="flex items-center gap-2 text-xs text-slate-400">
-          <FileSpreadsheet className="w-4 h-4" />
-          <span>Excel .xlsx / .xls</span>
+          <ol className="flex list-none flex-wrap gap-2 text-xs text-slate-700" aria-label="Basic master upload workflow">
+            {BASIC_MASTER_WORKFLOW_STEPS.map((t, i) => (
+              <li
+                key={t}
+                className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1"
+              >
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+                  {i + 1}
+                </span>
+                {t}
+              </li>
+            ))}
+          </ol>
+        </header>
+        <div className="flex shrink-0 items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          <FileSpreadsheet className="h-4 w-4 text-blue-600" aria-hidden />
+          <span>.xlsx / .xls</span>
         </div>
       </div>
 
-      <div className="mb-4">
-        <label className="block text-xs font-medium text-slate-300 mb-2">Upload mode</label>
-        <div className="flex items-center gap-4 text-sm">
-          <label className="inline-flex items-center gap-2 text-slate-200">
+      <fieldset className="mb-5 border-0 p-0">
+        <legend className="mb-2 text-xs font-medium text-slate-600">Upload mode</legend>
+        <div className="flex flex-wrap items-center gap-4 text-sm text-slate-800">
+          <label className="inline-flex cursor-pointer items-center gap-2">
             <input
               type="radio"
               name="basic-master-mode"
               checked={mode === 'update'}
               onChange={() => setMode('update')}
+              className="border-slate-300 text-blue-600 focus:ring-blue-500/40"
             />
-            Update Existing
+            Update existing rows
           </label>
-          <label className="inline-flex items-center gap-2 text-slate-200">
+          <label className="inline-flex cursor-pointer items-center gap-2">
             <input
               type="radio"
               name="basic-master-mode"
               checked={mode === 'add'}
               onChange={() => setMode('add')}
+              className="border-slate-300 text-blue-600 focus:ring-blue-500/40"
             />
-            Add New Entries
+            Add new entries only
           </label>
         </div>
+      </fieldset>
+
+      <div className="mb-5">
+        <label htmlFor="basic-master-effective-from" className="mb-2 block text-xs font-medium text-slate-600">
+          Effective from (for dated fields)
+        </label>
+        <input
+          id="basic-master-effective-from"
+          type="date"
+          value={effectiveFrom}
+          onChange={(e) => setEffectiveFrom(e.target.value)}
+          className="w-full max-w-xs rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+        />
+        <p className="mt-1 text-[11px] text-slate-600">Defaults to today; change before upload if you need a back-dated effective date.</p>
       </div>
 
-      <div className="mb-4">
-        <div>
-          <label className="block text-xs font-medium text-slate-300 mb-2">Effective From Date</label>
-          <input
-            type="date"
-            value={effectiveFrom}
-            onChange={(e) => setEffectiveFrom(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/60"
-          />
-          <p className="text-[11px] text-slate-500 mt-1">Default is current date. You can change it before upload.</p>
-        </div>
-      </div>
-
-      <div className="mb-4 flex items-center gap-3">
-        <label className="flex-1 flex items-center justify-between px-4 py-3 border border-dashed border-slate-700 rounded-lg cursor-pointer bg-slate-900/80 hover:border-emerald-500 transition-colors">
-          <div className="flex items-center gap-2 text-slate-300 text-sm">
-            <Upload className="w-4 h-4 text-slate-400" />
-            <span>Choose Employee Master Excel</span>
-          </div>
+      <div className="mb-5">
+        <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50/80 px-4 py-3 transition-colors hover:border-blue-300 hover:bg-blue-50/40">
+          <span className="flex items-center gap-2 text-sm text-slate-700">
+            <Upload className="h-4 w-4 shrink-0 text-blue-600" aria-hidden />
+            <span>Choose employee master Excel</span>
+          </span>
           <input type="file" accept=".xlsx,.xls" onChange={handleUpload} className="hidden" disabled={isUploading} />
         </label>
       </div>
 
-      <div className="mb-4 p-3 bg-slate-900/40 border border-slate-700 rounded text-xs text-slate-300">
-        <div className="font-medium mb-1">Excluded columns in Basic Upload</div>
-        <div>{EXCLUDED_COLUMNS.join(', ')}</div>
+      <div className="mb-5 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+        <div className="mb-1 font-medium text-slate-800">Columns ignored in this basic upload</div>
+        <p className="leading-relaxed">{EXCLUDED_COLUMNS.join(', ')}</p>
       </div>
 
       {error && (
-        <div className="mt-3 bg-rose-950/40 border border-rose-700/60 text-rose-100 px-4 py-3 rounded-md text-xs">
+        <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900" role="alert">
           {error}
         </div>
       )}
 
       {stats && (
-        <div className="mt-3 bg-emerald-950/40 border border-emerald-700/60 text-emerald-100 px-4 py-3 rounded-md text-xs">
-          <div className="font-medium">Upload Complete ({stats.mode})</div>
-          <div className="mt-1">Updated: {stats.updated || 0}, Created: {stats.created || 0}, Failed: {stats.failed || 0}</div>
-          <div className="mt-1">Effective From: {stats.effectiveFrom || effectiveFrom}</div>
+        <div
+          className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="font-semibold">Upload complete ({stats.mode})</div>
+          <div className="mt-1">
+            Updated: {stats.updated || 0}, Created: {stats.created || 0}, Failed: {stats.failed || 0}
+          </div>
+          <div className="mt-1">Effective from: {stats.effectiveFrom || effectiveFrom}</div>
           {Array.isArray(stats.errors) && stats.errors.length > 0 && (
-            <ul className="mt-2 list-disc list-inside text-rose-200 max-h-32 overflow-y-auto">
+            <ul className="mt-2 max-h-32 list-inside list-disc overflow-y-auto text-red-800">
               {stats.errors.map((msg: string, idx: number) => (
                 <li key={idx}>{msg}</li>
               ))}
@@ -415,33 +446,52 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
         </div>
       )}
 
-      <div className="mt-4 text-[11px] text-slate-500 flex items-center gap-2">
-        <Users className="w-3 h-3" />
-        <span>Fields like Registered/Working Under Partner and salary values are tracked with effective date history.</span>
+      <div className="flex items-start gap-2 rounded-md border border-blue-100 bg-blue-50/60 px-3 py-2 text-[11px] text-slate-700">
+        <Users className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-700" aria-hidden />
+        <span>
+          Partner and salary-style fields keep an effective-date history when saved from{' '}
+          <span className="font-medium">Employees</span>.
+        </span>
       </div>
 
-      <div className="mt-8 pt-6 border-t border-slate-800">
-        <h3 className="text-lg font-semibold text-slate-100 mb-3">Employee Schedule Upload</h3>
-        <p className="text-xs text-slate-400 mb-4">
-          Upload schedule rows with headers: Name, Employee Code (optional), Sch-In, Sch-Out, Sch-Out (For Sat optional),
-          or day-wise headers Monday..Sunday with values like 10:00 - 17:00.
+      <div className="mt-8 border-t border-slate-200 pt-6">
+        <h3 className="mb-1 text-base font-semibold text-slate-900">Schedule bulk upload</h3>
+        <p className="mb-3 max-w-2xl text-sm text-slate-600">
+          Second file: rows with Name, optional Employee Code, Sch-In / Sch-Out (and Saturday variant), or Monday–Sunday
+          cells such as <span className="font-mono text-slate-800">10:00 - 17:00</span>.
         </p>
+        <ol className="mb-5 flex list-none flex-wrap gap-2 text-xs text-slate-700" aria-label="Schedule upload workflow">
+          {SCHEDULE_UPLOAD_WORKFLOW_STEPS.map((t, i) => (
+            <li
+              key={t}
+              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1"
+            >
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+                {i + 1}
+              </span>
+              {t}
+            </li>
+          ))}
+        </ol>
 
         <div className="mb-4">
-          <label className="block text-xs font-medium text-slate-300 mb-2">Schedule Effective From Date</label>
+          <label htmlFor="schedule-effective-from" className="mb-2 block text-xs font-medium text-slate-600">
+            Schedule effective from
+          </label>
           <input
+            id="schedule-effective-from"
             type="date"
             value={scheduleEffectiveFrom}
             onChange={(e) => setScheduleEffectiveFrom(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500/60"
+            className="w-full max-w-xs rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           />
         </div>
 
-        <label className="flex items-center justify-between px-4 py-3 border border-dashed border-slate-700 rounded-lg cursor-pointer bg-slate-900/80 hover:border-emerald-500 transition-colors">
-          <div className="flex items-center gap-2 text-slate-300 text-sm">
-            <Upload className="w-4 h-4 text-slate-400" />
-            <span>Choose Schedule Excel</span>
-          </div>
+        <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50/80 px-4 py-3 transition-colors hover:border-blue-300 hover:bg-blue-50/40">
+          <span className="flex items-center gap-2 text-sm text-slate-700">
+            <Upload className="h-4 w-4 shrink-0 text-blue-600" aria-hidden />
+            <span>Choose schedule Excel</span>
+          </span>
           <input
             type="file"
             accept=".xlsx,.xls"
@@ -452,18 +502,24 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
         </label>
 
         {scheduleError && (
-          <div className="mt-3 bg-rose-950/40 border border-rose-700/60 text-rose-100 px-4 py-3 rounded-md text-xs">
+          <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900" role="alert">
             {scheduleError}
           </div>
         )}
 
         {scheduleStats && (
-          <div className="mt-3 bg-emerald-950/40 border border-emerald-700/60 text-emerald-100 px-4 py-3 rounded-md text-xs">
-            <div className="font-medium">Schedule Upload Complete</div>
-            <div className="mt-1">Updated: {scheduleStats.updated || 0}, Failed: {scheduleStats.failed || 0}</div>
-            <div className="mt-1">Effective From: {scheduleStats.effectiveFrom || scheduleEffectiveFrom}</div>
+          <div
+            className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950"
+            role="status"
+            aria-live="polite"
+          >
+            <div className="font-semibold">Schedule upload complete</div>
+            <div className="mt-1">
+              Updated: {scheduleStats.updated || 0}, Failed: {scheduleStats.failed || 0}
+            </div>
+            <div className="mt-1">Effective from: {scheduleStats.effectiveFrom || scheduleEffectiveFrom}</div>
             {Array.isArray(scheduleStats.errors) && scheduleStats.errors.length > 0 && (
-              <ul className="mt-2 list-disc list-inside text-rose-200 max-h-32 overflow-y-auto">
+              <ul className="mt-2 max-h-32 list-inside list-disc overflow-y-auto text-red-800">
                 {scheduleStats.errors.map((msg: string, idx: number) => (
                   <li key={idx}>{msg}</li>
                 ))}

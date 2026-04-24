@@ -1363,7 +1363,7 @@ export default function EmployeeDashboard() {
                   showSummaryStrip={false}
                   sectionTitle="Monthly calendar"
                   subtitle="Past days: request a correction. Future days: select a range, then apply for leave or other status."
-                  sectionClassName="!bg-zinc-900/30 !border-zinc-800/80"
+                  sectionClassName="!border-blue-100 !bg-blue-50/50"
                 />
               </section>
             )}
@@ -1490,7 +1490,7 @@ export default function EmployeeDashboard() {
                             showSummaryStrip={true}
                             sectionTitle="Calendar"
                             subtitle={null}
-                            sectionClassName="!bg-zinc-900/20 !border-zinc-800/70"
+                            sectionClassName="!border-blue-100 !bg-white"
                           />
                         </div>
                       ) : (

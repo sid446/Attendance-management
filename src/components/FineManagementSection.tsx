@@ -1,7 +1,21 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { RefreshCw, AlertTriangle, IndianRupee, Download, Check, X, ChevronDown, ChevronUp, Info, Users, AlertCircle, Edit2, FileText } from 'lucide-react';
+import {
+  RefreshCw,
+  AlertTriangle,
+  IndianRupee,
+  Download,
+  Check,
+  X,
+  ChevronDown,
+  ChevronUp,
+  Info,
+  Users,
+  AlertCircle,
+  FileText,
+  Search,
+} from 'lucide-react';
 
 interface FineRecord {
   serialNo: string;
@@ -40,6 +54,8 @@ interface FineManagementProps {
   selectedMonth?: number;
   selectedYear?: number;
 }
+
+const FINE_MANAGEMENT_WORKFLOW_STEPS = ['Pick month & run calc', 'Filter or impose manual', 'Update status or export'] as const;
 
 export const FineManagementSection: React.FC<FineManagementProps> = ({
   selectedMonth = new Date().getMonth() + 1,
@@ -732,158 +748,204 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
     doc.save(fileName);
   };
 
+  const selectCls =
+    'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
+  const inputCls =
+    'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
+  const thBase = 'px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600';
+
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-100">Fine Management</h2>
-          <p className="text-sm text-slate-400 mt-1">Manage late arrival fines and warnings</p>
+    <section className="space-y-5 p-6 text-slate-900" aria-labelledby="fine-management-heading">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-2">
+          <h2 id="fine-management-heading" className="text-2xl font-bold tracking-tight text-slate-900">
+            Fine management
+          </h2>
+          <p className="text-sm text-slate-600">Manage late arrival fines and warnings.</p>
+          <ol className="flex flex-wrap gap-2" aria-label="Workflow">
+            {FINE_MANAGEMENT_WORKFLOW_STEPS.map((label, i) => (
+              <li
+                key={label}
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700"
+              >
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+                  {i + 1}
+                </span>
+                {label}
+              </li>
+            ))}
+          </ol>
         </div>
-        
-        <div className="flex items-center gap-3">
-          {/* Month/Year selector */}
-          <select
-            value={month}
-            onChange={(e) => setMonth(Number(e.target.value))}
-            className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200"
-          >
-            {Array.from({ length: 12 }, (_, i) => (
-              <option key={i + 1} value={i + 1}>
-                {new Date(2000, i, 1).toLocaleString('default', { month: 'long' })}
-              </option>
-            ))}
-          </select>
-          <select
-            value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
-            className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200"
-          >
-            {Array.from({ length: 5 }, (_, i) => (
-              <option key={2024 + i} value={2024 + i}>{2024 + i}</option>
-            ))}
-          </select>
-          
+
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+          <div className="flex flex-wrap items-center gap-2">
+            <label htmlFor="fine-month" className="sr-only">
+              Month
+            </label>
+            <select
+              id="fine-month"
+              value={month}
+              onChange={(e) => setMonth(Number(e.target.value))}
+              className={selectCls}
+            >
+              {Array.from({ length: 12 }, (_, i) => (
+                <option key={i + 1} value={i + 1}>
+                  {new Date(2000, i, 1).toLocaleString('default', { month: 'long' })}
+                </option>
+              ))}
+            </select>
+            <label htmlFor="fine-year" className="sr-only">
+              Year
+            </label>
+            <select id="fine-year" value={year} onChange={(e) => setYear(Number(e.target.value))} className={selectCls}>
+              {Array.from({ length: 5 }, (_, i) => (
+                <option key={2024 + i} value={2024 + i}>
+                  {2024 + i}
+                </option>
+              ))}
+            </select>
+          </div>
           <button
+            type="button"
             onClick={calculateFines}
             disabled={calculating}
-            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50"
           >
-            <RefreshCw className={`w-4 h-4 ${calculating ? 'animate-spin' : ''}`} />
-            {calculating ? 'Calculating...' : 'Calculate Fines'}
+            <RefreshCw className={`h-4 w-4 ${calculating ? 'animate-spin' : ''}`} aria-hidden />
+            {calculating ? 'Calculating…' : 'Calculate fines'}
           </button>
-          
           <button
+            type="button"
             onClick={exportToExcel}
             disabled={filteredFines.length === 0}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50"
           >
-            <Download className="w-4 h-4" />
+            <Download className="h-4 w-4 text-slate-600" aria-hidden />
             Export Excel
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* Manual Fine Form */}
-      <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-medium text-slate-200">Impose Manual Fine</h3>
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-base font-semibold text-slate-900">Impose manual fine</h3>
           <button
+            type="button"
             onClick={() => setShowManualFineForm(!showManualFineForm)}
-            className="text-slate-400 hover:text-slate-200"
+            className="rounded-lg border border-slate-200 p-1.5 text-slate-600 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            aria-expanded={showManualFineForm}
+            aria-controls="manual-fine-panel"
           >
-            {showManualFineForm ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+            {showManualFineForm ? (
+              <ChevronUp className="h-5 w-5" aria-hidden />
+            ) : (
+              <ChevronDown className="h-5 w-5" aria-hidden />
+            )}
+            <span className="sr-only">{showManualFineForm ? 'Collapse' : 'Expand'} manual fine form</span>
           </button>
         </div>
         {showManualFineForm && (
-          <div className="space-y-4">
+          <div id="manual-fine-panel" className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Search Employee</label>
+              <label htmlFor="manual-fine-employee" className="mb-1 block text-sm font-medium text-slate-700">
+                Search employee
+              </label>
               <input
+                id="manual-fine-employee"
                 type="text"
-                placeholder="Search by name or ID..."
+                placeholder="Search by name or ID…"
                 value={manualFineEmployee}
                 onChange={(e) => setManualFineEmployee(e.target.value)}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200"
+                className={inputCls}
                 list="employee-list"
               />
               <datalist id="employee-list">
-                {fines.map(fine => (
+                {fines.map((fine) => (
                   <option key={fine.userId._id} value={fine.userId._id}>
                     {fine.userId.name} ({fine.userId.odId})
                   </option>
                 ))}
               </datalist>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Reason *</label>
+                <label htmlFor="manual-fine-reason" className="mb-1 block text-sm font-medium text-slate-700">
+                  Reason <span className="text-rose-600">*</span>
+                </label>
                 <input
+                  id="manual-fine-reason"
                   type="text"
                   placeholder="Enter reason for fine"
                   value={manualFineReason}
                   onChange={(e) => setManualFineReason(e.target.value)}
-                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200"
+                  className={inputCls}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Fine Amount (₹) *</label>
+                <label htmlFor="manual-fine-amount" className="mb-1 block text-sm font-medium text-slate-700">
+                  Fine amount (₹) <span className="text-rose-600">*</span>
+                </label>
                 <input
+                  id="manual-fine-amount"
                   type="number"
                   placeholder="Enter amount"
                   value={manualFineAmount}
                   onChange={(e) => setManualFineAmount(e.target.value)}
-                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200"
+                  className={inputCls}
                 />
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Remark (Optional)</label>
+              <label htmlFor="manual-fine-remark" className="mb-1 block text-sm font-medium text-slate-700">
+                Remark (optional)
+              </label>
               <textarea
+                id="manual-fine-remark"
                 placeholder="Additional remarks"
                 value={manualFineRemark}
                 onChange={(e) => setManualFineRemark(e.target.value)}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200"
+                className={inputCls}
                 rows={2}
               />
             </div>
             <div className="flex justify-end gap-3">
               <button
+                type="button"
                 onClick={() => setShowManualFineForm(false)}
-                className="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg transition-colors"
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={imposeManualFine}
                 disabled={imposingFine}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500/30 disabled:opacity-50"
               >
-                {imposingFine ? 'Imposing...' : 'Impose Fine'}
+                {imposingFine ? 'Imposing…' : 'Impose fine'}
               </button>
             </div>
           </div>
         )}
       </div>
 
-      {/* Rules Info Card */}
-      <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
+      <div className="rounded-xl border border-blue-100 bg-blue-50/80 p-4 shadow-sm">
         <div className="flex items-start gap-3">
-          <Info className="w-5 h-5 text-blue-400 mt-0.5 flex-shrink-0" />
-          <div className="text-sm">
-            <h3 className="font-medium text-slate-200 mb-2">Fine Rules (Late Attendance)</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-slate-400">
+          <Info className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" aria-hidden />
+          <div className="text-sm text-slate-800">
+            <h3 className="mb-2 font-semibold text-slate-900">Fine rules (late attendance)</h3>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <span className="font-medium text-slate-300">Employee:</span>
-                <ul className="list-disc list-inside ml-2 space-y-0.5">
+                <span className="font-medium text-slate-900">Employee</span>
+                <ul className="ml-2 mt-1 list-inside list-disc space-y-0.5 text-slate-700">
                   <li>2 late in a month: Warning</li>
-                  <li>3-7 late in a month: ₹50 fine</li>
+                  <li>3–7 late in a month: ₹50 fine</li>
                   <li>8 or more late in a month: ₹100 fine</li>
                 </ul>
               </div>
               <div>
-                <span className="font-medium text-slate-300">Article:</span>
-                <ul className="list-disc list-inside ml-2 space-y-0.5">
+                <span className="font-medium text-slate-900">Article</span>
+                <ul className="ml-2 mt-1 list-inside list-disc space-y-0.5 text-slate-700">
                   <li>2 late in a month: Warning</li>
                   <li>3 or more late in a month: ₹25 fine</li>
                 </ul>
@@ -893,303 +955,349 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
-          <div className="flex items-center gap-2 text-amber-400 mb-2">
-            <AlertTriangle className="w-5 h-5" />
-            <span className="text-sm font-medium">Total Warnings</span>
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+          <div className="mb-2 flex items-center gap-2 text-amber-700">
+            <AlertTriangle className="h-5 w-5" aria-hidden />
+            <span className="text-sm font-medium text-slate-800">Total warnings</span>
           </div>
-          <div className="text-2xl font-bold text-slate-100">{totals.totalWarnings}</div>
-          <div className="text-xs text-slate-500">{totals.employeesWithWarnings} employees</div>
+          <div className="text-2xl font-bold text-slate-900">{totals.totalWarnings}</div>
+          <div className="text-xs text-slate-600">{totals.employeesWithWarnings} employees</div>
         </div>
-        
-        <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
-          <div className="flex items-center gap-2 text-rose-400 mb-2">
-            <IndianRupee className="w-5 h-5" />
-            <span className="text-sm font-medium">Total Fines</span>
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+          <div className="mb-2 flex items-center gap-2 text-rose-700">
+            <IndianRupee className="h-5 w-5" aria-hidden />
+            <span className="text-sm font-medium text-slate-800">Total fines</span>
           </div>
-          <div className="text-2xl font-bold text-slate-100">₹{totals.totalFines}</div>
-          <div className="text-xs text-slate-500">{totals.employeesWithFines} employees</div>
+          <div className="text-2xl font-bold text-slate-900">₹{totals.totalFines}</div>
+          <div className="text-xs text-slate-600">{totals.employeesWithFines} employees</div>
         </div>
-        
-        <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
-          <div className="flex items-center gap-2 text-blue-400 mb-2">
-            <Users className="w-5 h-5" />
-            <span className="text-sm font-medium">Staff Fines</span>
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+          <div className="mb-2 flex items-center gap-2 text-blue-700">
+            <Users className="h-5 w-5" aria-hidden />
+            <span className="text-sm font-medium text-slate-800">Staff fines</span>
           </div>
-          <div className="text-2xl font-bold text-slate-100">
-            ₹{fines.filter(f => f.category === 'Staff').reduce((s, f) => s + f.totalFine, 0)}
+          <div className="text-2xl font-bold text-slate-900">
+            ₹{fines.filter((f) => f.category === 'Staff').reduce((s, f) => s + f.totalFine, 0)}
           </div>
         </div>
-        
-        <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
-          <div className="flex items-center gap-2 text-purple-400 mb-2">
-            <Users className="w-5 h-5" />
-            <span className="text-sm font-medium">Article Fines</span>
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+          <div className="mb-2 flex items-center gap-2 text-violet-700">
+            <Users className="h-5 w-5" aria-hidden />
+            <span className="text-sm font-medium text-slate-800">Article fines</span>
           </div>
-          <div className="text-2xl font-bold text-slate-100">
-            ₹{fines.filter(f => f.category === 'Article').reduce((s, f) => s + f.totalFine, 0)}
+          <div className="text-2xl font-bold text-slate-900">
+            ₹{fines.filter((f) => f.category === 'Article').reduce((s, f) => s + f.totalFine, 0)}
           </div>
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <input
-          type="text"
-          placeholder="Search by name or ID..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 w-64"
-        />
+      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="relative min-w-[12rem] flex-1 sm:max-w-xs">
+          <label htmlFor="fine-search" className="sr-only">
+            Search by name or ID
+          </label>
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
+          <input
+            id="fine-search"
+            type="text"
+            placeholder="Search by name or ID…"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className={`${inputCls} pl-9`}
+          />
+        </div>
+        <label htmlFor="fine-category-filter" className="sr-only">
+          Category
+        </label>
         <select
+          id="fine-category-filter"
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value as 'all' | 'Staff' | 'Article')}
-          className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200"
+          className={`${selectCls} min-w-[10rem]`}
         >
-          <option value="all">All Categories</option>
+          <option value="all">All categories</option>
           <option value="Staff">Staff</option>
           <option value="Article">Article</option>
         </select>
+        <label htmlFor="fine-team-filter" className="sr-only">
+          Team
+        </label>
         <select
+          id="fine-team-filter"
           value={teamFilter}
-          onChange={e => setTeamFilter(e.target.value)}
-          className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200"
+          onChange={(e) => setTeamFilter(e.target.value)}
+          className={`${selectCls} min-w-[10rem]`}
         >
-          <option value="all">All Teams</option>
-          {Array.from(new Set(fines.map(f => f.userId?.team || f.userId?.workingUnderPartner).filter(Boolean))).map(team => (
-            <option key={team} value={team}>{team}</option>
-          ))}
+          <option value="all">All teams</option>
+          {Array.from(new Set(fines.map((f) => f.userId?.team || f.userId?.workingUnderPartner).filter(Boolean))).map(
+            (team) => (
+              <option key={team} value={team}>
+                {team}
+              </option>
+            ),
+          )}
         </select>
+        <label htmlFor="fine-status-filter" className="sr-only">
+          Status
+        </label>
         <select
+          id="fine-status-filter"
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as 'all' | 'pending' | 'paid' | 'waived')}
-          className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200"
+          className={`${selectCls} min-w-[10rem]`}
         >
-          <option value="all">All Status</option>
+          <option value="all">All status</option>
           <option value="pending">Pending</option>
           <option value="paid">Paid</option>
           <option value="waived">Waived</option>
         </select>
       </div>
 
-      {/* Error message */}
       {error && (
-        <div className="bg-rose-500/10 border border-rose-500/30 rounded-lg p-4 flex items-center gap-3">
-          <AlertCircle className="w-5 h-5 text-rose-400" />
-          <span className="text-rose-300">{error}</span>
+        <div
+          role="alert"
+          className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-red-900 shadow-sm"
+        >
+          <AlertCircle className="h-5 w-5 shrink-0 text-red-600" aria-hidden />
+          <span>{error}</span>
         </div>
       )}
 
-      {/* Loading state */}
       {loading && (
-        <div className="flex items-center justify-center py-12">
-          <RefreshCw className="w-8 h-8 text-slate-500 animate-spin" />
+        <div className="flex items-center justify-center py-12" aria-live="polite">
+          <RefreshCw className="h-8 w-8 animate-spin text-blue-600" aria-hidden />
+          <span className="sr-only">Loading fines</span>
         </div>
       )}
 
-      {/* Fines Table */}
       {!loading && (
-        <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <table className="w-full">
-            <thead className="bg-slate-900">
+            <thead className="border-b border-slate-200 bg-slate-50">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider w-8"></th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Employee</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Category</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">Team</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-400 uppercase tracking-wider">Warnings</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-400 uppercase tracking-wider">Fine Records</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase tracking-wider">Total Fine</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-400 uppercase tracking-wider">Actions</th>
+                <th className={`${thBase} w-8 text-left`} scope="col">
+                  <span className="sr-only">Expand</span>
+                </th>
+                <th className={`${thBase} text-left`} scope="col">
+                  Employee
+                </th>
+                <th className={`${thBase} text-left`} scope="col">
+                  Category
+                </th>
+                <th className={`${thBase} text-left`} scope="col">
+                  Team
+                </th>
+                <th className={`${thBase} text-center`} scope="col">
+                  Warnings
+                </th>
+                <th className={`${thBase} text-center`} scope="col">
+                  Fine records
+                </th>
+                <th className={`${thBase} text-right`} scope="col">
+                  Total fine
+                </th>
+                <th className={`${thBase} text-center`} scope="col">
+                  Actions
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-700">
+            <tbody className="divide-y divide-slate-100">
               {filteredFines.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
-                    {fines.length === 0 
-                      ? 'No fine records found. Click "Calculate Fines" to generate.'
-                      : 'No matching records found.'
-                    }
+                  <td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-600">
+                    {fines.length === 0
+                      ? 'No fine records found. Click “Calculate fines” to generate.'
+                      : 'No matching records found.'}
                   </td>
                 </tr>
               ) : (
-                filteredFines.map(fine => (
+                filteredFines.map((fine) => (
                   <React.Fragment key={fine._id}>
-                    <tr 
-                      className={`hover:bg-slate-700/50 cursor-pointer transition-colors ${expandedRows.has(fine._id) ? 'bg-slate-700/30' : ''}`}
+                    <tr
+                      className={`cursor-pointer transition-colors hover:bg-slate-50 ${
+                        expandedRows.has(fine._id) ? 'bg-slate-50/80' : ''
+                      }`}
                       onClick={() => toggleRow(fine._id)}
                     >
                       <td className="px-4 py-3">
                         {expandedRows.has(fine._id) ? (
-                          <ChevronUp className="w-4 h-4 text-slate-400" />
+                          <ChevronUp className="h-4 w-4 text-slate-500" aria-hidden />
                         ) : (
-                          <ChevronDown className="w-4 h-4 text-slate-400" />
+                          <ChevronDown className="h-4 w-4 text-slate-500" aria-hidden />
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="font-medium text-slate-200">{fine.userId?.name}</div>
-                        <div className="text-xs text-slate-500">{fine.userId?.odId}</div>
+                        <div className="font-medium text-slate-900">{fine.userId?.name}</div>
+                        <div className="text-xs text-slate-600">{fine.userId?.odId}</div>
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                          fine.category === 'Staff' 
-                            ? 'bg-blue-500/20 text-blue-300' 
-                            : 'bg-purple-500/20 text-purple-300'
-                        }`}>
+                        <span
+                          className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                            fine.category === 'Staff'
+                              ? 'border border-blue-200 bg-blue-50 text-blue-900'
+                              : 'border border-violet-200 bg-violet-50 text-violet-900'
+                          }`}
+                        >
                           {fine.category}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-slate-400 text-sm">{fine.userId?.team || fine.userId?.workingUnderPartner || '-'}</td>
+                      <td className="px-4 py-3 text-sm text-slate-600">
+                        {fine.userId?.team || fine.userId?.workingUnderPartner || '—'}
+                      </td>
                       <td className="px-4 py-3 text-center">
                         {fine.totalWarnings > 0 && (
-                          <span className="text-amber-400 font-medium">{fine.totalWarnings}</span>
+                          <span className="font-medium text-amber-700">{fine.totalWarnings}</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-center text-slate-400">
-                        {fine.fineRecords.filter(r => !r.isWarning).length}
+                      <td className="px-4 py-3 text-center text-slate-600">
+                        {fine.fineRecords.filter((r) => !r.isWarning).length}
                       </td>
                       <td className="px-4 py-3 text-right">
                         {fine.totalFine > 0 ? (
-                          <span className="text-rose-400 font-bold">₹{fine.totalFine}</span>
+                          <span className="font-bold text-rose-700">₹{fine.totalFine}</span>
                         ) : (
                           <span className="text-slate-500">₹0</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-center">
-                        {fine.fineRecords.filter(r => !r.isWarning).length > 0 && (
+                        {fine.fineRecords.filter((r) => !r.isWarning).length > 0 && (
                           <button
+                            type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               generateAllPenaltySlips(fine);
                             }}
-                            className="flex items-center gap-1 px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white text-xs rounded transition-colors mx-auto"
-                            title="Generate All Penalty Slips"
+                            className="mx-auto inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1 text-xs font-medium text-violet-900 transition-colors hover:bg-violet-100 focus:outline-none focus:ring-2 focus:ring-violet-500/25"
+                            title="Generate all penalty slips"
                           >
-                            <FileText className="w-3 h-3" />
-                            Generate Slips
+                            <FileText className="h-3 w-3" aria-hidden />
+                            Generate slips
                           </button>
                         )}
                       </td>
                     </tr>
-                    
-                    {/* Expanded row details */}
+
                     {expandedRows.has(fine._id) && (
-                      <tr className="bg-slate-900/50">
-                        <td colSpan={8} className="px-4 py-4">
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      <tr className="bg-slate-50">
+                        <td colSpan={8} className="border-t border-slate-100 px-4 py-4">
+                          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
                             {fine.fineRecords.map((record, idx) => (
-                              <div 
+                              <div
                                 key={idx}
-                                className={`p-3 rounded-lg border ${
-                                  record.isWarning 
-                                    ? 'bg-amber-500/10 border-amber-500/30' 
-                                    : 'bg-rose-500/10 border-rose-500/30'
+                                className={`rounded-lg border p-3 shadow-sm ${
+                                  record.isWarning
+                                    ? 'border-amber-200 bg-amber-50/80'
+                                    : 'border-rose-200 bg-rose-50/60'
                                 }`}
                               >
-                              <div className="flex justify-between items-start mb-2">
+                                <div className="mb-2 flex items-start justify-between">
                                   <div>
-                                    <div className="text-xs font-mono text-emerald-400 mb-1">
-                                      {record.serialNo}
-                                    </div>
-                                    <div className="font-medium text-slate-200">
-                                      {new Date(record.date).toLocaleDateString('en-IN', { 
-                                        weekday: 'short', 
-                                        day: 'numeric', 
-                                        month: 'short' 
+                                    <div className="mb-1 font-mono text-xs text-emerald-700">{record.serialNo}</div>
+                                    <div className="font-medium text-slate-900">
+                                      {new Date(record.date).toLocaleDateString('en-IN', {
+                                        weekday: 'short',
+                                        day: 'numeric',
+                                        month: 'short',
                                       })}
                                     </div>
-                                    <div className="text-xs text-slate-500">
-                                      Consecutive day: {record.consecutiveDay}
-                                    </div>
+                                    <div className="text-xs text-slate-600">Consecutive day: {record.consecutiveDay}</div>
                                   </div>
                                   <div className="text-right">
                                     {record.isWarning ? (
-                                      <span className="text-amber-400 font-medium flex items-center gap-1">
-                                        <AlertTriangle className="w-4 h-4" /> Warning
+                                      <span className="flex items-center gap-1 font-medium text-amber-800">
+                                        <AlertTriangle className="h-4 w-4" aria-hidden /> Warning
                                       </span>
                                     ) : (
-                                      <span className="text-rose-400 font-bold">₹{record.fineAmount}</span>
+                                      <span className="font-bold text-rose-700">₹{record.fineAmount}</span>
                                     )}
                                   </div>
                                 </div>
-                                
-                                {/* Additional Details */}
-                                <div className="mt-2 space-y-1 text-xs">
+
+                                <div className="mt-2 space-y-1 text-xs text-slate-700">
                                   {record.reason && (
-                                    <div className="text-slate-400">
-                                      <span className="text-slate-500">Reason:</span> {record.reason}
+                                    <div>
+                                      <span className="font-medium text-slate-600">Reason:</span> {record.reason}
                                     </div>
                                   )}
                                   {record.vertical && (
-                                    <div className="text-slate-400">
-                                      <span className="text-slate-500">Vertical:</span> {record.vertical}
+                                    <div>
+                                      <span className="font-medium text-slate-600">Vertical:</span> {record.vertical}
                                     </div>
                                   )}
                                   {record.penaltyImposedBy && (
-                                    <div className="text-slate-400">
-                                      <span className="text-slate-500">Imposed by:</span> {record.penaltyImposedBy}
+                                    <div>
+                                      <span className="font-medium text-slate-600">Imposed by:</span>{' '}
+                                      {record.penaltyImposedBy}
                                     </div>
                                   )}
                                   {record.remark && (
-                                    <div className="text-slate-400">
-                                      <span className="text-slate-500">Remark:</span> {record.remark}
+                                    <div>
+                                      <span className="font-medium text-slate-600">Remark:</span> {record.remark}
                                     </div>
                                   )}
                                   {record.paymentDate && (
-                                    <div className="text-slate-400">
-                                      <span className="text-slate-500">Payment:</span> {record.paymentDate} ({record.paymentMode || 'N/A'})
+                                    <div>
+                                      <span className="font-medium text-slate-600">Payment:</span> {record.paymentDate}{' '}
+                                      ({record.paymentMode || 'N/A'})
                                     </div>
                                   )}
                                 </div>
-                                
-                                <div className="flex items-center justify-between mt-2">
-                                  <span className={`text-xs px-2 py-0.5 rounded ${
-                                    record.status === 'pending' ? 'bg-slate-700 text-slate-300' :
-                                    record.status === 'paid' ? 'bg-emerald-500/20 text-emerald-300' :
-                                    'bg-blue-500/20 text-blue-300'
-                                  }`}>
+
+                                <div className="mt-2 flex items-center justify-between">
+                                  <span
+                                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                                      record.status === 'pending'
+                                        ? 'border border-slate-200 bg-white text-slate-800'
+                                        : record.status === 'paid'
+                                          ? 'border border-emerald-200 bg-emerald-50 text-emerald-900'
+                                          : 'border border-blue-200 bg-blue-50 text-blue-900'
+                                    }`}
+                                  >
                                     {record.status.charAt(0).toUpperCase() + record.status.slice(1)}
                                   </span>
-                                  
+
                                   <div className="flex gap-1">
-                                    {/* Generate Slip Button - for fines only */}
                                     {!record.isWarning && (
                                       <button
+                                        type="button"
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           generatePenaltySlip(fine, record);
                                         }}
-                                        className="p-1 bg-purple-600 hover:bg-purple-700 rounded text-white"
-                                        title="Generate Penalty Slip"
+                                        className="rounded-md border border-violet-200 bg-white p-1 text-violet-800 transition-colors hover:bg-violet-50 focus:outline-none focus:ring-2 focus:ring-violet-500/25"
+                                        title="Generate penalty slip"
                                       >
-                                        <FileText className="w-3 h-3" />
+                                        <FileText className="h-3 w-3" aria-hidden />
                                       </button>
                                     )}
-                                    
+
                                     {!record.isWarning && record.status === 'pending' && (
                                       <>
                                         <button
+                                          type="button"
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             updateFineStatus(fine._id, record.date, 'paid');
                                           }}
-                                          className="p-1 bg-emerald-600 hover:bg-emerald-700 rounded text-white"
-                                          title="Mark as Paid"
+                                          className="rounded-md border border-emerald-200 bg-white p-1 text-emerald-800 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/25"
+                                          title="Mark as paid"
                                         >
-                                          <Check className="w-3 h-3" />
+                                          <Check className="h-3 w-3" aria-hidden />
                                         </button>
                                         <button
+                                          type="button"
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             updateFineStatus(fine._id, record.date, 'waived');
                                           }}
-                                          className="p-1 bg-blue-600 hover:bg-blue-700 rounded text-white"
-                                          title="Waive Fine"
+                                          className="rounded-md border border-blue-200 bg-white p-1 text-blue-800 transition-colors hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500/25"
+                                          title="Waive fine"
                                         >
-                                          <X className="w-3 h-3" />
+                                          <X className="h-3 w-3" aria-hidden />
                                         </button>
                                       </>
                                     )}
@@ -1208,7 +1316,7 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
           </table>
         </div>
       )}
-    </div>
+    </section>
   );
 };
 

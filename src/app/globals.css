@@ -1,8 +1,17 @@
 @import "tailwindcss";
 
+/*
+ * Eye-friendly reading palette (light default)
+ * - Canvas: soft cool-gray (less glare than pure #fff)
+ * - Ink: blue-gray charcoal (softer than pure black, still WCAG-friendly on white/off-white)
+ * - Accent reference for selection/focus (matches app blue; use Tailwind blues in components)
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #eceff3;
+  --foreground: #2a3341;
+  --surface: #fbfbfd;
+  --foreground-muted: #5a6572;
+  --border-readable: #d5dbe3;
 }
 
 @theme inline {
@@ -12,17 +21,24 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Keep the admin app visually consistent: comfortable light canvas even if OS prefers dark */
+html {
+  color-scheme: light;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: color-mix(in srgb, #3b82f6 22%, transparent);
+  color: inherit;
 }
 
 /* Modal slide-up animation */

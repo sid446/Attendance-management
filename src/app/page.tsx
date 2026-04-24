@@ -1303,7 +1303,7 @@ export default function AttendanceUpload() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-50">
+    <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
       <div className="flex h-screen max-h-screen">
         <Sidebar
           activeSection={activeSection}
@@ -1316,7 +1316,7 @@ export default function AttendanceUpload() {
         />
 
         {/* Main content */}
-        <main className="flex-1 bg-slate-950/80 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto bg-[var(--surface)]">
           <div className="max-w-6xl mx-auto px-8 py-6 space-y-6">
             {/* Upload Section */}
             
