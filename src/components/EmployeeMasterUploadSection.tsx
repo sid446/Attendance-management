@@ -1,5 +1,5 @@
 import React, { ChangeEvent, useState } from 'react';
-import { Upload, FileSpreadsheet, Users } from 'lucide-react';
+import { Upload, FileSpreadsheet, Users, Download } from 'lucide-react';
 
 interface EmployeeMasterUploadSectionProps {
   onRefreshUsers?: () => void;
@@ -74,6 +74,184 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
       return `${String(Number(h)).padStart(2, '0')}:${m}`;
     }
     return text;
+  };
+
+  const handleDownloadMasterFormat = async () => {
+    try {
+      const ExcelJS = (await import('exceljs')).default;
+
+      const headers = [
+        'Name',
+        'Registration / Membership No.',
+        'Employee Code',
+        'Paid From',
+        'Designation',
+        'Category',
+        'Tally Name',
+        'Gender',
+        'Asija Mail ID',
+        'Parents/Guardians Names',
+        'Parents/Guardians Occupation',
+        'Cell No.',
+        'Alternate No.',
+        'Alternate Mail Id',
+        'Address 1',
+        'Address 2',
+        'Emergency Contact No.',
+        'Relation',
+        'Anniversary Date',
+        'Bank Name',
+        'Branch Name',
+        'Account No.',
+        'IFSC',
+        'Type of Account',
+        'Name of Account Holder',
+        'Aadhar No.',
+        'PAN',
+        'Basis Salary/Stipend/Fees',
+        'Laptop Allowance',
+        'Total Salary (P/M)',
+        'Per Annum',
+        'PF',
+        'ESI',
+        'Gratuity',
+        'Date of Joining -in Asija',
+        'Articleship Start Date',
+        'Transfer Case',
+        '1st Yr of Articleship',
+        '2nd Yr of Articleship',
+        '3rd Yr of Articleship',
+        'Filled Scholarship',
+        'Qualification Level',
+        'Next Attempt Due Date',
+        'Registered Under Partner',
+        'Working Under Partner',
+      ];
+
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'Asija Attendance System';
+      workbook.created = new Date();
+
+      const worksheet = workbook.addWorksheet('Master', {
+        views: [{ state: 'frozen', ySplit: 1, topLeftCell: 'A2' }],
+      });
+
+      worksheet.columns = headers.map((header) => ({
+        header,
+        key: header,
+        width: Math.max(16, Math.min(36, header.length + 4)),
+      }));
+
+      const headerRow = worksheet.getRow(1);
+      headerRow.height = 28;
+      headerRow.eachCell((cell) => {
+        cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF1E3A8A' },
+        };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          right: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        };
+      });
+
+      worksheet.autoFilter = {
+        from: { row: 1, column: 1 },
+        to: { row: 1, column: headers.length },
+      };
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([
+        buffer,
+      ], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'Employee_Master_Format.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError('Failed to download format file');
+    }
+  };
+
+  const handleDownloadScheduleFormat = async () => {
+    try {
+      const ExcelJS = (await import('exceljs')).default;
+
+      const headers = [
+        'Name',
+        'Employee Code',
+        'Sch-In',
+        'Sch-Out',
+        'Monday',
+        'Tuesday',
+        'Wednesday',
+        'Thursday',
+        'Friday',
+        'Saturday',
+        'Sunday',
+      ];
+
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'Asija Attendance System';
+      workbook.created = new Date();
+
+      const worksheet = workbook.addWorksheet('Schedule', {
+        views: [{ state: 'frozen', ySplit: 1, topLeftCell: 'A2' }],
+      });
+
+      worksheet.columns = headers.map((header) => ({
+        header,
+        key: header,
+        width: Math.max(14, Math.min(24, header.length + 4)),
+      }));
+
+      const headerRow = worksheet.getRow(1);
+      headerRow.height = 28;
+      headerRow.eachCell((cell) => {
+        cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF065F46' },
+        };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          right: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        };
+      });
+
+      worksheet.autoFilter = {
+        from: { row: 1, column: 1 },
+        to: { row: 1, column: headers.length },
+      };
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([
+        buffer,
+      ], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'Employee_Schedule_Format.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setScheduleError('Failed to download schedule format file');
+    }
   };
 
   const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -264,7 +442,6 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
         employeeCode: findCol(['Employee Code', 'Emp Code']),
         inTime: findCol(['Sch-In', 'In Time', 'Schedule In']),
         outTime: findCol(['Sch-Out', 'Out Time', 'Schedule Out']),
-        outTimeSat: findCol(['Sch-Out (For Sat)', 'Sat Out Time', 'Saturday Out']),
         monday: findCol(['Monday', 'Mon']),
         tuesday: findCol(['Tuesday', 'Tue']),
         wednesday: findCol(['Wednesday', 'Wed']),
@@ -291,7 +468,6 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
             employeeCode: String(getVal(row, idx.employeeCode) || '').trim(),
             inTime: formatTime(getVal(row, idx.inTime)),
             outTime: formatTime(getVal(row, idx.outTime)),
-            outTimeSat: formatTime(getVal(row, idx.outTimeSat)),
             dailyRanges: {
               monday: String(getVal(row, idx.monday) || '').trim(),
               tuesday: String(getVal(row, idx.tuesday) || '').trim(),
@@ -404,7 +580,7 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
         <p className="mt-1 text-[11px] text-slate-600">Defaults to today; change before upload if you need a back-dated effective date.</p>
       </div>
 
-      <div className="mb-5">
+      <div className="mb-5 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
         <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50/80 px-4 py-3 transition-colors hover:border-blue-300 hover:bg-blue-50/40">
           <span className="flex items-center gap-2 text-sm text-slate-700">
             <Upload className="h-4 w-4 shrink-0 text-blue-600" aria-hidden />
@@ -412,6 +588,14 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
           </span>
           <input type="file" accept=".xlsx,.xls" onChange={handleUpload} className="hidden" disabled={isUploading} />
         </label>
+        <button
+          type="button"
+          onClick={handleDownloadMasterFormat}
+          className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-200/65 bg-panel px-4 py-2.5 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+        >
+          <Download className="h-4 w-4 text-blue-600" aria-hidden />
+          Download master format
+        </button>
       </div>
 
       <div className="mb-5 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
@@ -457,7 +641,7 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
       <div className="mt-8 border-t border-slate-200 pt-6">
         <h3 className="mb-1 text-base font-semibold text-slate-900">Schedule bulk upload</h3>
         <p className="mb-3 max-w-2xl text-sm text-slate-600">
-          Second file: rows with Name, optional Employee Code, Sch-In / Sch-Out (and Saturday variant), or Monday–Sunday
+          Second file: rows with Name, optional Employee Code, Sch-In / Sch-Out, or Monday–Sunday
           cells such as <span className="font-mono text-slate-800">10:00 - 17:00</span>.
         </p>
         <ol className="mb-5 flex list-none flex-wrap gap-2 text-xs text-slate-700" aria-label="Schedule upload workflow">
@@ -487,19 +671,29 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
           />
         </div>
 
-        <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50/80 px-4 py-3 transition-colors hover:border-blue-300 hover:bg-blue-50/40">
-          <span className="flex items-center gap-2 text-sm text-slate-700">
-            <Upload className="h-4 w-4 shrink-0 text-blue-600" aria-hidden />
-            <span>Choose schedule Excel</span>
-          </span>
-          <input
-            type="file"
-            accept=".xlsx,.xls"
-            onChange={handleScheduleUpload}
-            className="hidden"
-            disabled={isScheduleUploading}
-          />
-        </label>
+        <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
+          <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50/80 px-4 py-3 transition-colors hover:border-blue-300 hover:bg-blue-50/40">
+            <span className="flex items-center gap-2 text-sm text-slate-700">
+              <Upload className="h-4 w-4 shrink-0 text-blue-600" aria-hidden />
+              <span>Choose schedule Excel</span>
+            </span>
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={handleScheduleUpload}
+              className="hidden"
+              disabled={isScheduleUploading}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={handleDownloadScheduleFormat}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-200/65 bg-panel px-4 py-2.5 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          >
+            <Download className="h-4 w-4 text-blue-600" aria-hidden />
+            Download schedule format
+          </button>
+        </div>
 
         {scheduleError && (
           <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900" role="alert">

@@ -7,7 +7,6 @@ type IncomingSchedule = {
   employeeCode?: string;
   inTime?: string;
   outTime?: string;
-  outTimeSat?: string;
   dailyRanges?: {
     monday?: string;
     tuesday?: string;
@@ -128,8 +127,6 @@ export async function POST(request: NextRequest) {
 
         const inTime = normalizeTime(row.inTime);
         const outTime = normalizeTime(row.outTime);
-        const outTimeSat = normalizeTime(row.outTimeSat) || outTime;
-
         const daily: Record<DayKey, any> = {
           monday: { inTime: '', outTime: '', isHoliday: true, isHalfDay: false },
           tuesday: { inTime: '', outTime: '', isHoliday: true, isHalfDay: false },
@@ -147,7 +144,7 @@ export async function POST(request: NextRequest) {
           daily.wednesday = { inTime, outTime, isHoliday: false, isHalfDay: false };
           daily.thursday = { inTime, outTime, isHoliday: false, isHalfDay: false };
           daily.friday = { inTime, outTime, isHoliday: false, isHalfDay: false };
-          daily.saturday = { inTime, outTime: outTimeSat, isHoliday: false, isHalfDay: true };
+          daily.saturday = { inTime, outTime, isHoliday: false, isHalfDay: true };
         }
 
         // Day-wise override: values like "10:00 - 17:00" or "off".
