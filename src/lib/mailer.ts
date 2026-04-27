@@ -18,12 +18,13 @@ export const mailOptions = {
 };
 
 // Send OTP email
-export async function sendOTPEmail(otp: string): Promise<void> {
+export async function sendOTPEmail(otp: string, recipientEmail?: string): Promise<void> {
   const adminEmail = process.env.ADMIN_EMAIL || 'service@asija.in';
+  const toEmail = recipientEmail || adminEmail;
   
   await transporter.sendMail({
     ...mailOptions,
-    to: adminEmail,
+    to: toEmail,
     subject: 'Attendance Console - Login OTP',
     html: `
       <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 400px;">

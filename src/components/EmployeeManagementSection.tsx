@@ -236,10 +236,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
     paidFrom: [],
     categories: []
   });
-  const [newPredefinedValue, setNewPredefinedValue] = useState<{
-    type: 'team' | 'designation' | 'paidFrom' | 'category';
-    value: string;
-  }>({ type: 'team', value: '' });
+  const predefinedValueInputRef = useRef<HTMLInputElement | null>(null);
   const [isSavingPredefinedValue, setIsSavingPredefinedValue] = useState<boolean>(false);
 
   // History State
@@ -604,8 +601,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
     }
   };
 
-  const handleAddPredefinedValue = async () => {
-    const { type, value } = newPredefinedValue;
+  const handleAddPredefinedValue = async (type: 'team' | 'designation' | 'paidFrom' | 'category', value: string) => {
     const trimmedValue = value.trim();
     if (!trimmedValue) return;
 
@@ -641,7 +637,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       if (!res.ok || !json.success) {
         throw new Error(json.error || 'Failed to add value');
       }
-      setNewPredefinedValue({ ...newPredefinedValue, value: '' });
+      if (predefinedValueInputRef.current) {
+        predefinedValueInputRef.current.value = '';
+      }
       fetchPredefinedValues();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to add value');
@@ -5471,32 +5469,24 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               <div className="flex gap-2">
                 <input
                   type="text"
+                  ref={predefinedValueInputRef}
                   placeholder={`Add ${predefinedModal.type === 'team' ? 'team' : predefinedModal.type === 'designation' ? 'designation' : predefinedModal.type === 'paidFrom' ? 'paid from' : 'category'}…`}
-                  value={newPredefinedValue.type === predefinedModal.type ? newPredefinedValue.value : ''}
-                  onChange={(e) =>
-                    setNewPredefinedValue({
-                      type: predefinedModal.type!,
-                      value: e.target.value,
-                    })
-                  }
                   className="flex-1 rounded-lg border border-blue-200/65 bg-panel px-4 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25"
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleAddPredefinedValue();
+                    if (e.key === 'Enter' && predefinedModal.type) {
+                      const value = predefinedValueInputRef.current?.value || '';
+                      handleAddPredefinedValue(predefinedModal.type, value);
+                    }
                   }}
                 />
                 <button
                   type="button"
                   onClick={() => {
-                    setNewPredefinedValue({
-                      type: predefinedModal.type!,
-                      value: newPredefinedValue.type === predefinedModal.type ? newPredefinedValue.value : '',
-                    });
-                    handleAddPredefinedValue();
+                    if (!predefinedModal.type) return;
+                    const value = predefinedValueInputRef.current?.value || '';
+                    handleAddPredefinedValue(predefinedModal.type, value);
                   }}
-                  disabled={
-                    isSavingPredefinedValue ||
-                    (newPredefinedValue.type === predefinedModal.type && !newPredefinedValue.value.trim())
-                  }
+                  disabled={isSavingPredefinedValue}
                   className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                 >
                   {isSavingPredefinedValue ? 'Adding…' : 'Add'}

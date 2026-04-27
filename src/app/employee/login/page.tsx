@@ -5,29 +5,44 @@ import { Mail, ArrowRight, Loader2 } from 'lucide-react';
 
 export default function EmployeeLoginPage() {
   const [email, setEmail] = useState('');
+  const [otp, setOtp] = useState('');
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [step, setStep] = useState<'email' | 'otp'>('email');
+  const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const isAsijaEmail = (value: string) => value.trim().toLowerCase().endsWith('@asija.in');
+
+  const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email) return;
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) return;
+
+    if (!isAsijaEmail(normalizedEmail)) {
+      setError('Please enter your @asija.in email address');
+      return;
+    }
 
     setLoading(true);
     setError(null);
+    setMessage(null);
 
     try {
       const res = await fetch('/api/employee/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim() }),
+        body: JSON.stringify({ email: normalizedEmail }),
       });
 
       const json = await res.json();
 
       if (json.success) {
-        localStorage.setItem('employeeUser', JSON.stringify(json.data));
-        router.push('/employee/dashboard');
+        setSessionId(json.data.sessionId);
+        setStep('otp');
+        setOtp('');
+        setMessage('OTP sent to your email. Please check your inbox.');
       } else {
         setError(json.error || 'Login failed');
       }
@@ -36,6 +51,44 @@ export default function EmployeeLoginPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sessionId || otp.trim().length !== 6) return;
+
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const res = await fetch('/api/employee/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, otp: otp.trim() }),
+      });
+
+      const json = await res.json();
+
+      if (json.success) {
+        localStorage.setItem('employeeUser', JSON.stringify(json.data));
+        router.push('/employee/dashboard');
+      } else {
+        setError(json.error || 'OTP verification failed');
+      }
+    } catch (err) {
+      setError('Something went wrong. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleChangeEmail = () => {
+    setStep('email');
+    setSessionId(null);
+    setOtp('');
+    setError(null);
+    setMessage(null);
   };
 
   return (
@@ -51,25 +104,53 @@ export default function EmployeeLoginPage() {
         </div>
 
         <div className="p-8">
-          <form onSubmit={handleLogin} className="space-y-6">
-            <div className="space-y-2">
-              <label htmlFor="employee-email" className="text-sm font-medium text-zinc-400">
-                Email
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-zinc-500" aria-hidden />
-                <input
-                  id="employee-email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@company.com"
-                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 py-3 pl-10 pr-4 text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600/40"
-                  required
-                  autoComplete="email"
-                />
+          <form onSubmit={step === 'email' ? handleSendOtp : handleVerifyOtp} className="space-y-6">
+            {step === 'email' ? (
+              <div className="space-y-2">
+                <label htmlFor="employee-email" className="text-sm font-medium text-zinc-400">
+                  Email
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-zinc-500" aria-hidden />
+                  <input
+                    id="employee-email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@asija.in"
+                    className="w-full rounded-lg border border-zinc-700 bg-zinc-950 py-3 pl-10 pr-4 text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600/40"
+                    required
+                    autoComplete="email"
+                  />
+                </div>
+                <p className="text-xs text-zinc-500">Use your @asija.in email to receive OTP.</p>
               </div>
-            </div>
+            ) : (
+              <div className="space-y-2">
+                <label htmlFor="employee-otp" className="text-sm font-medium text-zinc-400">
+                  Enter OTP
+                </label>
+                <input
+                  id="employee-otp"
+                  type="text"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="6-digit OTP"
+                  className="w-full rounded-lg border border-zinc-700 bg-zinc-950 py-3 px-4 text-zinc-100 tracking-[0.35em] placeholder:tracking-normal placeholder:text-zinc-600 focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-600/40"
+                  required
+                  inputMode="numeric"
+                  maxLength={6}
+                  autoComplete="one-time-code"
+                />
+                <p className="text-xs text-zinc-500">OTP was sent to {email.trim().toLowerCase()}.</p>
+              </div>
+            )}
+
+            {message && (
+              <div className="rounded-lg border border-emerald-500/25 bg-emerald-950/40 p-3 text-sm text-emerald-300">
+                {message}
+              </div>
+            )}
 
             {error && (
               <div className="rounded-lg border border-rose-500/25 bg-rose-950/40 p-3 text-sm text-rose-300">
@@ -79,21 +160,31 @@ export default function EmployeeLoginPage() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || (step === 'otp' && otp.trim().length !== 6)}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 py-3 font-medium text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading ? (
                 <>
                   <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
-                  Signing in…
+                  {step === 'email' ? 'Sending OTP…' : 'Verifying OTP…'}
                 </>
               ) : (
                 <>
-                  Sign in
+                  {step === 'email' ? 'Send OTP' : 'Verify OTP'}
                   <ArrowRight className="h-5 w-5" aria-hidden />
                 </>
               )}
             </button>
+
+            {step === 'otp' && (
+              <button
+                type="button"
+                onClick={handleChangeEmail}
+                className="w-full text-sm text-zinc-400 transition-colors hover:text-emerald-400"
+              >
+                Change email
+              </button>
+            )}
           </form>
         </div>
       </div>
