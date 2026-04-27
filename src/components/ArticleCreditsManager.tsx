@@ -208,7 +208,7 @@ export const ArticleCreditsManager: React.FC = () => {
     if (!isOpen) return null;
     const rangeTitleId = 'article-credits-range-modal-title';
     const selectCls =
-      'w-full rounded-md border border-slate-200 bg-white px-2 py-2 font-mono text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20';
+      'w-full rounded-md border border-blue-200/65 bg-panel px-2 py-2 font-mono text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20';
     return (
       <div
         className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm"
@@ -216,7 +216,7 @@ export const ArticleCreditsManager: React.FC = () => {
         role="presentation"
       >
         <div
-          className="flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
+          className="flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-blue-200/65 bg-panel shadow-xl"
           onClick={(e) => e.stopPropagation()}
           role="dialog"
           aria-modal="true"
@@ -318,7 +318,7 @@ export const ArticleCreditsManager: React.FC = () => {
         role="presentation"
       >
         <div
-          className="flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
+          className="flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-blue-200/65 bg-panel shadow-xl"
           onClick={(e) => e.stopPropagation()}
           role="dialog"
           aria-modal="true"
@@ -417,12 +417,12 @@ export const ArticleCreditsManager: React.FC = () => {
         </ol>
       </header>
 
-      <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-4 rounded-xl border border-blue-200/65 bg-panel p-4 shadow-sm md:flex-row md:items-center md:justify-between">
         <div className="flex min-w-0 flex-col gap-2">
           <span className="text-xs font-medium text-slate-600">Attendance period (for excess totals)</span>
           <div className="flex flex-wrap items-center gap-2">
             <div
-              className="inline-flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm"
+              className="inline-flex flex-wrap gap-1 rounded-lg border border-blue-200/65 bg-panel p-0.5 shadow-sm"
               role="group"
               aria-label="Period preset"
             >
@@ -552,14 +552,14 @@ export const ArticleCreditsManager: React.FC = () => {
               placeholder="Search by name or ID…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-md border border-slate-200 bg-white py-2 pl-10 pr-3 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              className="w-full rounded-md border border-blue-200/65 bg-panel py-2 pl-10 pr-3 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             />
           </div>
           <button
             type="button"
             onClick={handleExport}
             disabled={rows.length === 0}
-            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:opacity-40"
             title="Export article credits to Excel"
           >
             <Download className="h-4 w-4 text-slate-600" aria-hidden />
@@ -599,7 +599,7 @@ export const ArticleCreditsManager: React.FC = () => {
       </div>
 
       <section
-        className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+        className="overflow-hidden rounded-xl border border-blue-200/65 bg-panel shadow-sm"
         aria-labelledby="article-credits-table-heading"
       >
         <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">

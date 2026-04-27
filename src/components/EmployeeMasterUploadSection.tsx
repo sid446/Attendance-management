@@ -332,7 +332,7 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
 
   return (
     <section
-      className="rounded-md border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
+      className="rounded-md border border-blue-200/65 bg-panel p-5 shadow-sm sm:p-6"
       aria-labelledby="employee-master-upload-heading"
     >
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -399,7 +399,7 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
           type="date"
           value={effectiveFrom}
           onChange={(e) => setEffectiveFrom(e.target.value)}
-          className="w-full max-w-xs rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          className="w-full max-w-xs rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
         />
         <p className="mt-1 text-[11px] text-slate-600">Defaults to today; change before upload if you need a back-dated effective date.</p>
       </div>
@@ -483,7 +483,7 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
             type="date"
             value={scheduleEffectiveFrom}
             onChange={(e) => setScheduleEffectiveFrom(e.target.value)}
-            className="w-full max-w-xs rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="w-full max-w-xs rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           />
         </div>
 

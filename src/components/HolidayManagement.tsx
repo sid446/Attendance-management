@@ -178,11 +178,11 @@ export const HolidayManagement: React.FC<HolidayManagementProps> = ({
   };
 
   const selectCls =
-    'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
+    'rounded-lg border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
   const inputCls =
-    'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
+    'w-full rounded-lg border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
   const inputCellCls =
-    'w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
+    'w-full rounded-md border border-blue-200/65 bg-panel px-2 py-1.5 text-xs text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
   const thBase = 'px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600';
 
   return (
@@ -252,7 +252,7 @@ export const HolidayManagement: React.FC<HolidayManagementProps> = ({
       )}
 
       {showAddForm && (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="rounded-xl border border-blue-200/65 bg-panel p-4 shadow-sm">
           <h3 className="mb-3 text-base font-semibold text-slate-900">Add new holiday</h3>
           <form onSubmit={handleAddHoliday} className="space-y-3">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -325,7 +325,7 @@ export const HolidayManagement: React.FC<HolidayManagementProps> = ({
               <button
                 type="button"
                 onClick={() => setShowAddForm(false)}
-                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="rounded-lg border border-blue-200/65 bg-panel px-4 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               >
                 Cancel
               </button>
@@ -334,7 +334,7 @@ export const HolidayManagement: React.FC<HolidayManagementProps> = ({
         </div>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-xl border border-blue-200/65 bg-panel shadow-sm">
         {loading ? (
           <div className="flex flex-col items-center justify-center gap-2 py-12" aria-live="polite">
             <RefreshCw className="h-8 w-8 animate-spin text-blue-600" aria-hidden />
@@ -464,7 +464,7 @@ export const HolidayManagement: React.FC<HolidayManagementProps> = ({
                             <button
                               type="button"
                               onClick={() => editingHoliday && handleUpdateHoliday(editingHoliday)}
-                              className="rounded-md border border-emerald-200 bg-white p-1.5 text-emerald-800 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/25"
+                              className="rounded-md border border-emerald-200 bg-panel p-1.5 text-emerald-800 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/25"
                               title="Save"
                             >
                               <Check className="h-3.5 w-3.5" aria-hidden />
@@ -472,7 +472,7 @@ export const HolidayManagement: React.FC<HolidayManagementProps> = ({
                             <button
                               type="button"
                               onClick={() => setEditingHoliday(null)}
-                              className="rounded-md border border-slate-200 bg-white p-1.5 text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                              className="rounded-md border border-blue-200/65 bg-panel p-1.5 text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                               title="Cancel"
                             >
                               <X className="h-3.5 w-3.5" aria-hidden />
@@ -483,7 +483,7 @@ export const HolidayManagement: React.FC<HolidayManagementProps> = ({
                             <button
                               type="button"
                               onClick={() => setEditingHoliday(holiday)}
-                              className="rounded-md border border-slate-200 bg-white p-1.5 text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                              className="rounded-md border border-blue-200/65 bg-panel p-1.5 text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                               title="Edit"
                             >
                               <Edit className="h-3.5 w-3.5" aria-hidden />
@@ -491,7 +491,7 @@ export const HolidayManagement: React.FC<HolidayManagementProps> = ({
                             <button
                               type="button"
                               onClick={() => handleDeleteHoliday(holiday._id)}
-                              className="rounded-md border border-red-200 bg-white p-1.5 text-red-700 transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500/25"
+                              className="rounded-md border border-red-200 bg-panel p-1.5 text-red-700 transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500/25"
                               title="Delete"
                             >
                               <Trash2 className="h-3.5 w-3.5" aria-hidden />

@@ -57,13 +57,13 @@ const DetailModal: React.FC<DetailModalProps> = ({ isOpen, onClose, title, data 
       role="presentation"
     >
       <div
-        className="flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
+        className="flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-blue-200/65 bg-panel shadow-xl"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="summary-detail-modal-title"
       >
-        <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+        <div className="flex shrink-0 items-center justify-between border-b border-blue-200/50 bg-sky-100/50 px-4 py-3">
           <h3 id="summary-detail-modal-title" className="text-sm font-semibold text-slate-900">
             {title}
           </h3>
@@ -84,10 +84,10 @@ const DetailModal: React.FC<DetailModalProps> = ({ isOpen, onClose, title, data 
               {data.map((d, i) => (
                 <div
                   key={i}
-                  className="flex flex-col gap-2 rounded-md border border-transparent px-3 py-2.5 text-sm transition-colors hover:border-slate-200 hover:bg-slate-50 sm:flex-row sm:items-start sm:justify-between"
+                  className="flex flex-col gap-2 rounded-md border border-transparent px-3 py-2.5 text-sm transition-colors hover:border-blue-200/60 hover:bg-sky-100/55 sm:flex-row sm:items-start sm:justify-between"
                 >
                   <div className="flex shrink-0 items-center gap-2">
-                    <div className="whitespace-nowrap rounded border border-slate-200 bg-white px-2 py-0.5 font-mono text-xs text-slate-800">
+                    <div className="whitespace-nowrap rounded border border-blue-200/65 bg-panel px-2 py-0.5 font-mono text-xs text-slate-800">
                       {d.date}
                     </div>
                     {d.subInfo && (
@@ -104,7 +104,7 @@ const DetailModal: React.FC<DetailModalProps> = ({ isOpen, onClose, title, data 
             </div>
           )}
         </div>
-        <div className="flex shrink-0 justify-end border-t border-slate-200 bg-slate-50 px-4 py-2.5">
+        <div className="flex shrink-0 justify-end border-t border-blue-200/50 bg-sky-100/50 px-4 py-2.5">
           <button
             type="button"
             onClick={onClose}
@@ -3267,13 +3267,13 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     return (
       <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm" onClick={onClose} role="presentation">
         <div
-          className="flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
+          className="flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-blue-200/65 bg-panel shadow-xl"
           onClick={(e) => e.stopPropagation()}
           role="dialog"
           aria-modal="true"
           aria-labelledby="summary-range-modal-title"
         >
-          <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="flex shrink-0 items-center justify-between border-b border-blue-200/50 bg-sky-100/50 px-4 py-3">
               <h3 id="summary-range-modal-title" className="text-sm font-semibold text-slate-900">
                 Custom date range
               </h3>
@@ -3282,10 +3282,10 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           <div className="p-4 flex-1">
             <p className="text-xs text-slate-500 mb-3">Pick a preset or choose start and end dates.</p>
             <div className="grid grid-cols-2 gap-2 mb-5">
-              <button type="button" onClick={setLast3Months} className="px-3 py-2 text-sm rounded-md border border-slate-200 bg-white text-slate-800 hover:bg-slate-100 transition-colors">Last 3 months</button>
-              <button type="button" onClick={setLast6Months} className="px-3 py-2 text-sm rounded-md border border-slate-200 bg-white text-slate-800 hover:bg-slate-100 transition-colors">Last 6 months</button>
-              <button type="button" onClick={setLast12Months} className="px-3 py-2 text-sm rounded-md border border-slate-200 bg-white text-slate-800 hover:bg-slate-100 transition-colors">Last 12 months</button>
-              <button type="button" onClick={setLastMonth} className="px-3 py-2 text-sm rounded-md border border-slate-200 bg-white text-slate-800 hover:bg-slate-100 transition-colors">Last month</button>
+              <button type="button" onClick={setLast3Months} className="px-3 py-2 text-sm rounded-md border border-blue-200/65 bg-panel text-slate-800 hover:bg-slate-100 transition-colors">Last 3 months</button>
+              <button type="button" onClick={setLast6Months} className="px-3 py-2 text-sm rounded-md border border-blue-200/65 bg-panel text-slate-800 hover:bg-slate-100 transition-colors">Last 6 months</button>
+              <button type="button" onClick={setLast12Months} className="px-3 py-2 text-sm rounded-md border border-blue-200/65 bg-panel text-slate-800 hover:bg-slate-100 transition-colors">Last 12 months</button>
+              <button type="button" onClick={setLastMonth} className="px-3 py-2 text-sm rounded-md border border-blue-200/65 bg-panel text-slate-800 hover:bg-slate-100 transition-colors">Last month</button>
               <button type="button" onClick={setCurrentMonth} className="px-3 py-2 text-sm rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100/80 transition-colors col-span-2">This month</button>
             </div>
             <div className="space-y-3">
@@ -3294,7 +3294,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                 <DatePicker
                   selected={new Date(customStartDate)}
                   onChange={(date: Date | null) => date && setCustomStartDate(date.toISOString().split('T')[0])}
-                  className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                   dateFormat="yyyy-MM-dd"
                 />
               </div>
@@ -3303,14 +3303,14 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                 <DatePicker
                   selected={new Date(customEndDate)}
                   onChange={(date: Date | null) => date && setCustomEndDate(date.toISOString().split('T')[0])}
-                  className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                   dateFormat="yyyy-MM-dd"
                 />
               </div>
               <button type="button" onClick={applyCustom} className="w-full mt-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors">Apply range</button>
             </div>
           </div>
-          <div className="px-4 py-2.5 border-t border-slate-200 flex justify-end shrink-0 bg-slate-50">
+          <div className="flex shrink-0 justify-end border-t border-blue-200/50 bg-sky-100/50 px-4 py-2.5">
               <button type="button" onClick={onClose} className="text-sm text-slate-600 hover:text-slate-800 px-3 py-1.5 rounded-md hover:bg-slate-100 transition-colors">Cancel</button>
           </div>
         </div>
@@ -3332,7 +3332,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           <select
             value={filter.operator}
             onChange={(e) => onChange({...filter, operator: e.target.value})}
-            className="flex-1 rounded-md border border-slate-200 bg-white px-2 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+            className="flex-1 rounded-md border border-blue-200/65 bg-panel px-2 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
           >
             <option value="all">All</option>
             <option value="equals">=</option>
@@ -3348,7 +3348,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
               step="0.5"
               value={filter.value}
               onChange={(e) => onChange({...filter, value: parseFloat(e.target.value) || 0})}
-              className="w-24 rounded-md border border-slate-200 bg-white px-2 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+              className="w-24 rounded-md border border-blue-200/65 bg-panel px-2 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
               placeholder="0"
             />
           )}
@@ -3359,13 +3359,13 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     return (
       <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm" onClick={onClose} role="presentation">
         <div
-          className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
+          className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-blue-200/65 bg-panel shadow-xl"
           onClick={(e) => e.stopPropagation()}
           role="dialog"
           aria-modal="true"
           aria-labelledby="summary-advanced-filters-title"
         >
-          <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="flex shrink-0 items-center justify-between border-b border-blue-200/50 bg-sky-100/50 px-4 py-3">
               <h3 id="summary-advanced-filters-title" className="text-sm font-semibold text-slate-900">
                 Refine results
               </h3>
@@ -3385,7 +3385,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                     id="summary-filter-team"
                     value={teamFilter}
                     onChange={(e) => setTeamFilter(e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                   >
                     <option value="all">All teams</option>
                     {getUniqueTeams().map(team => (
@@ -3402,7 +3402,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                     id="summary-filter-designation"
                     value={designationFilter}
                     onChange={(e) => setDesignationFilter(e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                   >
                     <option value="all">All designations</option>
                     {getUniqueDesignations().map(designation => (
@@ -3460,7 +3460,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
               </div>
             </div>
           </div>
-          <div className="px-4 py-3 border-t border-slate-200 flex justify-between items-center shrink-0 bg-slate-50">
+          <div className="flex shrink-0 items-center justify-between border-t border-blue-200/50 bg-sky-100/50 px-4 py-3">
             <button
               type="button"
               onClick={clearAllFilters}
@@ -3506,7 +3506,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           {SUMMARY_WORKFLOW_STEPS.map((t, i) => (
             <li
               key={t}
-              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1"
+              className="inline-flex items-center gap-1.5 rounded-md border border-blue-200/50 bg-sky-100/50 px-2 py-1"
             >
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
                 {i + 1}
@@ -3518,10 +3518,10 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       </header>
 
       {/* Period + scope */}
-      <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="rounded-md border border-blue-200/65 bg-panel p-4 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-            <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5" role="group" aria-label="Period type">
+            <div className="inline-flex rounded-md border border-blue-200/65 bg-panel p-0.5" role="group" aria-label="Period type">
               <button
                 type="button"
                 onClick={switchToMonth}
@@ -3551,7 +3551,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
               </button>
             </div>
 
-            <div className="flex items-center rounded-md border border-slate-200 bg-white">
+            <div className="flex items-center rounded-md border border-blue-200/65 bg-panel">
               <button
                 type="button"
                 onClick={filterType === 'week' ? handlePrevWeek : handlePrevMonth}
@@ -3579,7 +3579,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                 <select
                   value={selectedYear}
                   onChange={(e) => setSelectedYear(Number(e.target.value))}
-                  className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                  className="rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                   aria-label="Year"
                 >
                   {Array.from({ length: 5 }, (_, i) => currentDate.getFullYear() - 2 + i).map((y) => (
@@ -3591,7 +3591,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                 <select
                   value={selectedMonth}
                   onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                  className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                  className="rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                   aria-label="Month"
                 >
                   {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
@@ -3615,7 +3615,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
               placeholder="Search by employee name or code"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full rounded-md border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-800 shadow-sm outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+              className="w-full rounded-md border border-blue-200/65 bg-panel py-2 pl-9 pr-3 text-sm text-slate-800 shadow-sm outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
             />
           </div>
         </div>
@@ -3624,7 +3624,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           <button
             type="button"
             onClick={handleExport}
-            className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 transition-colors"
+            className="inline-flex items-center gap-2 rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 transition-colors"
           >
             <Download className="h-4 w-4 text-slate-500" />
             Export summary
@@ -3632,7 +3632,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           <button
             type="button"
             onClick={handleDetailedExport}
-            className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 transition-colors"
+            className="inline-flex items-center gap-2 rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 transition-colors"
           >
             <Download className="h-4 w-4 text-slate-500" />
             Export detailed
@@ -3641,7 +3641,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
             type="button"
             onClick={handleDayWiseExport}
             disabled={selectedEmployees.size === 0}
-            className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
+            className="inline-flex items-center gap-2 rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
             title={selectedEmployees.size === 0 ? 'Select one or more rows first' : undefined}
           >
             <Download className="h-4 w-4 text-slate-500" />
@@ -3650,7 +3650,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           <button
             type="button"
             onClick={() => setIsBulkManagerOpen(true)}
-            className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 transition-colors"
+            className="inline-flex items-center gap-2 rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100 transition-colors"
           >
             <ListChecks className="h-4 w-4 text-slate-500" />
             Bulk status
@@ -3661,7 +3661,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
             className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
               hasActiveFilters()
                 ? 'border-blue-500/50 bg-blue-50 text-blue-700 hover:bg-blue-100/80'
-                : 'border-slate-200 bg-white text-slate-800 hover:bg-slate-100'
+                : 'border-blue-200/65 bg-panel text-slate-800 hover:bg-slate-100'
             }`}
           >
             <Filter className="h-4 w-4 text-slate-500" />
@@ -3672,28 +3672,28 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
 
       {/* KPI strip — calm metrics */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm">
+        <div className="rounded-md border border-blue-200/50 bg-sky-100/50 px-4 py-3 shadow-sm">
           <div className="flex items-start justify-between gap-2">
             <p className="text-xs font-medium uppercase tracking-wide text-slate-500">People in view</p>
             <Users className="h-4 w-4 text-slate-500" aria-hidden />
           </div>
           <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{stats.totalEmployees}</p>
         </div>
-        <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm">
+        <div className="rounded-md border border-blue-200/50 bg-sky-100/50 px-4 py-3 shadow-sm">
           <div className="flex items-start justify-between gap-2">
             <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Late arrivals</p>
             <AlertCircle className="h-4 w-4 text-slate-500" aria-hidden />
           </div>
           <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{stats.totalLate}</p>
         </div>
-        <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm">
+        <div className="rounded-md border border-blue-200/50 bg-sky-100/50 px-4 py-3 shadow-sm">
           <div className="flex items-start justify-between gap-2">
             <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Absence days</p>
             <UserX className="h-4 w-4 text-slate-500" aria-hidden />
           </div>
           <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{stats.totalAbsents}</p>
         </div>
-        <div className="col-span-2 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm lg:col-span-1">
+        <div className="col-span-2 rounded-md border border-blue-200/50 bg-sky-100/50 px-4 py-3 shadow-sm lg:col-span-1">
           <div className="flex items-start justify-between gap-2">
             <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Total hours logged</p>
             <Clock className="h-4 w-4 text-slate-500" aria-hidden />
@@ -3703,8 +3703,8 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       </div>
 
       {/* Employee table */}
-      <section className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm" aria-labelledby="summary-employees-heading">
-        <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <section className="overflow-hidden rounded-md border border-blue-200/65 bg-panel shadow-sm" aria-labelledby="summary-employees-heading">
+        <div className="flex flex-col gap-2 border-b border-blue-200/50 bg-sky-100/50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 id="summary-employees-heading" className="text-sm font-semibold text-slate-900">
               Employees
@@ -3720,7 +3720,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
             <button
               type="button"
               onClick={() => setSummaryTableFullscreen(true)}
-              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:border-slate-300 hover:bg-slate-100"
+              className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm font-medium text-slate-800 hover:border-slate-300 hover:bg-slate-100"
               title="Open table full screen to scroll all columns"
             >
               <Maximize2 className="h-4 w-4 text-slate-500" aria-hidden />
@@ -3744,7 +3744,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         ) : (
           <>
             {summaryTableFullscreen && (
-              <div className="min-h-[min(70dvh,520px)] rounded-md border border-dashed border-slate-200 bg-slate-50/70 px-4 py-8 text-center">
+              <div className="min-h-[min(70dvh,520px)] rounded-md border border-dashed border-blue-200/50 bg-sky-100/50/70 px-4 py-8 text-center">
                 <p className="text-sm text-slate-500">Table is open in full screen.</p>
                 <button
                   type="button"
@@ -3763,7 +3763,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
               }
             >
               {summaryTableFullscreen && (
-                <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+                <div className="flex shrink-0 items-center justify-between gap-3 border-b border-blue-200/65 bg-panel px-4 py-3">
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-slate-900">Employees — full screen</p>
                     <p className="truncate text-xs text-slate-500">
@@ -3773,7 +3773,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                   <button
                     type="button"
                     onClick={() => setSummaryTableFullscreen(false)}
-                    className="inline-flex shrink-0 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
+                    className="inline-flex shrink-0 items-center gap-2 rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm font-medium text-slate-800 hover:bg-slate-100"
                   >
                     <Minimize2 className="h-4 w-4 text-slate-500" aria-hidden />
                     Exit
@@ -3782,7 +3782,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
               )}
               <div className={summaryTableFullscreen ? 'min-h-0 flex-1 overflow-auto' : undefined}>
             <table className={`w-full text-left text-sm ${summaryTableFullscreen ? 'min-w-[1280px]' : 'min-w-[1100px]'}`}>
-              <thead className="border-b border-slate-200 bg-slate-50">
+              <thead className="border-b border-blue-200/50 bg-sky-100/50">
                 <tr>
                   <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
                     <input
@@ -3842,7 +3842,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                 {(displayedSummaries as any[]).map((item) => (
                   <tr
                     key={item.id}
-                    className="group transition-colors hover:bg-slate-50"
+                    className="group transition-colors hover:bg-sky-100/55"
                   >
                     <td className="px-4 py-2.5 text-left" onClick={(e) => e.stopPropagation()}>
                       <input
@@ -3890,7 +3890,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                           return holidayCount;
                         })()}
                     </td>
-                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-500 cursor-pointer hover:bg-slate-50" onClick={(e) => openDetail(e, 'WorkingDays', item)}>
+                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-500 cursor-pointer hover:bg-sky-100/55" onClick={(e) => openDetail(e, 'WorkingDays', item)}>
                         {(() => {
                           // Count working days: exclude holidays (from DB), Sundays, and weekoff types
                           const records = item.recordDetails || {};
@@ -3907,12 +3907,12 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                           ) : '-';
                         })()}
                     </td>
-                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-800 cursor-pointer hover:bg-slate-50" onClick={(e) => item.summary.totalPresent > 0 && openDetail(e, 'Present', item)}>
+                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-800 cursor-pointer hover:bg-sky-100/55" onClick={(e) => item.summary.totalPresent > 0 && openDetail(e, 'Present', item)}>
                         {item.summary.totalPresent > 0 ? (
                            <span className="underline decoration-slate-300 decoration-dotted underline-offset-2" title="Day-by-day present">{item.summary.totalPresent}</span>
                         ) : '-'}
                     </td>
-                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-500 cursor-pointer hover:bg-slate-50" onClick={(e) => item.summary.totalHalfDay > 0 && openDetail(e, 'HalfDay', item)}>
+                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-500 cursor-pointer hover:bg-sky-100/55" onClick={(e) => item.summary.totalHalfDay > 0 && openDetail(e, 'HalfDay', item)}>
                         {item.summary.totalHalfDay > 0 ? (
                           <span className="underline decoration-slate-300 decoration-dotted underline-offset-2" title="Half-day breakdown">
                             {item.summary.totalHalfDay}
@@ -3926,24 +3926,24 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                           </span>
                         ) : '-'}
                     </td>
-                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-600 cursor-pointer hover:bg-slate-50" onClick={(e) => item.summary.totalAbsent > 0 && openDetail(e, 'Absent', item)}>
+                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-600 cursor-pointer hover:bg-sky-100/55" onClick={(e) => item.summary.totalAbsent > 0 && openDetail(e, 'Absent', item)}>
                         {item.summary.totalAbsent > 0 ? (
                            <span className="underline decoration-slate-300 decoration-dotted underline-offset-2" title="Absent days">{item.summary.totalAbsent}</span>
                         ) : '-'}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums" onClick={(e) => item.calcLate > 0 && openDetail(e, 'Late', item)}>
                       {item.calcLate > 0 ? (
-                        <span className="cursor-pointer rounded border border-slate-200 bg-white px-1.5 py-0.5 text-slate-800 hover:border-slate-300" title="Late arrival dates">{item.calcLate}</span>
+                        <span className="cursor-pointer rounded border border-blue-200/65 bg-panel px-1.5 py-0.5 text-slate-800 hover:border-slate-300" title="Late arrival dates">{item.calcLate}</span>
                       ) : (
                         <span className="text-slate-400">-</span>
                       )}
                     </td>
-                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-500 cursor-pointer hover:bg-slate-50" onClick={(e) => calculateLeaveConsumed(item) > 0 && openDetail(e, 'Leave', item)}>
+                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-500 cursor-pointer hover:bg-sky-100/55" onClick={(e) => calculateLeaveConsumed(item) > 0 && openDetail(e, 'Leave', item)}>
                         {calculateLeaveConsumed(item) > 0 ? (
                            <span className="underline decoration-slate-300 decoration-dotted underline-offset-2" title="Leave days">{calculateLeaveConsumed(item)}</span>
                         ) : '-'}
                     </td>
-                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-500 cursor-pointer hover:bg-slate-50" onClick={(e) => item.calcScheduled > 0 && openDetail(e, 'ScheduledHours', item)}>
+                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-500 cursor-pointer hover:bg-sky-100/55" onClick={(e) => item.calcScheduled > 0 && openDetail(e, 'ScheduledHours', item)}>
                         {item.calcScheduled > 0 ? (
                            <span className="underline decoration-slate-300 decoration-dotted underline-offset-2" title="Scheduled hours breakdown">{formatHoursMinutes(item.calcScheduled)}</span>
                         ) : '-'}
@@ -3962,12 +3962,12 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                           ) : '-';
                         })()}
                     </td>
-                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-700 cursor-pointer hover:bg-slate-50" onClick={(e) => item.summary.totalHour > 0 && openDetail(e, 'WorkHours', item)}>
+                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-700 cursor-pointer hover:bg-sky-100/55" onClick={(e) => item.summary.totalHour > 0 && openDetail(e, 'WorkHours', item)}>
                         {item.summary.totalHour > 0 ? (
                            <span className="underline decoration-slate-300 decoration-dotted underline-offset-2" title="Worked hours by day">{formatHoursMinutes(item.summary.totalHour)}</span>
                         ) : '0h 0m'}
                     </td>
-                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums cursor-pointer hover:bg-slate-50"
+                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums cursor-pointer hover:bg-sky-100/55"
                         onClick={() => {
                           const breakdown = getExcessResultForItem(item).breakdown;
                           setDetailModal({
@@ -4008,7 +4008,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                               )
                             )
                           }
-                          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-800 hover:bg-slate-100"
+                          className="rounded-md border border-blue-200/65 bg-panel px-3 py-1.5 text-sm text-slate-800 hover:bg-slate-100"
                         >
                           Load {SUMMARY_TABLE_CHUNK} more
                         </button>

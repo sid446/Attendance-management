@@ -56,8 +56,8 @@ function ApproveBulkContent() {
 
   if (submitted) {
     return (
-        <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4 font-sans">
-            <div className="w-full max-w-md bg-white p-8 rounded-lg shadow-md text-center">
+        <div className="flex min-h-screen items-center justify-center bg-background p-4 font-sans">
+            <div className="w-full max-w-md rounded-lg border border-blue-200/80 bg-surface p-8 shadow-md text-center">
                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100 mb-4">
                     <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
@@ -67,7 +67,7 @@ function ApproveBulkContent() {
                  <p className="text-gray-600">
                     <strong>{ids.length}</strong> request{ids.length !== 1 ? 's' : ''} have been approved.
                  </p>
-                 <div className="mt-4 p-4 bg-gray-50 rounded text-left text-sm">
+                 <div className="mt-4 rounded bg-blue-50/60 p-4 text-left text-sm">
                     <p><strong>Value Applied:</strong> {value}</p>
                     <p><strong>Remark:</strong> {remark}</p>
                  </div>
@@ -78,8 +78,8 @@ function ApproveBulkContent() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4 font-sans">
-      <div className="w-full max-w-md bg-white p-8 rounded-lg shadow-md">
+    <div className="flex min-h-screen items-center justify-center bg-background p-4 font-sans">
+      <div className="w-full max-w-md rounded-lg border border-blue-200/80 bg-surface p-8 shadow-md">
         <h1 className="text-2xl font-bold text-gray-800 mb-2 text-center">Bulk Approve Requests</h1>
         <p className="text-center text-gray-600 mb-6 text-sm">
             You are about to approve <strong>{ids.length}</strong> request{ids.length !== 1 ? 's' : ''}.

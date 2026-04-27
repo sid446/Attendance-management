@@ -749,9 +749,9 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
   };
 
   const selectCls =
-    'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
+    'rounded-lg border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
   const inputCls =
-    'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
+    'w-full rounded-lg border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
   const thBase = 'px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600';
 
   return (
@@ -818,7 +818,7 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
             type="button"
             onClick={exportToExcel}
             disabled={filteredFines.length === 0}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-blue-200/65 bg-panel px-4 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50"
           >
             <Download className="h-4 w-4 text-slate-600" aria-hidden />
             Export Excel
@@ -826,7 +826,7 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
         </div>
       </header>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="rounded-xl border border-blue-200/65 bg-panel p-4 shadow-sm">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-base font-semibold text-slate-900">Impose manual fine</h3>
           <button
@@ -912,7 +912,7 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
               <button
                 type="button"
                 onClick={() => setShowManualFineForm(false)}
-                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="rounded-lg border border-blue-200/65 bg-panel px-4 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               >
                 Cancel
               </button>
@@ -995,7 +995,7 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:flex-row sm:flex-wrap sm:items-center">
+      <div className="flex flex-col gap-3 rounded-xl border border-blue-200/65 bg-panel p-3 shadow-sm sm:flex-row sm:flex-wrap sm:items-center">
         <div className="relative min-w-[12rem] flex-1 sm:max-w-xs">
           <label htmlFor="fine-search" className="sr-only">
             Search by name or ID
@@ -1075,7 +1075,7 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
       )}
 
       {!loading && (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-hidden rounded-xl border border-blue-200/65 bg-panel shadow-sm">
           <table className="w-full">
             <thead className="border-b border-slate-200 bg-slate-50">
               <tr>
@@ -1251,7 +1251,7 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
                                   <span
                                     className={`rounded-full px-2 py-0.5 text-xs font-medium ${
                                       record.status === 'pending'
-                                        ? 'border border-slate-200 bg-white text-slate-800'
+                                        ? 'border border-blue-200/65 bg-panel text-slate-800'
                                         : record.status === 'paid'
                                           ? 'border border-emerald-200 bg-emerald-50 text-emerald-900'
                                           : 'border border-blue-200 bg-blue-50 text-blue-900'
@@ -1268,7 +1268,7 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
                                           e.stopPropagation();
                                           generatePenaltySlip(fine, record);
                                         }}
-                                        className="rounded-md border border-violet-200 bg-white p-1 text-violet-800 transition-colors hover:bg-violet-50 focus:outline-none focus:ring-2 focus:ring-violet-500/25"
+                                        className="rounded-md border border-violet-200 bg-panel p-1 text-violet-800 transition-colors hover:bg-violet-50 focus:outline-none focus:ring-2 focus:ring-violet-500/25"
                                         title="Generate penalty slip"
                                       >
                                         <FileText className="h-3 w-3" aria-hidden />
@@ -1283,7 +1283,7 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
                                             e.stopPropagation();
                                             updateFineStatus(fine._id, record.date, 'paid');
                                           }}
-                                          className="rounded-md border border-emerald-200 bg-white p-1 text-emerald-800 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/25"
+                                          className="rounded-md border border-emerald-200 bg-panel p-1 text-emerald-800 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/25"
                                           title="Mark as paid"
                                         >
                                           <Check className="h-3 w-3" aria-hidden />
@@ -1294,7 +1294,7 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
                                             e.stopPropagation();
                                             updateFineStatus(fine._id, record.date, 'waived');
                                           }}
-                                          className="rounded-md border border-blue-200 bg-white p-1 text-blue-800 transition-colors hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500/25"
+                                          className="rounded-md border border-blue-200 bg-panel p-1 text-blue-800 transition-colors hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500/25"
                                           title="Waive fine"
                                         >
                                           <X className="h-3 w-3" aria-hidden />

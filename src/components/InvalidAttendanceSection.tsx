@@ -174,13 +174,13 @@ export const InvalidAttendanceSection: React.FC<InvalidAttendanceSectionProps> =
   };
 
   const inputCls =
-    'w-full rounded-md border border-slate-200 bg-white py-2 pl-10 pr-4 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
+    'w-full rounded-md border border-blue-200/65 bg-panel py-2 pl-10 pr-4 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
   const selectCls =
-    'rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20';
+    'rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20';
 
   return (
     <section
-      className="rounded-xl border border-slate-200 bg-white shadow-sm"
+      className="rounded-xl border border-blue-200/65 bg-panel shadow-sm"
       aria-labelledby="invalid-attendance-heading"
     >
       <div className="border-b border-slate-200 p-6">
@@ -232,7 +232,7 @@ export const InvalidAttendanceSection: React.FC<InvalidAttendanceSectionProps> =
               type="button"
               onClick={fetchInvalidRecords}
               disabled={loading}
-              className="rounded-md border border-slate-200 bg-white p-2 text-slate-600 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50"
+              className="rounded-md border border-blue-200/65 bg-panel p-2 text-slate-600 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50"
               title="Refresh list"
               aria-label="Refresh invalid attendance list"
             >
@@ -323,7 +323,7 @@ export const InvalidAttendanceSection: React.FC<InvalidAttendanceSectionProps> =
               return (
                 <div
                   key={employee.userId}
-                  className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm"
+                  className="overflow-hidden rounded-lg border border-blue-200/65 bg-panel shadow-sm"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3 p-4">
                     <div
@@ -367,7 +367,7 @@ export const InvalidAttendanceSection: React.FC<InvalidAttendanceSectionProps> =
                         type="button"
                         onClick={() => sendNotification(employee.userId)}
                         disabled={sendingNotification.has(employee.userId)}
-                        className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50"
+                        className="inline-flex items-center gap-2 rounded-md border border-blue-200/65 bg-panel px-3 py-1.5 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50"
                       >
                         {sendingNotification.has(employee.userId) ? (
                           <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -390,7 +390,7 @@ export const InvalidAttendanceSection: React.FC<InvalidAttendanceSectionProps> =
                         {employee.invalidRecords.map((record, idx) => (
                           <div
                             key={idx}
-                            className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between"
+                            className="flex flex-col gap-2 rounded-lg border border-blue-200/65 bg-panel p-3 sm:flex-row sm:items-center sm:justify-between"
                           >
                             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
                               <div className="flex items-center gap-2">

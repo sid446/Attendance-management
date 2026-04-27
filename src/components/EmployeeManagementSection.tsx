@@ -151,7 +151,7 @@ function EmployeeManagementTableSkeleton() {
         </thead>
         <tbody className="divide-y divide-slate-200 animate-pulse">
           {Array.from({ length: rowCount }, (_, i) => (
-            <tr key={i} className={i % 2 === 0 ? 'bg-slate-50/80' : 'bg-white'}>
+            <tr key={i} className={i % 2 === 0 ? 'bg-sky-100/40' : 'bg-panel/80'}>
               <td className="px-4 py-3.5">
                 <div className="flex items-center gap-3">
                   <div className="h-9 w-9 shrink-0 rounded-xl bg-slate-200/80" />
@@ -1864,9 +1864,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
 
   const renderSalaryFieldWithHistory = (field: SalaryHistoryFieldKey, label: string, theme: 'salary' | 'extended' = 'salary') => {
     const inputCls =
-      'w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
+      'w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
     const dateCls =
-      'w-full min-h-9 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 [color-scheme:light] shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
+      'w-full min-h-9 rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-xs text-slate-900 [color-scheme:light] shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
     const panelBorder = theme === 'extended' ? 'border-blue-200' : 'border-slate-200';
     const panelTitle = theme === 'extended' ? 'text-blue-900' : 'text-slate-800';
     const panelBtn =
@@ -1956,7 +1956,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         <button
           type="button"
           onClick={() => openSalaryRevisionPanel(field)}
-          className="mt-2 inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm hover:border-blue-200 hover:bg-blue-50/60 hover:text-blue-900"
+          className="mt-2 inline-flex items-center gap-1 rounded-md border border-blue-200/65 bg-panel px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm hover:border-blue-200 hover:bg-blue-50/60 hover:text-blue-900"
         >
           <Plus className="w-3.5 h-3.5" />
           Add new salary
@@ -1988,7 +1988,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               <button
                 type="button"
                 onClick={() => setSalaryRevisionPanel(null)}
-                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                className="rounded-md border border-blue-200/65 bg-panel px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
               >
                 Cancel
               </button>
@@ -2003,7 +2003,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   if (editingUser) {
     return (
       <section
-        className="employee-edit-date-inputs rounded-lg border border-slate-200 bg-white p-6 shadow-sm"
+        className="employee-edit-date-inputs rounded-lg border border-blue-200/65 bg-panel p-6 shadow-sm"
         aria-labelledby="edit-employee-heading"
       >
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -2133,7 +2133,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="text"
                     value={formData.odId || ''}
                     onChange={(e) => handleInputChange('odId', e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
 
@@ -2143,7 +2143,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="text"
                     value={formData.name || ''}
                     onChange={(e) => handleInputChange('name', e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
 
@@ -2153,7 +2153,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="email"
                     value={formData.email || ''}
                     onChange={(e) => handleInputChange('email', e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
 
@@ -2163,7 +2163,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="email"
                     value={formData.attendanceEmail || ''}
                     onChange={(e) => handleInputChange('attendanceEmail', e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
 
@@ -2174,7 +2174,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="number"
                       value={formData.articleCreditsAsOnJan26 ?? ''}
                       onChange={(e) => handleInputChange('articleCreditsAsOnJan26', e.target.value === '' ? undefined : Number(e.target.value))}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                       min="0"
                     />
                   </div>
@@ -2185,7 +2185,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   <select
                     value={formData.designation || ''}
                     onChange={(e) => handleInputChange('designation', e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   >
                     <option value="">Select designation</option>
                     {predefinedValues.designations.map((designation) => (
@@ -2202,7 +2202,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       handleInputChange('workingUnderPartner', e.target.value);
                       handleInputChange('team', e.target.value); // Auto-fill team from work partner
                     }}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   >
                     <option value="">Select work partner</option>
                     {predefinedValues.teams.map((team) => (
@@ -2221,7 +2221,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             workingUnderPartner: e.target.value,
                           }))
                         }
-                        className="w-full min-h-9 rounded border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 [color-scheme:light] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25"
+                        className="w-full min-h-9 rounded border border-slate-300 bg-panel px-3 py-2 text-xs text-slate-900 [color-scheme:light] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25"
                       />
                     </div>
                   )}
@@ -2264,7 +2264,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     <select
                       value={newEmploymentType}
                       onChange={e => setNewEmploymentType(e.target.value)}
-                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900 shadow-sm"
+                      className="rounded-md border border-blue-200/65 bg-panel px-2 py-1 text-sm text-slate-900 shadow-sm"
                     >
                       <option value="">Select Type</option>
                       <option value="fulltime">Full Time</option>
@@ -2275,7 +2275,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                         type="date"
                         value={newEmploymentTypeDate}
                         onChange={e => setNewEmploymentTypeDate(e.target.value)}
-                        className="min-h-9 rounded border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 [color-scheme:light]"
+                        className="min-h-9 rounded border border-slate-300 bg-panel px-2 py-1 text-sm text-slate-900 [color-scheme:light]"
                       />
                     <button
                       type="button"
@@ -2293,7 +2293,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="date"
                     value={toDateInputValue(formData.joiningDate)}
                     onChange={(e) => handleInputChange('joiningDate', e.target.value)}
-                    className="w-full min-h-10 rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 [color-scheme:light] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25"
+                    className="w-full min-h-10 rounded border border-slate-300 bg-panel px-3 py-2 text-sm text-slate-900 [color-scheme:light] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25"
                   />
                 </div>
                 
@@ -2320,7 +2320,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                         type="date"
                         value={toDateInputValue(formData.inactiveAsOf)}
                         onChange={(e) => handleInputChange('inactiveAsOf', e.target.value)}
-                        className="w-full max-w-xs min-h-10 rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 [color-scheme:light] focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500"
+                        className="w-full max-w-xs min-h-10 rounded border border-slate-300 bg-panel px-3 py-2 text-sm text-slate-900 [color-scheme:light] focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500"
                         required
                       />
                       <p className="text-xs text-slate-500 mt-1">
@@ -2351,7 +2351,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               </div>
 
               {(formData.schedules || []).map((entry, index) => (
-                <div key={index} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                <div key={index} className="rounded-lg border border-blue-200/65 bg-panel p-4 shadow-sm">
                   <div className="mb-4 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <label className="text-sm font-medium text-slate-700">Effective from</label>
@@ -2359,7 +2359,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                         type="date"
                         value={toDateInputValue(entry.effectiveFrom)}
                         onChange={(e) => handleEffectiveFromChange(index, e.target.value)}
-                        className="min-h-9 rounded border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 [color-scheme:light]"
+                        className="min-h-9 rounded border border-slate-300 bg-panel px-2 py-1 text-sm text-slate-900 [color-scheme:light]"
                       />
                     </div>
                     <button
@@ -2404,7 +2404,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.monday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'monday', 'inTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.monday?.isHoliday}
                           />
                         </div>
@@ -2414,7 +2414,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.monday?.outTime || '19:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'monday', 'outTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.monday?.isHoliday}
                           />
                         </div>
@@ -2453,7 +2453,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.tuesday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'tuesday', 'inTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.tuesday?.isHoliday}
                           />
                         </div>
@@ -2463,7 +2463,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.tuesday?.outTime || '19:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'tuesday', 'outTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.tuesday?.isHoliday}
                           />
                         </div>
@@ -2502,7 +2502,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.wednesday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'wednesday', 'inTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.wednesday?.isHoliday}
                           />
                         </div>
@@ -2512,7 +2512,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.wednesday?.outTime || '19:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'wednesday', 'outTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.wednesday?.isHoliday}
                           />
                         </div>
@@ -2551,7 +2551,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.thursday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'thursday', 'inTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.thursday?.isHoliday}
                           />
                         </div>
@@ -2561,7 +2561,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.thursday?.outTime || '19:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'thursday', 'outTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.thursday?.isHoliday}
                           />
                         </div>
@@ -2600,7 +2600,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.friday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'friday', 'inTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.friday?.isHoliday}
                           />
                         </div>
@@ -2610,7 +2610,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.friday?.outTime || '19:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'friday', 'outTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.friday?.isHoliday}
                           />
                         </div>
@@ -2649,7 +2649,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.saturday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'saturday', 'inTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.saturday?.isHoliday}
                           />
                         </div>
@@ -2659,7 +2659,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.saturday?.outTime || '13:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'saturday', 'outTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.saturday?.isHoliday}
                           />
                         </div>
@@ -2698,7 +2698,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.sunday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'sunday', 'inTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.sunday?.isHoliday}
                           />
                         </div>
@@ -2708,7 +2708,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.sunday?.outTime || '19:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'sunday', 'outTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                             disabled={entry.daily?.sunday?.isHoliday}
                           />
                         </div>
@@ -2750,7 +2750,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                         <select
                           value={(formData as any)[field.key] || ''}
                           onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         >
                           <option value="">Select {field.label.toLowerCase()}</option>
                           {predefinedValues.designations.map((value) => (
@@ -2766,7 +2766,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                         <select
                           value={(formData as any)[field.key] || ''}
                           onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         >
                           <option value="">Select {field.label.toLowerCase()}</option>
                           {predefinedValues.paidFrom.map((value) => (
@@ -2782,7 +2782,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                         <select
                           value={(formData as any)[field.key] || ''}
                           onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         >
                           <option value="">Select {field.label.toLowerCase()}</option>
                           {predefinedValues.categories.map((value) => (
@@ -2799,7 +2799,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                           type="text"
                           value={(formData as any)[field.key] || ''}
                           onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         />
                       </div>
                     );
@@ -2813,7 +2813,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                           type="text"
                           value={formData.address1 || ''}
                           onChange={(e) => handleInputChange('address1', e.target.value)}
-                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         />
                       </div>
                       <div>
@@ -2822,7 +2822,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                           type="text"
                           value={formData.address2 || ''}
                           onChange={(e) => handleInputChange('address2', e.target.value)}
-                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         />
                       </div>
                 </div>
@@ -2835,7 +2835,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any).emergencyContactNo || ''}
                       onChange={(e) => handleInputChange('emergencyContactNo' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
@@ -2844,7 +2844,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any).emergencyContactRelation || ''}
                       onChange={(e) => handleInputChange('emergencyContactRelation' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
@@ -2853,7 +2853,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="date"
                       value={toDateInputValue((formData as any).anniversaryDate)}
                       onChange={(e) => handleInputChange('anniversaryDate' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
@@ -2862,7 +2862,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any).aadhaarNumber || ''}
                       onChange={(e) => handleInputChange('aadhaarNumber' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
@@ -2871,7 +2871,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any).panNumber || ''}
                       onChange={(e) => handleInputChange('panNumber' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                 </div>
@@ -2898,7 +2898,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any)[field.key] || ''}
                       onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                 ))}
@@ -2915,7 +2915,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                           registeredUnderPartner: e.target.value,
                         }))
                       }
-                      className="w-full min-h-9 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 [color-scheme:light] shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full min-h-9 rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-xs text-slate-900 [color-scheme:light] shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                 )}
@@ -2927,7 +2927,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="date"
                     value={toDateInputValue(formData.articleshipStartDate)}
                     onChange={(e) => handleInputChange('articleshipStartDate', e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                  <div>
@@ -2936,7 +2936,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="date"
                     value={toDateInputValue(formData.nextAttemptDueDate)}
                     onChange={(e) => handleInputChange('nextAttemptDueDate', e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
 
@@ -2964,7 +2964,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                         placeholder="Value"
                         value={item.value}
                         onChange={(e) => handleExtraInfoChange(idx, 'value', e.target.value)}
-                        className="col-span-8 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        className="col-span-8 rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-xs text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                       />
                     </div>
                   ))}
@@ -2988,7 +2988,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="text"
                     value={(formData as any).bankName || ''}
                     onChange={(e) => handleInputChange('bankName' as keyof User, e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                 <div>
@@ -2997,7 +2997,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="text"
                     value={(formData as any).branchName || ''}
                     onChange={(e) => handleInputChange('branchName' as keyof User, e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                 <div>
@@ -3006,7 +3006,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="text"
                     value={(formData as any).accountNumber || ''}
                     onChange={(e) => handleInputChange('accountNumber' as keyof User, e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                 <div>
@@ -3015,7 +3015,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="text"
                     value={(formData as any).ifscCode || ''}
                     onChange={(e) => handleInputChange('ifscCode' as keyof User, e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                 <div>
@@ -3024,7 +3024,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="text"
                     value={(formData as any).accountType || ''}
                     onChange={(e) => handleInputChange('accountType' as keyof User, e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                 <div>
@@ -3033,7 +3033,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="text"
                     value={(formData as any).accountHolderName || ''}
                     onChange={(e) => handleInputChange('accountHolderName' as keyof User, e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
               </div>
@@ -3060,7 +3060,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="text"
                     value={(formData as any).otherAllowance || ''}
                     onChange={(e) => handleInputChange('otherAllowance' as keyof User, e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                 <div>
@@ -3069,7 +3069,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="text"
                     value={(formData as any).bonus || ''}
                     onChange={(e) => handleInputChange('bonus' as keyof User, e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                 <div>
@@ -3078,7 +3078,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="text"
                     value={(formData as any).incentive || ''}
                     onChange={(e) => handleInputChange('incentive' as keyof User, e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                 {renderSalaryFieldWithHistory('totalSalaryPerMonth', 'Total Salary (P/M)', 'salary')}
@@ -3095,7 +3095,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="text"
                     value={(formData as any).pf || ''}
                     onChange={(e) => handleInputChange('pf' as keyof User, e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                 <div>
@@ -3104,7 +3104,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="text"
                     value={(formData as any).esi || ''}
                     onChange={(e) => handleInputChange('esi' as keyof User, e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                 <div>
@@ -3113,7 +3113,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="text"
                     value={(formData as any).gratuity || ''}
                     onChange={(e) => handleInputChange('gratuity' as keyof User, e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                 
@@ -3196,7 +3196,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                         <select
                           value={(formData as any)[field.key] || ''}
                           onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         >
                           <option value="">Select {field.label.toLowerCase()}</option>
                           {predefinedValues.paidFrom.map((value) => (
@@ -3212,7 +3212,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                         <select
                           value={(formData as any)[field.key] || ''}
                           onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         >
                           <option value="">Select {field.label.toLowerCase()}</option>
                           {predefinedValues.categories.map((value) => (
@@ -3229,7 +3229,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                           type="text"
                           value={(formData as any)[field.key] || ''}
                           onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         />
                       </div>
                     );
@@ -3243,7 +3243,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                           type="text"
                           value={formData.address1 || ''}
                           onChange={(e) => handleInputChange('address1', e.target.value)}
-                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         />
                       </div>
                       <div>
@@ -3252,7 +3252,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                           type="text"
                           value={formData.address2 || ''}
                           onChange={(e) => handleInputChange('address2', e.target.value)}
-                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         />
                       </div>
                 </div>
@@ -3265,7 +3265,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any).emergencyContactNo || ''}
                       onChange={(e) => handleInputChange('emergencyContactNo' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
@@ -3274,7 +3274,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any).emergencyContactRelation || ''}
                       onChange={(e) => handleInputChange('emergencyContactRelation' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
@@ -3283,7 +3283,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="date"
                       value={toDateInputValue((formData as any).anniversaryDate)}
                       onChange={(e) => handleInputChange('anniversaryDate' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
@@ -3292,7 +3292,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any).bankName || ''}
                       onChange={(e) => handleInputChange('bankName' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
@@ -3301,7 +3301,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any).branchName || ''}
                       onChange={(e) => handleInputChange('branchName' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
@@ -3310,7 +3310,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any).accountNumber || ''}
                       onChange={(e) => handleInputChange('accountNumber' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
@@ -3319,7 +3319,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any).ifscCode || ''}
                       onChange={(e) => handleInputChange('ifscCode' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
@@ -3328,7 +3328,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any).accountType || ''}
                       onChange={(e) => handleInputChange('accountType' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
@@ -3337,7 +3337,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any).accountHolderName || ''}
                       onChange={(e) => handleInputChange('accountHolderName' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
@@ -3346,7 +3346,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any).aadhaarNumber || ''}
                       onChange={(e) => handleInputChange('aadhaarNumber' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
@@ -3355,7 +3355,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any).panNumber || ''}
                       onChange={(e) => handleInputChange('panNumber' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                 </div>
@@ -3386,7 +3386,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any)[field.key] || ''}
                       onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                 ))}
@@ -3398,7 +3398,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="date"
                     value={toDateInputValue(formData.articleshipStartDate)}
                     onChange={(e) => handleInputChange('articleshipStartDate', e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                  <div>
@@ -3407,7 +3407,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="date"
                     value={toDateInputValue(formData.nextAttemptDueDate)}
                     onChange={(e) => handleInputChange('nextAttemptDueDate', e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
 
@@ -3430,7 +3430,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     value={changeReason}
                     onChange={(e) => setChangeReason(e.target.value)}
                     placeholder="Enter reason for the changes being made..."
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     rows={3}
                   />
                 </div>
@@ -3550,7 +3550,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   if (isAddingNew) {
     return (
       <section
-        className="employee-edit-date-inputs rounded-lg border border-slate-200 bg-white p-6 shadow-sm"
+        className="employee-edit-date-inputs rounded-lg border border-blue-200/65 bg-panel p-6 shadow-sm"
         aria-labelledby="add-employee-heading"
       >
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -3644,7 +3644,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="text"
                     value={formData.odId || ''}
                     onChange={(e) => handleInputChange('odId', e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     required
                   />
                 </div>
@@ -3655,7 +3655,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="text"
                     value={formData.name || ''}
                     onChange={(e) => handleInputChange('name', e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     required
                   />
                 </div>
@@ -3666,7 +3666,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="email"
                     value={formData.email || ''}
                     onChange={(e) => handleInputChange('email', e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     required
                   />
                 </div>
@@ -3676,7 +3676,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   <select
                     value={formData.designation || ''}
                     onChange={(e) => handleInputChange('designation', e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   >
                     <option value="">Select designation</option>
                     {predefinedValues.designations.map((designation) => (
@@ -3693,7 +3693,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       handleInputChange('workingUnderPartner', e.target.value);
                       handleInputChange('team', e.target.value); // Auto-fill team from work partner
                     }}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   >
                     <option value="">Select work partner</option>
                     {predefinedValues.teams.map((team) => (
@@ -3719,7 +3719,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="date"
                     value={toDateInputValue(formData.joiningDate)}
                     onChange={(e) => handleInputChange('joiningDate', e.target.value)}
-                    className="w-full min-h-10 rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 [color-scheme:light] focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500"
+                    className="w-full min-h-10 rounded border border-slate-300 bg-panel px-3 py-2 text-sm text-slate-900 [color-scheme:light] focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500"
                     required
                   />
                 </div>
@@ -3746,7 +3746,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                         type="date"
                         value={toDateInputValue(formData.inactiveAsOf)}
                         onChange={(e) => handleInputChange('inactiveAsOf', e.target.value)}
-                        className="w-full max-w-xs min-h-10 rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 [color-scheme:light] focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500"
+                        className="w-full max-w-xs min-h-10 rounded border border-slate-300 bg-panel px-3 py-2 text-sm text-slate-900 [color-scheme:light] focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500"
                         required
                       />
                     </div>
@@ -3774,7 +3774,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               </div>
 
               {(formData.schedules || []).map((entry, index) => (
-                <div key={index} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                <div key={index} className="rounded-lg border border-blue-200/65 bg-panel p-4 shadow-sm">
                   <div className="mb-4 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <label className="text-sm font-medium text-slate-700">Effective from</label>
@@ -3782,7 +3782,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                         type="date"
                         value={toDateInputValue(entry.effectiveFrom)}
                         onChange={(e) => handleEffectiveFromChange(index, e.target.value)}
-                        className="min-h-9 rounded border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 [color-scheme:light]"
+                        className="min-h-9 rounded border border-slate-300 bg-panel px-2 py-1 text-sm text-slate-900 [color-scheme:light]"
                       />
                     </div>
                     <button
@@ -3827,7 +3827,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.monday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'monday', 'inTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.monday?.isHoliday}
                           />
                         </div>
@@ -3837,7 +3837,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.monday?.outTime || '19:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'monday', 'outTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.monday?.isHoliday}
                           />
                         </div>
@@ -3876,7 +3876,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.tuesday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'tuesday', 'inTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.tuesday?.isHoliday}
                           />
                         </div>
@@ -3886,7 +3886,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.tuesday?.outTime || '19:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'tuesday', 'outTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.tuesday?.isHoliday}
                           />
                         </div>
@@ -3925,7 +3925,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.wednesday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'wednesday', 'inTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.wednesday?.isHoliday}
                           />
                         </div>
@@ -3935,7 +3935,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.wednesday?.outTime || '19:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'wednesday', 'outTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.wednesday?.isHoliday}
                           />
                         </div>
@@ -3974,7 +3974,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.thursday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'thursday', 'inTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.thursday?.isHoliday}
                           />
                         </div>
@@ -3984,7 +3984,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.thursday?.outTime || '19:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'thursday', 'outTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.thursday?.isHoliday}
                           />
                         </div>
@@ -4023,7 +4023,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.friday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'friday', 'inTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.friday?.isHoliday}
                           />
                         </div>
@@ -4033,7 +4033,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.friday?.outTime || '19:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'friday', 'outTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.friday?.isHoliday}
                           />
                         </div>
@@ -4072,7 +4072,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.saturday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'saturday', 'inTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.saturday?.isHoliday}
                           />
                         </div>
@@ -4082,7 +4082,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.saturday?.outTime || '13:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'saturday', 'outTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.saturday?.isHoliday}
                           />
                         </div>
@@ -4121,7 +4121,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.sunday?.inTime || '10:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'sunday', 'inTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.sunday?.isHoliday}
                           />
                         </div>
@@ -4131,7 +4131,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             type="time"
                             value={entry.daily?.sunday?.outTime || '19:45'}
                             onChange={(e) => handleScheduleEntryChange(index, 'sunday', 'outTime', e.target.value)}
-                            className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
+                            className="w-full rounded border border-blue-200/65 bg-panel px-2 py-1.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/25"
                             disabled={entry.daily?.sunday?.isHoliday}
                           />
                         </div>
@@ -4173,7 +4173,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                         <select
                           value={(formData as any)[field.key] || ''}
                           onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         >
                           <option value="">Select {field.label.toLowerCase()}</option>
                           {predefinedValues.paidFrom.map((value) => (
@@ -4189,7 +4189,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                         <select
                           value={(formData as any)[field.key] || ''}
                           onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         >
                           <option value="">Select {field.label.toLowerCase()}</option>
                           {predefinedValues.categories.map((value) => (
@@ -4206,7 +4206,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                           type="text"
                           value={(formData as any)[field.key] || ''}
                           onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         />
                       </div>
                     );
@@ -4220,7 +4220,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                           type="text"
                           value={formData.address1 || ''}
                           onChange={(e) => handleInputChange('address1', e.target.value)}
-                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         />
                       </div>
                       <div>
@@ -4229,7 +4229,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                           type="text"
                           value={formData.address2 || ''}
                           onChange={(e) => handleInputChange('address2', e.target.value)}
-                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                          className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                         />
                       </div>
                 </div>
@@ -4242,7 +4242,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any).emergencyContactNo || ''}
                       onChange={(e) => handleInputChange('emergencyContactNo' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
@@ -4251,7 +4251,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any).emergencyContactRelation || ''}
                       onChange={(e) => handleInputChange('emergencyContactRelation' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
@@ -4260,7 +4260,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="date"
                       value={toDateInputValue((formData as any).anniversaryDate)}
                       onChange={(e) => handleInputChange('anniversaryDate' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
@@ -4269,7 +4269,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any).bankName || ''}
                       onChange={(e) => handleInputChange('bankName' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
@@ -4278,7 +4278,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any).branchName || ''}
                       onChange={(e) => handleInputChange('branchName' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
@@ -4287,7 +4287,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any).accountNumber || ''}
                       onChange={(e) => handleInputChange('accountNumber' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
@@ -4296,7 +4296,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any).ifscCode || ''}
                       onChange={(e) => handleInputChange('ifscCode' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
@@ -4305,7 +4305,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any).accountType || ''}
                       onChange={(e) => handleInputChange('accountType' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
@@ -4314,7 +4314,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any).accountHolderName || ''}
                       onChange={(e) => handleInputChange('accountHolderName' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
@@ -4323,7 +4323,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any).aadhaarNumber || ''}
                       onChange={(e) => handleInputChange('aadhaarNumber' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                   <div>
@@ -4332,7 +4332,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any).panNumber || ''}
                       onChange={(e) => handleInputChange('panNumber' as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                 </div>
@@ -4363,7 +4363,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       type="text"
                       value={(formData as any)[field.key] || ''}
                       onChange={(e) => handleInputChange(field.key as keyof User, e.target.value)}
-                      className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                 ))}
@@ -4375,7 +4375,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="date"
                     value={toDateInputValue(formData.articleshipStartDate)}
                     onChange={(e) => handleInputChange('articleshipStartDate', e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
                  <div>
@@ -4384,7 +4384,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                     type="date"
                     value={toDateInputValue(formData.nextAttemptDueDate)}
                     onChange={(e) => handleInputChange('nextAttemptDueDate', e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
 
@@ -4424,7 +4424,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       aria-labelledby="employee-management-heading"
     >
       {/* Header: hierarchy, plain language, numbered workflow (orientation before action) */}
-      <div className="rounded-md border border-slate-200 bg-white px-4 py-5 shadow-sm sm:px-6">
+      <div className="rounded-md border border-blue-200/65 bg-panel px-4 py-5 shadow-sm sm:px-6">
         <div className="space-y-4">
           <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start lg:gap-6">
             <header className="min-w-0 flex-1 space-y-2">
@@ -4516,7 +4516,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   placeholder="Search by name, email, code…"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-10 pr-10 text-sm text-slate-900 shadow-sm transition-colors placeholder:text-slate-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25"
+                  className="w-full rounded-lg border border-blue-200/65 bg-panel py-2.5 pl-10 pr-10 text-sm text-slate-900 shadow-sm transition-colors placeholder:text-slate-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25"
                 />
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" aria-hidden />
                 {searchTerm && (
@@ -4534,7 +4534,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               <div className="relative min-w-[10rem] flex-1 sm:max-w-[11rem]">
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm text-slate-800 shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/25"
+                  className="flex w-full items-center justify-between rounded-lg border border-blue-200/65 bg-panel px-3 py-2.5 text-left text-sm text-slate-800 shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/25"
                   onClick={() => setShowDesignationDropdown((v) => !v)}
                   aria-expanded={showDesignationDropdown}
                   aria-haspopup="listbox"
@@ -4544,7 +4544,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 </button>
                 {showDesignationDropdown && (
                   <div
-                    className="absolute z-20 mt-2 max-h-56 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+                    className="absolute z-20 mt-2 max-h-56 w-full overflow-y-auto rounded-lg border border-blue-200/65 bg-panel py-1 shadow-lg"
                     role="listbox"
                     aria-label="Filter by designation"
                   >
@@ -4581,7 +4581,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               <div className="relative min-w-[10rem] flex-1 sm:max-w-[11rem]">
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm text-slate-800 shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/25"
+                  className="flex w-full items-center justify-between rounded-lg border border-blue-200/65 bg-panel px-3 py-2.5 text-left text-sm text-slate-800 shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/25"
                   onClick={() => setShowTeamDropdown((v) => !v)}
                   aria-expanded={showTeamDropdown}
                   aria-haspopup="listbox"
@@ -4591,7 +4591,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 </button>
                 {showTeamDropdown && (
                   <div
-                    className="absolute z-20 mt-2 max-h-56 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+                    className="absolute z-20 mt-2 max-h-56 w-full overflow-y-auto rounded-lg border border-blue-200/65 bg-panel py-1 shadow-lg"
                     role="listbox"
                     aria-label="Filter by team"
                   >
@@ -4628,7 +4628,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               <div className="relative min-w-[10rem] flex-1 sm:max-w-[11rem]">
                 <button
                   type="button"
-                  className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-left text-sm text-slate-800 shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/25"
+                  className="flex w-full items-center justify-between rounded-lg border border-blue-200/65 bg-panel px-3 py-2.5 text-left text-sm text-slate-800 shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/25"
                   onClick={() => setShowUserDropdown((v) => !v)}
                   aria-expanded={showUserDropdown}
                   aria-haspopup="listbox"
@@ -4638,7 +4638,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 </button>
                 {showUserDropdown && (
                   <div
-                    className="absolute z-20 mt-2 max-h-56 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+                    className="absolute z-20 mt-2 max-h-56 w-full overflow-y-auto rounded-lg border border-blue-200/65 bg-panel py-1 shadow-lg"
                     role="listbox"
                     aria-label="Filter by employee name"
                   >
@@ -4707,7 +4707,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 className={`rounded-lg border p-2.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/30 ${
                   showSettingsPanel
                     ? 'border-blue-200 bg-blue-50 text-blue-900'
-                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    : 'border-blue-200/65 bg-panel text-slate-600 hover:bg-slate-50'
                 }`}
                 aria-pressed={showSettingsPanel}
                 aria-label="Settings: custom fields, predefined values, Excel format"
@@ -4718,7 +4718,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               <button
                 type="button"
                 onClick={handleExportToExcel}
-                className="rounded-lg border border-slate-200 bg-white p-2.5 text-slate-600 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                className="rounded-lg border border-blue-200/65 bg-panel p-2.5 text-slate-600 transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
                 aria-label="Export roster to Excel"
               >
                 <Download className="h-4 w-4" aria-hidden />
@@ -4728,7 +4728,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 className={`rounded-lg border p-2.5 text-sm transition-colors focus-within:ring-2 focus-within:ring-blue-500/30 ${
                   isUploading
                     ? 'cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400'
-                    : 'cursor-pointer border-slate-200 bg-white text-slate-600 hover:bg-blue-50/80 hover:text-blue-800'
+                    : 'cursor-pointer border-blue-200/65 bg-panel text-slate-600 hover:bg-blue-50/80 hover:text-blue-800'
                 }`}
                 title={isUploading ? 'Uploading…' : 'Bulk upload from Excel'}
               >
@@ -4767,7 +4767,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           {filterDesignations.map((designation) => (
             <span
               key={designation}
-              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-800"
+              className="inline-flex items-center gap-1.5 rounded-md border border-blue-200/65 bg-panel px-2.5 py-1 text-xs text-slate-800"
             >
               {designation}
               <button
@@ -4783,7 +4783,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           {filterTeams.map((team) => (
             <span
               key={team}
-              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-800"
+              className="inline-flex items-center gap-1.5 rounded-md border border-blue-200/65 bg-panel px-2.5 py-1 text-xs text-slate-800"
             >
               {team}
               <button
@@ -4799,7 +4799,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           {filterUsers.map((user) => (
             <span
               key={user}
-              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-800"
+              className="inline-flex items-center gap-1.5 rounded-md border border-blue-200/65 bg-panel px-2.5 py-1 text-xs text-slate-800"
             >
               {user}
               <button
@@ -4829,7 +4829,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
 
       {/* Settings — same light system as the rest of the console */}
       {showSettingsPanel && (
-        <div className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-hidden rounded-md border border-blue-200/65 bg-panel shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3 sm:px-5">
             <div className="flex items-center gap-2">
               <Settings className="h-4 w-4 text-slate-600" aria-hidden />
@@ -4922,7 +4922,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       placeholder="New field name…"
                       value={newExtraLabel}
                       onChange={(e) => setNewExtraLabel(e.target.value)}
-                      className="min-w-[10rem] flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25 sm:max-w-xs"
+                      className="min-w-[10rem] flex-1 rounded-lg border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25 sm:max-w-xs"
                     />
                     <button
                       type="button"
@@ -5114,7 +5114,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                           className={`rounded-lg border px-3 py-2 text-xs ${
                             column === 'Name'
                               ? 'border-emerald-200 bg-emerald-50 font-medium text-emerald-900'
-                              : 'border-slate-200 bg-white text-slate-700'
+                              : 'border-blue-200/65 bg-panel text-slate-700'
                           }`}
                         >
                           {column}
@@ -5217,7 +5217,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       )}
 
       {/* Employee table */}
-      <div className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-md border border-blue-200/65 bg-panel shadow-sm">
         <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
           <p className="text-sm font-medium text-slate-800" id="employee-table-summary">
             {filteredUsers.length === users.length
@@ -5269,7 +5269,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                 {filteredUsers.map((user, index) => (
                   <tr
                     key={user._id}
-                    className={`transition-colors hover:bg-slate-50/90 ${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}`}
+                    className={`transition-colors hover:bg-sky-100/50 ${index % 2 === 0 ? 'bg-panel/90' : 'bg-sky-100/35'}`}
                   >
                     <td className="px-4 py-3.5">
                       <div className="flex items-center gap-3">
@@ -5355,7 +5355,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           }}
         >
           <div
-            className="max-h-[80vh] w-full max-w-md overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl"
+            className="max-h-[80vh] w-full max-w-md overflow-hidden rounded-xl border border-blue-200/65 bg-panel shadow-xl"
             role="dialog"
             aria-modal="true"
             aria-labelledby="predefined-modal-title"
@@ -5479,7 +5479,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                       value: e.target.value,
                     })
                   }
-                  className="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25"
+                  className="flex-1 rounded-lg border border-blue-200/65 bg-panel px-4 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleAddPredefinedValue();
                   }}

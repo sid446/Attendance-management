@@ -255,7 +255,7 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
   );
 
   const inputCls =
-    'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
+    'w-full rounded-lg border border-blue-200/65 bg-panel px-3 py-2.5 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
 
   return (
     <section className="space-y-5 p-6 text-slate-900" aria-labelledby="client-place-heading">
@@ -318,7 +318,7 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
             if (e.target === e.currentTarget) setShowAddForm(false);
           }}
         >
-          <div className="max-h-[90vh] w-full max-w-lg overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-hidden rounded-xl border border-blue-200/65 bg-panel shadow-xl">
             <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
               <h3 className="font-semibold text-slate-900">Add new client place</h3>
               <button
@@ -398,7 +398,7 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
                 <button
                   type="button"
                   onClick={() => setShowAddForm(false)}
-                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="rounded-lg border border-blue-200/65 bg-panel px-4 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 >
                   Cancel
                 </button>
@@ -423,7 +423,7 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
             if (e.target === e.currentTarget) setEditingPlace(null);
           }}
         >
-          <div className="max-h-[90vh] w-full max-w-lg overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-hidden rounded-xl border border-blue-200/65 bg-panel shadow-xl">
             <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
               <h3 className="font-semibold text-slate-900">Edit client place</h3>
               <button
@@ -504,7 +504,7 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
                 <button
                   type="button"
                   onClick={() => setEditingPlace(null)}
-                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="rounded-lg border border-blue-200/65 bg-panel px-4 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 >
                   Cancel
                 </button>
@@ -532,7 +532,7 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
             }
           }}
         >
-          <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+          <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-blue-200/65 bg-panel shadow-xl">
             <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
               <div>
                 <h3 className="font-semibold text-slate-900">Assign employees</h3>
@@ -608,7 +608,7 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
                         key={emp._id}
                         type="button"
                         onClick={() => handleAssignEmployee(emp._id)}
-                        className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white p-2.5 text-left transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        className="flex w-full items-center justify-between rounded-lg border border-blue-200/65 bg-panel p-2.5 text-left transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                       >
                         <div>
                           <span className="font-medium text-slate-900">{emp.name}</span>
@@ -630,7 +630,7 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
                   setAssigningPlace(null);
                   setSearchTerm('');
                 }}
-                className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-full rounded-lg border border-blue-200/65 bg-panel px-4 py-2.5 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               >
                 Done
               </button>
@@ -656,8 +656,8 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
           {clientPlaces.map((place) => (
             <article
               key={place._id}
-              className={`flex flex-col overflow-hidden rounded-xl border bg-white shadow-sm transition-opacity ${
-                place.isActive ? 'border-slate-200' : 'border-rose-200 opacity-90'
+              className={`flex flex-col overflow-hidden rounded-xl border bg-panel shadow-sm transition-opacity ${
+                place.isActive ? 'border-blue-200/65' : 'border-rose-200 opacity-90'
               }`}
             >
               <div className="flex-1 p-4">
@@ -715,7 +715,7 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
                   <button
                     type="button"
                     onClick={() => setEditingPlace(place)}
-                    className="rounded-lg border border-transparent p-1.5 text-slate-600 transition-colors hover:border-slate-200 hover:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="rounded-lg border border-transparent p-1.5 text-slate-600 transition-colors hover:border-blue-200/70 hover:bg-panel focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     title="Edit"
                   >
                     <Edit className="h-4 w-4" aria-hidden />
@@ -753,14 +753,14 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
                     <button
                       type="button"
                       onClick={() => handleReactivatePlace(place._id)}
-                      className="rounded-lg border border-emerald-200 bg-white px-2 py-1 text-xs font-medium text-emerald-800 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/25"
+                      className="rounded-lg border border-emerald-200 bg-panel px-2 py-1 text-xs font-medium text-emerald-800 transition-colors hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-500/25"
                     >
                       Reactivate
                     </button>
                     <button
                       type="button"
                       onClick={() => handlePermanentDeletePlace(place._id)}
-                      className="rounded-lg border border-red-200 bg-white px-2 py-1 text-xs font-medium text-red-800 transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500/25"
+                      className="rounded-lg border border-red-200 bg-panel px-2 py-1 text-xs font-medium text-red-800 transition-colors hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500/25"
                       title="Permanently delete"
                     >
                       Delete permanently

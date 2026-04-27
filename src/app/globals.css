@@ -1,22 +1,23 @@
 @import "tailwindcss";
 
 /*
- * Eye-friendly reading palette (light default)
- * - Canvas: soft cool-gray (less glare than pure #fff)
- * - Ink: blue-gray charcoal (softer than pure black, still WCAG-friendly on white/off-white)
- * - Accent reference for selection/focus (matches app blue; use Tailwind blues in components)
+ * Light blue workspace (light default)
+ * - Canvas / surface / panel: layered blues (main column vs nested cards)
  */
 :root {
-  --background: #eceff3;
-  --foreground: #2a3341;
-  --surface: #fbfbfd;
-  --foreground-muted: #5a6572;
-  --border-readable: #d5dbe3;
+  --background: #9ec0ea;
+  --foreground: #0c1f36;
+  --surface: #c9ddf5;
+  --panel: #e8f2fc;
+  --foreground-muted: #355a82;
+  --border-readable: #7aa3d4;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-panel: var(--panel);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }

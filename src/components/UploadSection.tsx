@@ -219,7 +219,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   };
 
   return (
-    <section className="rounded-md border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+    <section className="rounded-md border border-blue-200/65 bg-panel p-5 shadow-sm sm:p-6">
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <h1 className="text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">Upload attendance Excel</h1>
@@ -248,7 +248,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
             <button
               type="button"
               onClick={() => setShowMachineDropdown(!showMachineDropdown)}
-              className="flex min-h-[2.5rem] w-full items-center justify-between rounded-md border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-800 transition-colors hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/25"
+              className="flex min-h-[2.5rem] w-full items-center justify-between rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-left text-sm text-slate-800 transition-colors hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/25"
             >
               <div className="flex min-w-0 items-center gap-2">
                 <FileSpreadsheet className="h-4 w-4 shrink-0 text-blue-600" aria-hidden />
@@ -260,7 +260,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
             </button>
 
             {showMachineDropdown && (
-              <div className="absolute top-full z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-md border border-slate-200 bg-white shadow-lg">
+              <div className="absolute top-full z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-md border border-blue-200/65 bg-panel shadow-lg">
                 {renderDropdownContent()}
               </div>
             )}
@@ -269,7 +269,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
           <button
             type="button"
             onClick={() => setShowAddForm(!showAddForm)}
-            className="inline-flex shrink-0 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-blue-200 hover:bg-blue-50 hover:text-blue-900"
+            className="inline-flex shrink-0 items-center gap-2 rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-blue-200 hover:bg-blue-50 hover:text-blue-900"
           >
             <ChevronRight className={`h-4 w-4 transition-transform ${showAddForm ? 'rotate-90' : ''}`} aria-hidden />
             Add machine format
@@ -293,7 +293,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                   type="text"
                   value={newMachine.machineId}
                   onChange={(e) => setNewMachine(prev => ({ ...prev, machineId: e.target.value }))}
-                  className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   placeholder="e.g., machine3"
                   required
                 />
@@ -304,7 +304,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                   type="text"
                   value={newMachine.name}
                   onChange={(e) => setNewMachine(prev => ({ ...prev, name: e.target.value }))}
-                  className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   placeholder="e.g., BioMax Pro"
                   required
                 />
@@ -316,7 +316,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                 type="text"
                 value={newMachine.description}
                 onChange={(e) => setNewMachine(prev => ({ ...prev, description: e.target.value }))}
-                className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 placeholder="e.g., Advanced biometric attendance system"
                 required
               />
@@ -327,7 +327,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                 type="text"
                 value={newMachine.headers}
                 onChange={(e) => setNewMachine(prev => ({ ...prev, headers: e.target.value }))}
-                className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 placeholder="e.g., ID, Name, Date, Check In, Check Out"
                 required
               />
@@ -356,7 +356,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                   });
                   setAddError(null);
                 }}
-                className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-50"
+                className="rounded-md border border-blue-200/65 bg-panel px-4 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-50"
               >
                 Cancel
               </button>
@@ -416,7 +416,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
-          <label className="flex flex-1 cursor-pointer items-center justify-between gap-2 rounded-lg border border-dashed border-slate-300 bg-white px-4 py-3 transition-colors hover:border-blue-300 hover:bg-blue-50/40">
+          <label className="flex flex-1 cursor-pointer items-center justify-between gap-2 rounded-lg border border-dashed border-slate-300 bg-panel px-4 py-3 transition-colors hover:border-blue-300 hover:bg-blue-50/40">
             <div className="flex min-w-0 items-center gap-2">
               <Upload className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
               <span className="truncate text-xs text-slate-600">
@@ -430,7 +430,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
             type="button"
             onClick={() => onProcessFixedFile?.()}
             disabled={!selectedFixedFile || processing}
-            className="inline-flex shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-800 transition-colors hover:border-blue-200 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-[10rem]"
+            className="inline-flex shrink-0 items-center justify-center rounded-md border border-blue-200/65 bg-panel px-4 py-2.5 text-xs font-semibold text-slate-800 transition-colors hover:border-blue-200 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-[10rem]"
           >
             {processing ? 'Processing…' : 'Process fixed sheet'}
           </button>
@@ -470,7 +470,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                 Your file should include these columns (header row is detected automatically).
               </p>
             </div>
-            <div className="max-h-80 overflow-y-auto bg-white p-4">
+            <div className="max-h-80 overflow-y-auto bg-panel p-4">
               {machineFormat === 'machine2' ? (
                 /* Special format preview for Machine 2 complex format */
                 <div className="space-y-3">
@@ -487,8 +487,8 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                       <span className="text-slate-500">Col B:</span> In Time
                       <span className="text-slate-500">Col C:</span> Out Time
                     </div>
-                    <div className="rounded bg-white px-2 py-1 text-slate-600 ring-1 ring-slate-200">John Doe | 01-01-1900 09:00:00 | 01-01-1900 18:00:00</div>
-                    <div className="rounded bg-white px-2 py-1 text-slate-600 ring-1 ring-slate-200">Jane Smith | 01-01-1900 09:30:00 | 01-01-1900 17:30:00</div>
+                    <div className="rounded bg-panel px-2 py-1 text-slate-600 ring-1 ring-slate-200">John Doe | 01-01-1900 09:00:00 | 01-01-1900 18:00:00</div>
+                    <div className="rounded bg-panel px-2 py-1 text-slate-600 ring-1 ring-slate-200">Jane Smith | 01-01-1900 09:30:00 | 01-01-1900 17:30:00</div>
                     <div className="mt-2 flex gap-4 rounded border-l-2 border-blue-500 bg-blue-50 px-2 py-1 text-slate-800">
                       <span className="text-slate-500">Col A:</span> Date :
                       <span className="text-slate-500">Col B:</span> 31-12-2025
@@ -516,8 +516,8 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                       <span className="text-slate-500">Col B:</span> In Time
                       <span className="text-slate-500">Col C:</span> Out Time
                     </div>
-                    <div className="rounded bg-white px-2 py-1 text-slate-600 ring-1 ring-slate-200">John Doe | 30-12-2025 08:42:00 | 30-12-2025 18:00:00</div>
-                    <div className="rounded bg-white px-2 py-1 text-slate-600 ring-1 ring-slate-200">Jane Smith | 30-12-2025 09:30:00 | 30-12-2025 17:30:00</div>
+                    <div className="rounded bg-panel px-2 py-1 text-slate-600 ring-1 ring-slate-200">John Doe | 30-12-2025 08:42:00 | 30-12-2025 18:00:00</div>
+                    <div className="rounded bg-panel px-2 py-1 text-slate-600 ring-1 ring-slate-200">Jane Smith | 30-12-2025 09:30:00 | 30-12-2025 17:30:00</div>
                     <div className="mt-2 flex gap-4 rounded border-l-2 border-blue-500 bg-blue-50 px-2 py-1 text-slate-800">
                       <span className="text-slate-500">Col A:</span> Date :
                       <span className="text-slate-500">Col B:</span> 31-12-2025
@@ -567,7 +567,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
             <AlertCircle className="h-4 w-4 text-red-600" aria-hidden />
             <span className="text-xs font-semibold text-red-900">Rows that did not import ({uploadErrors.length})</span>
           </div>
-          <div className="max-h-48 overflow-y-auto bg-white p-2">
+          <div className="max-h-48 overflow-y-auto bg-panel p-2">
             <table className="w-full text-left text-[11px]">
               <thead className="font-medium text-slate-600">
                 <tr>

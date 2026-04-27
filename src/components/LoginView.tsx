@@ -27,9 +27,9 @@ export const LoginView: React.FC<LoginViewProps> = ({
   error
 }) => {
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50/80 to-white text-slate-900 flex items-center justify-center p-6">
+    <div className="min-h-screen bg-gradient-to-b from-sky-400/50 via-blue-200/85 to-[var(--surface)] text-slate-900 flex items-center justify-center p-6">
       <div className="w-full max-w-md">
-        <div className="rounded-xl border border-slate-200 bg-white p-8 shadow-lg shadow-slate-200/60">
+        <div className="rounded-xl border border-blue-300/70 bg-[var(--panel)] p-8 shadow-lg shadow-blue-400/35">
           {/* Logo and Company Name */}
           <div className="flex flex-col items-center mb-6">
             <img src="/lg.png" alt="Asija Logo" className="w-20 h-20 object-contain mb-3" />

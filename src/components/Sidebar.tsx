@@ -21,8 +21,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout
 }) => {
   return (
-    <aside className="flex w-64 flex-col border-r border-slate-200/90 bg-white shadow-[1px_0_0_0_rgb(226_232_240_/_0.6)]">
-      <div className="flex items-center gap-2 border-b border-slate-200/90 px-4 py-3">
+    <aside className="flex w-64 flex-col border-r border-blue-300/80 bg-sky-200/70 shadow-[1px_0_0_0_rgb(96_165_250_/_0.45)]">
+      <div className="flex items-center gap-2 border-b border-blue-200/85 px-4 py-3">
         <img src="/lg.png" alt="Logo" className="w-12 h-12 object-contain flex-shrink-0" />
         <div>
           <div className="text-sm font-semibold tracking-wide text-slate-800">Asija and Associates LLP</div>
@@ -37,7 +37,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'employees'
               ? 'border border-blue-200 bg-blue-50 text-blue-900'
-              : 'text-slate-600 hover:bg-slate-100'
+              : 'text-slate-600 hover:bg-blue-100/75'
           }`}
         >
           <Users className="w-4 h-4" />
@@ -50,7 +50,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'employeeMasterUpload'
               ? 'border border-blue-200 bg-blue-50 text-blue-900'
-              : 'text-slate-600 hover:bg-slate-100'
+              : 'text-slate-600 hover:bg-blue-100/75'
           }`}
         >
           <FileSpreadsheet className="w-4 h-4" />
@@ -63,7 +63,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'summary'
               ? 'border border-blue-200 bg-blue-50 text-blue-900'
-              : 'text-slate-600 hover:bg-slate-100'
+              : 'text-slate-600 hover:bg-blue-100/75'
           }`}
         >
           <CheckCircle className="w-4 h-4" />
@@ -76,7 +76,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'employee'
               ? 'border border-blue-200 bg-blue-50 text-blue-900'
-              : 'text-slate-600 hover:bg-slate-100'
+              : 'text-slate-600 hover:bg-blue-100/75'
           }`}
         >
           <Clock className="w-4 h-4" />
@@ -89,7 +89,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'requests'
               ? 'border border-blue-200 bg-blue-50 text-blue-900'
-              : 'text-slate-600 hover:bg-slate-100'
+              : 'text-slate-600 hover:bg-blue-100/75'
           }`}
         >
           <Clock className="w-4 h-4" />
@@ -102,7 +102,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'invalid'
               ? 'border border-blue-200 bg-blue-50 text-blue-900'
-              : 'text-slate-600 hover:bg-slate-100'
+              : 'text-slate-600 hover:bg-blue-100/75'
           }`}
         >
           <AlertTriangle className="w-4 h-4" />
@@ -115,7 +115,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'leave'
               ? 'border border-blue-200 bg-blue-50 text-blue-900'
-              : 'text-slate-600 hover:bg-slate-100'
+              : 'text-slate-600 hover:bg-blue-100/75'
           }`}
         >
           <TrendingUp className="w-4 h-4" />
@@ -128,7 +128,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'articleCredits'
               ? 'border border-blue-200 bg-blue-50 text-blue-900'
-              : 'text-slate-600 hover:bg-slate-100'
+              : 'text-slate-600 hover:bg-blue-100/75'
           }`}
         >
           <FileSpreadsheet className="w-4 h-4" />
@@ -141,7 +141,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'fines'
               ? 'border border-blue-200 bg-blue-50 text-blue-900'
-              : 'text-slate-600 hover:bg-slate-100'
+              : 'text-slate-600 hover:bg-blue-100/75'
           }`}
         >
           <IndianRupee className="w-4 h-4" />
@@ -154,7 +154,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'holidays'
               ? 'border border-blue-200 bg-blue-50 text-blue-900'
-              : 'text-slate-600 hover:bg-slate-100'
+              : 'text-slate-600 hover:bg-blue-100/75'
           }`}
         >
           <Calendar className="w-4 h-4" />
@@ -167,7 +167,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'clientPlaces'
               ? 'border border-blue-200 bg-blue-50 text-blue-900'
-              : 'text-slate-600 hover:bg-slate-100'
+              : 'text-slate-600 hover:bg-blue-100/75'
           }`}
         >
           <MapPin className="w-4 h-4" />
@@ -180,7 +180,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'upload'
               ? 'border border-blue-200 bg-blue-50 text-blue-900'
-              : 'text-slate-600 hover:bg-slate-100'
+              : 'text-slate-600 hover:bg-blue-100/75'
           }`}
         >
           <Upload className="w-4 h-4" />
@@ -193,7 +193,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
             activeSection === 'backup'
               ? 'border border-blue-200 bg-blue-50 text-blue-900'
-              : 'text-slate-600 hover:bg-slate-100'
+              : 'text-slate-600 hover:bg-blue-100/75'
           }`}
         >
           <Database className="w-4 h-4" />
@@ -202,7 +202,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </nav>
 
       {uploadTotal > 0 && (
-        <div className="border-t border-slate-200/90 px-4 py-3 text-xs text-slate-500">
+        <div className="border-t border-blue-200/85 px-4 py-3 text-xs text-slate-500">
           <div className="mb-1 flex justify-between">
             <span>Last upload</span>
             <span>
@@ -215,7 +215,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       {/* Logout button */}
-      <div className="border-t border-slate-200/90 px-3 py-3">
+      <div className="border-t border-blue-200/85 px-3 py-3">
         <button
           type="button"
           onClick={onLogout}

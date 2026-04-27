@@ -103,7 +103,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
   );
 
   const selectCls =
-    'rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20';
+    'rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20';
 
   const handleRefresh = () => {
     void fetchLeaveBalances();
@@ -141,7 +141,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
         <button
           type="button"
           onClick={handleRefresh}
-          className="inline-flex shrink-0 items-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50"
+          className="inline-flex shrink-0 items-center gap-2 rounded-md border border-blue-200/65 bg-panel px-4 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50"
           disabled={loading || isLoading}
         >
           <RefreshCw className={`h-4 w-4 ${loading || isLoading ? 'animate-spin text-blue-600' : 'text-slate-600'}`} aria-hidden />
@@ -150,7 +150,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
       </header>
 
       <div
-        className="inline-flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm"
+        className="inline-flex flex-wrap gap-1 rounded-lg border border-blue-200/65 bg-panel p-0.5 shadow-sm"
         role="tablist"
         aria-label="Employee category"
       >
@@ -240,7 +240,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
         </div>
       </div>
 
-      <div className="flex flex-col flex-wrap gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-end">
+      <div className="flex flex-col flex-wrap gap-3 rounded-xl border border-blue-200/65 bg-panel p-4 shadow-sm md:flex-row md:items-end">
         <div className="relative min-w-[200px] flex-1 md:max-w-xs">
           <label htmlFor="leave-management-search" className="sr-only">
             Search by name or employee code
@@ -255,7 +255,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Search by name or code…"
-            className="w-full rounded-md border border-slate-200 bg-white py-2 pl-10 pr-3 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="w-full rounded-md border border-blue-200/65 bg-panel py-2 pl-10 pr-3 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           />
         </div>
 
@@ -298,7 +298,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
       </div>
 
       <section
-        className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+        className="overflow-hidden rounded-xl border border-blue-200/65 bg-panel shadow-sm"
         aria-labelledby="leave-balances-table-heading"
       >
         <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">

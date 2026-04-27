@@ -355,7 +355,7 @@ const AttendanceRequestsTable: React.FC<{
     'border-b border-slate-200 px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500';
   const tdCls = 'border-b border-slate-200 px-4 py-3 align-top';
   return (
-    <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
+    <div className="overflow-x-auto rounded-md border border-blue-200/65 bg-panel">
       <table className="w-full min-w-[1100px] border-collapse text-left text-sm">
         <thead className="bg-slate-50">
           <tr>
@@ -373,7 +373,7 @@ const AttendanceRequestsTable: React.FC<{
             {isAdminView && <th className={thCls}>Actions</th>}
           </tr>
         </thead>
-        <tbody className="bg-white">
+        <tbody className="bg-panel">
           {rangeGroups.map((group) => (
             <tr key={`range-${group.ids.join('-')}`} className="transition-colors hover:bg-slate-50/80">
               <td className={tdCls}>
@@ -783,7 +783,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
         role="presentation"
       >
         <div
-          className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl"
+          className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg border border-blue-200/65 bg-panel shadow-xl"
           onClick={(e) => e.stopPropagation()}
           role="dialog"
           aria-modal="true"
@@ -811,7 +811,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
               </label>
               <textarea
                 id="approval-remarks"
-                className="w-full rounded-md border border-slate-200 bg-white p-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                className="w-full rounded-md border border-blue-200/65 bg-panel p-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 rows={3}
                 value={approvalRemarks}
                 onChange={(e) => setApprovalRemarks(e.target.value)}
@@ -863,7 +863,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
                     step="0.01"
                     min="0"
                     max={maxVal || undefined}
-                    className={`w-full rounded-md border bg-white p-2 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
+                    className={`w-full rounded-md border bg-panel p-2 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
                       approvalValueError ? 'border-red-500 focus:border-red-500' : 'border-slate-200 focus:border-blue-500'
                     }`}
                     value={approvalValue}
@@ -889,7 +889,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
             <div className="mt-4 flex justify-end gap-2 border-t border-slate-200 pt-4">
               <button
                 onClick={closeApprovalModal}
-                className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50"
+                className="rounded-md border border-blue-200/65 bg-panel px-4 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50"
                 type="button"
               >
                 Cancel
@@ -1058,12 +1058,12 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
   };
 
   const selectCls =
-    'rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20';
+    'rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20';
 
   if (loading) {
     return (
       <section
-        className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+        className="rounded-xl border border-blue-200/65 bg-panel p-6 shadow-sm"
         aria-busy="true"
         aria-label="Loading attendance requests"
       >
@@ -1077,7 +1077,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
 
   return (
     <section
-      className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+      className="rounded-xl border border-blue-200/65 bg-panel p-6 shadow-sm"
       aria-labelledby="attendance-requests-heading"
     >
       <header className="mb-5 space-y-3">
@@ -1108,7 +1108,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
 
           <div className="flex flex-wrap items-center gap-2">
             <span className="sr-only">View layout</span>
-            <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5 shadow-sm" role="group" aria-label="View layout">
+            <div className="inline-flex rounded-md border border-blue-200/65 bg-panel p-0.5 shadow-sm" role="group" aria-label="View layout">
           <button
             type="button"
             onClick={() => setViewMode('cards')}
@@ -1183,7 +1183,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
           <button
             type="button"
             onClick={exportToExcel}
-            className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="inline-flex items-center gap-2 rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             title="Export to Excel"
           >
             <Download className="h-4 w-4 text-slate-500" aria-hidden />
@@ -1236,7 +1236,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
           {filteredIndividualRequests.map((request) => (
             <div
               key={request._id}
-              className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50/60"
+              className="rounded-lg border border-blue-200/65 bg-panel p-4 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50/60"
             >
               <div className="mb-3 flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">

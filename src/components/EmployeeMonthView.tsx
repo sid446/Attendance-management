@@ -87,6 +87,15 @@ function resolveAttendanceCellStyle(input: {
     };
   }
 
+  if (status === 'Missed Entry') {
+    return {
+      borderClass: 'border-red-400',
+      bgClass: 'bg-red-200',
+      badgeClass: 'border-red-500 bg-red-300 text-red-950',
+      Icon: XCircle,
+    };
+  }
+
   const isHalfDay =
     status === 'HalfDay' ||
     status === 'Half Day (HD)' ||
@@ -556,13 +565,13 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
     subtitleProp === undefined ? defaultSubtitle : subtitleProp;
 
   const fieldCls =
-    'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
+    'w-full rounded-lg border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
   const navBtnCls =
-    'rounded-lg border border-slate-200 bg-white p-1.5 text-slate-700 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50 sm:p-2';
+    'rounded-lg border border-blue-200/65 bg-panel p-1.5 text-slate-700 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50 sm:p-2';
 
   return (
     <section
-      className={`space-y-4 rounded-xl border border-slate-200 bg-white p-4 text-slate-900 shadow-sm sm:space-y-5 sm:p-6 ${sectionClassName}`.trim()}
+      className={`space-y-4 rounded-xl border border-blue-200/65 bg-panel p-4 text-slate-900 shadow-sm sm:space-y-5 sm:p-6 ${sectionClassName}`.trim()}
     >
       {/* Monthly summary row */}
       {showSummaryStrip && summaryFromList && summaryFromList.summary && (
@@ -642,7 +651,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                   {editModalOpen && editDate && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
                       <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setEditModalOpen(false)} />
-                      <div className="relative w-[min(620px,95%)] rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-900 shadow-xl">
+                      <div className="relative w-[min(620px,95%)] rounded-xl border border-blue-200/65 bg-panel p-4 text-sm text-slate-900 shadow-xl">
                         <h3 className="mb-2 font-semibold text-slate-900">Edit attendance — {editDate}</h3>
                         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                           <div>
@@ -722,7 +731,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                           <button
                             type="button"
                             onClick={() => setEditModalOpen(false)}
-                            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
+                            className="rounded-lg border border-blue-200/65 bg-panel px-3 py-1.5 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
                           >
                             Cancel
                           </button>
@@ -788,7 +797,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="request-detail-title"
-                        className="relative w-[min(420px,95%)] rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-900 shadow-xl"
+                        className="relative w-[min(420px,95%)] rounded-xl border border-blue-200/65 bg-panel p-4 text-sm text-slate-900 shadow-xl"
                       >
                         <h3 id="request-detail-title" className="mb-3 font-semibold text-slate-900">
                           Request details
@@ -841,7 +850,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                           <button
                             type="button"
                             onClick={() => setRequestDetailModal(null)}
-                            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
+                            className="rounded-lg border border-blue-200/65 bg-panel px-3 py-1.5 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
                           >
                             Close
                           </button>
@@ -932,7 +941,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
             >
               <ChevronLeft className="h-4 w-4" aria-hidden />
             </button>
-            <span className="min-w-[50px] rounded-lg border border-slate-200 bg-white px-1.5 py-1.5 text-center text-xs font-semibold text-slate-900 shadow-sm sm:min-w-[80px] sm:px-3 sm:py-2 sm:text-sm">
+            <span className="min-w-[50px] rounded-lg border border-blue-200/65 bg-panel px-1.5 py-1.5 text-center text-xs font-semibold text-slate-900 shadow-sm sm:min-w-[80px] sm:px-3 sm:py-2 sm:text-sm">
               {selectedYear}
             </span>
             <button
@@ -1045,11 +1054,11 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
           <div className="relative">
             {isLoading && selectedEmployeeId && selectedMonthYear && (
               <div
-                className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/70 backdrop-blur-sm"
+                className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-panel/80 backdrop-blur-sm"
                 aria-live="polite"
                 aria-busy="true"
               >
-                <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 shadow-lg">
+                <div className="flex items-center gap-2 rounded-xl border border-blue-200/65 bg-panel px-4 py-3 text-sm text-slate-800 shadow-lg">
                   <Loader2 className="h-5 w-5 animate-spin text-blue-600" aria-hidden />
                   <span>Loading attendance…</span>
                 </div>
@@ -1084,6 +1093,20 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                 const approvedReq = approvedRequests.length > 0 ? calendarData.approvedRequestMap.get(day) : null;
                 let status: any = rec?.status;
                 const type = rec?.typeOfPresence;
+
+                // Treat partial punch records (only one side marked) as Absent for red highlight.
+                const normalizedType = String(type || '').toLowerCase();
+                const isNonWorkingType =
+                  normalizedType.includes('leave') ||
+                  normalizedType.includes('holiday') ||
+                  normalizedType.includes('week off') ||
+                  normalizedType.includes('weekoff');
+                const inMarked = !!rec?.inTime && rec.inTime !== '00:00';
+                const outMarked = !!rec?.outTime && rec.outTime !== '00:00';
+                const isPartialPunch = rec ? inMarked !== outMarked : false;
+                if (isPartialPunch && !isNonWorkingType) {
+                  status = 'Missed Entry';
+                }
                 
                 // Override status if 00:00 - 00:00 (Absent)
                 if (rec && rec.inTime === '00:00' && rec.outTime === '00:00') {
@@ -1123,7 +1146,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                 })();
 
                 let borderClass = 'border-slate-200';
-                let bgClass = 'bg-white';
+                let bgClass = 'bg-sky-50/90';
                 let badgeClass = 'border-slate-200 bg-slate-100 text-slate-600';
                 let Icon: React.ElementType = XCircle;
 
@@ -1275,6 +1298,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                               return isLate ? 'Late' : 'In';
                             }
                             if (status === 'Absent') return 'Absent';
+                            if (status === 'Missed Entry') return 'Missed';
                             if (status === 'Leave' || status === 'On leave') return 'Leave';
                             if (status === 'Paid Leave') return 'Paid Lv';
                             if (status === 'Unpaid Leave') return 'Unpaid';
@@ -1364,6 +1388,10 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
             <span className="text-slate-700">Absent</span>
           </div>
           <div className="flex items-center gap-2">
+            <div className="h-4 w-4 rounded border border-red-500 bg-red-300" />
+            <span className="text-slate-700">Missed entry (single punch)</span>
+          </div>
+          <div className="flex items-center gap-2">
             <div className="h-4 w-4 rounded border border-sky-300 bg-sky-100" />
             <span className="text-slate-700">Paid leave</span>
           </div>
@@ -1376,7 +1404,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
             <span className="text-slate-700">Holiday / week off</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="h-4 w-4 rounded border border-slate-300 bg-white" />
+            <div className="h-4 w-4 rounded border border-slate-300 bg-panel" />
             <span className="text-slate-700">No record</span>
           </div>
           <div className="flex items-center gap-2">
