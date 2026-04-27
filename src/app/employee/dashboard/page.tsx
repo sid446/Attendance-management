@@ -200,6 +200,7 @@ export default function EmployeeDashboard() {
 
   // Future Request Modal State
   const [showFutureModal, setShowFutureModal] = useState(false);
+  const [showHolidayListModal, setShowHolidayListModal] = useState(false);
   const [futureStartDate, setFutureStartDate] = useState('');
   const [futureEndDate, setFutureEndDate] = useState('');
   const [futureType, setFutureType] = useState('On leave');
@@ -1052,6 +1053,14 @@ export default function EmployeeDashboard() {
     );
   }
 
+  const selectedYear = Number(monthYear.split('-')[0] || new Date().getFullYear());
+  const holidaysForSelectedYear = holidays
+    .filter((h) => {
+      const d = new Date(h.date);
+      return !Number.isNaN(d.getTime()) && d.getFullYear() === selectedYear;
+    })
+    .sort((a, b) => Number(new Date(a.date).getTime()) - Number(new Date(b.date).getTime()));
+
   const pendingRequestCount = employeeRequests.filter((r) => r.status === 'Pending').length;
 
   // Correction request dropdown options (simplified)
@@ -1159,6 +1168,15 @@ export default function EmployeeDashboard() {
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+            <button
+              type="button"
+              className="relative hidden md:inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-800 sm:text-sm"
+              onClick={() => setShowHolidayListModal(true)}
+              title={`Holiday list (${selectedYear})`}
+            >
+              <CalendarDays className="h-4 w-4 opacity-80" aria-hidden />
+              Holidays
+            </button>
             <button
               type="button"
               className="relative hidden md:inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-800 sm:text-sm"
@@ -1513,6 +1531,55 @@ export default function EmployeeDashboard() {
       </div>
 
       {/* Correction Modal */}
+      {showHolidayListModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4">
+          <div className="w-full max-w-lg bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+            <div className="p-3 sm:p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-950">
+              <h3 className="font-semibold text-white text-sm sm:text-base">Holiday List ({selectedYear})</h3>
+              <button
+                onClick={() => setShowHolidayListModal(false)}
+                className="text-zinc-500 hover:text-white"
+                aria-label="Close holiday list"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 sm:p-6">
+              {holidaysForSelectedYear.length === 0 ? (
+                <div className="rounded-lg border border-zinc-700 bg-zinc-950 p-4 text-sm text-zinc-300">
+                  No active holidays configured for {selectedYear}.
+                </div>
+              ) : (
+                <ul className="space-y-2">
+                  {holidaysForSelectedYear.map((holiday) => {
+                    const d = new Date(holiday.date);
+                    const dateLabel = Number.isNaN(d.getTime())
+                      ? holiday.date
+                      : d.toLocaleDateString('en-IN', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                        });
+                    return (
+                      <li
+                        key={`${holiday.date}-${holiday.name}`}
+                        className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-medium text-zinc-100">{holiday.name}</p>
+                          <p className="shrink-0 text-xs text-zinc-400">{dateLabel}</p>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              <p className="mt-4 text-xs text-zinc-500">Read-only list. Holiday edits are managed by HR/Admin.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {selectedDate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4">
           <div className="w-full max-w-md bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
