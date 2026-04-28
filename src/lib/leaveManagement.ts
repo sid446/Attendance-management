@@ -672,3 +672,72 @@ export async function getMonthlyLeaveSummary(
     };
   }
 }
+
+/**
+ * Remove paid leave transactions for a specific date (reversal when attendance corrected)
+ * - Deletes 'used' LeaveTransaction entries for the given date
+ * - Adjusts user's usedAfterJan26 and remaining balance safely (no negatives)
+ * - Rebuilds monthly snapshots for affected month
+ */
+export async function removePaidLeaveForDate(
+  userId: mongoose.Types.ObjectId,
+  date: string
+): Promise<void> {
+  try {
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(String(date))) {
+      // nothing to do for non-date references
+      return;
+    }
+
+    const user = await User.findById(userId);
+    if (!user) return;
+
+    const monthYear = date.slice(0, 7);
+
+    // Find all 'used' transactions for this user/date
+    const txs = await LeaveTransaction.find({ userId, date, type: 'used' });
+    if (!txs || txs.length === 0) return;
+
+    const totalAmount = txs.reduce((s, t) => s + (Number(t.amount) || 0), 0);
+    if (totalAmount <= 0) {
+      // Nothing to adjust
+      await LeaveTransaction.deleteMany({ _id: { $in: txs.map(t => t._id) } });
+      try {
+        const ledger = await import('@/lib/leaveLedger');
+        await ledger.createMonthlySnapshots(monthYear);
+      } catch (e) {
+        console.error('Failed to rebuild snapshots after deleting zero-amount txs:', e);
+      }
+      return;
+    }
+
+    // Delete the transactions
+    await LeaveTransaction.deleteMany({ _id: { $in: txs.map(t => t._id) } });
+
+    // Adjust user's usedAfterJan26 (safely clamp to >= 0)
+    const prevUsedAfter = Number(user.leaveBalance?.usedAfterJan26 || 0);
+    const newUsedAfter = Math.max(0, Number((prevUsedAfter - totalAmount).toFixed(3)));
+
+    const balanceAsOfJan26 = Number(user.leaveBalance?.balanceAsOfJan26 || 0);
+    const currentEarned = Number(user.leaveBalance?.earned || 0);
+    const currentUsed = Number(user.leaveBalance?.used || 0);
+    const newRemaining = Math.max(0, Number((balanceAsOfJan26 + currentEarned - currentUsed - newUsedAfter).toFixed(3)));
+
+    await User.findByIdAndUpdate(userId, {
+      'leaveBalance.usedAfterJan26': newUsedAfter,
+      'leaveBalance.remaining': newRemaining,
+      'leaveBalance.lastUpdated': new Date(),
+    });
+
+    // Rebuild snapshot for the affected month (best-effort)
+    try {
+      const ledger = await import('@/lib/leaveLedger');
+      await ledger.createMonthlySnapshots(monthYear);
+    } catch (e) {
+      console.error('Failed to rebuild monthly snapshot after removing paid leave for date', date, e);
+    }
+  } catch (error) {
+    console.error('Error removing paid leave transactions for date:', date, error);
+    throw error;
+  }
+}

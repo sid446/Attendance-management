@@ -84,6 +84,12 @@ function ReviewAllPageContent() {
     return status.includes('half') || status.includes('leave') || requestedStatus === 'On leave';
   };
 
+  // Only leave requests should be grouped together in the review list.
+  const isLeaveRequestType = (requestedStatus: string): boolean => {
+    const status = requestedStatus.toLowerCase();
+    return status.includes('leave') || requestedStatus === 'On leave';
+  };
+
   // Get max value for all selected groups (use the highest max among them)
   const getMaxValueForSelected = (): number => {
     if (selectedGroupIds.length === 0) return 1;
@@ -119,10 +125,10 @@ function ReviewAllPageContent() {
   const groupRequests = (requests: Request[]): RequestGroup[] => {
     const groupMap: { [key: string]: Request[] } = {};
     requests.forEach(req => {
-      // For time corrections (requests with startTime/endTime), don't group - each date is separate
-      const hasTimeCorrection = req.startTime && req.endTime;
-      const timeKey = hasTimeCorrection ? `${req.startTime}-${req.endTime}` : 'no-time';
-      const key = `${req.userName}-${req.requestedStatus}-${timeKey}`;
+      // Leave requests can be grouped by employee and status; everything else stays separate.
+      const key = isLeaveRequestType(req.requestedStatus)
+        ? `${req.userName}-${req.requestedStatus}`
+        : req._id;
       if (!groupMap[key]) groupMap[key] = [];
       groupMap[key].push(req);
     });

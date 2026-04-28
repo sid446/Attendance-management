@@ -196,6 +196,22 @@ export async function POST(request: NextRequest) {
                     };
                 }
 
+                                // If existing record was a paid leave and the approved action moves it to non-leave,
+                                // remove prior 'used' leave transactions so snapshots stay consistent.
+                                const prevRec = attendance.records.get(date);
+                                const prevValue = prevRec ? (typeof prevRec.value === 'string' ? parseFloat(prevRec.value) : (prevRec.value || 0)) : 0;
+                                const prevIsPaidLeave = !!prevRec && (prevValue >= 1 || (prevRec.typeOfPresence && String(prevRec.typeOfPresence).toLowerCase().includes('leave')));
+                                const newIsLeaveRequest = (requestedStatus || '').toLowerCase().includes('leave') || (requestedStatus || '').toLowerCase().includes('absent') || requestedStatus === 'On leave';
+                                if (prevIsPaidLeave && !newIsLeaveRequest) {
+                                    try {
+                                        const { removePaidLeaveForDate } = await import('@/lib/leaveManagement');
+                                        await removePaidLeaveForDate(userId, date);
+                                        console.log(`Removed prior paid leave transactions for ${userId} on ${date} (bulk HR)`);
+                                    } catch (e) {
+                                        console.error('Failed to remove prior paid leave transactions in bulk-action', e);
+                                    }
+                                }
+
                                 // Fetch user schedule for the day early so mapping logic can use it
                                 const userObj = await User.findById(userId);
                                 let scheduledInTime = '';

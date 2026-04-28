@@ -109,6 +109,47 @@ const TIMED_CATEGORIES = [
   'Present - client place'
 ];
 
+const CORRECTION_TIME_REQUIRED_PREFIXES = [
+  'Present - in office',
+  'Half Day',
+  'WFH',
+  'Present - outstation',
+  'Present - client place',
+];
+
+const TIME_INPUT_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+function parseTimeToMinutes(time: string): number | null {
+  if (!TIME_INPUT_PATTERN.test(time)) return null;
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+function isTimeRangeValid(startTime: string, endTime: string): boolean {
+  const startMinutes = parseTimeToMinutes(startTime);
+  const endMinutes = parseTimeToMinutes(endTime);
+  return startMinutes !== null && endMinutes !== null && startMinutes < endMinutes;
+}
+
+function requiresCorrectionTimePair(status: string): boolean {
+  const normalized = status.trim().toLowerCase();
+  return CORRECTION_TIME_REQUIRED_PREFIXES.some((prefix) =>
+    normalized.startsWith(prefix.toLowerCase())
+  );
+}
+
+function getCorrectionTimeDraft(dayRecord?: AttendanceRecord | null) {
+  const startTime = dayRecord?.inTime && dayRecord.inTime !== '00:00' ? dayRecord.inTime : '';
+  const endTime = dayRecord?.outTime && dayRecord.outTime !== '00:00' ? dayRecord.outTime : '';
+
+  return {
+    startTime,
+    endTime,
+    lockStartTime: Boolean(startTime && !endTime),
+    lockEndTime: Boolean(endTime && !startTime),
+  };
+}
+
 export default function EmployeeDashboard() {
   const [activeTab, setActiveTab] = useState<
     'dashboard' | 'attendance' | 'clientPunch' | 'employees'
@@ -228,6 +269,15 @@ export default function EmployeeDashboard() {
   const [holidays, setHolidays] = useState<{ date: string; name: string }[]>([]);
   /** Populated user from attendance API (schedules, employment type, etc.) for summary-aligned math */
   const [attendanceUser, setAttendanceUser] = useState<User | null>(null);
+  const selectedDayRecord = useMemo(
+    () => employeeDays.find((day) => day.date === selectedDate) ?? null,
+    [employeeDays, selectedDate]
+  );
+  const selectedCorrectionTimeDraft = useMemo(
+    () => getCorrectionTimeDraft(selectedDayRecord),
+    [selectedDayRecord]
+  );
+  const correctionStatusRequiresTimePair = requiresCorrectionTimePair(requestStatus);
 
   useEffect(() => {
     (async () => {
@@ -718,6 +768,7 @@ export default function EmployeeDashboard() {
       // Past date - handle correction request
       // Find the attendance record for this date
       const dayRecord = employeeDays.find(d => d.date === date);
+      const timeDraft = getCorrectionTimeDraft(dayRecord);
 
       // Check if correction request is allowed
       // Allowed when: Absent, Half Day, Holiday/Week Off, or in/out time is missing
@@ -752,8 +803,8 @@ export default function EmployeeDashboard() {
         setRequestStatus('On leave');
       }
       setRequestReason('');
-      setStartTime('');
-      setEndTime('');
+      setStartTime(timeDraft.startTime);
+      setEndTime(timeDraft.endTime);
     }
   };
 
@@ -763,6 +814,34 @@ export default function EmployeeDashboard() {
       alert('Please provide a reason for your attendance correction request.');
       return;
     }
+
+    if (correctionStatusRequiresTimePair) {
+      if (!startTime || !endTime) {
+        alert('Please fill both in time and out time for this request.');
+        return;
+      }
+
+      const startMinutes = parseTimeToMinutes(startTime);
+      const endMinutes = parseTimeToMinutes(endTime);
+      if (startMinutes === null || endMinutes === null) {
+        alert('Please enter valid 24-hour times.');
+        return;
+      }
+      if (startMinutes >= endMinutes) {
+        alert('In time must be earlier than out time.');
+        return;
+      }
+
+      if (selectedCorrectionTimeDraft.lockStartTime && startTime !== selectedCorrectionTimeDraft.startTime) {
+        alert('Original in time is locked for this date. Only enter the missing out time.');
+        return;
+      }
+      if (selectedCorrectionTimeDraft.lockEndTime && endTime !== selectedCorrectionTimeDraft.endTime) {
+        alert('Original out time is locked for this date. Only enter the missing in time.');
+        return;
+      }
+    }
+
     let finalStartTime = startTime;
     let finalEndTime = endTime;
     // Determine if selectedDate is Sunday or holiday (from DB)
@@ -861,6 +940,10 @@ export default function EmployeeDashboard() {
       }
       if (!futureStartTime || !futureEndTime) {
         alert('Please provide Start Time and End Time.');
+        return;
+      }
+      if (!isTimeRangeValid(futureStartTime, futureEndTime)) {
+        alert('Start time must be earlier than end time.');
         return;
       }
     }
@@ -1021,7 +1104,7 @@ export default function EmployeeDashboard() {
               alt=""
               width={72}
               height={72}
-              className="h-[4.5rem] w-[4.5rem] object-contain drop-shadow-[0_0_28px_rgba(16,185,129,0.12)]"
+              className="h-18 w-18 object-contain drop-shadow-[0_0_28px_rgba(16,185,129,0.12)]"
             />
           </div>
           <div className="flex items-center justify-center gap-1.5" aria-hidden>
@@ -1190,7 +1273,7 @@ export default function EmployeeDashboard() {
               <span className="relative inline-flex shrink-0">
                 <ClipboardList className="h-4 w-4 opacity-80" aria-hidden />
                 {partnerPendingReviewCount > 0 && (
-                  <span className="absolute -right-2 -top-2 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white shadow-sm">
+                  <span className="absolute -right-2 -top-2 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white shadow-sm">
                     {partnerPendingReviewCount > 99 ? '99+' : partnerPendingReviewCount}
                   </span>
                 )}
@@ -1256,7 +1339,7 @@ export default function EmployeeDashboard() {
             transition-[transform,width] duration-200 ease-out
             ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
             md:relative md:translate-x-0 md:z-0
-            ${desktopSidebarCollapsed ? 'md:w-[4.5rem]' : 'md:w-56'}
+            ${desktopSidebarCollapsed ? 'md:w-18' : 'md:w-56'}
             shrink-0 px-2 py-4 md:py-6
           `}
         >
@@ -1337,7 +1420,7 @@ export default function EmployeeDashboard() {
             <span className="relative inline-flex shrink-0">
               <ClipboardList className="h-5 w-5 opacity-90" aria-hidden />
               {partnerPendingReviewCount > 0 && (
-                <span className="absolute -right-2.5 -top-2 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white shadow-sm">
+                <span className="absolute -right-2.5 -top-2 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white shadow-sm">
                   {partnerPendingReviewCount > 99 ? '99+' : partnerPendingReviewCount}
                 </span>
               )}
@@ -1603,7 +1686,7 @@ export default function EmployeeDashboard() {
                 </select>
               </div>
 
-              {(requestStatus !== 'On leave' && requestStatus !== 'Present - outstation') && (
+              {correctionStatusRequiresTimePair && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-zinc-300">Start Time</label>
@@ -1611,6 +1694,7 @@ export default function EmployeeDashboard() {
                       type="time"
                       value={startTime}
                       onChange={(e) => setStartTime(e.target.value)}
+                      disabled={selectedCorrectionTimeDraft.lockStartTime}
                       className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2.5 text-zinc-200 outline-none focus:border-emerald-500 text-sm sm:text-base"
                     />
                   </div>
@@ -1620,10 +1704,21 @@ export default function EmployeeDashboard() {
                       type="time"
                       value={endTime}
                       onChange={(e) => setEndTime(e.target.value)}
+                      disabled={selectedCorrectionTimeDraft.lockEndTime}
                       className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2.5 text-zinc-200 outline-none focus:border-emerald-500 text-sm sm:text-base"
                     />
                   </div>
                 </div>
+              )}
+
+              {correctionStatusRequiresTimePair && (
+                <p className="text-xs text-zinc-500">
+                  {selectedCorrectionTimeDraft.lockStartTime && !selectedCorrectionTimeDraft.lockEndTime
+                    ? 'Original in time is preserved. Fill only the missing out time.'
+                    : selectedCorrectionTimeDraft.lockEndTime && !selectedCorrectionTimeDraft.lockStartTime
+                      ? 'Original out time is preserved. Fill only the missing in time.'
+                      : 'Enter both times in 24-hour format. In time must be earlier than out time.'}
+                </p>
               )}
 
               <div className="space-y-2">
@@ -1761,6 +1856,12 @@ export default function EmployeeDashboard() {
                     />
                   </div>
                 </div>
+              )}
+
+              {TIMED_CATEGORIES.includes(futureType) && (
+                <p className="text-xs text-zinc-500">
+                  Start time must be earlier than end time.
+                </p>
               )}
 
               <div className="space-y-2">

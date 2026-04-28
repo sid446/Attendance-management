@@ -161,6 +161,25 @@ export async function POST(request: NextRequest) {
         value: 0
       };
 
+      // If this date was previously counted as a paid leave and is now being
+      // changed to a non-leave status, remove prior paid-leave transactions
+      // so the ledger and snapshots reflect the correction.
+      try {
+        const wasOnLeave = existingRec && (String(existingRec.typeOfPresence || '').toLowerCase().includes('leave') || Number(existingRec.value || 0) >= 1);
+        const newIsLeave = (attendanceRequest.requestedStatus || '').toLowerCase().includes('leave') || (attendanceRequest.requestedStatus || '').toLowerCase().includes('absent') || attendanceRequest.requestedStatus === 'On leave';
+        if (wasOnLeave && !newIsLeave) {
+          try {
+            const lm = await import('@/lib/leaveManagement');
+            await lm.removePaidLeaveForDate(attendanceRequest.userId, attendanceRequest.date);
+            console.log(`[LEAVE DEBUG] Removed prior paid-leave transactions for ${attendanceRequest.userId} on ${attendanceRequest.date}`);
+          } catch (e) {
+            console.error('Failed to remove prior paid-leave transactions on approval:', e);
+          }
+        }
+      } catch (e) {
+        console.error('Error while checking/removing prior leave transactions:', e);
+      }
+
       // Update the attendance record with the requested status
       rec.typeOfPresence = attendanceRequest.requestedStatus;
 

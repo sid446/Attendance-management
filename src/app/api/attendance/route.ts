@@ -389,6 +389,26 @@ export async function POST(request: NextRequest) {
           attendance.summary = calculateSummary(attendance.records as any, user);
           await attendance.save();
 
+          // If this date was previously a paid 'On leave' but the new upload
+          // changed it to a non-leave type, remove earlier paid-leave transactions
+          // so ledger and snapshots reflect the corrected status.
+          try {
+            const prev = existingRecordBeforeUpdate;
+            const wasOnLeave = prev && (String(prev.typeOfPresence || '').toLowerCase().includes('leave') || Number(prev.value || 0) >= 1);
+            const nowIsLeave = (typeOfPresence === 'On leave' || typeOfPresence === 'Absent');
+            if (wasOnLeave && !nowIsLeave) {
+              try {
+                const lm = await import('@/lib/leaveManagement');
+                await lm.removePaidLeaveForDate(user._id, isoDate);
+                console.log(`[LEAVE DEBUG] Removed prior paid-leave transactions for ${user._id} on ${isoDate} due to re-upload change`);
+              } catch (e) {
+                console.error('Failed to remove prior paid-leave transactions on re-upload:', e);
+              }
+            }
+          } catch (e) {
+            console.error('Error while checking/removing prior leave transactions on upload:', e);
+          }
+
           // Collect absent/leave days that were newly uploaded and not already paid leave.
           const isLeaveCandidateType = typeOfPresence === 'Absent' || typeOfPresence === 'On leave';
           const wasAlreadyPaidLeave = Boolean(

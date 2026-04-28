@@ -4,6 +4,34 @@ import AttendanceRequest from '@/models/AttendanceRequest';
 import User from '@/models/User';
 import { transporter, mailOptions } from '@/lib/mailer';
 
+const TIME_REQUIRED_PREFIXES = [
+  'Present - in office',
+  'Half Day',
+  'WFH',
+  'Present - outstation',
+  'Present - client place'
+];
+
+const ZERO_TIME_PREFIXES = ['On leave', 'Weekoff - special allowance'];
+
+const TIME_INPUT_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+function parseTimeToMinutes(time: string): number | null {
+  if (!TIME_INPUT_PATTERN.test(time)) return null;
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+function requiresTimePair(requestType: string): boolean {
+  const normalized = requestType.trim().toLowerCase();
+  return TIME_REQUIRED_PREFIXES.some((prefix) => normalized.startsWith(prefix.toLowerCase()));
+}
+
+function isZeroTimeRequest(requestType: string): boolean {
+  const normalized = requestType.trim().toLowerCase();
+  return ZERO_TIME_PREFIXES.some((prefix) => normalized.startsWith(prefix.toLowerCase()));
+}
+
 export async function POST(request: NextRequest) {
   try {
     await dbConnect();
@@ -33,6 +61,55 @@ export async function POST(request: NextRequest) {
 
     const start = new Date(startDate);
     const end = new Date(endDate);
+
+    const needsTimes = requiresTimePair(requestType);
+    const zeroTimeRequest = isZeroTimeRequest(requestType);
+    const hasStartTime = typeof startTime === 'string' && startTime.trim() !== '';
+    const hasEndTime = typeof endTime === 'string' && endTime.trim() !== '';
+
+    if (needsTimes) {
+      if (!hasStartTime || !hasEndTime) {
+        return NextResponse.json(
+          { success: false, error: 'This request type requires both start time and end time.' },
+          { status: 400 }
+        );
+      }
+
+      const startMinutes = parseTimeToMinutes(startTime);
+      const endMinutes = parseTimeToMinutes(endTime);
+      if (startMinutes === null || endMinutes === null) {
+        return NextResponse.json(
+          { success: false, error: 'Invalid time format. Use 24-hour HH:MM.' },
+          { status: 400 }
+        );
+      }
+      if (startMinutes >= endMinutes) {
+        return NextResponse.json(
+          { success: false, error: 'Start time must be earlier than end time.' },
+          { status: 400 }
+        );
+      }
+    } else if (zeroTimeRequest) {
+      if ((hasStartTime || hasEndTime) && !(startTime === '00:00' && endTime === '00:00')) {
+        return NextResponse.json(
+          { success: false, error: 'This request type should not include manual time values.' },
+          { status: 400 }
+        );
+      }
+    } else if (hasStartTime || hasEndTime) {
+      const startMinutes = hasStartTime ? parseTimeToMinutes(startTime) : null;
+      const endMinutes = hasEndTime ? parseTimeToMinutes(endTime) : null;
+      if (
+        startMinutes === null ||
+        endMinutes === null ||
+        startMinutes >= endMinutes
+      ) {
+        return NextResponse.json(
+          { success: false, error: 'Invalid time range.' },
+          { status: 400 }
+        );
+      }
+    }
     
     // Validate dates
     if (isNaN(start.getTime()) || isNaN(end.getTime())) {

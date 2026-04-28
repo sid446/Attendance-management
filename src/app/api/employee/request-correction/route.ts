@@ -4,6 +4,27 @@ import AttendanceRequest from '@/models/AttendanceRequest';
 import User from '@/models/User';
 import { transporter, mailOptions } from '@/lib/mailer';
 
+const TIME_REQUIRED_PREFIXES = [
+  'Present - in office',
+  'Half Day',
+  'WFH',
+  'Present - outstation',
+  'Present - client place'
+];
+
+const TIME_INPUT_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+function parseTimeToMinutes(time: string): number | null {
+  if (!TIME_INPUT_PATTERN.test(time)) return null;
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+function requiresTimePair(status: string): boolean {
+  const normalized = status.trim().toLowerCase();
+  return TIME_REQUIRED_PREFIXES.some((prefix) => normalized.startsWith(prefix.toLowerCase()));
+}
+
 export async function GET(request: NextRequest) {
   try {
     await dbConnect();
@@ -73,6 +94,39 @@ export async function POST(request: NextRequest) {
     }
 
     const monthYear = date.substring(0, 7); // YYYY-MM
+
+    const needsTimes = requiresTimePair(requestedStatus);
+    const hasStartTime = typeof startTime === 'string' && startTime.trim() !== '';
+    const hasEndTime = typeof endTime === 'string' && endTime.trim() !== '';
+
+    if (needsTimes) {
+      if (!hasStartTime || !hasEndTime) {
+        return NextResponse.json(
+          { success: false, error: 'This status requires both in time and out time.' },
+          { status: 400 }
+        );
+      }
+
+      const startMinutes = parseTimeToMinutes(startTime);
+      const endMinutes = parseTimeToMinutes(endTime);
+      if (startMinutes === null || endMinutes === null) {
+        return NextResponse.json(
+          { success: false, error: 'Invalid time format. Use 24-hour HH:MM.' },
+          { status: 400 }
+        );
+      }
+      if (startMinutes >= endMinutes) {
+        return NextResponse.json(
+          { success: false, error: 'In time must be earlier than out time.' },
+          { status: 400 }
+        );
+      }
+    } else if (hasStartTime || hasEndTime) {
+      return NextResponse.json(
+        { success: false, error: 'This status does not accept manual time values.' },
+        { status: 400 }
+      );
+    }
 
     const existingForDate = await AttendanceRequest.find({ userId: user._id, date });
     const hasActiveForDate = existingForDate.some((r: any) => r.status !== 'Rejected');
