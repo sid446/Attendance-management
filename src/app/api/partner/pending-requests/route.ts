@@ -3,20 +3,44 @@ import dbConnect from '@/lib/mongodb';
 import '@/models/User';
 import AttendanceRequest from '@/models/AttendanceRequest';
 import Attendance from '@/models/Attendance';
+import { verifyPartnerReviewToken } from '@/lib/partnerReviewToken';
+
+function normalizePartnerName(name: string): string {
+  return name.trim().toLowerCase();
+}
 
 export async function GET(request: NextRequest) {
   try {
     await dbConnect();
 
-    // For simplicity, assume partnerName is passed as query param, but in real app, get from session
     const { searchParams } = new URL(request.url);
-    const partnerName = searchParams.get('partnerName');
+    const token = searchParams.get('token');
+    const legacyPartnerName = searchParams.get('partnerName');
+    let partnerName = '';
+    let partnerEmail: string | null = null;
 
-    if (!partnerName) {
-      return NextResponse.json({ success: false, error: 'Partner name required' }, { status: 400 });
+    if (token) {
+      const tokenCheck = verifyPartnerReviewToken(token);
+      if (!tokenCheck.valid) {
+        return NextResponse.json({ success: false, error: tokenCheck.error }, { status: 401 });
+      }
+      partnerName = tokenCheck.claims.partnerName;
+      partnerEmail = tokenCheck.claims.partnerEmail;
+    } else if (process.env.NODE_ENV !== 'production' && legacyPartnerName) {
+      partnerName = legacyPartnerName;
     }
 
-    const requests = await AttendanceRequest.find({ partnerName, status: 'Pending' })
+    if (!partnerName) {
+      return NextResponse.json(
+        { success: false, error: 'Secure token is required for partner review access' },
+        { status: 401 }
+      );
+    }
+
+    const requests = await AttendanceRequest.find({
+      partnerName: { $regex: new RegExp(`^${normalizePartnerName(partnerName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+      status: 'Pending',
+    })
       .sort({ createdAt: 1 })
       .populate('userId', 'name email designation')
       .lean();
@@ -60,6 +84,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      actor: {
+        partnerName,
+        partnerEmail,
+      },
       data: enrichedRequests
     });
   } catch (error) {

@@ -187,16 +187,47 @@ export default function EmployeeDashboard() {
 
   /** Pending attendance requests for this user as partner (review queue). */
   const [partnerPendingReviewCount, setPartnerPendingReviewCount] = useState(0);
+  const [partnerReviewAccessToken, setPartnerReviewAccessToken] = useState<string | null>(null);
+
+  const getPartnerReviewIdentity = useCallback(() => {
+    if (!user?.name || !user?.email) return null;
+    return {
+      partnerName: formatPartnerNameForReview(user.name),
+      partnerEmail: String(user.attendanceEmail || user.email).trim(),
+    };
+  }, [user?.attendanceEmail, user?.email, user?.name]);
+
+  const fetchPartnerReviewAccessToken = useCallback(async () => {
+    if (partnerReviewAccessToken) return partnerReviewAccessToken;
+
+    const identity = getPartnerReviewIdentity();
+    if (!identity) return null;
+
+    try {
+      const res = await fetch('/api/partner/review-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(identity),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success || !json.data?.token) return null;
+
+      setPartnerReviewAccessToken(json.data.token);
+      return json.data.token as string;
+    } catch {
+      return null;
+    }
+  }, [getPartnerReviewIdentity, partnerReviewAccessToken]);
 
   const fetchPartnerPendingReviewCount = useCallback(async () => {
-    if (!user?.name) {
+    const token = await fetchPartnerReviewAccessToken();
+    if (!token) {
       setPartnerPendingReviewCount(0);
       return;
     }
-    const partnerName = formatPartnerNameForReview(user.name);
     try {
       const res = await fetch(
-        `/api/partner/pending-requests?partnerName=${encodeURIComponent(partnerName)}`
+        `/api/partner/pending-requests?token=${encodeURIComponent(token)}`
       );
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
@@ -207,7 +238,7 @@ export default function EmployeeDashboard() {
     } catch {
       setPartnerPendingReviewCount(0);
     }
-  }, [user?.name]);
+  }, [fetchPartnerReviewAccessToken]);
 
   useEffect(() => {
     fetchPartnerPendingReviewCount();
@@ -1190,12 +1221,15 @@ export default function EmployeeDashboard() {
   ];
 
   const goPartnerReview = () => {
-    if (!user?.name || !user?.email) return;
-    const name = formatPartnerNameForReview(user.name);
-    router.push(
-      `/partner/review-all?partnerName=${encodeURIComponent(name)}&partnerEmail=${encodeURIComponent(user.email)}`
-    );
-    setSidebarOpen(false);
+    void (async () => {
+      const token = await fetchPartnerReviewAccessToken();
+      if (!token) {
+        alert('Unable to create review access token. Please refresh and try again.');
+        return;
+      }
+      router.push(`/partner/review-all?token=${encodeURIComponent(token)}`);
+      setSidebarOpen(false);
+    })();
   };
 
   const navItemClass = (active: boolean) =>

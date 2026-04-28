@@ -3,6 +3,7 @@ import dbConnect from '@/lib/mongodb';
 import AttendanceRequest from '@/models/AttendanceRequest';
 import User from '@/models/User';
 import { transporter, mailOptions } from '@/lib/mailer';
+import { createPartnerReviewAllLink } from '@/lib/partnerReviewToken';
 
 const TIME_REQUIRED_PREFIXES = [
   'Present - in office',
@@ -157,6 +158,7 @@ export async function POST(request: NextRequest) {
     });
 
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || request.headers.get('origin') || 'http://localhost:3000';
+    const reviewAllLink = createPartnerReviewAllLink(baseUrl, partnerName, partnerEmail);
 
     // Fetch all pending requests assigned to this partner (across all employees)
     const pendingRequests = await AttendanceRequest.find({ partnerName: partnerName, status: 'Pending' }).sort({ createdAt: 1 });
@@ -274,7 +276,7 @@ export async function POST(request: NextRequest) {
 
       <!-- Review All Button -->
       <div style="background-color: #f9fafb; padding: 16px; text-align: center; border-bottom: 1px solid #e5e7eb;">
-        <a href="${baseUrl}/partner/review-all?partnerName=${encodeURIComponent(partnerName)}&partnerEmail=${encodeURIComponent(partnerEmail)}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: white; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">Review All Pending Requests</a>
+        <a href="${reviewAllLink}" style="display: inline-block; padding: 12px 24px; background-color: #3b82f6; color: white; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">Review All Pending Requests</a>
       </div>
 
       <!-- Content -->

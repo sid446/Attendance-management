@@ -4,6 +4,7 @@ import AttendanceRequest from '@/models/AttendanceRequest';
 import Attendance from '@/models/Attendance';
 import User from '@/models/User';
 import { transporter, mailOptions } from '@/lib/mailer';
+import { createPartnerReviewAllLink } from '@/lib/partnerReviewToken';
 
 interface CorrectionData {
   date: string;
@@ -173,7 +174,7 @@ export async function POST(request: NextRequest) {
         }).join('');
 
         // Review all link
-        const reviewAllLink = `${baseUrl}/partner/review-all?partner=${encodeURIComponent(partnerName)}`;
+        const reviewAllLink = createPartnerReviewAllLink(baseUrl, partnerName, partnerEmail);
 
         await transporter.sendMail({
           ...mailOptions,

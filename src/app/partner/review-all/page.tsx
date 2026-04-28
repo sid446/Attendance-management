@@ -30,8 +30,7 @@ interface RequestGroup {
 function ReviewAllPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const partnerName = searchParams.get('partnerName') || searchParams.get('partner');
-  const partnerEmail = searchParams.get('partnerEmail');
+  const accessToken = searchParams.get('token') || '';
   const [requestGroups, setRequestGroups] = useState<RequestGroup[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -100,13 +99,13 @@ function ReviewAllPageContent() {
   };
 
   useEffect(() => {
-    if (!partnerName) {
-      setError('Partner name not provided');
+    if (!accessToken) {
+      setError('Secure partner access token not provided');
       setLoading(false);
       return;
     }
 
-    fetch(`/api/partner/pending-requests?partnerName=${encodeURIComponent(partnerName)}`)
+    fetch(`/api/partner/pending-requests?token=${encodeURIComponent(accessToken)}`)
       .then(res => res.json())
       .then(data => {
         if (data.success) {
@@ -120,7 +119,7 @@ function ReviewAllPageContent() {
         setError('Failed to load requests');
       })
       .finally(() => setLoading(false));
-  }, [partnerName]);
+  }, [accessToken]);
 
   const groupRequests = (requests: Request[]): RequestGroup[] => {
     const groupMap: { [key: string]: Request[] } = {};
@@ -303,8 +302,7 @@ function ReviewAllPageContent() {
                 ids: group.requestIds,
                 remark,
                 value,
-                approvedBy: partnerName,
-                approvedByEmail: partnerEmail
+                accessToken
               })
             });
             if (!res.ok) {
@@ -328,8 +326,7 @@ function ReviewAllPageContent() {
               ids: allRequestIds,
               remark,
               ...(value !== undefined && { value }),
-              approvedBy: partnerName,
-              approvedByEmail: partnerEmail
+              accessToken
             })
           });
           if (res.ok) {
@@ -354,8 +351,7 @@ function ReviewAllPageContent() {
               ids: group.requestIds,
               remark,
               ...(value !== undefined && { value }),
-              approvedBy: partnerName,
-              approvedByEmail: partnerEmail
+              accessToken
             })
           });
           if (!res.ok) {

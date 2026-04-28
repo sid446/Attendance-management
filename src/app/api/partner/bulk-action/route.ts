@@ -31,6 +31,11 @@ import Attendance from '@/models/Attendance';
 import User from '@/models/User';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import LeaveTransaction from '@/models/LeaveTransaction';
+import { verifyPartnerReviewToken } from '@/lib/partnerReviewToken';
+
+function normalizePartnerName(name: string): string {
+    return String(name || '').trim().toLowerCase();
+}
 
 function calculateDuration(start: string, end: string): number {
     if (!start || !end) return 0;
@@ -91,7 +96,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ success: false, error: 'Invalid JSON body' }, { status: 400 });
         }
 
-        const { action, ids, remark, value, approvedBy, approvedByEmail } = body;
+        const { action, ids, remark, value, approvedBy, approvedByEmail, accessToken } = body;
 
         if (!action || !['approve', 'reject'].includes(action)) {
             return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 });
@@ -101,9 +106,26 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ success: false, error: 'Missing or invalid IDs' }, { status: 400 });
         }
 
+        let secureApprovedBy: string | null = null;
+        let secureApprovedByEmail: string | null = null;
+
+        if (typeof accessToken === 'string' && accessToken.trim()) {
+            const tokenCheck = verifyPartnerReviewToken(accessToken.trim());
+            if (!tokenCheck.valid) {
+                return NextResponse.json({ success: false, error: tokenCheck.error }, { status: 401 });
+            }
+            secureApprovedBy = tokenCheck.claims.partnerName;
+            secureApprovedByEmail = tokenCheck.claims.partnerEmail;
+        } else if (process.env.NODE_ENV === 'production') {
+            return NextResponse.json(
+                { success: false, error: 'Secure token is required for partner actions' },
+                { status: 401 }
+            );
+        }
+
         const appliedRemark = remark || (action === 'approve' ? 'Bulk Approved' : 'Bulk Rejected');
-        const appliedApprovedBy = approvedBy || 'HR';
-        const appliedApprovedByEmail = approvedByEmail || 'hr@asija.in';
+        const appliedApprovedBy = secureApprovedBy || approvedBy || 'HR';
+        const appliedApprovedByEmail = secureApprovedByEmail || approvedByEmail || 'hr@asija.in';
         let appliedValue: number | undefined;
         if (action === 'approve') {
             appliedValue = typeof value === 'number' ? value : 1;
@@ -114,6 +136,13 @@ export async function POST(request: NextRequest) {
         for (const id of ids) {
             const reqRecord = await AttendanceRequest.findById(id);
             if (!reqRecord || reqRecord.status !== 'Pending') continue;
+
+            if (secureApprovedBy && normalizePartnerName(reqRecord.partnerName) !== normalizePartnerName(secureApprovedBy)) {
+                return NextResponse.json(
+                    { success: false, error: 'Unauthorized: request does not belong to this partner token' },
+                    { status: 403 }
+                );
+            }
 
             reqRecord.status = action === 'approve' ? 'Approved' : 'Rejected';
             if (action === 'approve') {
