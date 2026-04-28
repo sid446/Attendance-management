@@ -222,12 +222,41 @@ function ReviewAllPageContent() {
     }
   };
 
+  const initializeModalState = (sameRemark: boolean, sameValue: boolean) => {
+    setApplySameRemark(sameRemark);
+    setApplySameValue(sameValue);
+    setRemarks({ all: '' });
+
+    if (modalAction === 'approve') {
+      if (sameValue) {
+        const defaultVal = getMaxValueForSelected() === 0.75 ? '0.75' : '1';
+        setValues({ all: defaultVal });
+        return;
+      }
+
+      const initialValues: { [key: string]: string } = {}
+      selectedGroupIds.forEach((id) => {
+        const group = requestGroups[parseInt(id)];
+        initialValues[id] = getDefaultValueForType(group?.requestedStatus || '');
+      });
+      setValues(initialValues);
+      return;
+    }
+
+    setValues({});
+  };
+
   const openModal = (action: 'approve' | 'reject') => {
     if (selectedGroupIds.length === 0) {
       alert('Please select at least one request group');
       return;
     }
     setModalAction(action);
+    if (selectedGroupIds.length === 1) {
+      initializeModalState(false, false);
+      setShowModal(true);
+      return;
+    }
     setShowSameRemarkModal(true);
   };
 
@@ -238,27 +267,10 @@ function ReviewAllPageContent() {
       setShowSameValueModal(true);
     } else {
       setShowModal(true);
-      // Initialize remarks and values
-      const selectedGroups = selectedGroupIds.map(id => requestGroups[parseInt(id)]);
       if (same) {
-        setRemarks({ all: '' });
-        if (modalAction === 'approve') {
-          // Use the default value for the selected groups
-          const defaultVal = getMaxValueForSelected() === 0.75 ? '0.75' : '1';
-          setValues({ all: defaultVal });
-        }
+        initializeModalState(true, modalAction === 'approve');
       } else {
-        const initialRemarks: { [key: string]: string } = {};
-        const initialValues: { [key: string]: string } = {};
-        selectedGroupIds.forEach(id => {
-          const group = requestGroups[parseInt(id)];
-          initialRemarks[id] = '';
-          if (modalAction === 'approve') {
-            initialValues[id] = getDefaultValueForType(group?.requestedStatus || '');
-          }
-        });
-        setRemarks(initialRemarks);
-        setValues(initialValues);
+        initializeModalState(false, false);
       }
     }
   };
@@ -267,20 +279,7 @@ function ReviewAllPageContent() {
     setApplySameValue(same);
     setShowSameValueModal(false);
     setShowModal(true);
-    // Initialize remarks and values
-    setRemarks({ all: '' });
-    if (same) {
-      // Use the default value for the selected groups
-      const defaultVal = getMaxValueForSelected() === 0.75 ? '0.75' : '1';
-      setValues({ all: defaultVal });
-    } else {
-      const initialValues: { [key: string]: string } = {};
-      selectedGroupIds.forEach(id => {
-        const group = requestGroups[parseInt(id)];
-        initialValues[id] = getDefaultValueForType(group?.requestedStatus || '');
-      });
-      setValues(initialValues);
-    }
+    initializeModalState(true, same);
   };
 
   const handleSubmit = async () => {
