@@ -1,12 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
+import dbConnect from '@/lib/mongodb';
+import User from '@/models/User';
 import { sendOTPEmail } from '@/lib/mailer';
 
 // Fixed HR password
 const HR_PASSWORD = 'Asija@2026';
+const EMAIL_DOMAIN = '@asija.in';
 
-// In-memory OTP store (in production, use Redis or DB)
-// Map<sessionId, { otp: string, expiresAt: number }>
-const otpStore = new Map<string, { otp: string; expiresAt: number }>();
+// In-memory OTP stores
+// For HR/Partner: Map<sessionId, { otp: string, expiresAt: number }>
+// For Employee: Map<sessionId, { otp: string, expiresAt: number, email: string, userId: string }>
+const hrOtpStore = new Map<string, { otp: string; expiresAt: number }>();
+const employeeOtpStore = new Map<
+  string,
+  {
+    otp: string;
+    expiresAt: number;
+    email: string;
+    userId: string;
+  }
+>();
 
 // Generate 6-digit OTP
 function generateOTP(): string {
@@ -21,56 +34,147 @@ function generateSessionId(): string {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { password } = body;
+    const { password, email, role } = body;
 
-    if (!password) {
+    // HR/Admin login with password
+    if (!role || role === 'hr') {
+      if (!password) {
+        return NextResponse.json(
+          { success: false, error: 'Password is required' },
+          { status: 400 }
+        );
+      }
+
+      // Verify fixed password
+      if (password !== HR_PASSWORD) {
+        return NextResponse.json(
+          { success: false, error: 'Invalid password' },
+          { status: 401 }
+        );
+      }
+
+      // Generate OTP and session
+      const otp = generateOTP();
+      const sessionId = generateSessionId();
+      const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
+
+      // Store OTP
+      hrOtpStore.set(sessionId, { otp, expiresAt });
+
+      // Clean up expired OTPs
+      for (const [key, value] of hrOtpStore.entries()) {
+        if (value.expiresAt < Date.now()) {
+          hrOtpStore.delete(key);
+        }
+      }
+
+      // Send OTP email
+      try {
+        await sendOTPEmail(otp);
+      } catch (emailError) {
+        console.error('Failed to send OTP email:', emailError);
+        return NextResponse.json(
+          { success: false, error: 'Failed to send OTP email. Please try again.' },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          sessionId,
+          message: 'OTP sent to admin email',
+        },
+      });
+    }
+
+    // Employee/Partner login with email + OTP
+    if (role === 'employee' || role === 'partner') {
+      const rawEmail = String(email || '').trim().toLowerCase();
+
+      if (!rawEmail) {
+        return NextResponse.json(
+          { success: false, error: 'Email is required' },
+          { status: 400 }
+        );
+      }
+
+      if (!rawEmail.endsWith(EMAIL_DOMAIN)) {
+        return NextResponse.json(
+          { success: false, error: `Only ${EMAIL_DOMAIN} emails are allowed` },
+          { status: 400 }
+        );
+      }
+
+      await dbConnect();
+
+      // For employee role, check User collection
+      if (role === 'employee') {
+        const user = await User.findOne({ email: { $regex: new RegExp(`^${rawEmail}$`, 'i') } });
+
+        if (!user) {
+          return NextResponse.json(
+            { success: false, error: 'User not found with this email' },
+            { status: 404 }
+          );
+        }
+
+        if (!user.isActive) {
+          return NextResponse.json(
+            { success: false, error: 'User account is inactive' },
+            { status: 403 }
+          );
+        }
+
+        const otp = generateOTP();
+        const sessionId = generateSessionId();
+        const expiresAt = Date.now() + 5 * 60 * 1000;
+
+        employeeOtpStore.set(sessionId, {
+          otp,
+          expiresAt,
+          email: String(user.email || rawEmail).trim().toLowerCase(),
+          userId: String(user._id),
+        });
+
+        // Clean up expired OTPs
+        for (const [key, value] of employeeOtpStore.entries()) {
+          if (value.expiresAt < Date.now()) {
+            employeeOtpStore.delete(key);
+          }
+        }
+
+        try {
+          await sendOTPEmail(otp, String(user.email || rawEmail).trim());
+        } catch (emailError) {
+          employeeOtpStore.delete(sessionId);
+          console.error('Employee OTP email send error:', emailError);
+          return NextResponse.json(
+            { success: false, error: 'Failed to send OTP email. Please try again.' },
+            { status: 500 }
+          );
+        }
+
+        return NextResponse.json({
+          success: true,
+          data: {
+            sessionId,
+            message: 'OTP sent to your email',
+          },
+        });
+      }
+
+      // Partner role handling can be added here in future
       return NextResponse.json(
-        { success: false, error: 'Password is required' },
+        { success: false, error: 'Unsupported role' },
         { status: 400 }
       );
     }
 
-    // Verify fixed password
-    if (password !== HR_PASSWORD) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid password' },
-        { status: 401 }
-      );
-    }
-
-    // Generate OTP and session
-    const otp = generateOTP();
-    const sessionId = generateSessionId();
-    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
-
-    // Store OTP
-    otpStore.set(sessionId, { otp, expiresAt });
-
-    // Clean up expired OTPs
-    for (const [key, value] of otpStore.entries()) {
-      if (value.expiresAt < Date.now()) {
-        otpStore.delete(key);
-      }
-    }
-
-    // Send OTP email
-    try {
-      await sendOTPEmail(otp);
-    } catch (emailError) {
-      console.error('Failed to send OTP email:', emailError);
-      return NextResponse.json(
-        { success: false, error: 'Failed to send OTP email. Please try again.' },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        sessionId,
-        message: 'OTP sent to admin email',
-      },
-    });
+    return NextResponse.json(
+      { success: false, error: 'Invalid request parameters' },
+      { status: 400 }
+    );
   } catch (error) {
     console.error('Login error:', error);
     return NextResponse.json(
@@ -81,4 +185,5 @@ export async function POST(request: NextRequest) {
 }
 
 // Export for use by verify-otp route
-export { otpStore };
+export { hrOtpStore, employeeOtpStore };
+

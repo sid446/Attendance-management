@@ -30,10 +30,10 @@ export default function EmployeeLoginPage() {
     setMessage(null);
 
     try {
-      const res = await fetch('/api/employee/login', {
+      const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: normalizedEmail }),
+        body: JSON.stringify({ email: normalizedEmail, role: 'employee' }),
       });
 
       const json = await res.json();
@@ -62,10 +62,10 @@ export default function EmployeeLoginPage() {
     setMessage(null);
 
     try {
-      const res = await fetch('/api/employee/verify-otp', {
+      const res = await fetch('/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, otp: otp.trim() }),
+        body: JSON.stringify({ sessionId, otp: otp.trim(), role: 'employee' }),
       });
 
       const json = await res.json();

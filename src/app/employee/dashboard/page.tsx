@@ -1335,12 +1335,12 @@ export default function EmployeeDashboard() {
         <aside
           aria-label="Workspace navigation"
           className={`
-            fixed inset-y-0 left-0 z-40 flex w-56 flex-col border-r border-zinc-800 bg-zinc-900
+            fixed inset-y-0 left-0 z-40 flex flex-col border-r border-zinc-800 bg-zinc-900
             transition-[transform,width] duration-200 ease-out
             ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-            md:relative md:translate-x-0 md:z-0
+            md:translate-x-0 md:z-40
             ${desktopSidebarCollapsed ? 'md:w-18' : 'md:w-56'}
-            shrink-0 px-2 py-4 md:py-6
+            w-56 shrink-0 px-2 py-4 md:py-6
           `}
         >
           <div
@@ -1429,7 +1429,7 @@ export default function EmployeeDashboard() {
           </button>
         </aside>
 
-        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+        <main className={`min-h-0 min-w-0 flex-1 overflow-y-auto transition-[margin] duration-200 ${desktopSidebarCollapsed ? 'md:ml-18' : 'md:ml-56'}`}>
           <div className="mx-auto max-w-7xl space-y-6 px-3 py-5 sm:px-6 sm:py-8 lg:px-10">
             {activeTab === 'dashboard' && (
               <EmployeeDashboardOverview
