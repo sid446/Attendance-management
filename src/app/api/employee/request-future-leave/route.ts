@@ -48,13 +48,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
     }
 
-    // Partner Email Logic - use employee's attendanceEmail directly
+    // Partner Email Logic - use employee's login email so review access stays in sync.
     if (!user.workingUnderPartner) {
         return NextResponse.json({ success: false, error: 'No Partner assigned to this employee' }, { status: 400 });
     }
 
     const partnerName = user.workingUnderPartner;
-    const partnerEmail = user.attendanceEmail;
+    const partnerEmail = user.email?.trim();
     
     if (!partnerEmail) {
       return NextResponse.json({ success: false, error: 'No attendance email configured for this employee. Please contact admin.' }, { status: 400 });

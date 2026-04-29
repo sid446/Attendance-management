@@ -86,9 +86,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'No Partner assigned to this employee' }, { status: 400 });
     }
 
-    // Use the employee's attendanceEmail directly (which should be set to partner's email)
+    // Use the employee's login email so partner review access follows the current account.
     const partnerName = user.workingUnderPartner;
-    const partnerEmail = user.attendanceEmail;
+    const partnerEmail = user.email?.trim();
     
     if (!partnerEmail) {
       return NextResponse.json({ success: false, error: 'No attendance email configured for this employee. Please contact admin.' }, { status: 400 });
@@ -221,11 +221,14 @@ export async function POST(request: NextRequest) {
     }).join('');
 
     // Mobile-optimized email template
-    await transporter.sendMail({
-      ...mailOptions,
-      to: partnerEmail,
-      subject: `Attendance Correction Requests: ${user.name}`,
-      html: `
+    let emailSent = true;
+    let emailWarning: string | undefined;
+    try {
+      await transporter.sendMail({
+        ...mailOptions,
+        to: partnerEmail,
+        subject: `Attendance Correction Requests: ${user.name}`,
+        html: `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -341,9 +344,20 @@ export async function POST(request: NextRequest) {
 </body>
 </html>
       `
-    });
+      });
+    } catch (emailError) {
+      emailSent = false;
+      emailWarning = 'Request saved, but partner email could not be delivered right now.';
+      console.error('Failed to send correction request email:', emailError);
+    }
 
-    return NextResponse.json({ success: true, message: 'Request sent to partner', sentTo: partnerEmail });
+    return NextResponse.json({
+      success: true,
+      message: 'Request sent to partner',
+      sentTo: partnerEmail,
+      emailSent,
+      warning: emailWarning,
+    });
   } catch (error) {
     console.error('Request Error:', error);
     return NextResponse.json({ success: false, error: 'Failed to submit request' }, { status: 500 });

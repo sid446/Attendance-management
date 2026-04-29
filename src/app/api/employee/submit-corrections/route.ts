@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
     }
 
     const partnerName = user.workingUnderPartner;
-    const partnerEmail = user.attendanceEmail;
+    const partnerEmail = user.email?.trim();
 
     if (!partnerEmail) {
       return NextResponse.json({

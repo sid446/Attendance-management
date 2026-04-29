@@ -179,26 +179,34 @@ export function EmployeeDashboardOverview({
         ) : (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
             {[
-                cell("Total days", String(m.totalDaysInRecords), "Days with rows"),
-                cell("Holidays", String(m.holidaysInRecords), "Sun + company holiday dates"),
-                cell("Working days", String(m.workingDaysInRecords), "Excl. sun / holiday / week-off"),
-                cell("Present", String(m.totalPresent)),
-                cell("Half days", String(m.totalHalfDay)),
-                cell("Absent", String(m.totalAbsent)),
-                cell("Late", String(m.calcLate)),
-                cell("Leave", String(m.leaveFullDaysConsumed), "Full leave days (value = 1)"),
-                cell("Scheduled", formatHoursMinutes(m.calcScheduledHours), "Expected hours (eligible days)"),
+              ["total-days", cell("Total days", String(m.totalDaysInRecords), "Days with rows")],
+              ["holidays", cell("Holidays", String(m.holidaysInRecords), "Sun + company holiday dates")],
+              ["working-days", cell("Working days", String(m.workingDaysInRecords), "Excl. sun / holiday / week-off")],
+              ["present", cell("Present", String(m.totalPresent))],
+              ["half-days", cell("Half days", String(m.totalHalfDay))],
+              ["absent", cell("Absent", String(m.totalAbsent))],
+              ["late", cell("Late", String(m.calcLate))],
+              ["leave", cell("Leave", String(m.leaveFullDaysConsumed), "Full leave days (value = 1)")],
+              ["scheduled", cell("Scheduled", formatHoursMinutes(m.calcScheduledHours), "Expected hours (eligible days)")],
+              [
+                "work-hours",
                 cell(
                   "Work hours",
                   formatHoursMinutes(m.totalHour),
                   "Sum of daily hours (excl. Sun / holiday / week-off rows)"
                 ),
+              ],
+              [
+                "excess-short",
                 cell(
                   "Excess / short",
                   `${m.calcExcessDeficit > 0 ? "+" : m.calcExcessDeficit < 0 ? "-" : ""}${formatHoursMinutes(Math.abs(m.calcExcessDeficit))}`,
                   "Worked - scheduled"
                 ),
-              ]}
+              ],
+            ].map(([key, content]) => (
+              <React.Fragment key={key}>{content}</React.Fragment>
+            ))}
             <div className="col-span-2 rounded-lg border border-zinc-800/90 bg-zinc-900/50 px-3 py-2.5 sm:col-span-3 lg:col-span-4">
               <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
                 Requests pending

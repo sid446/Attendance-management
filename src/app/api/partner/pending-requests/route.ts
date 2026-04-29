@@ -37,13 +37,68 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const requests = await AttendanceRequest.find({
-      partnerName: { $regex: new RegExp(`^${normalizePartnerName(partnerName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
-      status: 'Pending',
-    })
-      .sort({ createdAt: 1 })
-      .populate('userId', 'name email designation')
-      .lean();
+    // Build a case-insensitive exact-match regex for the normalized partner name
+    const partnerRegex = new RegExp(
+      `^${normalizePartnerName(partnerName).replace(/[.*+?^${}()|[\\]\\]/g, '\\\\$&')}$`,
+      'i'
+    );
+
+    let requests: any[];
+
+    if (partnerEmail) {
+      // If we have a partnerEmail (from token), return pending requests that either
+      // - have partnerName matching the partner, OR
+      // - belong to a user whose attendanceEmail equals the partnerEmail.
+      // Use aggregation to join the user document for the attendanceEmail check and to
+      // return a populated `userId` field (so downstream code can use req.userId.name/email).
+      const emailRegex = new RegExp(`^${String(partnerEmail).trim().replace(/[.*+?^${}()|[\\]\\]/g, '\\\\$&')}$`, 'i');
+
+      requests = await AttendanceRequest.aggregate([
+        { $match: { status: 'Pending' } },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'userId',
+            foreignField: '_id',
+            as: 'userDoc',
+          },
+        },
+        { $unwind: { path: '$userDoc', preserveNullAndEmptyArrays: true } },
+        {
+          $match: {
+            $or: [
+              { partnerName: { $regex: partnerRegex } },
+              { 'userDoc.attendanceEmail': { $regex: emailRegex } },
+            ],
+          },
+        },
+        { $sort: { createdAt: 1 } },
+        {
+          $project: {
+            _id: 1,
+            userId: '$userDoc',
+            userName: 1,
+            date: 1,
+            requestedStatus: 1,
+            reason: 1,
+            startTime: 1,
+            endTime: 1,
+            createdAt: 1,
+            partnerName: 1,
+            status: 1,
+          },
+        },
+      ]).exec();
+    } else {
+      // Fallback: match by partnerName only (legacy behavior)
+      requests = await AttendanceRequest.find({
+        partnerName: { $regex: partnerRegex },
+        status: 'Pending',
+      })
+        .sort({ createdAt: 1 })
+        .populate('userId', 'name email designation')
+        .lean();
+    }
 
     // Fetch original attendance data for each request
     const enrichedRequests = await Promise.all(requests.map(async (req: any) => {

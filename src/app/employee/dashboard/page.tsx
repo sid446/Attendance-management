@@ -193,9 +193,9 @@ export default function EmployeeDashboard() {
     if (!user?.name || !user?.email) return null;
     return {
       partnerName: formatPartnerNameForReview(user.name),
-      partnerEmail: String(user.attendanceEmail || user.email).trim(),
+      partnerEmail: String(user.email).trim(),
     };
-  }, [user?.attendanceEmail, user?.email, user?.name]);
+  }, [user?.email, user?.name]);
 
   const fetchPartnerReviewAccessToken = useCallback(async () => {
     if (partnerReviewAccessToken) return partnerReviewAccessToken;
@@ -1369,7 +1369,7 @@ export default function EmployeeDashboard() {
         <aside
           aria-label="Workspace navigation"
           className={`
-            fixed inset-y-0 left-0 z-40 flex flex-col border-r border-zinc-800 bg-zinc-900
+            fixed bottom-0 left-0 top-14 z-40 flex flex-col border-r border-zinc-800 bg-zinc-900
             transition-[transform,width] duration-200 ease-out
             ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
             md:translate-x-0 md:z-40
