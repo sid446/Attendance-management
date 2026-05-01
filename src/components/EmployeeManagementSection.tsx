@@ -337,6 +337,12 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         effectiveFrom: toDateInputValue(entry.effectiveFrom),
       })) as User['schedules'];
     }
+    if (formDataCopy.seasonalSchedules && Array.isArray(formDataCopy.seasonalSchedules)) {
+      formDataCopy.seasonalSchedules = (formDataCopy.seasonalSchedules as any[]).map((entry: any) => ({
+        ...entry,
+        effectiveFrom: toDateInputValue(entry.effectiveFrom),
+      })) as User['seasonalSchedules'];
+    }
     setEditingUser(user);
     setFormData(formDataCopy);
     setManagedFieldsEffectiveFromByField(getManagedEffectiveDatesFromUser(formDataCopy));
@@ -859,11 +865,70 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
     });
   };
 
+  const handleAddSeasonalSchedule = () => {
+    setFormData(prev => {
+      const seasonalSchedules = Array.isArray(prev.seasonalSchedules) ? [...prev.seasonalSchedules] : [];
+      seasonalSchedules.push({
+        startMonth: 11, // December
+        endMonth: 0,    // January
+        effectiveFrom: toDateInputValue(new Date()),
+        daily: {
+          monday: { inTime: '10:45', outTime: '19:45' },
+          tuesday: { inTime: '10:45', outTime: '19:45' },
+          wednesday: { inTime: '10:45', outTime: '19:45' },
+          thursday: { inTime: '10:45', outTime: '19:45' },
+          friday: { inTime: '10:45', outTime: '19:45' },
+          saturday: { inTime: '10:45', outTime: '13:45', isHalfDay: true },
+          sunday: { inTime: '', outTime: '', isHoliday: true }
+        }
+      });
+      return { ...prev, seasonalSchedules };
+    });
+  };
+
+  const handleRemoveSeasonalSchedule = (index: number) => {
+    setFormData(prev => {
+      const seasonalSchedules = Array.isArray(prev.seasonalSchedules) ? [...prev.seasonalSchedules] : [];
+      seasonalSchedules.splice(index, 1);
+      return { ...prev, seasonalSchedules };
+    });
+  };
+
+  const handleSeasonalScheduleFieldChange = (index: number, field: string, value: any) => {
+    setFormData(prev => {
+      const seasonalSchedules = Array.isArray(prev.seasonalSchedules) ? [...prev.seasonalSchedules] : [];
+      if (!seasonalSchedules[index]) return prev;
+      seasonalSchedules[index] = { ...seasonalSchedules[index], [field]: value };
+      return { ...prev, seasonalSchedules };
+    });
+  };
+
+  const handleSeasonalScheduleTimeChange = (index: number, day: string, field: string, value: any) => {
+    setFormData(prev => {
+      const seasonalSchedules = Array.isArray(prev.seasonalSchedules) ? [...prev.seasonalSchedules] : [];
+      if (!seasonalSchedules[index]) return prev;
+      const entry = { ...seasonalSchedules[index] };
+      const daily = { ...entry.daily };
+      const dayData = { ...(daily[day] || {}) };
+      (dayData as any)[field] = value;
+      daily[day] = dayData as any;
+      entry.daily = daily;
+      seasonalSchedules[index] = entry;
+      return { ...prev, seasonalSchedules };
+    });
+  };
+
   // Helper function to prepare formData for saving (convert effectiveFrom strings to Date objects)
   const prepareFormDataForSave = (data: any) => {
     const prepared = { ...data };
     if (prepared.schedules && Array.isArray(prepared.schedules)) {
       prepared.schedules = prepared.schedules.map((entry: any) => ({
+        ...entry,
+        effectiveFrom: new Date(entry.effectiveFrom)
+      }));
+    }
+    if (prepared.seasonalSchedules && Array.isArray(prepared.seasonalSchedules)) {
+      prepared.seasonalSchedules = prepared.seasonalSchedules.map((entry: any) => ({
         ...entry,
         effectiveFrom: new Date(entry.effectiveFrom)
       }));
@@ -2715,6 +2780,130 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   </div>
                 </div>
               ))}
+
+              <div className="pt-6 mt-6 border-t border-slate-200">
+                <div className="flex flex-col gap-3 pb-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">Seasonal schedule overrides</h3>
+                    <p className="text-xs text-slate-500">Recurring rules that apply for specific months (e.g. Dec-Jan winter timings)</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddSeasonalSchedule}
+                    className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                  >
+                    Add seasonal override
+                  </button>
+                </div>
+
+                <div className="space-y-6 mt-4">
+                  {(formData.seasonalSchedules || []).map((entry, index) => (
+                    <div key={index} className="rounded-lg border border-emerald-200/65 bg-emerald-50/30 p-4 shadow-sm">
+                      <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+                        <div className="flex flex-wrap items-center gap-4">
+                          <div className="flex items-center gap-2">
+                            <label className="text-sm font-medium text-slate-700">From Month</label>
+                            <select
+                              value={entry.startMonth}
+                              onChange={(e) => handleSeasonalScheduleFieldChange(index, 'startMonth', parseInt(e.target.value))}
+                              className="rounded border border-slate-300 bg-panel px-2 py-1 text-sm text-slate-900 shadow-sm"
+                            >
+                              {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map((m, i) => (
+                                <option key={i} value={i}>{m}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <label className="text-sm font-medium text-slate-700">To Month</label>
+                            <select
+                              value={entry.endMonth}
+                              onChange={(e) => handleSeasonalScheduleFieldChange(index, 'endMonth', parseInt(e.target.value))}
+                              className="rounded border border-slate-300 bg-panel px-2 py-1 text-sm text-slate-900 shadow-sm"
+                            >
+                              {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map((m, i) => (
+                                <option key={i} value={i}>{m}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <label className="text-sm font-medium text-slate-700 text-xs">Version Effective</label>
+                            <input
+                              type="date"
+                              value={toDateInputValue(entry.effectiveFrom)}
+                              onChange={(e) => handleSeasonalScheduleFieldChange(index, 'effectiveFrom', e.target.value)}
+                              className="min-h-9 rounded border border-slate-300 bg-panel px-2 py-1 text-xs text-slate-900 [color-scheme:light]"
+                            />
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveSeasonalSchedule(index)}
+                          className="rounded-md bg-rose-600 px-2 py-1 text-sm font-medium text-white hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500/40"
+                        >
+                          Remove
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((day) => (
+                          <div key={day} className="space-y-3 rounded-lg border border-slate-200 bg-white p-3">
+                            <div className="flex items-center justify-between">
+                              <label className="text-sm font-semibold capitalize text-slate-800">{day}</label>
+                              <div className="flex gap-2">
+                                <label className="flex items-center gap-1 text-[10px]">
+                                  <input
+                                    type="checkbox"
+                                    checked={entry.daily?.[day]?.isHoliday || false}
+                                    onChange={(e) => handleSeasonalScheduleTimeChange(index, day, 'isHoliday', e.target.checked)}
+                                    className="w-3 h-3"
+                                  />
+                                  Holiday
+                                </label>
+                                <label className="flex items-center gap-1 text-[10px]">
+                                  <input
+                                    type="checkbox"
+                                    checked={entry.daily?.[day]?.isHalfDay || false}
+                                    onChange={(e) => handleSeasonalScheduleTimeChange(index, day, 'isHalfDay', e.target.checked)}
+                                    className="w-3 h-3"
+                                  />
+                                  Half
+                                </label>
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <div>
+                                <label className="text-[10px] text-slate-500">In Time</label>
+                                <input
+                                  type="time"
+                                  value={entry.daily?.[day]?.inTime || ''}
+                                  onChange={(e) => handleSeasonalScheduleTimeChange(index, day, 'inTime', e.target.value)}
+                                  className="w-full rounded border border-slate-200 bg-panel px-2 py-1 text-xs text-slate-900 shadow-sm focus:border-emerald-500 focus:outline-none"
+                                  disabled={entry.daily?.[day]?.isHoliday}
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-slate-500">Out Time</label>
+                                <input
+                                  type="time"
+                                  value={entry.daily?.[day]?.outTime || ''}
+                                  onChange={(e) => handleSeasonalScheduleTimeChange(index, day, 'outTime', e.target.value)}
+                                  className="w-full rounded border border-slate-200 bg-panel px-2 py-1 text-xs text-slate-900 shadow-sm focus:border-emerald-500 focus:outline-none"
+                                  disabled={entry.daily?.[day]?.isHoliday}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {(formData.seasonalSchedules || []).length === 0 && (
+                    <div className="rounded-lg border border-dashed border-slate-300 py-8 text-center text-sm text-slate-500 bg-slate-50/50">
+                      No seasonal overrides defined for this employee.
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
@@ -4138,6 +4327,130 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   </div>
                 </div>
               ))}
+
+              <div className="pt-6 mt-6 border-t border-slate-200">
+                <div className="flex flex-col gap-3 pb-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">Seasonal schedule overrides</h3>
+                    <p className="text-xs text-slate-500">Recurring rules that apply for specific months (e.g. Dec-Jan winter timings)</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddSeasonalSchedule}
+                    className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                  >
+                    Add seasonal override
+                  </button>
+                </div>
+
+                <div className="space-y-6 mt-4">
+                  {(formData.seasonalSchedules || []).map((entry, index) => (
+                    <div key={index} className="rounded-lg border border-emerald-200/65 bg-emerald-50/30 p-4 shadow-sm">
+                      <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+                        <div className="flex flex-wrap items-center gap-4">
+                          <div className="flex items-center gap-2">
+                            <label className="text-sm font-medium text-slate-700">From Month</label>
+                            <select
+                              value={entry.startMonth}
+                              onChange={(e) => handleSeasonalScheduleFieldChange(index, 'startMonth', parseInt(e.target.value))}
+                              className="rounded border border-slate-300 bg-panel px-2 py-1 text-sm text-slate-900 shadow-sm"
+                            >
+                              {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map((m, i) => (
+                                <option key={i} value={i}>{m}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <label className="text-sm font-medium text-slate-700">To Month</label>
+                            <select
+                              value={entry.endMonth}
+                              onChange={(e) => handleSeasonalScheduleFieldChange(index, 'endMonth', parseInt(e.target.value))}
+                              className="rounded border border-slate-300 bg-panel px-2 py-1 text-sm text-slate-900 shadow-sm"
+                            >
+                              {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map((m, i) => (
+                                <option key={i} value={i}>{m}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <label className="text-sm font-medium text-slate-700 text-xs">Version Effective</label>
+                            <input
+                              type="date"
+                              value={toDateInputValue(entry.effectiveFrom)}
+                              onChange={(e) => handleSeasonalScheduleFieldChange(index, 'effectiveFrom', e.target.value)}
+                              className="min-h-9 rounded border border-slate-300 bg-panel px-2 py-1 text-xs text-slate-900 [color-scheme:light]"
+                            />
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveSeasonalSchedule(index)}
+                          className="rounded-md bg-rose-600 px-2 py-1 text-sm font-medium text-white hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500/40"
+                        >
+                          Remove
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((day) => (
+                          <div key={day} className="space-y-3 rounded-lg border border-slate-200 bg-white p-3">
+                            <div className="flex items-center justify-between">
+                              <label className="text-sm font-semibold capitalize text-slate-800">{day}</label>
+                              <div className="flex gap-2">
+                                <label className="flex items-center gap-1 text-[10px]">
+                                  <input
+                                    type="checkbox"
+                                    checked={entry.daily?.[day]?.isHoliday || false}
+                                    onChange={(e) => handleSeasonalScheduleTimeChange(index, day, 'isHoliday', e.target.checked)}
+                                    className="w-3 h-3"
+                                  />
+                                  Holiday
+                                </label>
+                                <label className="flex items-center gap-1 text-[10px]">
+                                  <input
+                                    type="checkbox"
+                                    checked={entry.daily?.[day]?.isHalfDay || false}
+                                    onChange={(e) => handleSeasonalScheduleTimeChange(index, day, 'isHalfDay', e.target.checked)}
+                                    className="w-3 h-3"
+                                  />
+                                  Half
+                                </label>
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <div>
+                                <label className="text-[10px] text-slate-500">In Time</label>
+                                <input
+                                  type="time"
+                                  value={entry.daily?.[day]?.inTime || ''}
+                                  onChange={(e) => handleSeasonalScheduleTimeChange(index, day, 'inTime', e.target.value)}
+                                  className="w-full rounded border border-slate-200 bg-panel px-2 py-1 text-xs text-slate-900 shadow-sm focus:border-emerald-500 focus:outline-none"
+                                  disabled={entry.daily?.[day]?.isHoliday}
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-slate-500">Out Time</label>
+                                <input
+                                  type="time"
+                                  value={entry.daily?.[day]?.outTime || ''}
+                                  onChange={(e) => handleSeasonalScheduleTimeChange(index, day, 'outTime', e.target.value)}
+                                  className="w-full rounded border border-slate-200 bg-panel px-2 py-1 text-xs text-slate-900 shadow-sm focus:border-emerald-500 focus:outline-none"
+                                  disabled={entry.daily?.[day]?.isHoliday}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {(formData.seasonalSchedules || []).length === 0 && (
+                    <div className="rounded-lg border border-dashed border-slate-300 py-8 text-center text-sm text-slate-500 bg-slate-50/50">
+                      No seasonal overrides defined for this employee.
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 

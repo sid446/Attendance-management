@@ -59,6 +59,8 @@ export async function POST(request: NextRequest) {
       scheduleInOutTime,
       scheduleInOutTimeSat,
       scheduleInOutTimeMonth,
+      schedules,
+      seasonalSchedules,
       isActive,
       inactiveAsOf,
       // Extended fields
@@ -160,6 +162,8 @@ export async function POST(request: NextRequest) {
       scheduleInOutTime: scheduleInOutTime || { inTime: '09:00', outTime: '18:00' },
       scheduleInOutTimeSat: scheduleInOutTimeSat || { inTime: '09:00', outTime: '13:00' },
       scheduleInOutTimeMonth: scheduleInOutTimeMonth || { inTime: '09:00', outTime: '18:00' },
+      schedules,
+      seasonalSchedules,
       isActive: active,
       inactiveAsOf: !active && inactiveAsOf ? new Date(inactiveAsOf) : null,
       // Extended fields

@@ -1,5 +1,5 @@
 import React, { ChangeEvent, useState, useEffect } from 'react';
-import { Upload, AlertCircle, ChevronDown, ChevronUp, FileSpreadsheet, ChevronRight } from 'lucide-react';
+import { Upload, AlertCircle, ChevronDown, ChevronUp, FileSpreadsheet, ChevronRight, Download, History, Clock } from 'lucide-react';
 
 interface MachineFormat {
   machineId: string;
@@ -64,6 +64,78 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   const [addingMachine, setAddingMachine] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [selectedFixedFile, setSelectedFixedFile] = useState<File | null>(fixedFile);
+
+  const [showLogs, setShowLogs] = useState(false);
+  const [logs, setLogs] = useState<any[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+
+  const fetchLogs = async () => {
+    setLoadingLogs(true);
+    try {
+      const response = await fetch('/api/upload-logs');
+      const result = await response.json();
+      if (result.success) {
+        setLogs(result.data);
+      }
+    } catch (err) {
+      console.error('Failed to load logs:', err);
+    } finally {
+      setLoadingLogs(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showLogs) {
+      fetchLogs();
+    }
+  }, [showLogs]);
+
+  const groupedCurrentErrors = React.useMemo(() => {
+    return uploadErrors.reduce((acc, curr) => {
+      const existing = acc.find(e => e.message === curr.reason);
+      if (existing) {
+        existing.count++;
+        if (existing.sampleRows.length < 5 && !existing.sampleRows.includes(curr.odId)) {
+          existing.sampleRows.push(curr.odId);
+        }
+      } else {
+        acc.push({
+          message: curr.reason,
+          count: 1,
+          sampleRows: [curr.odId]
+        });
+      }
+      return acc;
+    }, [] as { message: string, count: number, sampleRows: string[] }[]);
+  }, [uploadErrors]);
+
+  const exportCurrentErrors = async () => {
+    const XLSX = (await import('xlsx')).default;
+    const wsData = groupedCurrentErrors.map(e => ({
+      'Error Message': e.message,
+      'Occurrences': e.count,
+      'Sample Records (Max 5)': e.sampleRows.join(', ')
+    }));
+    const ws = XLSX.utils.json_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Errors');
+    XLSX.writeFile(wb, `Current_Upload_Errors.xlsx`);
+  };
+
+  const exportHistoricalLog = async (log: any) => {
+    const XLSX = (await import('xlsx')).default;
+    const wsData = log.errorDetails.map((e: any) => ({
+      'File Name': log.fileName,
+      'Upload Date': new Date(log.uploadDate).toLocaleString(),
+      'Error Message': e.message,
+      'Occurrences': e.count,
+      'Sample Records (Max 5)': e.sampleRows.join(', ')
+    }));
+    const ws = XLSX.utils.json_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Errors');
+    XLSX.writeFile(wb, `Upload_Errors_${log.fileName}.xlsx`);
+  };
 
   // Keep selectedFiles in sync when parent supplies `file` or `files` props
   useEffect(() => {
@@ -561,32 +633,122 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{saveMessage}</div>
       )}
 
-      {uploadErrors.length > 0 && (
-        <div className="mt-4 overflow-hidden rounded-lg border border-red-200">
-          <div className="flex items-center gap-2 border-b border-red-200 bg-red-50 px-4 py-2">
-            <AlertCircle className="h-4 w-4 text-red-600" aria-hidden />
-            <span className="text-xs font-semibold text-red-900">Rows that did not import ({uploadErrors.length})</span>
-          </div>
-          <div className="max-h-48 overflow-y-auto bg-panel p-2">
-            <table className="w-full text-left text-[11px]">
-              <thead className="font-medium text-slate-600">
-                <tr>
-                  <th className="px-2 py-1">ID</th>
-                  <th className="px-2 py-1">Reason</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-800">
-                {uploadErrors.map((err, i) => (
-                  <tr key={i} className="hover:bg-slate-50">
-                    <td className="px-2 py-1 font-mono">{err.odId}</td>
-                    <td className="px-2 py-1">{err.reason}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      <div className="mt-6 border-t border-slate-200 pt-6">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-slate-800">Upload History & Logs</h3>
+          <button
+            type="button"
+            onClick={() => setShowLogs(!showLogs)}
+            className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+          >
+            <History className="h-4 w-4" />
+            {showLogs ? 'Hide Logs' : 'View Past Logs'}
+          </button>
         </div>
-      )}
+
+        {uploadErrors.length > 0 && !showLogs && (
+          <div className="mt-4 overflow-hidden rounded-lg border border-red-200 shadow-sm">
+            <div className="flex items-center justify-between border-b border-red-200 bg-red-50 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 text-red-600" aria-hidden />
+                <span className="font-semibold text-red-900">Current Upload Errors ({uploadErrors.length} total)</span>
+              </div>
+              <button
+                type="button"
+                onClick={exportCurrentErrors}
+                className="inline-flex items-center gap-1.5 rounded-md bg-white px-2.5 py-1.5 text-xs font-medium text-red-700 shadow-sm ring-1 ring-inset ring-red-300 hover:bg-red-50"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export to Excel
+              </button>
+            </div>
+            <div className="max-h-64 overflow-y-auto bg-white p-0">
+              <table className="w-full text-left text-sm whitespace-nowrap">
+                <thead className="bg-slate-50 font-medium text-slate-600 sticky top-0 border-b border-slate-200 shadow-sm z-10">
+                  <tr>
+                    <th className="px-4 py-2">Error Message</th>
+                    <th className="px-4 py-2 text-center">Occurrences</th>
+                    <th className="px-4 py-2">Sample Identifiers (Max 5)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-800">
+                  {groupedCurrentErrors.map((err, i) => (
+                    <tr key={i} className="hover:bg-slate-50">
+                      <td className="px-4 py-2.5 text-red-700 max-w-xs truncate" title={err.message}>{err.message}</td>
+                      <td className="px-4 py-2.5 text-center font-semibold text-slate-700">{err.count}</td>
+                      <td className="px-4 py-2.5 font-mono text-xs text-slate-500 max-w-sm truncate" title={err.sampleRows.join(', ')}>
+                        {err.sampleRows.join(', ')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {showLogs && (
+          <div className="mt-4 space-y-4">
+            {loadingLogs ? (
+              <div className="flex justify-center p-8 text-slate-500">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600"></div>
+                <span className="ml-3 text-sm">Loading logs...</span>
+              </div>
+            ) : logs.length === 0 ? (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
+                No error logs found in the system.
+              </div>
+            ) : (
+              logs.map((log) => (
+                <div key={log._id} className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
+                    <div>
+                      <h4 className="font-medium text-slate-800 flex items-center gap-2">
+                        <FileSpreadsheet className="h-4 w-4 text-slate-500" />
+                        {log.fileName}
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
+                        <Clock className="h-3 w-3" />
+                        {new Date(log.uploadDate).toLocaleString()}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => exportHistoricalLog(log)}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50 transition-colors"
+                    >
+                      <Download className="h-4 w-4 text-slate-500" />
+                      Export Excel
+                    </button>
+                  </div>
+                  <div className="max-h-60 overflow-y-auto">
+                    <table className="w-full text-left text-sm whitespace-nowrap">
+                      <thead className="bg-slate-50/50 font-medium text-slate-600 sticky top-0 border-b border-slate-200 shadow-sm">
+                        <tr>
+                          <th className="px-4 py-2">Error Message</th>
+                          <th className="px-4 py-2 text-center">Occurrences</th>
+                          <th className="px-4 py-2">Sample Identifiers</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-slate-800">
+                        {log.errorDetails.map((err: any, i: number) => (
+                          <tr key={i} className="hover:bg-slate-50">
+                            <td className="px-4 py-2 text-red-600 max-w-xs truncate" title={err.message}>{err.message}</td>
+                            <td className="px-4 py-2 text-center font-medium text-slate-700">{err.count}</td>
+                            <td className="px-4 py-2 font-mono text-xs text-slate-500 max-w-sm truncate" title={err.sampleRows.join(', ')}>
+                              {err.sampleRows.join(', ')}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
     </section>
   );
 };

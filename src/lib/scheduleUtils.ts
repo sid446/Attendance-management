@@ -1,62 +1,124 @@
-// src/lib/scheduleUtils.ts
-import { IUser } from '@/models/User';
-
 /**
  * Get scheduled in/out times, holiday, and half-day status for a user on a specific date.
+ * This is the central source of truth for all schedule calculations.
  */
-export function getScheduledTimes(user: IUser | null | undefined, dateStr: string): { inTime: string; outTime: string; isHoliday: boolean; isHalfDay: boolean } {
+export function getScheduledTimes(user: any, dateInput: string | Date): { 
+  inTime: string; 
+  outTime: string; 
+  isHoliday: boolean; 
+  isHalfDay: boolean;
+  source: 'seasonal' | 'regular' | 'legacy' | 'default';
+} {
   if (!user) {
-    return { inTime: '09:00', outTime: '18:00', isHoliday: false, isHalfDay: false };
+    return { inTime: '09:00', outTime: '18:00', isHoliday: false, isHalfDay: false, source: 'default' };
   }
-  const date = new Date(dateStr);
-  const dayOfWeek = date.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
 
-  // Try to use the user's schedules array (new structure)
-  if (user.schedules && Array.isArray(user.schedules)) {
-    const normalizeDate = (d: any) => {
-      if (!d) return 0;
-      if (typeof d === 'string') return new Date(d).getTime();
-      if (d instanceof Date) return d.getTime();
-      return 0;
-    };
-    const applicableEntry = user.schedules
-      .filter(entry => normalizeDate(entry.effectiveFrom) <= date.getTime())
-      .sort((a, b) => normalizeDate(b.effectiveFrom) - normalizeDate(a.effectiveFrom))[0];
-    if (applicableEntry && applicableEntry.daily) {
-      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-      const dayName = dayNames[dayOfWeek];
-      const sch = applicableEntry.daily[dayName];
-      if (sch) {
+  const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  if (isNaN(date.getTime())) {
+    return { inTime: '09:00', outTime: '18:00', isHoliday: false, isHalfDay: false, source: 'default' };
+  }
+
+  const dateTime = date.getTime();
+  const dayOfWeek = date.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+  const month = date.getMonth(); // 0-11
+  const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const dayName = dayNames[dayOfWeek];
+
+  const normalizeDate = (d: any) => {
+    if (!d) return 0;
+    if (typeof d === 'string') return new Date(d).getTime();
+    if (d instanceof Date) return d.getTime();
+    if (typeof d === 'object' && d.$date) return new Date(d.$date).getTime();
+    return 0;
+  };
+
+  // 1. Try to use seasonal schedules first (Recurring & Versioned)
+  if (user.seasonalSchedules && Array.isArray(user.seasonalSchedules)) {
+    const applicableSeasonal = user.seasonalSchedules
+      .filter((s: any) => {
+        // Month range check with wrap-around support
+        const isMonthMatch = s.startMonth <= s.endMonth
+          ? (month >= s.startMonth && month <= s.endMonth)
+          : (month >= s.startMonth || month <= s.endMonth);
+        
+        // Versioning check
+        const isEffective = normalizeDate(s.effectiveFrom) <= dateTime;
+        return isMonthMatch && isEffective;
+      })
+      .slice()
+      .sort((a: any, b: any) => normalizeDate(b.effectiveFrom) - normalizeDate(a.effectiveFrom))[0];
+
+    if (applicableSeasonal && applicableSeasonal.daily) {
+      const sch = applicableSeasonal.daily[dayName];
+      if (sch && sch.inTime) {
         return {
-          inTime: sch.inTime || '09:00',
+          inTime: sch.inTime,
           outTime: sch.outTime || '18:00',
           isHoliday: sch.isHoliday || false,
           isHalfDay: sch.isHalfDay || false,
+          source: 'seasonal'
         };
       }
     }
   }
-  // Fallback to legacy schedule fields
-  const month = date.getMonth() + 1; // 1-12
+
+  // 2. Fallback to the user's regular schedules array (Effective Date based)
+  if (user.schedules && Array.isArray(user.schedules)) {
+    const applicableEntry = user.schedules
+      .filter((entry: any) => normalizeDate(entry.effectiveFrom) <= dateTime)
+      .slice()
+      .sort((a: any, b: any) => normalizeDate(b.effectiveFrom) - normalizeDate(a.effectiveFrom))[0];
+
+    if (applicableEntry && applicableEntry.daily) {
+      const sch = applicableEntry.daily[dayName];
+      if (sch && sch.inTime) {
+        return {
+          inTime: sch.inTime,
+          outTime: sch.outTime || '18:00',
+          isHoliday: sch.isHoliday || false,
+          isHalfDay: sch.isHalfDay || false,
+          source: 'regular'
+        };
+      }
+    }
+  }
+
+  // 3. Fallback to legacy schedule fields
+  const month1Based = month + 1; // 1-12
   let inTime = '09:00';
   let outTime = '18:00';
   let isHoliday = false;
   let isHalfDay = false;
-  if (month === 12 || month === 1) {
-    inTime = user.scheduleInOutTimeMonth?.inTime || '09:00';
-    outTime = user.scheduleInOutTimeMonth?.outTime || '18:00';
-    isHoliday = user.scheduleInOutTimeMonth?.isHoliday || false;
-    isHalfDay = user.scheduleInOutTimeMonth?.isHalfDay || false;
+  let source: 'legacy' | 'default' = 'default';
+
+  if (month1Based === 12 || month1Based === 1) {
+    if (user.scheduleInOutTimeMonth) {
+      inTime = user.scheduleInOutTimeMonth.inTime || '09:00';
+      outTime = user.scheduleInOutTimeMonth.outTime || '18:00';
+      isHoliday = user.scheduleInOutTimeMonth.isHoliday || false;
+      isHalfDay = user.scheduleInOutTimeMonth.isHalfDay || false;
+      source = 'legacy';
+    }
   } else if (dayOfWeek === 6) { // Saturday
-    inTime = user.scheduleInOutTimeSat?.inTime || '09:00';
-    outTime = user.scheduleInOutTimeSat?.outTime || '18:00';
-    isHoliday = user.scheduleInOutTimeSat?.isHoliday || false;
-    isHalfDay = user.scheduleInOutTimeSat?.isHalfDay || false;
+    if (user.scheduleInOutTimeSat) {
+      inTime = user.scheduleInOutTimeSat.inTime || '09:00';
+      outTime = user.scheduleInOutTimeSat.outTime || '18:00';
+      isHoliday = user.scheduleInOutTimeSat.isHoliday || false;
+      isHalfDay = user.scheduleInOutTimeSat.isHalfDay || false;
+      source = 'legacy';
+    }
   } else if (dayOfWeek !== 0) { // Regular (Mon-Fri)
-    inTime = user.scheduleInOutTime?.inTime || '09:00';
-    outTime = user.scheduleInOutTime?.outTime || '18:00';
-    isHoliday = user.scheduleInOutTime?.isHoliday || false;
-    isHalfDay = user.scheduleInOutTime?.isHalfDay || false;
+    if (user.scheduleInOutTime) {
+      inTime = user.scheduleInOutTime.inTime || '09:00';
+      outTime = user.scheduleInOutTime.outTime || '18:00';
+      isHoliday = user.scheduleInOutTime.isHoliday || false;
+      isHalfDay = user.scheduleInOutTime.isHalfDay || false;
+      source = 'legacy';
+    }
+  } else {
+    // Sunday default
+    isHoliday = true;
   }
-  return { inTime, outTime, isHoliday, isHalfDay };
+
+  return { inTime, outTime, isHoliday, isHalfDay, source };
 }

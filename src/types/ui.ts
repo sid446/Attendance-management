@@ -165,6 +165,14 @@ export interface User {
 
   // Schedule entries with effective dates - NEW STRUCTURE
   schedules?: ScheduleEntry[]; // Array of schedule entries, ordered by effectiveFrom ascending
+  
+  // Seasonal schedules (e.g. Dec-Jan recurring)
+  seasonalSchedules?: Array<{
+    startMonth: number; // 0-11
+    endMonth: number;   // 0-11
+    effectiveFrom: string | Date;
+    daily: DailySchedule;
+  }>;
 
   // Legacy fields for backward compatibility (will be migrated)
   scheduleInOutTime?: ScheduleTime;

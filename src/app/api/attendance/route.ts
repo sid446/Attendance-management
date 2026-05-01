@@ -5,6 +5,7 @@ import AttendanceRequest from '@/models/AttendanceRequest';
 import User, { IUser } from '@/models/User';
 import Holiday from '@/models/Holiday';
 import { calculateLeaveUsageForMultipleDays, updateLeaveBalanceOnApproval, reconcilePartialLeaveFromAttendance } from '@/lib/leaveManagement';
+import { getScheduledTimes } from '@/lib/scheduleUtils';
 
 // GET - Fetch attendance records
 export async function GET(request: NextRequest) {
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
     }
 
     const attendanceRecords = await Attendance.find(query)
-      .populate('userId', 'name employeeId odId employeeCode email department team designation workingUnderPartner schedules scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth')
+      .populate('userId', 'name employeeId odId employeeCode email department team designation workingUnderPartner paidFrom category schedules scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth')
       .sort({ monthYear: -1 });
 
     // Serialize records to plain JS objects and ensure summary fields are present
@@ -67,10 +68,9 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // Debug: Log the serialized data and summaries
-    console.log('[DEBUG] Attendance GET serialized:', JSON.stringify(serialized, null, 2));
+    // Debug: Log the summaries to ensure they are present
     if (serialized.length > 0) {
-      console.log('[DEBUG] First summary:', JSON.stringify(serialized[0].summary, null, 2));
+      console.log(`[DEBUG] Fetched ${serialized.length} attendance records. First summary:`, JSON.stringify(serialized[0].summary));
     }
 
     return NextResponse.json({
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
       const newAttendanceUserMonths = new Set<string>();
 
       // Pre-fetch all users for efficient in-memory matching
-      const allUsers = await User.find({}).select('name _id odId employeeCode designation employmentType schedules scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth');
+      const allUsers = await User.find({}).select('name _id odId employeeCode designation employmentType schedules seasonalSchedules scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth');
       
       // Helper to strip non-alphanumeric characters for fuzzy matching
       const normalizeForMatch = (s: string) => s.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
@@ -183,6 +183,34 @@ export async function POST(request: NextRequest) {
           let checkin = normalizeTimeToHHmm(rec.inTime || rec.actualInTime);
           let checkout = normalizeTimeToHHmm(rec.outTime || rec.actualOutTime);
 
+          // MERGE LOGIC: If a record already exists for this date, merge raw times before processing
+          // Keep earliest In, Latest Out
+          let wasMerged = false;
+          if (existingRecordBeforeUpdate) {
+            const oldIn = existingRecordBeforeUpdate.checkin || '00:00';
+            const oldOut = existingRecordBeforeUpdate.checkout || '00:00';
+            
+            if (oldIn !== '00:00' && (checkin === '00:00' || oldIn < checkin)) {
+              checkin = oldIn;
+              wasMerged = true;
+            } else if (oldIn === '00:00' && checkin !== '00:00') {
+              // checkin is already new value
+            } else if (oldIn !== '00:00' && checkin !== '00:00' && oldIn < checkin) {
+               checkin = oldIn;
+               wasMerged = true;
+            }
+
+            if (oldOut !== '00:00' && (checkout === '00:00' || oldOut > checkout)) {
+              checkout = oldOut;
+              wasMerged = true;
+            } else if (oldOut === '00:00' && checkout !== '00:00') {
+              // checkout is already new value
+            } else if (oldOut !== '00:00' && checkout !== '00:00' && oldOut > checkout) {
+               checkout = oldOut;
+               wasMerged = true;
+            }
+          }
+
           // Anomaly Detection: If checkin is late (>= 16:00) AND checkout is 00:00/empty,
           // person likely only punched OUT, so the checkin value is actually the exit time.
           // Swap: move checkin to checkout, set checkin to 00:00
@@ -197,11 +225,10 @@ export async function POST(request: NextRequest) {
           }
 
           // For Excel uploads, edited times are initially set to same as original times
-          // They can be modified later through employee correction requests
           const editedCheckin = checkin;
           const editedCheckout = checkout;
 
-          // Use edited times for calculations (which are initially same as original)
+          // Use edited times for calculations
           const calculationCheckin = editedCheckin;
           const calculationCheckout = editedCheckout;
           const totalHour = calculateTotalHours(calculationCheckin, calculationCheckout);
@@ -214,17 +241,15 @@ export async function POST(request: NextRequest) {
           });
 
           // Map page status to typeOfPresence;
-          // User Requirement: typeOfPresence should always be 'ThumbMachine' for Excel uploads indicating source.
-          // Absent status will be determined by 0 totalHour in summary calculation.
           let typeOfPresence = 'ThumbMachine';
           let finalCheckin = checkin;
           let finalCheckout = checkout;
-          let finalEditedCheckin = editedCheckin; // Initially same as original
-          let finalEditedCheckout = editedCheckout; // Initially same as original
+          let finalEditedCheckin = editedCheckin; 
+          let finalEditedCheckout = editedCheckout; 
           let finalTotalHour = totalHour;
           let finalValue = totalHour > 0 ? 1 : 0;
           let finalHalfDay = false;
-          let remarksStr = '';
+          let remarksStr = wasMerged ? '(Merged from multiple uploads)' : '';
 
           if (isFixedDataUpload) {
             const mappedType = rec.typeOfPresence ? String(rec.typeOfPresence).trim() : mapFixedPresenceCodeToType(fixedPresenceCode);
@@ -257,16 +282,14 @@ export async function POST(request: NextRequest) {
             if (typeOfPresence === 'Holiday' || typeOfPresence === 'Sunday' || typeOfPresence === 'Weekoff' || typeOfPresence === 'Absent') {
               finalTotalHour = 0;
             }
-            remarksStr = fixedPresenceCode ? `Fixed upload status: ${fixedPresenceCode}` : '';
+            remarksStr = (fixedPresenceCode ? `Fixed upload status: ${fixedPresenceCode}` : '') + (wasMerged ? ' (Merged)' : '');
           }
 
           // Special case: if checkin is 00:00 but checkout is valid, mark as half day
           if (finalCheckin === '00:00' && finalCheckout !== '00:00' && finalCheckout !== '' && finalTotalHour > 0) {
             finalHalfDay = true;
             finalValue = 0.5;
-            remarksStr = exitOnlyPunchDetected 
-              ? 'Exit-only punch detected, marked as Half Day' 
-              : 'Marked as Half Day (no check-in time)';
+            remarksStr += (remarksStr ? ' | ' : '') + (exitOnlyPunchDetected ? 'Exit-only punch detected' : 'No check-in time');
           }
 
           // Check if date is a Sunday or Holiday when there's no working hours
@@ -278,20 +301,19 @@ export async function POST(request: NextRequest) {
             if (dayOfWeek === 0) {
               typeOfPresence = 'Holiday';
               finalValue = 0;
-              remarksStr = 'Weekly Off (Sunday)';
+              remarksStr += (remarksStr ? ' | ' : '') + 'Weekly Off (Sunday)';
             } else {
               // Check if it's a Holiday
               const holiday = await Holiday.findOne({ date: isoDate, isActive: true });
               if (holiday) {
                 typeOfPresence = 'Holiday';
                 finalValue = 0;
-                remarksStr = holiday.name;
+                remarksStr += (remarksStr ? ' | ' : '') + holiday.name;
               }
             }
           }
           // Override if Approved Request Exists
           if (!isFixedDataUpload && approvedRequest) {
-             // Calculate Request Duration
              let requestTotalHour = 0;
              if (approvedRequest.startTime && approvedRequest.endTime) {
                  const [h1, m1] = String(approvedRequest.startTime).split(':').map(Number);
@@ -301,24 +323,15 @@ export async function POST(request: NextRequest) {
                     requestTotalHour = Math.max(0, Math.round((minutes / 60) * 100) / 100);
                  }
              }
-
-             // Logic: If Machine Data hours > Request Data hours, Machine Data prevails.
-             // This handles:
-             // 1. Applied for Leave (0 hrs) but worked (e.g. 5 hrs) -> Machine Data (Present)
-             // 2. Applied for Half Day (4 hrs) but worked Full Day (8 hrs) -> Machine Data (Present)
-             // 3. Applied for WFH (9 hrs) and Machine is 0 or less -> Request Data (WFH)
              
              if (totalHour > requestTotalHour) {
                  typeOfPresence = 'Present'; 
-                 remarksStr = `Present (Machine ${totalHour}h > Request ${requestTotalHour}h)`;
-                 // finalCheckin, finalCheckout, finalTotalHour are already set to machine values
+                 remarksStr += (remarksStr ? ' | ' : '') + `Present (Machine ${totalHour}h > Request ${requestTotalHour}h)`;
                  finalValue = 1;
              } else {
-                 // Standard Override: Approved Request takes precedence
                  typeOfPresence = approvedRequest.requestedStatus;
-                 remarksStr = `Overridden by Approved Request: ${approvedRequest.requestedStatus}`;
+                 remarksStr += (remarksStr ? ' | ' : '') + `Overridden by Approved Request: ${approvedRequest.requestedStatus}`;
 
-                 // If request provides specific times, use them
                  if (approvedRequest.startTime && approvedRequest.endTime) {
                      finalCheckin = approvedRequest.startTime;
                      finalCheckout = approvedRequest.endTime;
@@ -326,7 +339,6 @@ export async function POST(request: NextRequest) {
                      finalEditedCheckout = approvedRequest.endTime;
                      finalTotalHour = requestTotalHour;
                  } else {
-                     // If it's a leave type and no times (or times resulted in 0), ensure cleared
                      const isLeaveType = ['On leave', 'Absent'].includes(approvedRequest.requestedStatus);
                      if (isLeaveType) {
                          finalCheckin = '';
@@ -335,7 +347,6 @@ export async function POST(request: NextRequest) {
                      }
                  }
 
-                 // Adjust Value based on Status
                  if (typeOfPresence === 'On leave' || typeOfPresence === 'Absent') {
                      finalValue = 0;
                  } else if (typeOfPresence && typeOfPresence.includes('Half Day')) {
@@ -350,19 +361,14 @@ export async function POST(request: NextRequest) {
           // Special handling for Article employees
           const isArticleEmployee = user && (user.employmentType === 'article' || user.designation?.toLowerCase() === 'article');
           if (!isFixedDataUpload && isArticleEmployee) {
-            // Article employees are treated as full-time
-            // Even with 00:00 times, they should be marked as present (not absent)
-            // But preserve Holiday status for Sundays/holidays
             if (finalTotalHour === 0 && typeOfPresence !== 'Holiday') {
-              finalValue = 0; // Treat as present
+              finalValue = 0;
               typeOfPresence = 'ThumbMachine';
             }
-            
-            // Determine half-day for Article employees: arrive after 1:00 PM or spent less than 3:30 hours
-            // Skip half-day calculation if times are 00:00
             if (finalCheckin !== '00:00' || finalCheckout !== '00:00') {
               const isAfter1PM = finalCheckin ? finalCheckin >= '13:00' : false;
               finalHalfDay = isAfter1PM || finalTotalHour < 3.5;
+              if (finalHalfDay) finalValue = 0.5;
             }
           }
 
@@ -843,108 +849,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Helper function to calculate summary from records
-// Helper to get scheduled times for a user on a specific date
-function getScheduledTimes(user: IUser | null | undefined, dateStr: string): { inTime: string; outTime: string; isHoliday: boolean; isHalfDay: boolean } {
-  if (!user) {
-    console.log(`[getScheduledTimes] No user provided for date ${dateStr}, using default 09:00-18:00`);
-    return { inTime: '09:00', outTime: '18:00', isHoliday: false, isHalfDay: false };
-  }
 
-  const date = new Date(dateStr);
-  const dayOfWeek = date.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-
-  // Try to use the user's schedules array (new structure)
-  if (user.schedules && Array.isArray(user.schedules)) {
-    // Find the most recent schedule entry effective on or before this date
-    const normalizeDate = (d: any) => {
-      if (!d) return new Date('1900-01-01');
-      if (d instanceof Date) return d;
-      if (typeof d === 'string') return new Date(d);
-      if (typeof d === 'object' && d.$date) return new Date(d.$date);
-      return new Date(d);
-    };
-    console.log(`[getScheduledTimes] User: ${user.name} (${user._id}), Date: ${dateStr}, Checking schedules:`);
-    user.schedules.forEach((entry, idx) => {
-      const eff = entry.effectiveFrom;
-      const effNorm = normalizeDate(eff);
-      console.log(`  [${idx}] effectiveFrom:`, eff, `(type: ${typeof eff}), normalized: ${effNorm.toISOString()}, compare to: ${date.toISOString()}`);
-    });
-    const applicableEntry = user.schedules
-      .filter(entry => {
-        const eff = normalizeDate(entry.effectiveFrom);
-        return eff <= date;
-      })
-      .sort((a, b) => {
-        const aEff = normalizeDate(a.effectiveFrom);
-        const bEff = normalizeDate(b.effectiveFrom);
-        return bEff.getTime() - aEff.getTime();
-      })[0];
-    if (applicableEntry) {
-      const effNorm = normalizeDate(applicableEntry.effectiveFrom);
-      console.log(`[getScheduledTimes] User: ${user.name} (${user._id}), Date: ${dateStr}, Selected applicableEntry effectiveFrom: ${applicableEntry.effectiveFrom} (normalized: ${effNorm.toISOString()})`);
-    } else {
-      console.log(`[getScheduledTimes] User: ${user.name} (${user._id}), Date: ${dateStr}, No applicableEntry found (all effectiveFrom > date)`);
-    }
-    if (applicableEntry && applicableEntry.daily) {
-      const daily = applicableEntry.daily;
-      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
-      type DayName = typeof dayNames[number];
-      const dayName = dayNames[dayOfWeek] as DayName;
-      let daySchedule = daily[dayName as keyof typeof daily];
-      // If no specific day schedule, fallback to Monday for weekdays
-      if ((!daySchedule || !daySchedule.inTime) && dayOfWeek >= 1 && dayOfWeek <= 5) {
-        daySchedule = daily['monday'];
-      }
-      if (daySchedule) {
-        console.log(`[getScheduledTimes] User: ${user.name} (${user._id}), Date: ${dateStr}, Using schedule from entry effective ${applicableEntry.effectiveFrom}, Day: ${dayName}, In: ${daySchedule.inTime}, Out: ${daySchedule.outTime}`);
-        return {
-          inTime: daySchedule.inTime || '09:00',
-          outTime: daySchedule.outTime || '18:00',
-          isHoliday: daySchedule.isHoliday || false,
-          isHalfDay: daySchedule.isHalfDay || false,
-        };
-      } else {
-        console.log(`[getScheduledTimes] User: ${user.name} (${user._id}), Date: ${dateStr}, No daySchedule found for day: ${dayName}, entry effective: ${applicableEntry.effectiveFrom}`);
-      }
-    } else {
-      console.log(`[getScheduledTimes] User: ${user.name} (${user._id}), Date: ${dateStr}, No applicableEntry.daily found`);
-    }
-  }
-
-  // Fallback to legacy schedule fields if schedules array is not set
-  // (This logic is unchanged, but only used if no schedules array)
-  const month = date.getMonth() + 1; // 1-12
-  let inTime = '09:00';
-  let outTime = '18:00';
-  let isHoliday = false;
-  let isHalfDay = false;
-
-  if (month === 12 || month === 1) {
-    inTime = user.scheduleInOutTimeMonth?.inTime || '09:00';
-    outTime = user.scheduleInOutTimeMonth?.outTime || '18:00';
-    isHoliday = user.scheduleInOutTimeMonth?.isHoliday || false;
-    isHalfDay = user.scheduleInOutTimeMonth?.isHalfDay || false;
-  } else if (dayOfWeek === 6) { // Saturday
-    inTime = user.scheduleInOutTimeSat?.inTime || '09:00';
-    outTime = user.scheduleInOutTimeSat?.outTime || '18:00';
-    isHoliday = user.scheduleInOutTimeSat?.isHoliday || false;
-    isHalfDay = user.scheduleInOutTimeSat?.isHalfDay || false;
-  } else if (dayOfWeek !== 0) { // Regular (Mon-Fri)
-    inTime = user.scheduleInOutTime?.inTime || '09:00';
-    outTime = user.scheduleInOutTime?.outTime || '18:00';
-    isHoliday = user.scheduleInOutTime?.isHoliday || false;
-    isHalfDay = user.scheduleInOutTime?.isHalfDay || false;
-  } else { // Sunday
-    inTime = user.scheduleInOutTime?.inTime || '09:00';
-    outTime = user.scheduleInOutTime?.outTime || '18:00';
-    isHoliday = user.scheduleInOutTime?.isHoliday || true; // Sunday default holiday
-    isHalfDay = user.scheduleInOutTime?.isHalfDay || false;
-  }
-
-  console.log(`[getScheduledTimes] User: ${user.name} (${user._id}), Date: ${dateStr}, FALLBACK to legacy/default. In: ${inTime}, Out: ${outTime}`);
-  return { inTime, outTime, isHoliday, isHalfDay };
-}
 
 // Helper to convert time string to minutes
 function timeToMinutes(time: string): number {

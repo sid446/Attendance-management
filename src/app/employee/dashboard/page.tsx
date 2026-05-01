@@ -33,10 +33,12 @@ import { LocationAttendanceSection } from '@/components/LocationAttendanceSectio
 import { EmployeeDashboardOverview } from '@/components/EmployeeDashboardOverview';
 import { EmployeeSummaryMonthPicker } from '@/components/EmployeeSummaryMonthPicker';
 import { TeamAttendanceSkeleton } from '@/components/TeamAttendanceSkeleton';
+
 import {
   PartnerTeamOverview,
   type PartnerTeamRow,
 } from '@/components/PartnerTeamOverview';
+import { SummarySection } from '@/components/SummarySection';
 import {
   computeSummaryAlignedMetrics,
   getDailyWorkedHoursSeries,
@@ -101,6 +103,72 @@ function mergeAttendanceProfile(session: User, docUser: unknown): User {
   } as User;
 }
 
+// Helper to calculate scheduled hours from recordDetails
+function calculateScheduledHoursForSummary(attData: any): number {
+  let totalScheduled = 0;
+  const recordDetails = attData.recordDetails || {};
+  const user = attData.userId;
+  
+  if (!user || !recordDetails) return 0;
+  
+  Object.entries(recordDetails).forEach(([dateStr, rec]: [string, any]) => {
+    const d = new Date(dateStr);
+    const typeOfPresence = rec.typeOfPresence || '';
+    
+    // Skip holidays and non-working records
+    if (typeOfPresence === 'Holiday' || typeOfPresence === 'Sunday' || typeOfPresence === 'Weekoff') {
+      return;
+    }
+    
+    // Get schedule for this date
+    let scheduledInTime = '';
+    let scheduledOutTime = '';
+    
+    if (user.schedules && Array.isArray(user.schedules) && user.schedules.length > 0) {
+      const effSchedules = user.schedules
+        .filter((s: any) => new Date(s.effectiveFrom) <= d)
+        .sort((a: any, b: any) => new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime());
+      
+      if (effSchedules.length > 0) {
+        const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        const dayName = dayNames[d.getDay()];
+        const daySchedule = effSchedules[0].daily?.[dayName];
+        if (daySchedule && !daySchedule.isHoliday) {
+          scheduledInTime = daySchedule.inTime || '';
+          scheduledOutTime = daySchedule.outTime || '';
+        }
+      }
+    }
+    
+    // Fallback to legacy fields
+    if (!scheduledInTime && !scheduledOutTime) {
+      const dayName = d.getDay();
+      if (dayName === 6 && user.scheduleInOutTimeSat) {
+        scheduledInTime = user.scheduleInOutTimeSat.inTime || '';
+        scheduledOutTime = user.scheduleInOutTimeSat.outTime || '';
+      } else if (dayName !== 0 && user.scheduleInOutTime) {
+        scheduledInTime = user.scheduleInOutTime.inTime || '';
+        scheduledOutTime = user.scheduleInOutTime.outTime || '';
+      }
+    }
+    
+    // Calculate hours from schedule times
+    if (scheduledInTime && scheduledOutTime && scheduledInTime !== '00:00' && scheduledOutTime !== '00:00') {
+      const [inH, inM] = scheduledInTime.split(':').map(Number);
+      const [outH, outM] = scheduledOutTime.split(':').map(Number);
+      let minutes = (outH * 60 + outM) - (inH * 60 + inM);
+      if (minutes < 0) minutes += 24 * 60;
+      
+      // Deduct 1 hour lunch
+      const hoursWithoutLunch = Math.max(0, minutes - 60) / 60;
+      totalScheduled += hoursWithoutLunch;
+    }
+  });
+  
+  return Number(totalScheduled.toFixed(2));
+}
+
+
 const TIMED_CATEGORIES = [
   'Present - in office',
   'Half Day',
@@ -145,8 +213,6 @@ function getCorrectionTimeDraft(dayRecord?: AttendanceRecord | null) {
   return {
     startTime,
     endTime,
-    lockStartTime: Boolean(startTime && !endTime),
-    lockEndTime: Boolean(endTime && !startTime),
   };
 }
 
@@ -166,6 +232,7 @@ export default function EmployeeDashboard() {
 
   // State for subordinates (if any)
   const [subordinates, setSubordinates] = useState<User[]>([]);
+  const [showTeamExportModal, setShowTeamExportModal] = useState(false);
   const [subordinateAttendance, setSubordinateAttendance] = useState<
     Record<
       string,
@@ -264,6 +331,7 @@ export default function EmployeeDashboard() {
   // Modal State
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedDateStatus, setSelectedDateStatus] = useState<string | null>(null); // Track the status of selected date
+  const [selectedDateIsMissedEntry, setSelectedDateIsMissedEntry] = useState(false);
   const [requestStatus, setRequestStatus] = useState('Official Holiday Duty (OHD)');
   const [requestReason, setRequestReason] = useState('');
   const [startTime, setStartTime] = useState('');
@@ -438,11 +506,17 @@ export default function EmployeeDashboard() {
             recordDetailsPlain[k] =
               v && typeof v === 'object' ? { ...(v as object) } : v;
           }
+          const calcScheduled = calculateScheduledHoursForSummary(attData);
+          const calcExcessDeficit = attData.summary?.excessHour ?? 0;
           const mappedSum: AttendanceSummaryView = {
             id: attData._id,
             userId: attData.userId._id,
             userName: attData.userId.name,
             monthYear: attData.monthYear,
+            odId: attData.userId.odId,
+            employeeCode: attData.userId.employeeCode,
+            team: attData.userId.team,
+            designation: attData.userId.designation,
             schedules: {
               effectiveFrom: new Date().toISOString(),
               daily
@@ -454,6 +528,8 @@ export default function EmployeeDashboard() {
               ),
             },
             recordDetails: recordDetailsPlain as AttendanceSummaryView['recordDetails'],
+            calcScheduled,
+            calcExcessDeficit,
           };
           att[sub._id] = {
             summary: mappedSum,
@@ -589,11 +665,17 @@ export default function EmployeeDashboard() {
             v && typeof v === 'object' ? { ...(v as object) } : v;
         }
 
+        const calcScheduled = calculateScheduledHoursForSummary(doc);
+        const calcExcessDeficit = doc.summary?.excessHour ?? 0;
         const mappedSum: AttendanceSummaryView = {
           id: doc._id,
           userId: String(doc.userId._id ?? doc.userId),
           userName: doc.userId.name,
           monthYear: doc.monthYear,
+          odId: doc.userId.odId,
+          employeeCode: doc.userId.employeeCode,
+          team: doc.userId.team,
+          designation: doc.userId.designation,
           schedules: {
             effectiveFrom: new Date().toISOString(),
             daily
@@ -603,6 +685,8 @@ export default function EmployeeDashboard() {
             excessHours: formatExcessHour(doc.summary?.excessHour ?? 0),
           },
           recordDetails: recordDetailsPlain as AttendanceSummaryView['recordDetails'],
+          calcScheduled,
+          calcExcessDeficit,
         };
         setSummary(mappedSum);
         if (baseSession && doc.userId) {
@@ -726,11 +810,17 @@ export default function EmployeeDashboard() {
             recordDetailsPlain[k] =
               v && typeof v === 'object' ? { ...(v as object) } : v;
           }
+          const calcScheduled = calculateScheduledHoursForSummary(attData);
+          const calcExcessDeficit = attData.summary?.excessHour ?? 0;
           const mappedSum: AttendanceSummaryView = {
             id: attData._id,
             userId: attData.userId._id,
             userName: attData.userId.name,
             monthYear: attData.monthYear,
+            odId: attData.userId.odId,
+            employeeCode: attData.userId.employeeCode,
+            team: attData.userId.team,
+            designation: attData.userId.designation,
             schedules: {
               effectiveFrom: new Date().toISOString(),
               daily
@@ -742,6 +832,8 @@ export default function EmployeeDashboard() {
               ),
             },
             recordDetails: recordDetailsPlain as AttendanceSummaryView['recordDetails'],
+            calcScheduled,
+            calcExcessDeficit,
           };
           att[sub._id] = {
             summary: mappedSum,
@@ -827,8 +919,11 @@ export default function EmployeeDashboard() {
 
       setSelectedDate(date);
       setSelectedDateStatus(isHoliday ? 'Holiday' : null);
+      setSelectedDateIsMissedEntry(isMissingPunch);
       // Set default status based on the day type
-      if (isHoliday) {
+      if (isMissingPunch) {
+        setRequestStatus('Present - in office');
+      } else if (isHoliday) {
         setRequestStatus('Weekoff - special allowance');
       } else {
         setRequestStatus('On leave');
@@ -863,14 +958,6 @@ export default function EmployeeDashboard() {
         return;
       }
 
-      if (selectedCorrectionTimeDraft.lockStartTime && startTime !== selectedCorrectionTimeDraft.startTime) {
-        alert('Original in time is locked for this date. Only enter the missing out time.');
-        return;
-      }
-      if (selectedCorrectionTimeDraft.lockEndTime && endTime !== selectedCorrectionTimeDraft.endTime) {
-        alert('Original out time is locked for this date. Only enter the missing in time.');
-        return;
-      }
     }
 
     let finalStartTime = startTime;
@@ -1201,8 +1288,17 @@ export default function EmployeeDashboard() {
     'Present - client place'
   ];
 
+  // Keep options narrow for missed in/out entry correction.
+  const missedEntryStatusOptions = [
+    'Present - in office',
+    'Half Day'
+  ];
+
   // Get the appropriate options based on selected date status
   const getCorrectionStatusOptions = () => {
+    if (selectedDateIsMissedEntry) {
+      return missedEntryStatusOptions;
+    }
     if (selectedDateStatus === 'Holiday') {
       return weekOffStatusOptions;
     }
@@ -1559,6 +1655,18 @@ export default function EmployeeDashboard() {
                         }}
                       />
                     </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowTeamExportModal(true)}
+                        className="inline-flex items-center gap-2 rounded-md border border-zinc-700 bg-zinc-900/30 px-3 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-900/50 transition-colors"
+                      >
+                        Export team
+                      </button>
+                    </div>
+
+                    
                     <div className="flex max-w-md flex-col gap-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
                       <label htmlFor="search-subordinate" className="text-xs font-medium uppercase tracking-wide text-zinc-500">
                         Find employee
@@ -1648,6 +1756,29 @@ export default function EmployeeDashboard() {
       </div>
 
       {/* Correction Modal */}
+      {showTeamExportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm sm:p-4">
+          <div className="w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-5xl bg-slate-50 sm:border border-slate-200 sm:rounded-xl shadow-2xl flex flex-col overflow-hidden">
+            <div className="shrink-0 p-3 sm:p-4 border-b border-slate-200 flex justify-between items-center bg-white sticky top-0 z-10">
+              <h3 className="font-semibold text-slate-900 text-sm sm:text-base">Team Export</h3>
+              <button onClick={() => setShowTeamExportModal(false)} className="p-1.5 text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-full transition-colors" aria-label="Close team export"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-slate-50">
+              <SummarySection
+                summaries={Object.values(subordinateAttendance).map(p => p.summary).filter(Boolean) as AttendanceSummaryView[]}
+                allUsers={subordinates}
+                holidays={holidays}
+                isLoading={subLoading || teamAttendanceLoading}
+                onFilterChange={(filter) => { if (typeof filter === 'string') handleMonthChange(filter); }}
+                onEmployeeClick={(id, my) => { setSelectedSubordinateId(id); setMonthYear(my); setShowTeamExportModal(false); }}
+                initialMonthYear={monthYear}
+                hideDetailedExport={true}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {showHolidayListModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4">
           <div className="w-full max-w-lg bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
@@ -1702,7 +1833,15 @@ export default function EmployeeDashboard() {
           <div className="w-full max-w-md bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
             <div className="p-3 sm:p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-950">
               <h3 className="font-semibold text-white text-sm sm:text-base">Request Correction</h3>
-              <button onClick={() => setSelectedDate(null)} className="text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button>
+              <button
+                onClick={() => {
+                  setSelectedDate(null);
+                  setSelectedDateIsMissedEntry(false);
+                }}
+                className="text-zinc-500 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
             <div className="p-4 sm:p-6 space-y-4">
               <div className="p-3 bg-emerald-900/20 border border-emerald-500/30 rounded-lg text-emerald-200 text-sm">
@@ -1728,7 +1867,6 @@ export default function EmployeeDashboard() {
                       type="time"
                       value={startTime}
                       onChange={(e) => setStartTime(e.target.value)}
-                      disabled={selectedCorrectionTimeDraft.lockStartTime}
                       className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2.5 text-zinc-200 outline-none focus:border-emerald-500 text-sm sm:text-base"
                     />
                   </div>
@@ -1738,7 +1876,6 @@ export default function EmployeeDashboard() {
                       type="time"
                       value={endTime}
                       onChange={(e) => setEndTime(e.target.value)}
-                      disabled={selectedCorrectionTimeDraft.lockEndTime}
                       className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2.5 text-zinc-200 outline-none focus:border-emerald-500 text-sm sm:text-base"
                     />
                   </div>
@@ -1747,11 +1884,7 @@ export default function EmployeeDashboard() {
 
               {correctionStatusRequiresTimePair && (
                 <p className="text-xs text-zinc-500">
-                  {selectedCorrectionTimeDraft.lockStartTime && !selectedCorrectionTimeDraft.lockEndTime
-                    ? 'Original in time is preserved. Fill only the missing out time.'
-                    : selectedCorrectionTimeDraft.lockEndTime && !selectedCorrectionTimeDraft.lockStartTime
-                      ? 'Original out time is preserved. Fill only the missing in time.'
-                      : 'Enter both times in 24-hour format. In time must be earlier than out time.'}
+                  Enter both times in 24-hour format. In time must be earlier than out time.
                 </p>
               )}
 

@@ -31,6 +31,9 @@ export default function AttendanceUpload() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [loginLoading, setLoginLoading] = useState<boolean>(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string>('');
+  const [userRole, setUserRole] = useState<string>('');
+  const [loginEmail, setLoginEmail] = useState<string>('');
 
   // Attendance state
   const [file, setFile] = useState<File | null>(null);
@@ -49,6 +52,7 @@ export default function AttendanceUpload() {
   const [uploadSaved, setUploadSaved] = useState<number>(0);
   const [uploadFailed, setUploadFailed] = useState<number>(0);
   const [activeSection, setActiveSection] = useState<'upload' | 'summary' | 'employee' | 'employees' | 'employeeMasterUpload' | 'requests' | 'holidays' | 'backup' | 'leave' | 'fines' | 'articleCredits' | 'invalid' | 'clientPlaces'>('summary');
+  const isITUser = userRole === 'restricted_admin';
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [selectedEmployeeMonth, setSelectedEmployeeMonth] = useState<string>(() => {
     const d = new Date();
@@ -77,6 +81,17 @@ export default function AttendanceUpload() {
     if (storedToken) {
       setAuthToken(storedToken);
       setIsAuthenticated(true);
+      const storedEmail = localStorage.getItem('attendanceUserEmail');
+      if (storedEmail) {
+        setUserEmail(storedEmail);
+        const storedRole = localStorage.getItem('attendanceUserRole');
+        if (storedRole) {
+          setUserRole(storedRole);
+          if (storedRole === 'restricted_admin') {
+            setActiveSection('upload');
+          }
+        }
+      }
     }
   }, []);
 
@@ -115,7 +130,7 @@ export default function AttendanceUpload() {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ password, email: loginEmail }),
       });
 
       const result = await response.json();
@@ -184,10 +199,22 @@ export default function AttendanceUpload() {
       }
 
       const token = result.data.authToken;
+      const email = result.data.email || loginEmail;
+      const role = result.data.role || 'admin';
       setAuthToken(token);
       setIsAuthenticated(true);
+      setUserEmail(email);
+      setUserRole(role);
       localStorage.setItem('attendanceAuthToken', token);
+      localStorage.setItem('attendanceUserEmail', email);
+      localStorage.setItem('attendanceUserRole', role);
+      
+      if (role === 'restricted_admin') {
+        setActiveSection('upload');
+      }
+
       setOtp('');
+      setLoginEmail('');
       setSessionId(null);
     } catch (err) {
       setLoginError(err instanceof Error ? err.message : 'Verification failed');
@@ -200,9 +227,14 @@ export default function AttendanceUpload() {
   const handleLogout = () => {
     setIsAuthenticated(false);
     setAuthToken(null);
+    setUserEmail('');
+    setUserRole('');
     localStorage.removeItem('attendanceAuthToken');
+    localStorage.removeItem('attendanceUserEmail');
+    localStorage.removeItem('attendanceUserRole');
     setLoginStep('password');
     setPassword('');
+    setLoginEmail('');
     setOtp('');
     setSessionId(null);
     setLoginError(null);
@@ -885,6 +917,38 @@ export default function AttendanceUpload() {
          setUploadErrors(prev => [...prev, ...errorsList]);
       }
 
+      if (localErrors.length > 0) {
+        const groupedErrors = localErrors.reduce((acc, curr) => {
+          const existing = acc.find(e => e.message === curr.reason);
+          if (existing) {
+            existing.count++;
+            if (existing.sampleRows.length < 5 && !existing.sampleRows.includes(curr.odId)) {
+              existing.sampleRows.push(curr.odId);
+            }
+          } else {
+            acc.push({
+              message: curr.reason,
+              count: 1,
+              sampleRows: [curr.odId]
+            });
+          }
+          return acc;
+        }, [] as { message: string, count: number, sampleRows: string[] }[]);
+
+        try {
+          await fetch('/api/upload-logs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fileName: file?.name || fixedFile?.name || 'Unknown File',
+              errorDetails: groupedErrors
+            })
+          });
+        } catch (err) {
+          console.error('Failed to save upload log', err);
+        }
+      }
+
       const baseMessage = `Saved ${localSaved} attendance record${localSaved === 1 ? '' : 's'} to the server.`;
 
       let errorMessage = '';
@@ -1287,6 +1351,8 @@ export default function AttendanceUpload() {
         password={password}
         onPasswordChange={setPassword}
         onPasswordSubmit={handlePasswordSubmit}
+        email={loginEmail}
+        onEmailChange={setLoginEmail}
         otp={otp}
         onOtpChange={(val) => setOtp(val.replace(/\D/g, '').slice(0, 6))}
         onOtpSubmit={handleOTPSubmit}
@@ -1307,12 +1373,16 @@ export default function AttendanceUpload() {
       <div className="flex h-screen max-h-screen">
         <Sidebar
           activeSection={activeSection}
-          setActiveSection={(section) => setActiveSection(section)}
+          setActiveSection={(section) => {
+            if (isITUser && section !== 'upload') return;
+            setActiveSection(section);
+          }}
           uploadTotal={uploadTotal}
           uploadSaved={uploadSaved}
           uploadFailed={uploadFailed}
           currentMonthYear={currentMonthYear}
           onLogout={handleLogout}
+          isITUser={isITUser}
         />
 
         {/* Main content */}

@@ -26,6 +26,14 @@ export interface IScheduleEntry {
   daily: IDailySchedule; // Per-day schedules
 }
 
+export interface ISeasonalSchedule {
+  name: string;        // e.g., "Winter Schedule"
+  startMonth: number;  // 0-indexed, 11 = Dec
+  endMonth: number;    // 0-indexed, 0 = Jan
+  effectiveFrom: Date; // The date this rule starts being valid
+  daily: IDailySchedule;
+}
+
 export interface IEmploymentTypeHistory {
   employmentType: string;
   effectiveFrom: Date;
@@ -129,6 +137,7 @@ export interface IUser extends Document {
 
   // Schedule entries with effective dates - NEW STRUCTURE
   schedules?: IScheduleEntry[]; // Array of schedule entries, ordered by effectiveFrom ascending
+  seasonalSchedules?: ISeasonalSchedule[]; // Recurring seasonal overrides with versioning
 
   // Legacy fields for backward compatibility
   scheduleInOutTime?: IScheduleTime;      // Regular weekday schedule
@@ -191,6 +200,18 @@ const ScheduleEntrySchema: Schema = new Schema(
       type: Date,
       required: true,
     },
+    daily: DailyScheduleSchema,
+  },
+  { _id: false }
+);
+
+// Seasonal schedule schema
+const SeasonalScheduleSchema: Schema = new Schema(
+  {
+    name: { type: String, trim: true },
+    startMonth: { type: Number, required: true },
+    endMonth: { type: Number, required: true },
+    effectiveFrom: { type: Date, required: true },
     daily: DailyScheduleSchema,
   },
   { _id: false }
@@ -505,6 +526,10 @@ const UserSchema = new Schema(
     // Schedule entries with effective dates - NEW STRUCTURE
     schedules: {
       type: [ScheduleEntrySchema],
+      default: [],
+    },
+    seasonalSchedules: {
+      type: [SeasonalScheduleSchema],
       default: [],
     },
     // Legacy fields for backward compatibility

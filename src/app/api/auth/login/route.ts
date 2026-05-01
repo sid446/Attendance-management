@@ -8,9 +8,9 @@ const HR_PASSWORD = 'Asija@2026';
 const EMAIL_DOMAIN = '@asija.in';
 
 // In-memory OTP stores
-// For HR/Partner: Map<sessionId, { otp: string, expiresAt: number }>
+// For HR/Partner: Map<sessionId, { otp: string, expiresAt: number, email: string }>
 // For Employee: Map<sessionId, { otp: string, expiresAt: number, email: string, userId: string }>
-const hrOtpStore = new Map<string, { otp: string; expiresAt: number }>();
+const hrOtpStore = new Map<string, { otp: string; expiresAt: number; email: string }>();
 const employeeOtpStore = new Map<
   string,
   {
@@ -53,13 +53,24 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // Validate admin email
+      const rawEmail = String(email || '').trim().toLowerCase();
+      const ALLOWED_ADMIN_EMAILS = ['it@asija.in', 'hr@asija.in', 'service@asija.in']; // Add authorized emails here
+      
+      if (!rawEmail || !ALLOWED_ADMIN_EMAILS.includes(rawEmail)) {
+        return NextResponse.json(
+          { success: false, error: 'This email is not authorized for HR access' },
+          { status: 403 }
+        );
+      }
+
       // Generate OTP and session
       const otp = generateOTP();
       const sessionId = generateSessionId();
       const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
 
       // Store OTP
-      hrOtpStore.set(sessionId, { otp, expiresAt });
+      hrOtpStore.set(sessionId, { otp, expiresAt, email: String(email || '').trim().toLowerCase() });
 
       // Clean up expired OTPs
       for (const [key, value] of hrOtpStore.entries()) {

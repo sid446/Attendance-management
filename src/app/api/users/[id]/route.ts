@@ -67,6 +67,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       team,
       joiningDate,
       schedules, // New year-wise schedules
+      seasonalSchedules, // Seasonal overrides
       // Legacy fields for backward compatibility
       scheduleInOutTime,
       scheduleInOutTimeSat,
@@ -161,7 +162,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const historyEntries = [];
 
     // Detect whether schedule timelines changed and from which effective date we must recalculate.
-    const scheduleRecalcFrom = findScheduleRecalcStartDate((currentUser as any).schedules, schedules);
+    const scheduleRecalcFrom = findScheduleRecalcStartDate(
+      (currentUser as any).schedules, 
+      schedules,
+      (currentUser as any).seasonalSchedules,
+      seasonalSchedules
+    );
 
     for (const field of historyFields) {
       const newValue = body[field];
@@ -223,6 +229,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         ...(team !== undefined && { team }),
         ...(joiningDate && { joiningDate: new Date(joiningDate) }),
         ...(schedules && { schedules }), // New year-wise schedules
+        ...(seasonalSchedules && { seasonalSchedules }), // Seasonal overrides
         // Legacy fields for backward compatibility
         ...(scheduleInOutTime && { scheduleInOutTime }),
         ...(scheduleInOutTimeSat && { scheduleInOutTimeSat }),
@@ -433,40 +440,67 @@ function normalizeDailySchedule(daily: any): string {
   return JSON.stringify(normalized);
 }
 
-function findScheduleRecalcStartDate(currentSchedules: any, newSchedules: any): Date | null {
-  if (!Array.isArray(newSchedules) || newSchedules.length === 0) return null;
-
-  const currentArr = Array.isArray(currentSchedules) ? currentSchedules : [];
-  const currentMap = new Map<string, string>();
-  const nextMap = new Map<string, string>();
-
-  for (const entry of currentArr) {
-    const d = parseAnyDate(entry?.effectiveFrom);
-    if (!d) continue;
-    const key = d.toISOString().split('T')[0];
-    currentMap.set(key, normalizeDailySchedule(entry?.daily));
-  }
-
-  for (const entry of newSchedules) {
-    const d = parseAnyDate(entry?.effectiveFrom);
-    if (!d) continue;
-    const key = d.toISOString().split('T')[0];
-    nextMap.set(key, normalizeDailySchedule(entry?.daily));
-  }
-
+function findScheduleRecalcStartDate(currentSchedules: any, newSchedules: any, currentSeasonal?: any, newSeasonal?: any): Date | null {
   const changedDates: Date[] = [];
 
-  for (const [key, nextValue] of nextMap.entries()) {
-    const prevValue = currentMap.get(key);
-    if (!prevValue || prevValue !== nextValue) {
-      const d = parseAnyDate(key);
-      if (d) changedDates.push(d);
+  // Check regular schedules
+  if (Array.isArray(newSchedules)) {
+    const currentArr = Array.isArray(currentSchedules) ? currentSchedules : [];
+    const currentMap = new Map<string, string>();
+    const nextMap = new Map<string, string>();
+
+    for (const entry of currentArr) {
+      const d = parseAnyDate(entry?.effectiveFrom);
+      if (!d) continue;
+      const key = d.toISOString().split('T')[0];
+      currentMap.set(key, normalizeDailySchedule(entry?.daily));
+    }
+
+    for (const entry of newSchedules) {
+      const d = parseAnyDate(entry?.effectiveFrom);
+      if (!d) continue;
+      const key = d.toISOString().split('T')[0];
+      nextMap.set(key, normalizeDailySchedule(entry?.daily));
+    }
+
+    for (const [key, nextValue] of nextMap.entries()) {
+      const prevValue = currentMap.get(key);
+      if (!prevValue || prevValue !== nextValue) {
+        const d = parseAnyDate(key);
+        if (d) changedDates.push(d);
+      }
+    }
+
+    for (const key of currentMap.keys()) {
+      if (!nextMap.has(key)) {
+        const d = parseAnyDate(key);
+        if (d) changedDates.push(d);
+      }
     }
   }
 
-  for (const key of currentMap.keys()) {
-    if (!nextMap.has(key)) {
-      const d = parseAnyDate(key);
+  // Check seasonal schedules
+  if (Array.isArray(newSeasonal)) {
+    const currentSArr = Array.isArray(currentSeasonal) ? currentSeasonal : [];
+    // Seasonal schedules don't have a unique key other than maybe index, but they are recurring.
+    // However, they have an effectiveFrom for versioning.
+    // Let's compare the stringified arrays if they are different.
+    if (JSON.stringify(currentSArr) !== JSON.stringify(newSeasonal)) {
+      // If different, find the earliest effectiveFrom in newSeasonal
+      for (const entry of newSeasonal) {
+        const d = parseAnyDate(entry?.effectiveFrom);
+        if (d) changedDates.push(d);
+      }
+      // Also check old ones that might have been removed
+      for (const entry of currentSArr) {
+        const d = parseAnyDate(entry?.effectiveFrom);
+        if (d) changedDates.push(d);
+      }
+    }
+  } else if (Array.isArray(currentSeasonal) && currentSeasonal.length > 0) {
+    // All seasonal schedules removed
+    for (const entry of currentSeasonal) {
+      const d = parseAnyDate(entry?.effectiveFrom);
       if (d) changedDates.push(d);
     }
   }

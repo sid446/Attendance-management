@@ -9,6 +9,7 @@ interface SidebarProps {
   uploadFailed: number;
   currentMonthYear: string | null;
   onLogout: () => void;
+  isITUser?: boolean;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -18,7 +19,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   uploadSaved,
   uploadFailed,
   currentMonthYear,
-  onLogout
+  onLogout,
+  isITUser = false
 }) => {
   return (
     <aside className="flex w-64 flex-col border-r border-blue-300/80 bg-sky-200/70 shadow-[1px_0_0_0_rgb(96_165_250_/_0.45)]">
@@ -31,18 +33,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-1 text-sm">
-        <button
-          type="button"
-          onClick={() => setActiveSection('employees')}
-          className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
-            activeSection === 'employees'
-              ? 'border border-blue-200 bg-blue-50 text-blue-900'
-              : 'text-slate-600 hover:bg-blue-100/75'
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          <span>Employees</span>
-        </button>
+        {!isITUser && (
+          <>
+            <button
+              type="button"
+              onClick={() => setActiveSection('employees')}
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
+                activeSection === 'employees'
+                  ? 'border border-blue-200 bg-blue-50 text-blue-900'
+                  : 'text-slate-600 hover:bg-blue-100/75'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              <span>Employees</span>
+            </button>
 
         <button
           type="button"
@@ -161,18 +165,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <span>Holiday Management</span>
         </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveSection('clientPlaces')}
-          className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
-            activeSection === 'clientPlaces'
-              ? 'border border-blue-200 bg-blue-50 text-blue-900'
-              : 'text-slate-600 hover:bg-blue-100/75'
-          }`}
-        >
-          <MapPin className="w-4 h-4" />
-          <span>Client Places</span>
-        </button>
+            <button
+              type="button"
+              onClick={() => setActiveSection('clientPlaces')}
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
+                activeSection === 'clientPlaces'
+                  ? 'border border-blue-200 bg-blue-50 text-blue-900'
+                  : 'text-slate-600 hover:bg-blue-100/75'
+              }`}
+            >
+              <MapPin className="w-4 h-4" />
+              <span>Client Places</span>
+            </button>
+          </>
+        )}
 
         <button
           type="button"
@@ -187,18 +193,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <span>Attendance Upload</span>
         </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveSection('backup')}
-          className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
-            activeSection === 'backup'
-              ? 'border border-blue-200 bg-blue-50 text-blue-900'
-              : 'text-slate-600 hover:bg-blue-100/75'
-          }`}
-        >
-          <Database className="w-4 h-4" />
-          <span>Database Backup</span>
-        </button>
+        {!isITUser && (
+          <button
+            type="button"
+            onClick={() => setActiveSection('backup')}
+            className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
+              activeSection === 'backup'
+                ? 'border border-blue-200 bg-blue-50 text-blue-900'
+                : 'text-slate-600 hover:bg-blue-100/75'
+            }`}
+          >
+            <Database className="w-4 h-4" />
+            <span>Database Backup</span>
+          </button>
+        )}
       </nav>
 
       {uploadTotal > 0 && (

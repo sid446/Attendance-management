@@ -16,8 +16,8 @@
     "backfill:nonworking-attendance": "tsx --env-file=.env.local scripts/backfill-nonworking-day-attendance.ts",
     "test:api": "tsx scripts/test-api.ts",
     "backup": "tsx scripts/backup-database.ts",
-    "backup:create": "tsx scripts/backup-database.ts"
-    ,"backfill:leave-snapshots": "tsx scripts/backfill-leave-snapshots.ts"
+    "backup:create": "tsx scripts/backup-database.ts",
+    "backfill:leave-snapshots": "tsx scripts/backfill-leave-snapshots.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.3",

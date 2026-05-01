@@ -6,6 +6,8 @@ interface LoginViewProps {
   password: string;
   onPasswordChange: (val: string) => void;
   onPasswordSubmit: () => void;
+  email: string;
+  onEmailChange: (val: string) => void;
   otp: string;
   onOtpChange: (val: string) => void;
   onOtpSubmit: () => void;
@@ -19,6 +21,8 @@ export const LoginView: React.FC<LoginViewProps> = ({
   password,
   onPasswordChange,
   onPasswordSubmit,
+  email,
+  onEmailChange,
   otp,
   onOtpChange,
   onOtpSubmit,
@@ -60,6 +64,21 @@ export const LoginView: React.FC<LoginViewProps> = ({
                 />
               </div>
 
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-2">
+                  <Mail className="w-3 h-3 inline mr-1" />
+                  Admin Email
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => onEmailChange(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && onPasswordSubmit()}
+                  placeholder="e.g. it@asija.in"
+                  className="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/30 transition-colors"
+                />
+              </div>
+
               {error && (
                 <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-900">
                   {error}
@@ -68,7 +87,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
               <button
                 onClick={onPasswordSubmit}
-                disabled={isLoading || !password}
+                disabled={isLoading || !password || !email}
                 className="w-full rounded-md bg-blue-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
               >
                 {isLoading ? 'Verifying...' : 'Continue'}

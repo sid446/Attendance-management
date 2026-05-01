@@ -3,6 +3,7 @@
  * so the employee portal can show the same numbers for a single month.
  */
 import type { AttendanceSummaryView, DailySchedule, ScheduleEntry, ScheduleTime, User } from '@/types/ui';
+import { getScheduledTimes } from './scheduleUtils';
 
 type EmploymentTypeHistory = { employmentType: string; effectiveFrom: string | Date };
 
@@ -98,33 +99,7 @@ function isExcessEligibleRecord(dateStr: string, recAny: any): boolean {
   return false;
 }
 
-function dayScheduleForUser(user: User, dateObj: Date): any {
-  const dayKey = dateObj.toLocaleString('en-US', { weekday: 'long' }).toLowerCase();
 
-  let scheduleEntry;
-  if (user.schedules && Array.isArray(user.schedules)) {
-    scheduleEntry = user.schedules.slice().reverse().find((entry) => {
-      const eff = new Date(entry.effectiveFrom);
-      return eff <= dateObj;
-    });
-  }
-
-  let daySchedule: any;
-  if (scheduleEntry && scheduleEntry.daily && scheduleEntry.daily[dayKey]) {
-    daySchedule = scheduleEntry.daily[dayKey];
-  } else if (
-    user.scheduleInOutTime &&
-    ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'].includes(dayKey)
-  ) {
-    daySchedule = user.scheduleInOutTime;
-  } else if (user.scheduleInOutTimeSat && dayKey === 'saturday') {
-    daySchedule = user.scheduleInOutTimeSat;
-  } else if (user.scheduleInOutTimeMonth && dayKey === 'monthly') {
-    daySchedule = user.scheduleInOutTimeMonth;
-  }
-
-  return daySchedule;
-}
 
 export function getLateCountLikeSummary(item: AttendanceSummaryView, user: User | undefined): number {
   if (!user) return 0;
@@ -146,15 +121,9 @@ export function getLateCountLikeSummary(item: AttendanceSummaryView, user: User 
     const empTypeLate = getEmploymentTypeForDate(user, d);
     // Summary: halftime employees are never counted as late
     if (empTypeLate === 'halftime') return;
-    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-    const dayName = dayNames[d.getDay()] as keyof DailySchedule;
-    const applicableSchedule = getApplicableSchedule(item, user, date);
-    let daySchedule: ScheduleTime | undefined = applicableSchedule?.daily?.[dayName];
-    if ((!daySchedule || !daySchedule.inTime) && d.getDay() >= 1 && d.getDay() <= 5) {
-      daySchedule = applicableSchedule?.daily?.monday;
-    }
-    const scheduledIn = daySchedule?.inTime || '09:00';
-    if (effectiveCheckin > scheduledIn) {
+    
+    const schedule = getScheduledTimes(user, d);
+    if (effectiveCheckin > schedule.inTime) {
       dates.push(date);
     }
   });
@@ -367,16 +336,12 @@ export function getScheduledHoursNoLunchForMonth(
     if (!rec || !isExcessEligibleRecord(dateStr, rec)) return;
 
     const dateObj = new Date(dateStr);
-    const daySchedule = dayScheduleForUser(user, dateObj);
+    const schedule = getScheduledTimes(user, dateObj);
 
-    if (!daySchedule || daySchedule.isHoliday) return;
+    if (schedule.isHoliday || !schedule.inTime || !schedule.outTime || schedule.inTime === '00:00' || schedule.outTime === '00:00') return;
 
-    const inTime = daySchedule.inTime;
-    const outTime = daySchedule.outTime;
-    if (!(inTime && outTime && inTime !== '00:00' && outTime !== '00:00')) return;
-
-    const [inH, inM] = inTime.split(':').map(Number);
-    const [outH, outM] = outTime.split(':').map(Number);
+    const [inH, inM] = schedule.inTime.split(':').map(Number);
+    const [outH, outM] = schedule.outTime.split(':').map(Number);
     let diff = outH * 60 + outM - (inH * 60 + inM);
     if (diff < 0) diff += 24 * 60;
 

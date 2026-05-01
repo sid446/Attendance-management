@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { AttendanceSummaryView, AttendanceRecord, User, DailySchedule } from '@/types/ui';
 import { ScheduleEntry } from '@/types/ui';
+import { getScheduledTimes } from '@/lib/scheduleUtils';
 interface ApprovedRequest {
   _id: string;
   date: string;
@@ -389,64 +390,11 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
 
   // Helper: get scheduled times (inTime/outTime) for a specific date string YYYY-MM-DD
   const getScheduledTimesForDate = (dateStr: string) => {
-    // Try to find a specific attendance record for that date
-    const rec = employeeDays.find((r) => (r.date || '').split('T')[0] === dateStr);
-    if (rec && rec.schedule && (rec.schedule.inTime || rec.schedule.outTime)) {
-      return { inTime: rec.schedule.inTime || '', outTime: rec.schedule.outTime || '' };
-    }
-    // Fallback to summary daily schedules
-    if (summaryFromList && summaryFromList.schedules) {
-      const d = new Date(dateStr + 'T00:00:00');
-      if (!Number.isNaN(d.getTime())) {
-        // If the date is Sunday, use Monday's schedule
-        const dow = d.getDay();
-        const lookupDow = dow === 0 ? 1 : dow;
-        const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-        const dayName = dayNames[lookupDow] as keyof typeof summaryFromList.schedules.daily;
-        const daySchedule = summaryFromList.schedules.daily?.[dayName];
-        return { inTime: daySchedule?.inTime || '', outTime: daySchedule?.outTime || '' };
-      }
-    }
-    // Try to use user's schedule entries (fallback)
-    if (userFromList && userFromList.schedules && userFromList.schedules.length > 0) {
-      const d = new Date(dateStr + 'T00:00:00');
-      if (!Number.isNaN(d.getTime())) {
-        // find latest schedule effective on or before date
-        const applicable = [...userFromList.schedules].reverse().find((s) => {
-          try {
-            return new Date(s.effectiveFrom) <= d;
-          } catch (e) {
-            return false;
-          }
-        }) || userFromList.schedules[0];
-        if (applicable && applicable.daily) {
-          const dow = d.getDay();
-          const lookupDow = dow === 0 ? 1 : dow;
-          const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-          const dayName = dayNames[lookupDow];
-          const daySchedule = (applicable.daily as any)?.[dayName];
-          if (daySchedule) return { inTime: daySchedule.inTime || '', outTime: daySchedule.outTime || '' };
-        }
-      }
-    }
-
-    // Legacy single-schedule fields on user
-    if (userFromList) {
-      const d = new Date(dateStr + 'T00:00:00');
-      if (!Number.isNaN(d.getTime())) {
-        const dow = d.getDay();
-        const lookupDow = dow === 0 ? 1 : dow;
-        // Saturday-specific legacy schedule
-        if (lookupDow === 6 && userFromList.scheduleInOutTimeSat) {
-          return { inTime: userFromList.scheduleInOutTimeSat.inTime || '', outTime: userFromList.scheduleInOutTimeSat.outTime || '' };
-        }
-        if (userFromList.scheduleInOutTime) {
-          return { inTime: userFromList.scheduleInOutTime.inTime || '', outTime: userFromList.scheduleInOutTime.outTime || '' };
-        }
-      }
-    }
-
-    return { inTime: '', outTime: '' };
+    const user = userFromList || (summaryFromList ? { ...summaryFromList, _id: summaryFromList.userId } : null);
+    if (!user) return { inTime: '', outTime: '' };
+    
+    const schedule = getScheduledTimes(user, dateStr);
+    return { inTime: schedule.inTime, outTime: schedule.outTime };
   };
 
   // Statuses that should NOT ask for manual in/out times and instead use schedule
@@ -528,36 +476,17 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
     return { daysInMonth, startWeekday, dayRecordMap, approvedRequestMap };
   })();
 
-  // Determine lateness helper (use per-day schedule if available)
-  const isLateArrival = (date: Date, inTimeStr?: string, dayRecord?: AttendanceRecord) => {
-    if (!inTimeStr) return false;
+  // Determine lateness helper (use central utility)
+  const isLateArrival = (date: Date, inTimeStr?: string) => {
+    if (!inTimeStr || inTimeStr === '00:00') return false;
 
-    const parseMinutes = (t: string) => {
-      const [h, m] = t.split(':').map(Number);
-      return h * 60 + m;
-    };
+    const user = userFromList || (summaryFromList ? { ...summaryFromList, _id: summaryFromList.userId } : null);
+    if (!user) return false;
 
-    const actualMins = parseMinutes(inTimeStr);
-    let scheduledStr: string | undefined = undefined;
+    const schedule = getScheduledTimes(user, date);
+    if (!schedule.inTime || schedule.inTime === '00:00') return false;
 
-    // Prefer per-day schedule from AttendanceRecord
-    if (dayRecord && dayRecord.schedule && dayRecord.schedule.inTime) {
-      scheduledStr = dayRecord.schedule.inTime;
-    } else if (summaryFromList?.schedules) {
-      // If the date is Sunday, use Monday's schedule per requirement
-      const dow = date.getDay();
-      const lookupDow = dow === 0 ? 1 : dow;
-      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-      const dayName = dayNames[lookupDow] as keyof typeof summaryFromList.schedules.daily;
-      const daySchedule = summaryFromList.schedules.daily?.[dayName];
-      scheduledStr = daySchedule?.inTime;
-      if (!scheduledStr) return false; // no schedule available
-    } else {
-      return false;
-    }
-
-    const scheduledMins = parseMinutes(scheduledStr ?? "");
-    return actualMins > scheduledMins;
+    return inTimeStr > schedule.inTime;
   };
 
   const defaultSubtitle = 'View detailed daily attendance for any employee and month.';
@@ -1122,7 +1051,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                 const dateObj = new Date(selectedYear, selectedMonth - 1, day);
                 let isLate = false;
                 if (rec) {
-                  isLate = isLateArrival(dateObj, rec.inTime, rec);
+                  isLate = isLateArrival(dateObj, rec.inTime);
                 }
 
                 // Check if request is a custom/other type (not standard)

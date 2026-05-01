@@ -52,10 +52,15 @@ export async function POST(request: NextRequest) {
         Date.now().toString(36) +
         Math.random().toString(36).substring(2);
 
+      // Role-based access control (RBAC) - server side logic
+      const userRole = stored.email.toLowerCase() === 'it@asija.in' ? 'restricted_admin' : 'admin';
+
       return NextResponse.json({
         success: true,
         data: {
           authToken,
+          email: stored.email,
+          role: userRole,
           message: 'Login successful',
         },
       });
