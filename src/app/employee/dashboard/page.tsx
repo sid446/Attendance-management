@@ -470,12 +470,19 @@ export default function EmployeeDashboard() {
             }
             const effectiveCheckin = value.editedCheckin || value.checkin;
             const effectiveCheckout = value.editedCheckout || value.checkout;
+            const typeLower = String(value.typeOfPresence || '').toLowerCase();
+            const isPresenceType = typeLower.includes('wfh') || 
+                                   typeLower.includes('outstation') || 
+                                   typeLower.includes('clientplace') || 
+                                   typeLower.includes('half day') ||
+                                   value.halfDay;
+
             let status: any = 'Present';
             if (value.typeOfPresence === 'Leave' || value.typeOfPresence === 'On leave') status = 'On leave';
             else if (value.typeOfPresence === 'Holiday') status = 'Holiday';
-            else if (value.halfDay) status = 'HalfDay';
+            else if (isPresenceType) status = value.halfDay ? 'HalfDay' : 'Present';
             else if (!effectiveCheckin && !effectiveCheckout && value.typeOfPresence !== 'Leave' && value.typeOfPresence !== 'On leave') status = 'Absent';
-            if (status === 'Present' && !effectiveCheckin && !effectiveCheckout) status = 'Absent';
+            if (status === 'Present' && !effectiveCheckin && !effectiveCheckout && !isPresenceType) status = 'Absent';
             return {
               id: userForDay._id,
               name: userForDay.name,
@@ -613,14 +620,21 @@ export default function EmployeeDashboard() {
             const effectiveCheckin = value.editedCheckin || value.checkin;
             const effectiveCheckout = value.editedCheckout || value.checkout;
 
+            const typeLower = String(value.typeOfPresence || '').toLowerCase();
+            const isPresenceType = typeLower.includes('wfh') || 
+                                   typeLower.includes('outstation') || 
+                                   typeLower.includes('clientplace') || 
+                                   typeLower.includes('half day') ||
+                                   value.halfDay;
+
             let status: any = 'Present';
             if (value.typeOfPresence === 'Leave' || value.typeOfPresence === 'On leave') status = 'On leave';
             else if (value.typeOfPresence === 'Holiday') status = 'Holiday';
-            else if (value.halfDay) status = 'HalfDay';
+            else if (isPresenceType) status = value.halfDay ? 'HalfDay' : 'Present';
             else if (!effectiveCheckin && !effectiveCheckout && value.typeOfPresence !== 'Leave' && value.typeOfPresence !== 'On leave') status = 'Absent';
 
             // Fallback
-            if (status === 'Present' && !effectiveCheckin && !effectiveCheckout) status = 'Absent';
+            if (status === 'Present' && !effectiveCheckin && !effectiveCheckout && !isPresenceType) status = 'Absent';
 
             return {
               id: userForDay._id,
@@ -774,12 +788,19 @@ export default function EmployeeDashboard() {
             }
             const effectiveCheckin = value.editedCheckin || value.checkin;
             const effectiveCheckout = value.editedCheckout || value.checkout;
+            const typeLower = String(value.typeOfPresence || '').toLowerCase();
+            const isPresenceType = typeLower.includes('wfh') || 
+                                   typeLower.includes('outstation') || 
+                                   typeLower.includes('clientplace') || 
+                                   typeLower.includes('half day') ||
+                                   value.halfDay;
+
             let status: any = 'Present';
             if (value.typeOfPresence === 'Leave' || value.typeOfPresence === 'On leave') status = 'On leave';
             else if (value.typeOfPresence === 'Holiday') status = 'Holiday';
-            else if (value.halfDay) status = 'HalfDay';
+            else if (isPresenceType) status = value.halfDay ? 'HalfDay' : 'Present';
             else if (!effectiveCheckin && !effectiveCheckout && value.typeOfPresence !== 'Leave' && value.typeOfPresence !== 'On leave') status = 'Absent';
-            if (status === 'Present' && !effectiveCheckin && !effectiveCheckout) status = 'Absent';
+            if (status === 'Present' && !effectiveCheckin && !effectiveCheckout && !isPresenceType) status = 'Absent';
             return {
               id: userForDay._id,
               name: userForDay.name,

@@ -126,7 +126,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
     const XLSX = (await import('xlsx')).default;
     const wsData = log.errorDetails.map((e: any) => ({
       'File Name': log.fileName,
-      'Upload Date': new Date(log.uploadDate).toLocaleString(),
+      'Upload Date': new Date(log.uploadDate).toLocaleString('en-GB'),
       'Error Message': e.message,
       'Occurrences': e.count,
       'Sample Records (Max 5)': e.sampleRows.join(', ')
@@ -709,7 +709,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
                       </h4>
                       <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
                         <Clock className="h-3 w-3" />
-                        {new Date(log.uploadDate).toLocaleString()}
+                        {new Date(log.uploadDate).toLocaleString('en-GB')}
                       </p>
                     </div>
                     <button

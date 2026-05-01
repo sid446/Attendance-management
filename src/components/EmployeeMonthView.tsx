@@ -756,10 +756,11 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                                 <dt className="shrink-0 text-slate-600">Date</dt>
                                 <dd className="text-right text-slate-900">
                                   {requestDetailModal.approvedAt
-                                    ? new Date(requestDetailModal.approvedAt).toLocaleString('en-US', {
+                                    ? new Date(requestDetailModal.approvedAt).toLocaleDateString('en-GB', {
                                         year: 'numeric',
-                                        month: 'short',
-                                        day: 'numeric',
+                                        month: '2-digit',
+                                        day: '2-digit',
+                                      }) + ' ' + new Date(requestDetailModal.approvedAt).toLocaleTimeString([], {
                                         hour: '2-digit',
                                         minute: '2-digit',
                                       })
@@ -1152,7 +1153,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                                     ? 'border border-rose-200 bg-rose-50 text-rose-900 hover:bg-rose-100'
                                     : 'border border-violet-200 bg-violet-50 text-violet-900 hover:bg-violet-100'
                             }`}
-                            title={`Request: ${approvedReq.status}${isCustomRequestType ? ` (${approvedReq.requestedStatus})` : ''}${approvedReq.status === 'Approved' ? ` by ${approvedReq.approvedBy || 'Unknown'}` : ''}${approvedReq.approvedByEmail ? ` (${approvedReq.approvedByEmail})` : ''}${approvedReq.approvedAt ? ` on ${new Date(approvedReq.approvedAt).toLocaleDateString()}` : ''}`}
+                            title={`Request: ${approvedReq.status}${isCustomRequestType ? ` (${approvedReq.requestedStatus})` : ''}${approvedReq.status === 'Approved' ? ` by ${approvedReq.approvedBy || 'Unknown'}` : ''}${approvedReq.approvedByEmail ? ` (${approvedReq.approvedByEmail})` : ''}${approvedReq.approvedAt ? ` on ${new Date(approvedReq.approvedAt).toLocaleDateString('en-GB')}` : ''}`}
                             onClick={(e) => {
                               e.stopPropagation();
                               setRequestDetailModal(approvedReq);

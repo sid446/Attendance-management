@@ -411,7 +411,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
                         {balance.remaining}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-slate-600">{new Date(balance.lastUpdated).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-slate-600">{new Date(balance.lastUpdated).toLocaleDateString('en-GB')}</td>
                   </tr>
                 ))
               )}

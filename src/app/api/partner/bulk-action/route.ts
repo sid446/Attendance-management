@@ -32,9 +32,10 @@ import User from '@/models/User';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import LeaveTransaction from '@/models/LeaveTransaction';
 import { verifyPartnerReviewToken } from '@/lib/partnerReviewToken';
+import { transporter, mailOptions } from '@/lib/mailer';
 
 function normalizePartnerName(name: string): string {
-    return String(name || '').trim().toLowerCase();
+    return String(name || '').replace(/[.\s]/g, '').toLowerCase();
 }
 
 function calculateDuration(start: string, end: string): number {
@@ -128,16 +129,36 @@ export async function POST(request: NextRequest) {
         const appliedApprovedByEmail = secureApprovedByEmail || approvedByEmail || 'hr@asija.in';
         let appliedValue: number | undefined;
         if (action === 'approve') {
-            appliedValue = typeof value === 'number' ? value : 1;
+            if (typeof value === 'number') {
+                appliedValue = value;
+            } else if (typeof value === 'string' && value.trim() !== '' && !isNaN(parseFloat(value))) {
+                appliedValue = parseFloat(value);
+            } else {
+                appliedValue = 1;
+            }
         }
 
         let successCount = 0;
+        const processedRequestsByUser: Record<string, { user: any; requests: any[] }> = {};
 
         for (const id of ids) {
             const reqRecord = await AttendanceRequest.findById(id);
             if (!reqRecord || reqRecord.status !== 'Pending') continue;
 
-            if (secureApprovedBy && normalizePartnerName(reqRecord.partnerName) !== normalizePartnerName(secureApprovedBy)) {
+            let isAuthorized = false;
+            
+            if (!secureApprovedBy) {
+                isAuthorized = true; // No token provided or not required
+            } else if (normalizePartnerName(reqRecord.partnerName) === normalizePartnerName(secureApprovedBy)) {
+                isAuthorized = true;
+            } else if (secureApprovedByEmail) {
+                const requestUser = await User.findById(reqRecord.userId);
+                if (requestUser && requestUser.attendanceEmail && secureApprovedByEmail.toLowerCase() === requestUser.attendanceEmail.toLowerCase()) {
+                    isAuthorized = true;
+                }
+            }
+
+            if (!isAuthorized) {
                 return NextResponse.json(
                     { success: false, error: 'Unauthorized: request does not belong to this partner token' },
                     { status: 403 }
@@ -159,10 +180,11 @@ export async function POST(request: NextRequest) {
             }
             await reqRecord.save();
 
+            const { userId, date, requestedStatus, monthYear, startTime, endTime } = reqRecord;
+            const userObj = await User.findById(userId);
+
             if (action === 'approve') {
                 // Update Attendance Logic
-                const { userId, date, requestedStatus, monthYear, startTime, endTime } = reqRecord;
-
                 let attendance = await Attendance.findOne({ userId, monthYear });
                 const isNewAttendanceRecord = !attendance;
                 
@@ -170,7 +192,7 @@ export async function POST(request: NextRequest) {
                     attendance = new Attendance({
                         userId,
                         monthYear,
-                        records: {},
+                        records: new Map(),
                         summary: { totalHour: 0, totalLateArrival: 0, excessHour: 0, totalHalfDay: 0, totalPresent: 0, totalAbsent: 0, totalLeave: 0 }
                     });
 
@@ -241,9 +263,8 @@ export async function POST(request: NextRequest) {
                                     }
                                 }
 
-                                // Fetch user schedule for the day early so mapping logic can use it
-                                const userObj = await User.findById(userId);
-                                let scheduledInTime = '';
+                                 // Fetch user schedule for the day early so mapping logic can use it
+                                 let scheduledInTime = '';
                                 let scheduledOutTime = '';
                                 let scheduledMinutes = 0;
                                 if (userObj) {
@@ -286,8 +307,6 @@ export async function POST(request: NextRequest) {
                                                                             requestedStatus.toLowerCase().includes('absent') ||
                                                                             requestedStatus === 'On leave';
 
-                                // user schedule variables are initialized earlier
-
                                 // Helper to check type
                                 const isType = (type: string) => requestedStatus.toLowerCase().includes(type.toLowerCase());
 
@@ -310,7 +329,6 @@ export async function POST(request: NextRequest) {
 
                                 // Recalculation for special types
                                 let isWeekoff = /weekoff|week-off|week off/i.test(requestedStatus);
-                                let isWeekdays = /weekday|weekdays/i.test(requestedStatus);
                                 
                                 // If request provides startTime/endTime, use those for editedCheckin/editedCheckout
                                 if (startTime && startTime !== '00:00') {
@@ -376,11 +394,11 @@ export async function POST(request: NextRequest) {
                                     if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
                                     if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
                                 }
-                                // Present - Outstation
-                                else if (isType('Present - Outstation (Weekdays)')) {
-                                    rec.totalHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
-                                    rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
-                                } else if (isType('Present - Outstation (Weekoff)')) {
+                                 // Present - Outstation / ClientPlace
+                                 else if (isType('Present - Outstation (Weekdays)') || isType('Present - ClientPlace (Weekdays)')) {
+                                     rec.totalHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
+                                     rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
+                                 } else if (isType('Present - Outstation (Weekoff)') || isType('Present - ClientPlace (Weekoff)')) {
                                     rec.totalHour = 0;
                                     rec.excessHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
                                 }
@@ -467,8 +485,7 @@ export async function POST(request: NextRequest) {
                 // Mark records as modified so Mongoose saves changes to existing Map entries
                 attendance.markModified('records');
                 
-                const user = await User.findById(userId);
-                attendance.summary = calculateSummary(attendance.records, user);
+                attendance.summary = calculateSummary(attendance.records, userObj);
                 await attendance.save();
 
                 // Update leave balance if this is a paid leave request
@@ -478,7 +495,91 @@ export async function POST(request: NextRequest) {
                 }
             }
 
+            // Collect for email
+            const uIdStr = userId.toString();
+            if (!processedRequestsByUser[uIdStr]) {
+                processedRequestsByUser[uIdStr] = { user: userObj, requests: [] };
+            }
+            processedRequestsByUser[uIdStr].requests.push(reqRecord);
             successCount++;
+        }
+
+        // Send summary emails to each user
+        const now = new Date();
+        const istDate = now.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' });
+        const istTime = now.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour12: true });
+        const processingTime = `${istDate} ${istTime} (IST)`;
+
+        for (const uId in processedRequestsByUser) {
+            const { user, requests } = processedRequestsByUser[uId];
+            if (user && (user.attendanceEmail || user.email)) {
+                try {
+                    const subject = `Attendance Requests ${action === 'approve' ? 'Approved' : 'Rejected'}`;
+                    const requestsHtml = requests.map((req: any) => `
+                        <tr style="border-bottom: 1px solid #e5e5e7;">
+                            <td style="padding: 12px 0; font-size: 14px; color: #1d1d1f;">${new Date(req.date).toLocaleDateString('en-GB')}</td>
+                            <td style="padding: 12px 0; font-size: 14px; color: #1d1d1f; text-align: center;">${req.requestedStatus}</td>
+                            <td style="padding: 12px 0; font-size: 14px; color: #1d1d1f; text-align: right;">${req.reason || '-'}</td>
+                        </tr>
+                    `).join('');
+
+                    const html = `
+                        <div style="background-color: #f5f5f7; padding: 40px 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1d1d1f; line-height: 1.5;">
+                            <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.04);">
+                                <div style="padding: 40px 40px 20px; text-align: center;">
+                                    <img src="https://attendance.asija.in/lg.png" alt="Asija Logo" style="width: 56px; height: 56px; margin-bottom: 24px;">
+                                    <h1 style="font-size: 26px; font-weight: 600; margin: 0; letter-spacing: -0.02em;">Bulk Action Update</h1>
+                                    <div style="margin-top: 16px; display: inline-block; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; background-color: ${action === 'approve' ? '#e6f4ea' : '#fce8e6'}; color: ${action === 'approve' ? '#008040' : '#d21a0c'}; text-transform: uppercase;">
+                                        ${action === 'approve' ? 'Approved' : 'Rejected'}
+                                    </div>
+                                </div>
+                                <div style="padding: 0 40px 40px;">
+                                    <p style="font-size: 17px; color: #424245; margin-bottom: 32px; text-align: center;">
+                                        Hello ${user.name},<br>Multiple attendance correction requests have been ${action === 'approve' ? 'approved' : 'rejected'}.
+                                    </p>
+                                    <div style="background-color: #fbfbfd; border-radius: 14px; padding: 24px; border: 1px solid #d2d2d7;">
+                                        <table style="width: 100%; border-collapse: collapse;">
+                                            <thead>
+                                                <tr style="border-bottom: 1px solid #d2d2d7;">
+                                                    <th style="padding-bottom: 12px; font-size: 12px; color: #86868b; text-align: left; font-weight: 500;">DATE</th>
+                                                    <th style="padding-bottom: 12px; font-size: 12px; color: #86868b; text-align: center; font-weight: 500;">STATUS</th>
+                                                    <th style="padding-bottom: 12px; font-size: 12px; color: #86868b; text-align: right; font-weight: 500;">REASON</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                ${requestsHtml}
+                                            </tbody>
+                                        </table>
+                                        <div style="margin-top: 20px;">
+                                            <p style="font-size: 14px; color: #86868b; margin-bottom: 4px;">Approver Remarks</p>
+                                            <p style="font-size: 14px; font-weight: 600; color: ${action === 'approve' ? '#008040' : '#d21a0c'}; margin: 0;">${appliedRemark || 'N/A'}</p>
+                                        </div>
+                                        <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #e5e5e7;">
+                                            <p style="font-size: 12px; color: #86868b; margin: 0;">Processed By: <strong>${appliedApprovedBy}</strong></p>
+                                            <p style="font-size: 12px; color: #86868b; margin: 4px 0 0;">Processed On: <strong>${processingTime}</strong></p>
+                                        </div>
+                                    </div>
+                                    <div style="margin-top: 40px; text-align: center;">
+                                        <a href="https://attendance.asija.in/employee/dashboard" style="display: inline-block; background-color: #0071e3; color: #ffffff; padding: 12px 32px; border-radius: 980px; font-size: 17px; font-weight: 500; text-decoration: none;">View Dashboard</a>
+                                    </div>
+                                </div>
+                                <div style="background-color: #f5f5f7; padding: 32px 40px; text-align: center; border-top: 1px solid #d2d2d7;">
+                                    <p style="font-size: 12px; color: #86868b; margin: 0;">Automated notification from Asija Attendance System.</p>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    await transporter.sendMail({
+                        ...mailOptions,
+                        to: user.attendanceEmail || user.email,
+                        subject,
+                        html
+                    });
+                } catch (e) {
+                    console.error('Failed to send bulk action email to', user.email, e);
+                }
+            }
         }
 
         return NextResponse.json({ success: true, count: successCount });

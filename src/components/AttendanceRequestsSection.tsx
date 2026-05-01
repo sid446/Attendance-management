@@ -27,6 +27,7 @@ interface AttendanceRequest {
   rejectedBy?: string;
   rejectedByEmail?: string;
   rejectedAt?: string;
+  hrRemarks?: string;
   hrValue?: string; // HR value when approved by HR
   createdAt: string;
   updatedAt: string;
@@ -53,6 +54,7 @@ interface DateRangeGroup {
   rejectedByEmail?: string;
   rejectedAt?: string;
   hrValue?: string;
+  hrRemarks?: string;
   createdAt: string;
   ids: string[]; // Array of request IDs for this range
 }
@@ -107,22 +109,10 @@ const DateRangeRequestBlock: React.FC<{
     const end = new Date(endDate);
 
     if (start.toDateString() === end.toDateString()) {
-      return start.toLocaleDateString('en-US', {
-        weekday: 'short',
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric'
-      });
+      return start.toLocaleDateString('en-GB');
     }
 
-    return `${start.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric'
-    })} - ${end.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    })}`;
+    return `${start.toLocaleDateString('en-GB')} - ${end.toLocaleDateString('en-GB')}`;
   };
 
   return (
@@ -180,13 +170,7 @@ const DateRangeRequestBlock: React.FC<{
                 {rangeGroup.approvedBy || rangeGroup.rejectedBy}
                 {(rangeGroup.approvedAt || rangeGroup.rejectedAt) && (
                   <span className="ml-2 text-xs text-slate-500">
-                    on {new Date(rangeGroup.approvedAt || rangeGroup.rejectedAt!).toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
+                    on {new Date(rangeGroup.approvedAt || rangeGroup.rejectedAt!).toLocaleDateString('en-GB')} {new Date(rangeGroup.approvedAt || rangeGroup.rejectedAt!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 )}
               </span>
@@ -194,13 +178,7 @@ const DateRangeRequestBlock: React.FC<{
           )}
 
           <div className="text-xs text-slate-500">
-            Requested on {new Date(rangeGroup.createdAt).toLocaleDateString('en-US', {
-              year: 'numeric',
-              month: 'short',
-              day: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit'
-            })}
+            Requested on {new Date(rangeGroup.createdAt).toLocaleDateString('en-GB')} {new Date(rangeGroup.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </div>
         </div>
 
@@ -330,6 +308,7 @@ const groupRequestsIntoRanges = (requests: AttendanceRequest[]): {
           rejectedByEmail: firstRequest.rejectedByEmail,
           rejectedAt: firstRequest.rejectedAt,
           hrValue: firstRequest.hrValue,
+          hrRemarks: firstRequest.hrRemarks,
           createdAt: firstRequest.createdAt,
           ids: range.map(r => r._id)
         });
@@ -366,6 +345,7 @@ const AttendanceRequestsTable: React.FC<{
             <th className={thCls}>Reason</th>
             <th className={thCls}>Status</th>
             <th className={thCls}>Action by</th>
+            <th className={thCls}>Processed on</th>
             <th className={thCls}>Email</th>
             <th className={thCls}>Value</th>
             <th className={thCls}>Partner</th>
@@ -384,7 +364,7 @@ const AttendanceRequestsTable: React.FC<{
               </td>
               <td className={tdCls}>
                 <div className="text-slate-800">
-                  {new Date(group.startDate).toLocaleDateString()} – {new Date(group.endDate).toLocaleDateString()}
+                  {new Date(group.startDate).toLocaleDateString('en-GB')} – {new Date(group.endDate).toLocaleDateString('en-GB')}
                 </div>
               </td>
               <td className={tdCls}>
@@ -409,7 +389,17 @@ const AttendanceRequestsTable: React.FC<{
                 </div>
               </td>
               <td className={tdCls}>
-                <span className="text-slate-600">{group.approvedBy || group.rejectedBy || group.partnerName}</span>
+                <span className="text-slate-600">{group.approvedBy || group.rejectedBy || '—'}</span>
+              </td>
+              <td className={tdCls}>
+                {group.approvedAt || group.rejectedAt ? (
+                  <div className="text-slate-600">
+                    <div>{new Date(group.approvedAt || group.rejectedAt!).toLocaleDateString('en-GB')}</div>
+                    <div className="text-xs text-slate-500">{new Date(group.approvedAt || group.rejectedAt!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                  </div>
+                ) : (
+                  <span className="text-slate-400">—</span>
+                )}
               </td>
               <td className={tdCls}>
                 <span className="text-slate-600">{group.approvedByEmail || group.rejectedByEmail || '—'}</span>
@@ -422,8 +412,8 @@ const AttendanceRequestsTable: React.FC<{
               </td>
               <td className={tdCls}>
                 <div className="text-slate-600">
-                  <div>{new Date(group.createdAt).toLocaleDateString()}</div>
-                  <div className="text-xs text-slate-500">{new Date(group.createdAt).toLocaleTimeString()}</div>
+                  <div>{new Date(group.createdAt).toLocaleDateString('en-GB')}</div>
+                  <div className="text-xs text-slate-500">{new Date(group.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                 </div>
               </td>
               {isAdminView && (
@@ -462,7 +452,7 @@ const AttendanceRequestsTable: React.FC<{
                 </div>
               </td>
               <td className={tdCls}>
-                <div className="text-slate-800">{new Date(request.date).toLocaleDateString()}</div>
+                <div className="text-slate-800">{new Date(request.date).toLocaleDateString('en-GB')}</div>
               </td>
               <td className={tdCls}>
                 <span className="font-medium text-slate-900">{request.requestedStatus}</span>
@@ -486,7 +476,17 @@ const AttendanceRequestsTable: React.FC<{
                 </div>
               </td>
               <td className={tdCls}>
-                <span className="text-slate-600">{request.approvedBy || request.rejectedBy || request.partnerName}</span>
+                <span className="text-slate-600">{request.approvedBy || request.rejectedBy || '—'}</span>
+              </td>
+              <td className={tdCls}>
+                {request.approvedAt || request.rejectedAt ? (
+                  <div className="text-slate-600">
+                    <div>{new Date(request.approvedAt || request.rejectedAt!).toLocaleDateString('en-GB')}</div>
+                    <div className="text-xs text-slate-500">{new Date(request.approvedAt || request.rejectedAt!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                  </div>
+                ) : (
+                  <span className="text-slate-400">—</span>
+                )}
               </td>
               <td className={tdCls}>
                 <span className="text-slate-600">{request.approvedByEmail || request.rejectedByEmail || '—'}</span>
@@ -499,8 +499,8 @@ const AttendanceRequestsTable: React.FC<{
               </td>
               <td className={tdCls}>
                 <div className="text-slate-600">
-                  <div>{new Date(request.createdAt).toLocaleDateString()}</div>
-                  <div className="text-xs text-slate-500">{new Date(request.createdAt).toLocaleTimeString()}</div>
+                  <div>{new Date(request.createdAt).toLocaleDateString('en-GB')}</div>
+                  <div className="text-xs text-slate-500">{new Date(request.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                 </div>
               </td>
               {isAdminView && (
@@ -917,7 +917,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
     fetchRequests();
   }, [userId, partnerName]);
 
-  const exportToExcel = () => {
+  const exportToExcel = async () => {
     const { rangeGroups, individualRequests } = groupRequestsIntoRanges(requests);
     const filteredRangeGroups = rangeGroups.filter(group =>
       (filter === 'all' || group.status === filter) &&
@@ -934,82 +934,132 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
       (leaveTypeFilter === 'all' || request.requestedStatus === leaveTypeFilter)
     );
 
-    const excelData: any[] = [];
+    // Import ExcelJS dynamically
+    const ExcelJS = (await import('exceljs')).default;
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Attendance Requests');
 
-    // Add range groups
-    filteredRangeGroups.forEach(group => {
-      excelData.push({
-        'Employee Name': group.userName,
-        'Designation': group.designation || 'Employee',
-        'Partner': group.partnerName,
-        'Start Date': new Date(group.startDate).toLocaleDateString(),
-        'End Date': new Date(group.endDate).toLocaleDateString(),
-        'Days': group.dates.length,
-        'Requested Status': group.requestedStatus,
-        'Start Time': group.startTime || '',
-        'End Time': group.endTime || '',
-        'Reason': group.reason || '',
-        'Status': group.status,
-        'Action By': group.approvedBy || group.rejectedBy || group.partnerName,
-        'Email': group.approvedByEmail || group.rejectedByEmail || '',
-        'Value': group.hrValue || '',
-        'Partner Remarks': group.partnerRemarks || '',
-        'Submitted Date': new Date(group.createdAt).toLocaleDateString(),
-        'Submitted Time': new Date(group.createdAt).toLocaleTimeString()
-      });
-    });
-
-    // Add individual requests
-    filteredIndividualRequests.forEach(request => {
-      excelData.push({
-        'Employee Name': request.userName,
-        'Designation': request.userId?.designation || 'Employee',
-        'Partner': request.partnerName,
-        'Start Date': new Date(request.date).toLocaleDateString(),
-        'End Date': new Date(request.date).toLocaleDateString(),
-        'Days': 1,
-        'Requested Status': request.requestedStatus,
-        'Start Time': request.startTime || '',
-        'End Time': request.endTime || '',
-        'Reason': request.reason || '',
-        'Status': request.status,
-        'Action By': request.approvedBy || request.rejectedBy || request.partnerName,
-        'Email': request.approvedByEmail || request.rejectedByEmail || '',
-        'Value': request.hrValue || '',
-        'Partner Remarks': request.partnerRemarks || '',
-        'Submitted Date': new Date(request.createdAt).toLocaleDateString(),
-        'Submitted Time': new Date(request.createdAt).toLocaleTimeString()
-      });
-    });
-
-    const worksheet = XLSX.utils.json_to_sheet(excelData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Attendance Requests');
-
-    // Auto-size columns
-    const colWidths = [
-      { wch: 15 }, // Employee Name
-      { wch: 12 }, // Designation
-      { wch: 15 }, // Partner
-      { wch: 12 }, // Start Date
-      { wch: 12 }, // End Date
-      { wch: 8 },  // Days
-      { wch: 15 }, // Requested Status
-      { wch: 10 }, // Start Time
-      { wch: 10 }, // End Time
-      { wch: 20 }, // Reason
-      { wch: 10 }, // Status
-      { wch: 15 }, // Action By
-      { wch: 25 }, // Email
-      { wch: 8 },  // Value
-      { wch: 20 }, // Partner Remarks
-      { wch: 12 }, // Submitted Date
-      { wch: 12 }  // Submitted Time
+    // Define columns
+    worksheet.columns = [
+      { header: 'Employee Name', key: 'employeeName', width: 25 },
+      { header: 'Designation', key: 'designation', width: 20 },
+      { header: 'Partner', key: 'partner', width: 20 },
+      { header: 'Start Date', key: 'startDate', width: 15 },
+      { header: 'End Date', key: 'endDate', width: 15 },
+      { header: 'Days', key: 'days', width: 8 },
+      { header: 'Requested Status', key: 'requestedStatus', width: 25 },
+      { header: 'Time (Start)', key: 'startTime', width: 12 },
+      { header: 'Time (End)', key: 'endTime', width: 12 },
+      { header: 'Reason', key: 'reason', width: 35 },
+      { header: 'Status', key: 'status', width: 12 },
+      { header: 'Action By', key: 'actionBy', width: 20 },
+      { header: 'Processed Date', key: 'processedDate', width: 15 },
+      { header: 'Processed Time', key: 'processedTime', width: 15 },
+      { header: 'Approver Email', key: 'email', width: 30 },
+      { header: 'HR Value', key: 'hrValue', width: 10 },
+      { header: 'Submitted Date', key: 'submittedDate', width: 15 },
+      { header: 'Submitted Time', key: 'submittedTime', width: 15 },
+      { header: 'Partner Remarks', key: 'partnerRemarks', width: 35 },
+      { header: 'HR Remarks', key: 'hrRemarks', width: 35 },
     ];
-    worksheet['!cols'] = colWidths;
 
-    const fileName = `attendance_requests_${new Date().toISOString().split('T')[0]}.xlsx`;
-    XLSX.writeFile(workbook, fileName);
+    // Add data
+    const addRequestRow = (item: any) => {
+      const isRange = !!item.dates;
+      worksheet.addRow({
+        employeeName: item.userName,
+        designation: item.designation || (item.userId?.designation) || 'Employee',
+        partner: item.partnerName,
+        startDate: new Date(isRange ? item.startDate : item.date).toLocaleDateString('en-GB'),
+        endDate: new Date(isRange ? item.endDate : item.date).toLocaleDateString('en-GB'),
+        days: isRange ? item.dates.length : 1,
+        requestedStatus: item.requestedStatus,
+        startTime: item.startTime || '',
+        endTime: item.endTime || '',
+        reason: item.reason || '',
+        status: item.status,
+        actionBy: item.approvedBy || item.rejectedBy || '-',
+        processedDate: (item.approvedAt || item.rejectedAt) ? new Date(item.approvedAt || item.rejectedAt).toLocaleDateString('en-GB') : '-',
+        processedTime: (item.approvedAt || item.rejectedAt) ? new Date(item.approvedAt || item.rejectedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-',
+        email: item.approvedByEmail || item.rejectedByEmail || '',
+        hrValue: item.hrValue || '',
+        submittedDate: new Date(item.createdAt).toLocaleDateString('en-GB'),
+        submittedTime: new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        partnerRemarks: item.partnerRemarks || '',
+        hrRemarks: item.hrRemarks || ''
+      });
+    };
+
+    filteredRangeGroups.forEach(addRequestRow);
+    filteredIndividualRequests.forEach(addRequestRow);
+
+    // Styling
+    // 1. Add title row
+    const titleText = `Attendance Requests Report - Generated on ${new Date().toLocaleDateString('en-GB')} ${new Date().toLocaleTimeString()}`;
+    worksheet.spliceRows(1, 0, [titleText]);
+    worksheet.mergeCells(1, 1, 1, worksheet.columns.length);
+    worksheet.getRow(1).font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
+    worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E40AF' } }; // Blue-800
+    worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+    worksheet.getRow(1).height = 35;
+
+    // 2. Style Header Row (now row 2)
+    const headerRow = worksheet.getRow(2);
+    headerRow.height = 25;
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF3B82F6' } }; // Blue-500
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FF000000' } },
+        bottom: { style: 'thin', color: { argb: 'FF000000' } },
+        left: { style: 'thin', color: { argb: 'FF000000' } },
+        right: { style: 'thin', color: { argb: 'FF000000' } }
+      };
+    });
+
+    // 3. Style Data Rows
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber <= 2) return;
+
+      const isEven = rowNumber % 2 === 0;
+      row.eachCell((cell, colNumber) => {
+        cell.font = { size: 10 };
+        cell.alignment = { 
+          vertical: 'middle', 
+          horizontal: (colNumber <= 3 || colNumber >= 19) ? 'left' : 'center' 
+        };
+        if (isEven) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } }; // Slate-100
+        }
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+        };
+
+        // Status column coloring (Col 11)
+        if (colNumber === 11) {
+          const val = cell.value?.toString();
+          if (val === 'Approved') cell.font = { color: { argb: 'FF059669' }, bold: true };
+          if (val === 'Rejected') cell.font = { color: { argb: 'FFDC2626' }, bold: true };
+          if (val === 'Pending') cell.font = { color: { argb: 'FFD97706' }, bold: true };
+        }
+      });
+    });
+
+    // Auto-save/download
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Attendance_Requests_${new Date().toISOString().split('T')[0]}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
   };
 
   // Group requests into ranges and filter
@@ -1257,7 +1307,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
                     )}
                   </p>
                   <p className="mt-1 text-xs text-slate-500">
-                    Date: {new Date(request.date).toLocaleDateString()}
+                    Date: {new Date(request.date).toLocaleDateString('en-GB')}
                     {request.startTime && request.endTime && (
                       <> • {request.startTime} - {request.endTime}</>
                     )}
@@ -1299,12 +1349,13 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
                     {request.approvedBy || request.rejectedBy}
                     {(request.approvedAt || request.rejectedAt) && (
                       <span className="ml-2 text-xs text-slate-500">
-                        on {new Date(request.approvedAt || request.rejectedAt!).toLocaleDateString('en-US', {
+                        on {new Date(request.approvedAt || request.rejectedAt!).toLocaleDateString('en-GB', {
                           year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
+                          month: '2-digit',
+                          day: '2-digit',
+                        }) + ' ' + new Date(request.approvedAt || request.rejectedAt!).toLocaleTimeString([], {
                           hour: '2-digit',
-                          minute: '2-digit'
+                          minute: '2-digit',
                         })}
                       </span>
                     )}
@@ -1314,7 +1365,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
 
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
                 <span>Partner: {request.partnerName}</span>
-                <span>Submitted: {new Date(request.createdAt).toLocaleDateString()}</span>
+                <span>Submitted: {new Date(request.createdAt).toLocaleDateString('en-GB')}</span>
               </div>
 
               {isAdminView && request.status === 'Pending' && (

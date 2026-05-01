@@ -113,7 +113,7 @@ function formatSalaryHistoryRowDate(value: unknown): string {
   if (value == null || value === '') return '—';
   const d = value instanceof Date ? value : new Date(value as string);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString();
+  return d.toLocaleDateString('en-GB');
 }
 
 const USERS_LIST_ENDPOINT = '/api/users?listOnly=1&includeInactive=1';
@@ -2309,7 +2309,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                             <div key={String(idx)} className="flex items-center gap-2 text-xs">
                             <span className="rounded-md bg-slate-200 px-2 py-1 font-medium text-slate-800">{entry.employmentType}</span>
                             <span className="rounded-md bg-slate-100 px-2 py-1 text-slate-600">
-                              From: {new Date(entry.effectiveFrom).toLocaleDateString()}
+                              From: {new Date(entry.effectiveFrom).toLocaleDateString('en-GB')}
                             </span>
                             <button
                               type="button"
@@ -3343,7 +3343,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   <label className="block text-xs font-medium text-slate-600 mb-1">Last Updated</label>
                   <div className="text-sm font-medium rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-slate-800">
                     {(formData as any).leaveBalance?.lastUpdated 
-                      ? new Date((formData as any).leaveBalance.lastUpdated).toLocaleDateString()
+                      ? new Date((formData as any).leaveBalance.lastUpdated).toLocaleDateString('en-GB')
                       : 'Never'
                     }
                   </div>

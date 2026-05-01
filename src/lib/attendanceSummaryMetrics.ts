@@ -144,13 +144,6 @@ export function getHalfDayCountLikeSummary(item: AttendanceSummaryView, user: Us
       !(effectiveCheckout && effectiveCheckout !== '00:00');
     const d = new Date(date);
     const empTypeHalfDay = getEmploymentTypeForDate(user, d);
-    if (empTypeHalfDay === 'halftime') {
-      if (r.totalHour === 0) return;
-      if (effectiveCheckin) {
-        const [h, m] = effectiveCheckin.split(':').map(Number);
-        if (h > 13 || (h === 13 && m > 30)) return;
-      }
-    }
     if (r.halfDay && r.typeOfPresence !== 'Holiday' && !isBothZero) {
       n += 1;
     }
@@ -180,6 +173,17 @@ export function getAbsentCountLikeSummary(
       calcAbsent += 1;
       return;
     }
+
+    // Presence types that shouldn't be absent even with 0 hours
+    const typeLower = String(rec.typeOfPresence || '').toLowerCase();
+    const isPresenceType = typeLower.includes('wfh') || 
+                           typeLower.includes('outstation') || 
+                           typeLower.includes('clientplace') || 
+                           typeLower.includes('half day') ||
+                           rec.halfDay;
+
+    if (isPresenceType) return;
+
     const effectiveCheckin = rec.editedCheckin || rec.checkin;
     const effectiveCheckout = rec.editedCheckout || rec.checkout;
     if (
@@ -213,6 +217,7 @@ export function getTotalPresentLikeAdminSummary(item: AttendanceSummaryView): nu
   let totalPresent = 0;
   for (const rec of Object.values(item.recordDetails || {}) as any[]) {
     const type = String(rec?.typeOfPresence || '');
+    const typeLower = type.toLowerCase();
     const checkin = String(rec?.editedCheckin || rec?.checkin || '').trim();
     const checkout = String(rec?.editedCheckout || rec?.checkout || '').trim();
     const totalHour = Number(rec?.totalHour || 0);
@@ -236,10 +241,13 @@ export function getTotalPresentLikeAdminSummary(item: AttendanceSummaryView): nu
 
     const hasValidIn = checkin && checkin !== '00:00';
     const hasValidOut = checkout && checkout !== '00:00';
+    const isPresenceType = typeLower.includes('wfh') || 
+                           typeLower.includes('outstation') || 
+                           typeLower.includes('clientplace') || 
+                           typeLower.includes('half day') ||
+                           rec?.halfDay;
 
-    if (rec?.halfDay) {
-      totalPresent += 1;
-    } else if (hasValidIn || hasValidOut || totalHour > 0) {
+    if (isPresenceType || hasValidIn || hasValidOut || totalHour > 0) {
       totalPresent += 1;
     }
   }

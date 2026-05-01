@@ -372,6 +372,27 @@ export async function POST(request: NextRequest) {
             }
           }
 
+          // Special handling for halftime employees
+          const isHalftimeEmployee = user && user.employmentType === 'halftime';
+          if (isHalftimeEmployee) {
+            const inMissing = !finalCheckin || finalCheckin === '00:00';
+            const outMissing = !finalCheckout || finalCheckout === '00:00';
+            
+            if (inMissing && outMissing) {
+              finalValue = 0;
+              finalHalfDay = false;
+              typeOfPresence = 'Absent';
+            } else if (inMissing || outMissing) {
+              finalValue = 0.5;
+              finalHalfDay = true;
+              typeOfPresence = 'ThumbMachine';
+            } else {
+              finalValue = 1;
+              finalHalfDay = false;
+              typeOfPresence = 'ThumbMachine';
+            }
+          }
+
           // Ensure half-day is NOT set when both check-in and check-out are invalid/00:00
           const bothTimesInvalid = (!finalCheckin || finalCheckin === '00:00') && (!finalCheckout || finalCheckout === '00:00');
           if (bothTimesInvalid) {
@@ -939,6 +960,7 @@ function calculateSummary(
     excessHour: number;
     typeOfPresence: string;
     halfDay: boolean;
+    value?: number;
     remarks?: string;
   }>,
   user?: IUser | null
@@ -1076,10 +1098,10 @@ function calculateSummary(
           // For non-articles, half day depends only on 6-hour threshold.
           calculatedHalfDay = record.totalHour < 6;
         } else if (employmentType === 'halftime') {
-          // Can come anytime, half day if spent less than 60% of scheduled time
-          const scheduledHours = scheduledInTime && scheduledOutTime ? calculateTotalHours(scheduledInTime, scheduledOutTime) : 0;
-          const requiredHours = scheduledHours * 0.6;
-          calculatedHalfDay = record.totalHour < requiredHours;
+          // Can come anytime, half day ONLY if one punch is missing
+          const inMissing = !inTime || inTime === '00:00';
+          const outMissing = !outTime || outTime === '00:00';
+          calculatedHalfDay = (inMissing && !outMissing) || (!inMissing && outMissing);
         } else if (isArticle) {
           // Half day if arrive after 1:00 PM or spent less than 3:30 hours
           calculatedHalfDay = isAfter1PM || record.totalHour < 3.5;
@@ -1092,37 +1114,23 @@ function calculateSummary(
       totalHalfDay++;
     }
     // Late arrival: if inTime > scheduled in
-    if (inTime && scheduledInTime && inTime > scheduledInTime) {
+    if (inTime && scheduledInTime && inTime > scheduledInTime && user?.employmentType !== 'halftime') {
       totalLateArrival++;
     }
-    switch (record.typeOfPresence) {
-      case 'ThumbMachine':
-      case 'Manual':
-      case 'Remote':
-      case 'Weekly Off - Present (WO-Present)':
-      case 'Half Day (HD)':
-      case 'Work From Home (WFH)':
-      case 'Weekly Off - Work From Home (WO-WFH)':
-      case 'Onsite Presence (OS-P)':
-        // If hours are > 0, they are present. If 0, they are Absent (but source was Machine/Manual)
-        if (record.totalHour > 0) {
-           totalPresent++;
-        } else {
-           totalAbsent++;
-        }
-        break;
-      case 'On leave':
-      case 'Leave':
-        totalLeave++;
-        break;
-      case 'Holiday':
-      case 'Sunday':
-      case 'Weekoff':
-      case 'Weekoff - special allowance':
-        // Holidays don't count as present/absent
-        break;
-      default:
+    const t = String(record.typeOfPresence || '').toLowerCase();
+    if (t === 'leave' || t === 'on leave') {
+      totalLeave++;
+    } else if (t === 'holiday' || t === 'sunday' || t.includes('weekoff')) {
+      // Holidays/Weekoffs don't count as present/absent for the 1.0/0.5 metrics
+    } else if (t === 'absent') {
+      totalAbsent++;
+    } else {
+      // Everything else is treated as presence if there's any duration or value, else absent
+      if (record.totalHour > 0 || (record.value && record.value > 0)) {
+        totalPresent++;
+      } else {
         totalAbsent++;
+      }
     }
   });
 

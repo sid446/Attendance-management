@@ -89,7 +89,7 @@ const DetailModal: React.FC<DetailModalProps> = ({ isOpen, onClose, title, data 
                 >
                   <div className="flex shrink-0 items-center gap-2">
                     <div className="whitespace-nowrap rounded border border-blue-200/65 bg-panel px-2 py-0.5 font-mono text-xs text-slate-800">
-                      {d.date}
+                      {/^\d{4}-\d{2}-\d{2}$/.test(d.date) ? d.date.split('-').reverse().join('/') : new Date(d.date).toLocaleDateString('en-GB')}
                     </div>
                     {d.subInfo && (
                       <span className="whitespace-nowrap rounded border border-slate-200 px-1.5 py-0.5 text-[11px] text-slate-600">
@@ -292,13 +292,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       // Skip weekoff (case-insensitive)
       if (typeof rec.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff')) return;
       const empTypeLate = getEmploymentTypeForDate(user, d);
-      if (empTypeLate === 'halftime') {
-        // For halftime, do not mark late if checkin is after 1:30 PM
-        const [h, m] = effectiveCheckin.split(':').map(Number);
-        if (h > 13 || (h === 13 && m > 30)) return; // after 13:30
-        // For halftime, do not mark late at all
-        return;
-      }
+      if (empTypeLate === 'halftime') return;
       const schedule = getCachedScheduledTimes(user, d);
       const scheduledIn = schedule.inTime;
       
@@ -317,26 +311,45 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     if (!item) return [];
     const records = item.recordDetails || {};
     const dates: { date: string; info: string; subInfo?: string }[] = [];
+    const holidayDatesSet = new Set(holidays.map(h => h.date));
+    
     Object.entries(records).forEach(([date, rec]) => {
-        if (rec.typeOfPresence === 'Absent') {
+        const d = new Date(date);
+        const type = String(rec.typeOfPresence || '');
+        const typeLower = type.toLowerCase();
+        
+        // Skip Sundays and holidays
+        if (d.getDay() === 0) return;
+        if (holidayDatesSet.has(date) || typeLower === 'holiday') return;
+
+        if (type === 'Absent') {
           dates.push({ date, info: 'Absent', subInfo: 'Marked absent' });
           return;
         }
-        if (rec.typeOfPresence === 'Leave' || rec.typeOfPresence === 'On leave') {
+        if (type === 'Leave' || type === 'On leave') {
           dates.push({ date, info: 'Absent', subInfo: 'On leave' });
           return;
         }
-        // Absent logic: 0 hours, not Leave/Holiday, not weekoff, both in and out invalid
+
+        // Presence types that shouldn't be absent even with 0 hours
+        const isPresenceType = typeLower.includes('wfh') || 
+                               typeLower.includes('outstation') || 
+                               typeLower.includes('clientplace') || 
+                               typeLower.includes('half day') ||
+                               rec.halfDay;
+
+        if (isPresenceType) return;
+
+        // Absent logic: 0 hours, not weekoff, both in and out invalid
         if (
           rec.totalHour === 0 &&
-          rec.typeOfPresence !== 'Holiday' &&
-          !(typeof rec.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff'))
+          !(typeLower.includes('weekoff'))
         ) {
           const effectiveCheckin = rec.editedCheckin || rec.checkin;
           const effectiveCheckout = rec.editedCheckout || rec.checkout;
           // Only mark absent if BOTH in and out are missing or '00:00'
           if ((!(effectiveCheckin && effectiveCheckin !== "00:00")) && (!(effectiveCheckout && effectiveCheckout !== "00:00"))) {
-            dates.push({ date, info: 'Absent', subInfo: rec.typeOfPresence === 'ThumbMachine' ? '0 Hours' : rec.typeOfPresence });
+            dates.push({ date, info: 'Absent', subInfo: type === 'ThumbMachine' ? '0 Hours' : type });
           }
         }
     });
@@ -385,20 +398,6 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       const isBothZero = !(effectiveCheckin && effectiveCheckin !== '00:00') && !(effectiveCheckout && effectiveCheckout !== '00:00');
       const d = new Date(date);
       const empTypeHalfDay = getEmploymentTypeForDate(user, d);
-      // For halftime, do not mark half-day if absent (totalHour === 0)
-      if (empTypeHalfDay === 'halftime') {
-        if (rec.totalHour === 0) {
-          return;
-        }
-        // Do not mark half-day for halftime if checkin is after 13:30
-        if (effectiveCheckin) {
-          const [h, m] = effectiveCheckin.split(':').map(Number);
-          if (h > 13 || (h === 13 && m > 30)) {
-            // After 13:30, do not mark half-day
-            return;
-          }
-        }
-      }
       // Only count as half-day if rules for this employment type say so
       if (rec.halfDay && rec.typeOfPresence !== 'Holiday' && !isBothZero) {
         dates.push({ date, info: 'Half Day', subInfo: `${empTypeHalfDay ? `Type: ${empTypeHalfDay}. ` : ''}${effectiveCheckin ? `In: ${effectiveCheckin}` : ''}` });
@@ -447,12 +446,19 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         const effectiveCheckout = rec.editedCheckout || rec.checkout;
         const isBothZero = !(effectiveCheckin && effectiveCheckin !== '00:00') && !(effectiveCheckout && effectiveCheckout !== '00:00');
 
+        const typeLower = String(rec.typeOfPresence || '').toLowerCase();
+        const isPresenceType = typeLower.includes('wfh') || 
+                               typeLower.includes('outstation') || 
+                               typeLower.includes('clientplace') || 
+                               typeLower.includes('half day') ||
+                               rec.halfDay;
+
         if (rec.typeOfPresence === 'Leave' || rec.typeOfPresence === 'On leave') {
           absentDays++;
           if (!rec.halfDay) leaveDays++;
         } else if (
-          ((effectiveCheckin && effectiveCheckin !== '00:00') && (effectiveCheckout && effectiveCheckout !== '00:00')) ||
-          (rec.halfDay && !isBothZero)
+          isPresenceType ||
+          ((effectiveCheckin && effectiveCheckin !== '00:00') && (effectiveCheckout && effectiveCheckout !== '00:00'))
         ) {
           presentDays++;
         } else if (
@@ -536,7 +542,14 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
                   const effectiveCheckout = rec.editedCheckout || rec.checkout;
                   const isBothZero = !(effectiveCheckin && effectiveCheckin !== '00:00') && !(effectiveCheckout && effectiveCheckout !== '00:00');
 
-                  if (rec.totalHour > 0 || (effectiveCheckin && effectiveCheckin !== '00:00') || (rec.halfDay && !isBothZero)) {
+                  const typeLower = String(rec.typeOfPresence || '').toLowerCase();
+                  const isPresenceType = typeLower.includes('wfh') || 
+                                         typeLower.includes('outstation') || 
+                                         typeLower.includes('clientplace') || 
+                                         typeLower.includes('half day') ||
+                                         rec.halfDay;
+
+                  if (rec.totalHour > 0 || (effectiveCheckin && effectiveCheckin !== '00:00') || isPresenceType) {
                     status = rec.halfDay ? 'Present (Half)' : 'Present';
                     category = 'Present';
                   } else {
@@ -1320,10 +1333,35 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
             calcAbsent += 1;
             return;
           }
+
+          // Presence types that shouldn't be absent even with 0 hours
+          const typeLower = String(rec.typeOfPresence || '').toLowerCase();
+          const isPresenceType = typeLower.includes('wfh') || 
+                                 typeLower.includes('outstation') || 
+                                 typeLower.includes('clientplace') || 
+                                 typeLower.includes('half day') ||
+                                 rec.halfDay;
+
+          if (isPresenceType) return;
+
           const effectiveCheckin = rec.editedCheckin || rec.checkin;
           const effectiveCheckout = rec.editedCheckout || rec.checkout;
           if ((!effectiveCheckin || effectiveCheckin === '00:00') && (!effectiveCheckout || effectiveCheckout === '00:00')) {
             calcAbsent += 1;
+          }
+        });
+
+        // Calculate present days: valid checkin OR halfDay (with punches) OR WFH/OS/CP with value
+        let calcPresent = 0;
+        Object.values(item.recordDetails || {}).forEach((rec: any) => {
+          const effectiveCheckin = rec.editedCheckin || rec.checkin;
+          const effectiveCheckout = rec.editedCheckout || rec.checkout;
+          const isBothZero = !(effectiveCheckin && effectiveCheckin !== '00:00') && !(effectiveCheckout && effectiveCheckout !== '00:00');
+          const type = String(rec.typeOfPresence || '').toLowerCase();
+          
+          if ((effectiveCheckin && effectiveCheckin !== '00:00') || (rec.halfDay && !isBothZero) || 
+              ((type.includes('wfh') || type.includes('outstation') || type.includes('clientplace')) && (rec.value > 0 || !isBothZero))) {
+            calcPresent += 1;
           }
         });
 
@@ -1333,7 +1371,8 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
             ...item.summary,
             totalHalfDay: calcHalfDay,
             totalLate: calcLate,
-            totalAbsent: calcAbsent
+            totalAbsent: calcAbsent,
+            totalPresent: calcPresent
           },
           calcScheduled: sched,
           calcDefinedSchedule,
@@ -2381,8 +2420,28 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         team: item.team || '-',
         designation: item.designation || '-',
         totalDays: Object.keys(item.recordDetails || {}).length,
-        holidays: Object.values(item.recordDetails || {}).filter((r: any) => r.typeOfPresence === 'Holiday').length,
-        workingDays: item.summary.totalPresent + item.summary.totalAbsent,
+        holidays: (() => {
+          const records = item.recordDetails || {};
+          const holidayDatesSet = new Set(holidays.map(h => h.date));
+          let holidayCount = 0;
+          Object.keys(records).forEach((dateStr) => {
+            const d = new Date(dateStr);
+            if (d.getDay() === 0) holidayCount++;
+            else if (holidayDatesSet.has(dateStr)) holidayCount++;
+          });
+          return holidayCount;
+        })(),
+        workingDays: (() => {
+          const records = item.recordDetails || {};
+          const holidayDatesSet = new Set(holidays.map(h => h.date));
+          return Object.entries(records).filter(([dateStr, rec]: [string, any]) => {
+            const d = new Date(dateStr);
+            if (d.getDay() === 0) return false;
+            if (holidayDatesSet.has(dateStr)) return false;
+            if (typeof rec.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff')) return false;
+            return true;
+          }).length;
+        })(),
         present: item.summary.totalPresent,
         halfDays: item.summary.totalHalfDay,
         absent: item.summary.totalAbsent,
@@ -3212,9 +3271,9 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       let weekEnd = new Date(weekStart);
       weekEnd.setDate(weekEnd.getDate() + 6);
       if (weekEnd > lastDay) weekEnd = new Date(lastDay);
-      return `Week of ${weekStart.toLocaleDateString()} - ${weekEnd.toLocaleDateString()}`;
+      return `Week of ${weekStart.toLocaleDateString('en-GB')} - ${weekEnd.toLocaleDateString('en-GB')}`;
     })() : 
-    `From ${rangeStart.length > 7 ? new Date(rangeStart).toLocaleDateString() : new Date(rangeStart + '-01').toLocaleString('default', { month: 'long', year: 'numeric' })} to ${rangeEnd.length > 7 ? new Date(rangeEnd).toLocaleDateString() : new Date(rangeEnd + '-01').toLocaleString('default', { month: 'long', year: 'numeric' })}`;
+    `From ${rangeStart.length > 7 ? new Date(rangeStart).toLocaleDateString('en-GB') : new Date(rangeStart + '-01').toLocaleString('default', { month: 'long', year: 'numeric' })} to ${rangeEnd.length > 7 ? new Date(rangeEnd).toLocaleDateString('en-GB') : new Date(rangeEnd + '-01').toLocaleString('default', { month: 'long', year: 'numeric' })}`;
 
   const RangeModal: React.FC<{isOpen: boolean; onClose: () => void}> = ({isOpen, onClose}) => {
     const [customStartDate, setCustomStartDate] = useState(currentDate.toISOString().split('T')[0]);

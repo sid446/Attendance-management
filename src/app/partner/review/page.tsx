@@ -164,7 +164,7 @@ function PartnerReviewContent() {
                 </div>
                 <div>
                   <span className="text-slate-400">Date:</span>
-                  <p className="text-white font-medium">{new Date(request.date).toLocaleDateString()}</p>
+                  <p className="text-white font-medium">{new Date(request.date).toLocaleDateString('en-GB')}</p>
                 </div>
                 <div>
                   <span className="text-slate-400">Requested Status:</span>

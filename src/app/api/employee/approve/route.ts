@@ -535,25 +535,80 @@ export async function POST(request: NextRequest) {
     // Send email notification
     try {
       const user = await User.findById(attendanceRequest.userId);
-      if (user && user.email) {
+      if (user && (user.attendanceEmail || user.email)) {
         const subject = `Attendance Request ${action === 'approve' ? 'Approved' : 'Rejected'}`;
+        
+        // Format dates and times
+        const formattedDate = new Date(attendanceRequest.date).toLocaleDateString('en-GB');
+        const now = new Date();
+        const istDate = now.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' });
+        const istTime = now.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour12: true });
+        const processingTime = `${istDate} ${istTime} (IST)`;
+
         const html = `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: ${action === 'approve' ? '#10b981' : '#ef4444'};">${subject}</h2>
-            <p>Dear ${attendanceRequest.userName},</p>
-            <p>Your attendance correction request has been <strong>${action === 'approve' ? 'approved' : 'rejected'}</strong>.</p>
+          <div style="background-color: #f5f5f7; padding: 40px 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1d1d1f; line-height: 1.5;">
+            <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.04);">
+              <!-- Header -->
+              <div style="padding: 40px 40px 20px; text-align: center;">
+                <img src="https://attendance.asija.in/lg.png" alt="Asija Logo" style="width: 56px; height: 56px; margin-bottom: 24px;">
+                <h1 style="font-size: 26px; font-weight: 600; margin: 0; color: #1d1d1f; letter-spacing: -0.02em;">Attendance Correction</h1>
+                <div style="margin-top: 16px; display: inline-block; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; background-color: ${action === 'approve' ? '#e6f4ea' : '#fce8e6'}; color: ${action === 'approve' ? '#008040' : '#d21a0c'}; text-transform: uppercase; letter-spacing: 0.05em;">
+                  ${action === 'approve' ? 'Approved' : 'Rejected'}
+                </div>
+              </div>
 
-            <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0;">
-              <p><strong>Date:</strong> ${new Date(attendanceRequest.date).toLocaleDateString()}</p>
-              <p><strong>Requested Status:</strong> ${attendanceRequest.requestedStatus}</p>
-              <p><strong>Reason:</strong> ${attendanceRequest.reason || 'N/A'}</p>
-              ${remarks ? `<p><strong>Remarks:</strong> ${remarks}</p>` : ''}
-              <p><strong>Approved/Rejected by:</strong> ${approvedBy}</p>
-              <p><strong>Action taken on:</strong> ${new Date().toLocaleString()}</p>
+              <!-- Content -->
+              <div style="padding: 0 40px 40px;">
+                <p style="font-size: 17px; color: #424245; margin-bottom: 32px; text-align: center;">
+                  Hello ${attendanceRequest.userName},<br>Your attendance correction request has been ${action === 'approve' ? 'successfully approved' : 'rejected'}.
+                </p>
+
+                <div style="background-color: #fbfbfd; border-radius: 14px; padding: 24px; border: 1px solid #d2d2d7;">
+                  <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                      <td style="padding-bottom: 12px; font-size: 14px; color: #86868b; width: 40%;">Request Date</td>
+                      <td style="padding-bottom: 12px; font-size: 14px; font-weight: 500; text-align: right; color: #1d1d1f;">${formattedDate}</td>
+                    </tr>
+                    <tr>
+                      <td style="padding-bottom: 12px; font-size: 14px; color: #86868b;">Requested Status</td>
+                      <td style="padding-bottom: 12px; font-size: 14px; font-weight: 500; text-align: right; color: #1d1d1f;">${attendanceRequest.requestedStatus}</td>
+                    </tr>
+                    ${attendanceRequest.startTime && attendanceRequest.endTime ? `
+                    <tr>
+                      <td style="padding-bottom: 12px; font-size: 14px; color: #86868b;">Time Range</td>
+                      <td style="padding-bottom: 12px; font-size: 14px; font-weight: 500; text-align: right; color: #1d1d1f;">${attendanceRequest.startTime} - ${attendanceRequest.endTime}</td>
+                    </tr>` : ''}
+                    <tr>
+                      <td style="padding-bottom: 12px; font-size: 14px; color: #86868b;">Employee Reason</td>
+                      <td style="padding-bottom: 12px; font-size: 14px; font-weight: 500; text-align: right; color: #1d1d1f;">${attendanceRequest.reason || 'N/A'}</td>
+                    </tr>
+                    ${remarks ? `
+                    <tr style="border-top: 1px solid #e5e5e7;">
+                      <td style="padding-top: 12px; padding-bottom: 12px; font-size: 14px; color: #86868b;">Approver Remarks</td>
+                      <td style="padding-top: 12px; padding-bottom: 12px; font-size: 14px; font-weight: 600; text-align: right; color: ${action === 'approve' ? '#008040' : '#d21a0c'};">${remarks}</td>
+                    </tr>` : ''}
+                    <tr style="border-top: 1px solid #e5e5e7;">
+                      <td style="padding-top: 12px; font-size: 14px; color: #86868b;">Processed By</td>
+                      <td style="padding-top: 12px; font-size: 14px; font-weight: 500; text-align: right; color: #1d1d1f;">${approvedBy}</td>
+                    </tr>
+                    <tr>
+                      <td style="padding-top: 4px; font-size: 12px; color: #86868b;">Processed On</td>
+                      <td style="padding-top: 4px; font-size: 12px; color: #86868b; text-align: right;">${processingTime}</td>
+                    </tr>
+                  </table>
+                </div>
+
+                <div style="margin-top: 40px; text-align: center;">
+                  <a href="https://attendance.asija.in/employee/dashboard" style="display: inline-block; background-color: #0071e3; color: #ffffff; padding: 12px 32px; border-radius: 980px; font-size: 17px; font-weight: 500; text-decoration: none; transition: background-color 0.2s;">View Dashboard</a>
+                </div>
+              </div>
+
+              <!-- Footer -->
+              <div style="background-color: #f5f5f7; padding: 32px 40px; text-align: center; border-top: 1px solid #d2d2d7;">
+                <p style="font-size: 12px; color: #86868b; margin: 0; line-height: 1.4;">This is an automated notification from Asija and Associates LLP Attendance System.</p>
+                <p style="font-size: 12px; color: #86868b; margin: 8px 0 0;">Please do not reply to this email. For assistance, contact HR.</p>
+              </div>
             </div>
-
-            <p>If you have any questions, please contact your supervisor or HR department.</p>
-            <p>Best regards,<br>Attendance Management System</p>
           </div>
         `;
 
@@ -566,7 +621,6 @@ export async function POST(request: NextRequest) {
       }
     } catch (emailError) {
       console.error('Email sending failed:', emailError);
-      // Don't fail the request if email fails
     }
 
     return NextResponse.json({

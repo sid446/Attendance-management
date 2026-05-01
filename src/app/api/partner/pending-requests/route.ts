@@ -6,7 +6,7 @@ import Attendance from '@/models/Attendance';
 import { verifyPartnerReviewToken } from '@/lib/partnerReviewToken';
 
 function normalizePartnerName(name: string): string {
-  return name.trim().toLowerCase();
+  return String(name || '').replace(/[.\s]/g, '').toLowerCase();
 }
 
 export async function GET(request: NextRequest) {
