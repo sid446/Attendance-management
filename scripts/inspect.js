@@ -1,5 +1,15 @@
+require('dotenv').config({ path: '.env.local' }); // Try .env.local first
+require('dotenv').config(); // Fallback to .env
+
 const mongoose = require('mongoose');
-mongoose.connect('mongodb+srv://sidhant:sidbrogo123@cluster0.yzlofkn.mongodb.net/?appName=Cluster0')
+
+const uri = process.env.MONGODB_URI;
+if (!uri) {
+  console.error("Error: MONGODB_URI not found in environment variables.");
+  process.exit(1);
+}
+
+mongoose.connect(uri)
   .then(async () => {
     const db = mongoose.connection.db;
     const user = await db.collection('users').findOne({
