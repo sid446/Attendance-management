@@ -257,17 +257,24 @@ function calculateSummary(records: Map<string, {
       record.typeOfPresence === 'Weekoff - special allowance' ||
       isSundayDate;
 
-    // Determine if user is an article (articleship)
+    // Determine if user is an article (articleship) or halftime
     const isArticle = user && user.designation && user.designation.toLowerCase() === 'article';
+    const isPartner = user && (user.category === 'Partner' || (user.designation && user.designation.toLowerCase().includes('partner')));
+    const isHalftime = (user && String(user.employmentType || '').toLowerCase() === 'halftime') || isPartner;
 
     // Calculate halfDay based on user type
     let halfDay = false;
-    
+
     // Special case: if checkin is 00:00 but checkout is valid, mark as half day
     if (record.checkin === '00:00' && record.checkout !== '00:00' && record.checkout !== '' && record.totalHour > 0) {
+      // This special case applies to all users (exit-only punch / missing check-in)
       halfDay = true;
     } else if (record.checkin) {
-      if (isArticle) {
+      if (isHalftime) {
+        // For halftime employees, do NOT auto-mark half-day based on short hours or late arrival.
+        // Half-day for halftime employees is only set by the missing-entry special case above.
+        halfDay = false;
+      } else if (isArticle) {
         const checkinTime = record.checkin;
         const checkinMinutes = timeToMinutes(checkinTime);
         const onePMMinutes = timeToMinutes('13:00');
@@ -321,7 +328,8 @@ function calculateSummary(records: Map<string, {
       if (dayOfWeek === 0) scheduledIn = user.scheduleInOutTime?.inTime || '09:00';
     }
 
-    if (record.checkin && record.checkin > scheduledIn) {
+    // Do not count late arrivals for halftime employees
+    if (!isHalftime && record.checkin && record.checkin > scheduledIn) {
       totalLateArrival++;
     }
 

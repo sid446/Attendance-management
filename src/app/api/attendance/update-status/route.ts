@@ -34,13 +34,15 @@ function calculateSummary(
   
 // Determine if this is an articleship employee
     const isArticleship = user && user.designation && user.designation.toLowerCase() === 'article';
+    const isPartner = user && (user.category === 'Partner' || (user.designation && user.designation.toLowerCase().includes('partner')));
+    const isHalftime = (user && (user.employmentType === 'halftime' || user.employmentType?.includes('half'))) || isPartner;
     // Determine half-day based on user type and check-in time
     let isHalfDay = false;
     
     // Special case: if checkin is 00:00 but checkout is valid, mark as half day
     if (record.checkin === '00:00' && record.checkout !== '00:00' && record.checkout !== '' && record.totalHour > 0) {
       isHalfDay = true;
-    } else if (record.checkin) {
+    } else if (record.checkin && !isHalftime) {
       const checkinTime = record.checkin;
       const isAfter1PM = checkinTime >= '13:00';
       
@@ -212,7 +214,9 @@ export async function POST(request: NextRequest) {
                            else if (dow !== 0) scheduledIn = user.scheduleInOutTime?.inTime || '09:00';
                            if (dow === 0) scheduledIn = user.scheduleInOutTime?.inTime || '09:00';
 
-                           if (r.checkin && r.checkin > scheduledIn) tLate++;
+                           const isPartner = user && (user.category === 'Partner' || (user.designation && user.designation.toLowerCase().includes('partner')));
+                           const isHalftime = (user && (user.employmentType === 'halftime' || user.employmentType?.includes('half'))) || isPartner;
+                           if (r.checkin && r.checkin > scheduledIn && !isHalftime) tLate++;
 
                            // Status (align with global summary logic)
                             switch (r.typeOfPresence) {

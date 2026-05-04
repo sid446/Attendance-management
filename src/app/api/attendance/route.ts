@@ -106,8 +106,9 @@ export async function POST(request: NextRequest) {
       // Track user-month combinations where attendance is being created for the first time
       const newAttendanceUserMonths = new Set<string>();
 
-      // Pre-fetch all users for efficient in-memory matching
-      const allUsers = await User.find({}).select('name _id odId employeeCode designation employmentType schedules seasonalSchedules scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth');
+      // Pre-fetch all users and holidays for efficient in-memory matching
+      const allUsers = await User.find({}).select('name _id odId employeeCode designation category employmentType schedules seasonalSchedules scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth');
+      const allHolidays = await Holiday.find({ isActive: true });
       
       // Helper to strip non-alphanumeric characters for fuzzy matching
       const normalizeForMatch = (s: string) => s.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
@@ -292,23 +293,37 @@ export async function POST(request: NextRequest) {
             remarksStr += (remarksStr ? ' | ' : '') + (exitOnlyPunchDetected ? 'Exit-only punch detected' : 'No check-in time');
           }
 
-          // Check if date is a Sunday or Holiday when there's no working hours
-          if (!isFixedDataUpload && totalHour === 0 && !approvedRequest) {
+          // Check if date is a Sunday or Holiday
+          if (!approvedRequest) {
             const recordDate = new Date(isoDate);
             const dayOfWeek = recordDate.getDay(); // 0 = Sunday
-            
-            // Check if it's a Sunday (Weekly Off)
-            if (dayOfWeek === 0) {
-              typeOfPresence = 'Holiday';
-              finalValue = 0;
-              remarksStr += (remarksStr ? ' | ' : '') + 'Weekly Off (Sunday)';
-            } else {
-              // Check if it's a Holiday
-              const holiday = await Holiday.findOne({ date: isoDate, isActive: true });
-              if (holiday) {
+            const holiday = allHolidays.find(h => h.date === isoDate);
+
+            if (dayOfWeek === 0 || holiday) {
+              const holidayName = holiday ? holiday.name : 'Weekly Off (Sunday)';
+              // Determine presence: machine logs use hours, fixed uploads may use presence value
+              const isPresent = totalHour > 0 || finalValue > 0;
+
+              if (isPresent) {
+                // If present on a holiday/Sunday, assign the weekoff presence type
+                // For fixed uploads, only do this if the original code was "PRESENT" or "P"
+                const originalCodeLower = fixedPresenceCode.toLowerCase();
+                const isGenericPresent = !isFixedDataUpload || originalCodeLower === 'present' || originalCodeLower === 'p';
+
+                if (isGenericPresent && 
+                    !typeOfPresence.toLowerCase().includes('weekoff') && 
+                    !typeOfPresence.toLowerCase().includes('sunday') && 
+                    !typeOfPresence.toLowerCase().includes('holiday')) {
+                  typeOfPresence = 'Present - in office - weekoff';
+                  finalValue = 1;
+                }
+              } else {
                 typeOfPresence = 'Holiday';
                 finalValue = 0;
-                remarksStr += (remarksStr ? ' | ' : '') + holiday.name;
+              }
+              
+              if (!remarksStr.includes(holidayName)) {
+                remarksStr += (remarksStr ? ' | ' : '') + holidayName;
               }
             }
           }
@@ -358,8 +373,9 @@ export async function POST(request: NextRequest) {
              }
           }
 
-          // Special handling for Article employees
-          const isArticleEmployee = user && (user.employmentType === 'article' || user.designation?.toLowerCase() === 'article');
+          // Special handling for Article employees (case-insensitive employmentType)
+          const empTypeStr = String(user?.employmentType || '').toLowerCase();
+          const isArticleEmployee = user && (empTypeStr === 'article' || user.designation?.toLowerCase() === 'article');
           if (!isFixedDataUpload && isArticleEmployee) {
             if (finalTotalHour === 0 && typeOfPresence !== 'Holiday') {
               finalValue = 0;
@@ -372,24 +388,29 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          // Special handling for halftime employees
-          const isHalftimeEmployee = user && user.employmentType === 'halftime';
+          // Special handling for halftime employees (accept case variants like 'half', 'half-time')
+          // Also exempting Partners from half-day/late marking
+          const isPartner = user && (user.category === 'Partner' || (user.designation && user.designation.toLowerCase().includes('partner')));
+          const isHalftimeEmployee = user && (empTypeStr === 'halftime' || empTypeStr.includes('half') || isPartner);
           if (isHalftimeEmployee) {
             const inMissing = !finalCheckin || finalCheckin === '00:00';
             const outMissing = !finalCheckout || finalCheckout === '00:00';
             
             if (inMissing && outMissing) {
-              finalValue = 0;
-              finalHalfDay = false;
-              typeOfPresence = 'Absent';
-            } else if (inMissing || outMissing) {
-              finalValue = 0.5;
-              finalHalfDay = true;
-              typeOfPresence = 'ThumbMachine';
+              // Only mark as Absent if not a holiday/weekly off
+              if (typeOfPresence !== 'Holiday' && typeOfPresence !== 'Sunday' && typeOfPresence !== 'Weekoff' && !typeOfPresence.includes('Present')) {
+                finalValue = 0;
+                finalHalfDay = false;
+                typeOfPresence = 'Absent';
+              }
             } else {
+              // Halftime employees are full present (value 1) if they have any punch, and never half-day
               finalValue = 1;
               finalHalfDay = false;
-              typeOfPresence = 'ThumbMachine';
+              // If current type is a half-day or absent variant, normalize to Present
+              if (!typeOfPresence || typeOfPresence.includes('Half Day') || typeOfPresence === 'Absent' || typeOfPresence === 'ThumbMachine') {
+                typeOfPresence = 'Present';
+              }
             }
           }
 
@@ -1081,8 +1102,17 @@ function calculateSummary(
     }
 
     // Determine half-day based on employmentType (only for summary calculation, don't override individual record flags)
+    const employmentType = String(user?.employmentType || 'fulltime').toLowerCase();
+    const designation = user?.designation?.toLowerCase();
+    const isPartner = user && (user.category === 'Partner' || (user.designation && user.designation.toLowerCase().includes('partner')));
+    const isHalftime = employmentType === 'halftime' || employmentType.includes('half') || isPartner;
+
     let calculatedHalfDay = record.halfDay || false; // Use existing halfDay flag if already set
-    if (!record.halfDay && !isNonWorkingDayRecord) { // Only recalculate if not already set
+    
+    // Halftime employees are never marked as half-day
+    if (isHalftime) {
+      calculatedHalfDay = false;
+    } else if (!record.halfDay && !isNonWorkingDayRecord) { // Only recalculate if not already set
       // Special case: if inTime is 00:00 but outTime is valid, mark as half day
       if (inTime === '00:00' && outTime !== '00:00' && outTime !== '' && record.totalHour > 0) {
         calculatedHalfDay = true;
@@ -1090,31 +1120,26 @@ function calculateSummary(
           (record.editedCheckin === '' && record.editedCheckout === '')) {
         calculatedHalfDay = false;
       } else {
-        const employmentType = user?.employmentType || 'fulltime';
-        const designation = user?.designation?.toLowerCase();
         const isArticle = employmentType === 'article' || designation === 'article';
         const isAfter1PM = inTime ? inTime >= '13:00' : false;
         if (employmentType === 'fulltime' && !isArticle) {
           // For non-articles, half day depends only on 6-hour threshold.
           calculatedHalfDay = record.totalHour < 6;
-        } else if (employmentType === 'halftime') {
-          // Can come anytime, half day ONLY if one punch is missing
-          const inMissing = !inTime || inTime === '00:00';
-          const outMissing = !outTime || outTime === '00:00';
-          calculatedHalfDay = (inMissing && !outMissing) || (!inMissing && outMissing);
         } else if (isArticle) {
           // Half day if arrive after 1:00 PM or spent less than 3:30 hours
           calculatedHalfDay = isAfter1PM || record.totalHour < 3.5;
         }
       }
-      // Update the record's halfDay flag only if it wasn't already set
-      record.halfDay = calculatedHalfDay;
     }
+    
+    // Update the record's halfDay flag
+    record.halfDay = calculatedHalfDay;
     if (calculatedHalfDay) {
       totalHalfDay++;
     }
     // Late arrival: if inTime > scheduled in
-    if (inTime && scheduledInTime && inTime > scheduledInTime && user?.employmentType !== 'halftime') {
+    const userEmpType = String(user?.employmentType || '').toLowerCase();
+    if (inTime && scheduledInTime && inTime > scheduledInTime && !(userEmpType === 'halftime' || userEmpType.includes('half'))) {
       totalLateArrival++;
     }
     const t = String(record.typeOfPresence || '').toLowerCase();

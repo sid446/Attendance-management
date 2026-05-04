@@ -79,6 +79,7 @@ export async function GET(request: NextRequest) {
             userId: '$userDoc',
             userName: 1,
             date: 1,
+            monthYear: 1,
             requestedStatus: 1,
             reason: 1,
             startTime: 1,
@@ -106,20 +107,26 @@ export async function GET(request: NextRequest) {
       let originalCheckout = '-';
       
       // Get the original attendance record
-      if (req.userId && req.monthYear && req.date) {
+      const effectiveMonthYear = req.monthYear || (req.date ? req.date.substring(0, 7) : null);
+      
+      if (req.userId && effectiveMonthYear && req.date) {
         const attendance = await Attendance.findOne({
           userId: req.userId._id || req.userId,
-          monthYear: req.monthYear
+          monthYear: effectiveMonthYear
         }).lean();
         
         if (attendance && attendance.records) {
-          const record = attendance.records instanceof Map 
-            ? attendance.records.get(req.date)
-            : attendance.records[req.date];
+          // If using lean(), Map might become a plain object
+          let record = null;
+          if (attendance.records instanceof Map) {
+            record = attendance.records.get(req.date);
+          } else {
+            record = (attendance.records as any)[req.date];
+          }
           
           if (record) {
-            originalCheckin = record.checkin || '00:00';
-            originalCheckout = record.checkout || '00:00';
+            originalCheckin = record.checkin || '-';
+            originalCheckout = record.checkout || '-';
           }
         }
       }

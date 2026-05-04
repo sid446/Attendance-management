@@ -39,6 +39,7 @@ export default function AttendanceUpload() {
   const [file, setFile] = useState<File | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [fixedFile, setFixedFile] = useState<File | null>(null);
+  const [fixedFiles, setFixedFiles] = useState<File[]>([]);
   const [attendanceData, setAttendanceData] = useState<AttendanceRecord[]>([]);
   const [processing, setProcessing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -175,6 +176,26 @@ export default function AttendanceUpload() {
     setProcessing(false);
   };
 
+  const processMultipleFixedFiles = async (filesToProcess: File[]) => {
+    if (!filesToProcess || filesToProcess.length === 0) return;
+
+    setProcessing(true);
+    setError(null);
+    setSaveMessage(null);
+
+    for (const f of filesToProcess) {
+      try {
+        setFixedFile(f);
+        await processFixedDataFile(f);
+      } catch (err) {
+        console.error('Error processing fixed file', f.name, err);
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+
+    setProcessing(false);
+  };
+
   // Handle OTP verification
   const handleOTPSubmit = async () => {
     if (!otp || !sessionId) {
@@ -281,9 +302,26 @@ export default function AttendanceUpload() {
   };
 
   const handleFixedFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const selected = e.target.files && e.target.files[0] ? e.target.files[0] : null;
+    const list = e.target.files ? Array.from(e.target.files) : [];
+    const selected = list[0] ?? null;
+    setFixedFiles(list);
     setFixedFile(selected);
     if (selected) {
+      setError(null);
+      setSaveMessage(null);
+      setUploadErrors([]);
+      setUploadTotal(0);
+      setUploadSaved(0);
+      setUploadFailed(0);
+      setActiveSection('upload');
+    }
+  };
+
+  const handleFixedFilesChange = (list: File[]) => {
+    const selected = list[0] ?? null;
+    setFixedFiles(list);
+    setFixedFile(selected);
+    if (list.length > 0) {
       setError(null);
       setSaveMessage(null);
       setUploadErrors([]);
@@ -1421,10 +1459,13 @@ export default function AttendanceUpload() {
                           file={file}
                           files={files}
                           fixedFile={fixedFile}
+                          fixedFiles={fixedFiles}
                           onFileChange={handleFileChange}
                           onFilesChange={handleFilesChange}
                           onFixedFileChange={handleFixedFileChange}
+                          onFixedFilesChange={handleFixedFilesChange}
                           onProcessMultiple={processMultipleFiles}
+                          onProcessMultipleFixed={processMultipleFixedFiles}
                           onProcessFixedFile={() => {
                             processFixedDataFile();
                           }}

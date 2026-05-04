@@ -28,8 +28,11 @@ interface UploadSectionProps {
   machineFormat?: string;
   onMachineFormatChange?: (format: string) => void;
   fixedFile?: File | null;
+  fixedFiles?: File[];
   onFixedFileChange?: (e: ChangeEvent<HTMLInputElement>) => void;
+  onFixedFilesChange?: (files: File[]) => void;
   onProcessFixedFile?: () => void;
+  onProcessMultipleFixed?: (files: File[]) => void;
 }
 
 export const UploadSection: React.FC<UploadSectionProps> = ({
@@ -46,8 +49,11 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   machineFormat = 'machine2',
   onMachineFormatChange,
   fixedFile = null,
+  fixedFiles = [],
   onFixedFileChange,
-  onProcessFixedFile
+  onFixedFilesChange,
+  onProcessFixedFile,
+  onProcessMultipleFixed
 }) => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>(file ? [file] : files || []);
   const [showFormatPreview, setShowFormatPreview] = useState(false);
@@ -63,7 +69,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   });
   const [addingMachine, setAddingMachine] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
-  const [selectedFixedFile, setSelectedFixedFile] = useState<File | null>(fixedFile);
+  const [selectedFixedFiles, setSelectedFixedFiles] = useState<File[]>(fixedFile ? [fixedFile] : fixedFiles || []);
 
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState<any[]>([]);
@@ -147,8 +153,12 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   }, [file, files]);
 
   useEffect(() => {
-    setSelectedFixedFile(fixedFile);
-  }, [fixedFile]);
+    if (fixedFiles && fixedFiles.length > 0) {
+      setSelectedFixedFiles(fixedFiles);
+    } else if (fixedFile) {
+      setSelectedFixedFiles([fixedFile]);
+    }
+  }, [fixedFile, fixedFiles]);
 
   // Load machine formats on component mount
   useEffect(() => {
@@ -195,8 +205,9 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   };
 
   const handleFixedFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const nextFile = e.target.files && e.target.files[0] ? e.target.files[0] : null;
-    setSelectedFixedFile(nextFile);
+    const list = e.target.files ? Array.from(e.target.files) : [];
+    setSelectedFixedFiles(list);
+    onFixedFilesChange?.(list);
     onFixedFileChange?.(e);
   };
 
@@ -492,33 +503,66 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
             <div className="flex min-w-0 items-center gap-2">
               <Upload className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
               <span className="truncate text-xs text-slate-600">
-                {selectedFixedFile ? selectedFixedFile.name : 'Choose fixed attendance Excel'}
+                {selectedFixedFiles.length > 0 ? (
+                  selectedFixedFiles.length === 1 ? selectedFixedFiles[0].name : `${selectedFixedFiles.length} files selected`
+                ) : (
+                  'Choose fixed attendance Excel(s)'
+                )}
               </span>
             </div>
             <span className="shrink-0 text-[11px] font-medium text-slate-500">Browse</span>
-            <input type="file" accept=".xlsx,.xls" onChange={handleFixedFileInputChange} className="hidden" />
+            <input type="file" accept=".xlsx,.xls" multiple onChange={handleFixedFileInputChange} className="hidden" />
           </label>
           <button
             type="button"
-            onClick={() => onProcessFixedFile?.()}
-            disabled={!selectedFixedFile || processing}
+            onClick={() => {
+              if (selectedFixedFiles.length > 1) {
+                if (onProcessMultipleFixed) {
+                  onProcessMultipleFixed(selectedFixedFiles);
+                } else if (onProcessFixedFile) {
+                  onProcessFixedFile();
+                }
+              } else {
+                onProcessFixedFile?.();
+              }
+            }}
+            disabled={selectedFixedFiles.length === 0 || processing}
             className="inline-flex shrink-0 items-center justify-center rounded-md border border-blue-200/65 bg-panel px-4 py-2.5 text-xs font-semibold text-slate-800 transition-colors hover:border-blue-200 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-[10rem]"
           >
-            {processing ? 'Processing…' : 'Process fixed sheet'}
+            {processing ? 'Processing…' : selectedFixedFiles.length > 1 ? 'Process all fixed' : 'Process fixed sheet'}
           </button>
         </div>
       </div>
 
-      {selectedFiles.length > 1 && (
+      {(selectedFiles.length > 1 || selectedFixedFiles.length > 1) && (
         <div className="mb-4 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
           <div className="mb-1 font-medium text-slate-800">Selected files</div>
-          <ul className="max-h-28 list-inside list-disc overflow-y-auto text-slate-600">
-            {selectedFiles.map((f, i) => (
-              <li key={i} className="truncate">
-                {f.name}
-              </li>
-            ))}
-          </ul>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {selectedFiles.length > 1 && (
+              <div>
+                <div className="mb-1 text-[10px] uppercase tracking-wider text-slate-500">Machine exports</div>
+                <ul className="max-h-28 list-inside list-disc overflow-y-auto text-slate-600">
+                  {selectedFiles.map((f, i) => (
+                    <li key={i} className="truncate">
+                      {f.name}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {selectedFixedFiles.length > 1 && (
+              <div>
+                <div className="mb-1 text-[10px] uppercase tracking-wider text-slate-500">Fixed sheets</div>
+                <ul className="max-h-28 list-inside list-disc overflow-y-auto text-slate-600">
+                  {selectedFixedFiles.map((f, i) => (
+                    <li key={i} className="truncate">
+                      {f.name}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
