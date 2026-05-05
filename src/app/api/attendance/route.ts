@@ -284,6 +284,50 @@ export async function POST(request: NextRequest) {
               finalTotalHour = 0;
             }
             remarksStr = (fixedPresenceCode ? `Fixed upload status: ${fixedPresenceCode}` : '') + (wasMerged ? ' (Merged)' : '');
+
+            // NEW: Automatically fill missing times with scheduled hours for specific work types
+            const isMissingTimes = (!finalCheckin || finalCheckin === '00:00' || finalCheckin === '') && 
+                                   (!finalCheckout || finalCheckout === '00:00' || finalCheckout === '');
+            const isRelevantType = typeOfPresence.includes('ClientPlace') || 
+                                   typeOfPresence.includes('WFH') || 
+                                   typeOfPresence.includes('Present - in office') ||
+                                   typeOfPresence.includes('Half Day');
+
+            if (isMissingTimes && isRelevantType && user) {
+                // Get scheduled times for this date
+                let sch = getScheduledTimes(user, isoDate);
+                
+                // If it's a holiday or Sunday, get the nearest Monday's schedule for calculation purposes
+                const recordDate = new Date(isoDate);
+                const isHolidayOrSunday = recordDate.getDay() === 0 || allHolidays.some(h => h.date === isoDate);
+                
+                if (isHolidayOrSunday) {
+                    const mondayDate = new Date(isoDate);
+                    const dayOfWeek = mondayDate.getDay();
+                    const daysUntilMonday = dayOfWeek === 0 ? 1 : (8 - dayOfWeek);
+                    mondayDate.setDate(mondayDate.getDate() + daysUntilMonday);
+                    const mondayStr = mondayDate.toISOString().split('T')[0];
+                    sch = getScheduledTimes(user, mondayStr);
+                }
+                
+                if (sch && sch.inTime && sch.outTime && sch.inTime !== '00:00') {
+                    finalCheckin = sch.inTime;
+                    finalCheckout = sch.outTime;
+                    finalEditedCheckin = sch.inTime;
+                    finalEditedCheckout = sch.outTime;
+                    
+                    // Recalculate total hours based on scheduled times
+                    let calculatedHours = calculateTotalHours(finalCheckin, finalCheckout);
+                    
+                    // If it's a Half Day type, set total hours to 50% of scheduled
+                    if (finalHalfDay || typeOfPresence.includes('Half Day')) {
+                        calculatedHours = Math.round((calculatedHours / 2) * 100) / 100;
+                    }
+                    
+                    finalTotalHour = calculatedHours;
+                    remarksStr += (remarksStr ? ' | ' : '') + 'Auto-filled scheduled times';
+                }
+            }
           }
 
           // Special case: if checkin is 00:00 but checkout is valid, mark as half day
@@ -316,6 +360,12 @@ export async function POST(request: NextRequest) {
                     !typeOfPresence.toLowerCase().includes('holiday')) {
                   typeOfPresence = 'Present - in office - weekoff';
                   finalValue = 1;
+                } else if (typeOfPresence === 'Present - ClientPlace (Weekdays)') {
+                  typeOfPresence = 'Present - ClientPlace (Weekoff)';
+                } else if (typeOfPresence === 'WFH - weekdays') {
+                  typeOfPresence = 'WFH - weekoff';
+                } else if (typeOfPresence === 'Half Day - weekdays') {
+                  typeOfPresence = 'Half Day - weekoff';
                 }
               } else {
                 typeOfPresence = 'Holiday';

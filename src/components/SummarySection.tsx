@@ -1612,7 +1612,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         if (!hasValidCheckin && !hasValidCheckout) return false;
       }
 
-      return t === 'ThumbMachine' || t === 'Present - in office' || t === 'Present - in office - weekdays';
+      return t === 'ThumbMachine' || t === 'Present - in office' || t === 'Present - in office - weekdays' || t === 'Present';
     };
 
     const isWOPIO = (rec: any) => {
@@ -1826,28 +1826,30 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     ];
     worksheet.insertRow(2, headerLabels);
 
+    // Pre-calc period range
+    let startDate: Date;
+    let endDate: Date;
+
+    if (filterType === 'month') {
+      startDate = new Date(selectedYear, selectedMonth - 1, 1);
+      endDate = new Date(selectedYear, selectedMonth, 0);
+    } else if (filterType === 'week') {
+      startDate = new Date(currentWeekStart);
+      endDate = new Date(startDate);
+      endDate.setDate(startDate.getDate() + 6);
+    } else {
+      startDate = new Date(rangeStart);
+      endDate = new Date(rangeEnd);
+    }
+
     // Pre-calc total Sundays and total DB-holidays in selected period (same for all users)
     const totalSundaysInPeriod = countTotalSundaysInPeriod();
     const countHolidaysInPeriod = () => {
-      let startDate: Date;
-      let endDate: Date;
-
-      if (filterType === 'month') {
-        startDate = new Date(selectedYear, selectedMonth - 1, 1);
-        endDate = new Date(selectedYear, selectedMonth, 0);
-      } else if (filterType === 'week') {
-        startDate = new Date(currentWeekStart);
-        endDate = new Date(startDate);
-        endDate.setDate(startDate.getDate() + 6);
-      } else {
-        startDate = new Date(rangeStart);
-        endDate = new Date(rangeEnd);
-      }
-
       let cnt = 0;
       for (const h of holidays) {
-        const d = new Date(h.date);
-        if (d >= startDate && d <= endDate) cnt++;
+        const [y, m, d] = h.date.split('-').map(Number);
+        const localHolidayDate = new Date(y, m - 1, d);
+        if (localHolidayDate >= startDate && localHolidayDate <= endDate) cnt++;
       }
       return cnt;
     };
@@ -2160,7 +2162,16 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         leavesConsumed = Math.min(leaves_taken, available);
       }
       const leavesCF = Number((leavesBF + totalLeavesEarned - leavesConsumed).toFixed(3));
-      const weekoffs_total = Number((totalSundaysInPeriod + totalHolidaysInPeriod).toFixed(3));
+      // Calculate unique weekoffs (Sundays + non-Sunday Holidays)
+      let uniqueWeekoffs = totalSundaysInPeriod;
+      for (const h of holidays) {
+        const [y, m, day] = h.date.split('-').map(Number);
+        const d = new Date(y, m - 1, day);
+        if (d >= startDate && d <= endDate && d.getDay() !== 0) {
+          uniqueWeekoffs++;
+        }
+      }
+      const weekoffs_total = Number(uniqueWeekoffs.toFixed(3));
       const staffWeekoffWorking = Number((wo_pio + (weekoff_hd_days_converted / 2) + wfh_weekoff).toFixed(3));
 
       // Staff Overtime (non-articles): hours from ThumbMachine excess → days, plus 1 day per each full 6h of net period excess (worked − scheduled)
@@ -2746,7 +2757,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         const hasValidCheckout = !!(effectiveCheckout && effectiveCheckout !== '00:00');
         if (!hasValidCheckin && !hasValidCheckout) return false;
       }
-      return t === 'ThumbMachine' || t === 'Present - in office' || t === 'Present - in office - weekdays';
+      return t === 'ThumbMachine' || t === 'Present - in office' || t === 'Present - in office - weekdays' || t === 'Present or NA';
     };
 
     const daywiseIsWOPIOExplicit = (rec: any) => {

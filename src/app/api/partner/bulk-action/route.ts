@@ -296,7 +296,31 @@ export async function POST(request: NextRequest) {
                                             isHolidaySchedule = !!sch.isHoliday;
                                         }
                                         const useWeekoff = isSunday || isHolidaySchedule;
-                                        rec.typeOfPresence = useWeekoff ? 'Present - in office - weekoff' : 'Present - in office - weekdays';
+                                        
+                                        if (useWeekoff) {
+                                            if (reqLower.includes('clientplace') || reqLower.includes('client place')) {
+                                                rec.typeOfPresence = 'Present - ClientPlace (Weekoff)';
+                                            } else {
+                                                rec.typeOfPresence = 'Present - in office - weekoff';
+                                            }
+                                        } else {
+                                            if (reqLower.includes('clientplace') || reqLower.includes('client place')) {
+                                                rec.typeOfPresence = 'Present - ClientPlace (Weekdays)';
+                                            } else {
+                                                rec.typeOfPresence = 'Present - in office - weekdays';
+                                            }
+                                        }
+                                    } else if (requestedStatus === 'Present - ClientPlace (Weekdays)') {
+                                        const d = new Date(date);
+                                        const isSunday = d.getDay() === 0;
+                                        let isHolidaySchedule = false;
+                                        if (userObj) {
+                                            const sch = getScheduledTimes(userObj, date);
+                                            isHolidaySchedule = !!sch.isHoliday;
+                                        }
+                                        if (isSunday || isHolidaySchedule) {
+                                            rec.typeOfPresence = 'Present - ClientPlace (Weekoff)';
+                                        }
                                     }
                                 } catch (e) {
                                     console.error('Failed to map generic Present to detailed type in bulk action:', e);

@@ -482,21 +482,38 @@ export default function AttendanceUpload() {
     return parsed;
   };
 
-  const mapFixedPresenceCodeToType = (codeRaw: string): string => {
+  const mapFixedPresenceCodeToType = (codeRaw: string, dateStr?: string): string => {
     const code = codeRaw.trim().toUpperCase();
+    
+    // Check if it's a holiday or Sunday if date is provided
+    let isWeekoff = false;
+    if (dateStr) {
+      // Check Sunday
+      const [d, m, y] = dateStr.split('-');
+      const dateObj = new Date(Number(y), Number(m) - 1, Number(d));
+      if (dateObj.getDay() === 0) {
+        isWeekoff = true;
+      } else {
+        // Check Holiday
+        if (holidays.some(h => h.date === dateStr)) {
+          isWeekoff = true;
+        }
+      }
+    }
+
     switch (code) {
       case 'PRESENT':
-        return 'Present - in office - weekdays';
+        return isWeekoff ? 'Present - in office - weekoff' : 'Present - in office - weekdays';
       case 'WO-PRESENT':
         return 'Present - in office - weekoff';
       case 'HD':
-        return 'Half Day - weekdays';
+        return isWeekoff ? 'Half Day - weekoff' : 'Half Day - weekdays';
       case 'OS-P':
-        return 'Present - ClientPlace (Weekdays)';
+        return isWeekoff ? 'Present - ClientPlace (Weekoff)' : 'Present - ClientPlace (Weekdays)';
       case 'WO-HD':
         return 'Half Day - weekoff';
       case 'WFH':
-        return 'WFH - weekdays';
+        return isWeekoff ? 'WFH - weekoff' : 'WFH - weekdays';
       case 'WO-WFH':
         return 'WFH - weekoff';
       case 'SUN':
@@ -576,7 +593,7 @@ export default function AttendanceUpload() {
         const inTime = inParsed.time || '00:00:00';
         const outTime = outParsed.time || '00:00:00';
 
-        const mappedType = mapFixedPresenceCodeToType(presenceCode);
+        const mappedType = mapFixedPresenceCodeToType(presenceCode, parsedDate);
         const normalizedCode = presenceCode.toUpperCase();
         const status = (normalizedCode === 'A' || normalizedCode === 'ABSENT') ? 'Absent' : 'Present';
         const actualWFHValue = actualWFHIndex >= 0 ? parseNumericValue(row[actualWFHIndex]) : undefined;
