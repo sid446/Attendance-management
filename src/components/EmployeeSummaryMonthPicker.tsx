@@ -86,8 +86,8 @@ export function EmployeeSummaryMonthPicker({
   const goNextYear = () => setYm(selectedYear + 1, selectedMonth);
 
   return (
-    <div className={`rounded-xl border border-zinc-800 bg-zinc-900/50 p-3 sm:p-4 ${className}`}>
-      <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+    <div className={`rounded-xl border border-border bg-surface p-3 sm:p-4 ${className}`}>
+      <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </p>
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
@@ -96,7 +96,7 @@ export function EmployeeSummaryMonthPicker({
             type="button"
             onClick={goPrevYear}
             disabled={disabled}
-            className="rounded-lg border border-zinc-700 bg-zinc-950 p-2 text-zinc-300 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg border border-border bg-background p-2 text-foreground hover:bg-surface/70 disabled:cursor-not-allowed disabled:opacity-50"
             title="Previous year"
           >
             <ChevronLeft className="h-4 w-4" aria-hidden />
@@ -105,7 +105,7 @@ export function EmployeeSummaryMonthPicker({
             value={selectedYear}
             onChange={(e) => setYm(parseInt(e.target.value, 10), selectedMonth)}
             disabled={disabled}
-            className="rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-2 text-sm text-zinc-100 disabled:opacity-50"
+            className="rounded-lg border border-border bg-background px-2 py-2 text-sm text-foreground disabled:opacity-50"
             aria-label="Year"
           >
             {yearOptions.map((y) => (
@@ -118,7 +118,7 @@ export function EmployeeSummaryMonthPicker({
             type="button"
             onClick={goNextYear}
             disabled={disabled}
-            className="rounded-lg border border-zinc-700 bg-zinc-950 p-2 text-zinc-300 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg border border-border bg-background p-2 text-foreground hover:bg-surface/70 disabled:cursor-not-allowed disabled:opacity-50"
             title="Next year"
           >
             <ChevronRight className="h-4 w-4" aria-hidden />
@@ -129,7 +129,7 @@ export function EmployeeSummaryMonthPicker({
             type="button"
             onClick={goPrevMonth}
             disabled={disabled}
-            className="rounded-lg border border-zinc-700 bg-zinc-950 p-2 text-zinc-300 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg border border-border bg-background p-2 text-foreground hover:bg-surface/70 disabled:cursor-not-allowed disabled:opacity-50"
             title="Previous month"
           >
             <ChevronLeft className="h-4 w-4" aria-hidden />
@@ -138,7 +138,7 @@ export function EmployeeSummaryMonthPicker({
             value={selectedMonth}
             onChange={(e) => setYm(selectedYear, parseInt(e.target.value, 10))}
             disabled={disabled}
-            className="min-w-[8.5rem] rounded-lg border border-zinc-700 bg-zinc-950 px-2 py-2 text-sm text-zinc-100 disabled:opacity-50 sm:min-w-[10rem]"
+            className="min-w-[8.5rem] rounded-lg border border-border bg-background px-2 py-2 text-sm text-foreground disabled:opacity-50 sm:min-w-[10rem]"
             aria-label="Month"
           >
             {MONTHS.map((m) => (
@@ -151,7 +151,7 @@ export function EmployeeSummaryMonthPicker({
             type="button"
             onClick={goNextMonth}
             disabled={disabled}
-            className="rounded-lg border border-zinc-700 bg-zinc-950 p-2 text-zinc-300 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg border border-border bg-background p-2 text-foreground hover:bg-surface/70 disabled:cursor-not-allowed disabled:opacity-50"
             title="Next month"
           >
             <ChevronRight className="h-4 w-4" aria-hidden />

@@ -101,6 +101,47 @@ export async function GET(request: NextRequest) {
         .lean();
     }
 
+    // Auto-approve "self" requests for attendance heads:
+    // If the token's partnerEmail equals the user's attendanceEmail AND the user's own email,
+    // then the partner is approving their own attendance; approve automatically and keep audit fields
+    // consistent by reusing the existing bulk-action logic.
+    if (partnerEmail && token && Array.isArray(requests) && requests.length > 0) {
+      const tokenEmail = String(partnerEmail).trim().toLowerCase();
+      const selfIds = requests
+        .filter((r: any) => {
+          const userDoc = r.userId;
+          const userEmail = String(userDoc?.email || '').trim().toLowerCase();
+          const attendanceEmail = String(userDoc?.attendanceEmail || '').trim().toLowerCase();
+          if (!userEmail || !attendanceEmail) return false;
+          return userEmail === tokenEmail && attendanceEmail === tokenEmail;
+        })
+        .map((r: any) => String(r._id))
+        .filter(Boolean);
+
+      if (selfIds.length > 0) {
+        try {
+          const origin = new URL(request.url).origin;
+          await fetch(`${origin}/api/partner/bulk-action`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'approve',
+              ids: selfIds,
+              remark: 'Auto-approved (self)',
+              accessToken: token,
+            }),
+          });
+        } catch (e) {
+          // Don't fail the list if auto-approve fails; the partner can still approve manually.
+          console.error('Auto-approve (self) failed:', e);
+        }
+
+        // Remove any IDs we attempted to approve from the pending response list.
+        const selfIdSet = new Set(selfIds);
+        requests = requests.filter((r: any) => !selfIdSet.has(String(r._id)));
+      }
+    }
+
     // Fetch original attendance data for each request
     const enrichedRequests = await Promise.all(requests.map(async (req: any) => {
       let originalCheckin = '-';

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Clock, CheckCircle, XCircle, AlertCircle, RefreshCw, Calendar, Download, Table, LayoutGrid } from 'lucide-react';
+import React, { useRef, useState, useEffect } from 'react';
+import { Clock, CheckCircle, XCircle, AlertCircle, RefreshCw, Calendar, Download, Upload, Table, LayoutGrid } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 interface AttendanceRequest {
@@ -559,6 +559,8 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
   // For value cap logic
   const [approvalValueError, setApprovalValueError] = useState<string | null>(null);
   const [modalProcessing, setModalProcessing] = useState(false);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
+  const [excelUploading, setExcelUploading] = useState(false);
 
   // Helper function to check if request type has fixed value (no editing allowed)
   const isFixedValueType = (requestedStatus: string): boolean => {
@@ -617,6 +619,217 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
       setError('Failed to fetch requests');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const normalizeHeader = (value: unknown) =>
+    String(value ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .replace(/[()]/g, '');
+
+  const getRowValue = (row: Record<string, any>, wantedHeader: string) => {
+    const wanted = normalizeHeader(wantedHeader);
+    for (const key of Object.keys(row)) {
+      if (normalizeHeader(key) === wanted) return row[key];
+    }
+    return undefined;
+  };
+
+  const computeApprovalValueForIds = (ids: string[]): string => {
+    const first = requests.find(r => r._id === ids[0]);
+    if (!first) return '';
+    const status = first.requestedStatus || '';
+    if (status.toLowerCase().includes('half')) return '0.5';
+    if (isFixedValueType(status)) return '';
+    return getDefaultValueForType(status);
+  };
+
+  const applyActionsFromExcel = async (file: File) => {
+    if (excelUploading) return;
+    setExcelUploading(true);
+    setError(null);
+
+    const readAsArrayBuffer = () =>
+      new Promise<ArrayBuffer>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as ArrayBuffer);
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.readAsArrayBuffer(file);
+      });
+
+    try {
+      const buffer = await readAsArrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      if (!sheet) {
+        alert('No worksheet found in the Excel file.');
+        return;
+      }
+
+      // Read as a 2D array so we can detect the real header row.
+      // Partner exports include a title row on top, so headers are not always row 1.
+      const matrix = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '' }) as any[][];
+      if (!matrix.length) {
+        alert('No data rows found in the Excel file.');
+        return;
+      }
+
+      const wantedHeaders = [
+        'Request ID(s)',
+        'Decision (Approve/Reject)',
+        'Remark (Text)',
+      ];
+
+      const normalizeCell = (v: any) => normalizeHeader(v);
+
+      const findHeaderRowIndex = () => {
+        for (let r = 0; r < Math.min(matrix.length, 30); r++) {
+          const row = matrix[r] || [];
+          const rowNorm = row.map(normalizeCell);
+          const hasRequestIds = rowNorm.some((c: string) => c.includes('request id'));
+          const hasDecision = rowNorm.some((c: string) => c.includes('decision') || c.includes('approve/reject') || c === 'status');
+          if (hasRequestIds && hasDecision) return r;
+        }
+        return -1;
+      };
+
+      const headerRowIndex = findHeaderRowIndex();
+      if (headerRowIndex === -1) {
+        alert('Could not find header row in the Excel. Make sure it contains a "Request ID(s)" column.');
+        return;
+      }
+
+      const headerRow = (matrix[headerRowIndex] || []).map((h: any) => String(h ?? '').trim());
+      const normalizedHeaders = headerRow.map((h: string) => normalizeHeader(h));
+      const colIndex = (name: string) => normalizedHeaders.findIndex(h => h === normalizeHeader(name));
+
+      const requestIdsCol =
+        colIndex('Request ID(s)') >= 0 ? colIndex('Request ID(s)') :
+        colIndex('Request IDs') >= 0 ? colIndex('Request IDs') :
+        colIndex('Request Ids') >= 0 ? colIndex('Request Ids') :
+        colIndex('Request Id');
+
+      const decisionCol =
+        colIndex('Decision (Approve/Reject)') >= 0 ? colIndex('Decision (Approve/Reject)') :
+        colIndex('Decision') >= 0 ? colIndex('Decision') :
+        colIndex('Approve/Reject') >= 0 ? colIndex('Approve/Reject') :
+        colIndex('Status');
+
+      const remarkCol =
+        colIndex('Remark (Text)') >= 0 ? colIndex('Remark (Text)') :
+        colIndex('Remark') >= 0 ? colIndex('Remark') :
+        colIndex('Remarks');
+
+      if (requestIdsCol < 0) {
+        alert('Missing "Request ID(s)" column in the Excel.');
+        return;
+      }
+      if (decisionCol < 0) {
+        alert('Missing "Decision (Approve/Reject)" column in the Excel.');
+        return;
+      }
+
+      const results: { rowIndex: number; ok: boolean; message?: string }[] = [];
+
+      for (let r = headerRowIndex + 1; r < matrix.length; r++) {
+        const row = matrix[r] || [];
+        const excelRowNumber = r + 1; // 1-based for humans
+
+        const idsRaw = row[requestIdsCol];
+        const decisionRaw = row[decisionCol];
+        const remarkRaw = remarkCol >= 0 ? row[remarkCol] : '';
+
+        const ids = String(idsRaw ?? '')
+          .split(',')
+          .map(s => s.trim())
+          .filter(Boolean);
+
+        const decision = String(decisionRaw ?? '').trim().toLowerCase();
+        const remarks = String(remarkRaw ?? '').trim();
+
+        if (!ids.length) {
+          results.push({ rowIndex: excelRowNumber, ok: false, message: 'Missing Request ID(s)' });
+          continue;
+        }
+
+        const action: 'approve' | 'reject' | null =
+          decision === 'approve' || decision === 'approved' ? 'approve' : decision === 'reject' || decision === 'rejected' ? 'reject' : null;
+
+        if (!action) {
+          results.push({ rowIndex: excelRowNumber, ok: false, message: 'Decision must be Approve or Reject' });
+          continue;
+        }
+
+        // Use the same APIs as UI (single vs bulk), but avoid re-fetching after every row.
+        try {
+          let response: Response;
+          if (ids.length > 1) {
+            response = await fetch('/api/partner/bulk-action', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action,
+                ids,
+                remark: remarks,
+                value: action === 'approve' ? (() => {
+                  const v = computeApprovalValueForIds(ids);
+                  return v ? parseFloat(v) : undefined;
+                })() : undefined,
+                approvedBy: 'HR',
+                approvedByEmail: 'hr@asija.in'
+              }),
+            });
+          } else {
+            response = await fetch('/api/employee/approve', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                requestId: ids[0],
+                action,
+                remarks,
+                value: action === 'approve' ? computeApprovalValueForIds(ids) : '',
+                approvedBy: 'HR',
+                approvedByEmail: 'hr@asija.in'
+              }),
+            });
+          }
+
+          const json = await response.json().catch(() => ({}));
+          if (!response.ok || json?.success === false) {
+            results.push({
+              rowIndex: excelRowNumber,
+              ok: false,
+              message: json?.error || `API failed (HTTP ${response.status})`,
+            });
+          } else {
+            results.push({ rowIndex: excelRowNumber, ok: true });
+          }
+        } catch (e) {
+          results.push({ rowIndex: excelRowNumber, ok: false, message: 'Network error' });
+        }
+      }
+
+      const okCount = results.filter(r => r.ok).length;
+      const fail = results.filter(r => !r.ok);
+
+      await fetchRequests();
+      if (onRequestUpdate) onRequestUpdate();
+
+      if (fail.length === 0) {
+        alert(`Excel processed successfully. Updated ${okCount} row(s).`);
+      } else {
+        const sample = fail.slice(0, 10).map(f => `Row ${f.rowIndex}: ${f.message}`).join('\n');
+        alert(
+          `Excel processed with some errors.\n\nSuccess: ${okCount}\nFailed: ${fail.length}\n\nFirst errors:\n${sample}`
+        );
+      }
+    } finally {
+      // allow re-uploading same file
+      if (uploadInputRef.current) uploadInputRef.current.value = '';
+      setExcelUploading(false);
     }
   };
 
@@ -1239,6 +1452,30 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
             <Download className="h-4 w-4 text-slate-500" aria-hidden />
             Export Excel
           </button>
+          {isAdminView && (
+            <>
+              <input
+                ref={uploadInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) applyActionsFromExcel(f);
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => uploadInputRef.current?.click()}
+                disabled={excelUploading}
+                className="inline-flex items-center gap-2 rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60"
+                title="Upload partner decision Excel and apply actions"
+              >
+                <Upload className="h-4 w-4 text-slate-500" aria-hidden />
+                {excelUploading ? 'Uploading…' : 'Upload Excel'}
+              </button>
+            </>
+          )}
         </div>
         </div>
       </header>

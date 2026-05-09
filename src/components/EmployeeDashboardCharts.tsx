@@ -25,10 +25,11 @@ export function EmployeeDashboardCharts({
 
   const dayBars = useMemo(
     () => [
-      { label: "Present", value: m.totalPresent, className: "bg-emerald-500/85" },
-      { label: "Absent", value: m.totalAbsent, className: "bg-rose-500/80" },
-      { label: "Half", value: m.totalHalfDay, className: "bg-amber-500/80" },
-      { label: "Leave", value: m.leaveFullDaysConsumed, className: "bg-sky-500/75" },
+      // Use solid fills (better contrast on light surfaces)
+      { label: "Present", value: m.totalPresent, className: "bg-emerald-500" },
+      { label: "Absent", value: m.totalAbsent, className: "bg-rose-500" },
+      { label: "Half", value: m.totalHalfDay, className: "bg-amber-500" },
+      { label: "Leave", value: m.leaveFullDaysConsumed, className: "bg-sky-500" },
     ],
     [m]
   );
@@ -65,42 +66,42 @@ export function EmployeeDashboardCharts({
 
   return (
     <div className="mt-4 space-y-4">
-      <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         Visual summary
       </h4>
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-lg border border-zinc-800/90 bg-zinc-950/40 p-4">
-          <p className="text-[11px] font-medium text-zinc-400">Hours vs scheduled</p>
-          <p className="mt-3 text-[10px] uppercase tracking-wide text-zinc-600">
+        <div className="rounded-lg border border-border bg-background p-4">
+          <p className="text-[11px] font-medium text-muted-foreground">Hours vs scheduled</p>
+          <p className="mt-3 text-[10px] uppercase tracking-wide text-muted-foreground">
             Worked
           </p>
-          <div className="mt-1 h-2.5 overflow-hidden rounded-full bg-zinc-800">
+          <div className="mt-1 h-2.5 overflow-hidden rounded-full bg-surface">
             <div
               className="h-full rounded-full bg-emerald-500/90 transition-[width] duration-300"
               style={{ width: `${Math.min(100, workedPct)}%` }}
               title={formatHoursMinutes(m.totalHour)}
             />
           </div>
-          <p className="mt-0.5 font-mono text-xs text-zinc-300">
+          <p className="mt-0.5 font-mono text-xs text-foreground">
             {formatHoursMinutes(m.totalHour)}
           </p>
-          <p className="mt-3 text-[10px] uppercase tracking-wide text-zinc-600">
+          <p className="mt-3 text-[10px] uppercase tracking-wide text-muted-foreground">
             Scheduled
           </p>
-          <div className="mt-1 h-2.5 overflow-hidden rounded-full bg-zinc-800">
+          <div className="mt-1 h-2.5 overflow-hidden rounded-full bg-surface">
             <div
-              className="h-full rounded-full bg-zinc-500/70 transition-[width] duration-300"
+              className="h-full rounded-full bg-muted-foreground/50 transition-[width] duration-300"
               style={{ width: `${Math.min(100, schedPct)}%` }}
               title={formatHoursMinutes(m.calcScheduledHours)}
             />
           </div>
-          <p className="mt-0.5 font-mono text-xs text-zinc-400">
+          <p className="mt-0.5 font-mono text-xs text-muted-foreground">
             {formatHoursMinutes(m.calcScheduledHours)}
           </p>
         </div>
 
-        <div className="rounded-lg border border-zinc-800/90 bg-zinc-950/40 p-4">
-          <p className="text-[11px] font-medium text-zinc-400">Day outcomes</p>
+        <div className="rounded-lg border border-border bg-background p-4">
+          <p className="text-[11px] font-medium text-muted-foreground">Day outcomes</p>
           <div
             className="mt-4 flex h-36 items-end justify-between gap-2 px-1"
             role="img"
@@ -123,10 +124,10 @@ export function EmployeeDashboardCharts({
                     title={`${b.label}: ${b.value}`}
                   />
                 </div>
-                <span className="text-center text-[10px] text-zinc-500">
+                <span className="text-center text-[10px] text-muted-foreground">
                   {b.label}
                 </span>
-                <span className="font-mono text-xs tabular-nums text-zinc-300">
+                <span className="font-mono text-xs tabular-nums text-foreground">
                   {b.value}
                 </span>
               </div>
@@ -136,8 +137,8 @@ export function EmployeeDashboardCharts({
       </div>
 
       {sparkline && (
-        <div className="rounded-lg border border-zinc-800/90 bg-zinc-950/40 p-4">
-          <p className="text-[11px] font-medium text-zinc-400">
+        <div className="rounded-lg border border-border bg-background p-4">
+          <p className="text-[11px] font-medium text-muted-foreground">
             Cumulative worked hours (month)
           </p>
           <svg
@@ -158,7 +159,7 @@ export function EmployeeDashboardCharts({
               points={sparkline.points}
             />
           </svg>
-          <p className="mt-1 text-[10px] text-zinc-600">
+          <p className="mt-1 text-[10px] text-muted-foreground">
             Each step is a working day (excludes Sunday, holidays, and week-off types in the
             calendar).
           </p>

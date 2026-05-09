@@ -62,6 +62,12 @@ export async function POST(request: NextRequest) {
       }
     });
 
+    const findUserByName = (name: string) => {
+      const key = normalizeText(name).toLowerCase();
+      if (!key) return undefined;
+      return mapByName.get(key) || mapByName.get(key.replace(/\s+/g, '.')) || mapByName.get(key.replace(/\./g, ' '));
+    };
+
     for (const emp of employees) {
       try {
         const name = normalizeText(emp?.name);
@@ -132,6 +138,18 @@ export async function POST(request: NextRequest) {
           workingUnderPartner: emp.workingUnderPartner,
         };
 
+        const attendanceApprover = normalizeText(emp.attendanceEmail);
+        if (attendanceApprover) {
+          if (attendanceApprover.includes('@')) {
+            updateData.attendanceEmail = attendanceApprover;
+          } else {
+            const approverUser = findUserByName(attendanceApprover);
+            if (approverUser) {
+              updateData.attendanceEmail = (approverUser as any).attendanceEmail || (approverUser as any).email;
+            }
+          }
+        }
+
         Object.keys(updateData).forEach((key) => {
           if (updateData[key] === undefined || updateData[key] === null || updateData[key] === '') {
             delete updateData[key];
@@ -191,7 +209,7 @@ export async function POST(request: NextRequest) {
           odId,
           name: cleanName,
           email,
-          attendanceEmail: email,
+          attendanceEmail: updateData.attendanceEmail || email,
           joiningDate: updateData.joiningDate || new Date(),
           isActive: true,
           ...updateData,

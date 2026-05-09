@@ -1621,19 +1621,11 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       { key: 'panNumber', header: 'PAN', width: 12 },
       { key: 'basicSalary', header: 'Basis Salary/Stipend/Fees', width: 22 },
       { key: 'laptopAllowance', header: 'Laptop Allowance', width: 16 },
-      { key: 'otherAllowance', header: 'Other Allowance', width: 15 },
-      { key: 'bonus', header: 'Bonus', width: 10 },
-      { key: 'incentive', header: 'Incentive', width: 10 },
       { key: 'totalSalaryPerMonth', header: 'Total Salary (P/M)', width: 16 },
       { key: 'totalSalaryPerAnnum', header: 'Per Annum', width: 14 },
       { key: 'pf', header: 'PF', width: 10 },
       { key: 'esi', header: 'ESI', width: 10 },
       { key: 'gratuity', header: 'Gratuity', width: 10 },
-      { key: 'leavesBalanceAsOfJan26', header: 'Leaves B/F', width: 20 },
-      { key: 'leavesEarned', header: 'Leaves Earned (after Jan 26)', width: 22 },
-      { key: 'leavesTaken', header: 'Total Leaves Taken', width: 18 },
-      { key: 'balanceLeaves', header: 'Balance Leaves', width: 14 },
-      { key: 'articleCreditsAsOnJan26', header: 'Credits for Articles (as on 1st Jan 26)', width: 18 },
       { key: 'joiningDate', header: 'Date of Joining -in Asija', width: 22 },
       { key: 'articleshipStartDate', header: 'Articleship Start Date', width: 20 },
       { key: 'transferCase', header: 'Transfer Case', width: 14 },
@@ -1645,21 +1637,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       { key: 'nextAttemptDueDate', header: 'Next Attempt Due Date', width: 20 },
       { key: 'registeredUnderPartner', header: 'Registered Under Partner', width: 22 },
       { key: 'workingUnderPartner', header: 'Working Under Partner', width: 20 },
-      { key: 'workTimingsMonFri', header: 'Work Timings (Mon to Fri)', width: 22 },
-      { key: 'scheduledHoursMonFri', header: 'Scheduled Daily Hours (Mon to Fri)', width: 22 },
-      { key: 'workTimingsSat', header: 'Work Timings (Sat)', width: 18 },
-      { key: 'scheduledHoursSat', header: 'Scheduled Daily Hours (Sat)', width: 18 },
-      { key: 'weeklyScheduledHours', header: 'Weekly Scheduled Hours', width: 22 },
     ];
 
-    // Add extra info columns dynamically
-    const extraColumns = allExtraLabels.map((label, idx) => ({
-      key: `extra_${idx}`,
-      header: label,
-      width: Math.max(15, label.length + 2)
-    }));
-
-    worksheet.columns = [...baseColumns, ...extraColumns];
+    worksheet.columns = baseColumns;
 
     // Helper to format date
     const toDateString = (value?: string) => {
@@ -1674,62 +1654,6 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
 
     // Add data rows
     users.forEach((u) => {
-      // Schedule export logic
-      const getScheduleExportInfo = (user: User) => {
-        // Use latest schedule entry if available
-        let scheduleEntry = undefined;
-        if (user.schedules && Array.isArray(user.schedules) && user.schedules.length > 0) {
-          scheduleEntry = user.schedules[user.schedules.length - 1];
-        }
-        // Fallback to legacy fields
-        const daily = scheduleEntry ? scheduleEntry.daily : undefined;
-        // Mon-Fri timings
-        let monFriIn = '', monFriOut = '', monFriHours = '';
-        let satIn = '', satOut = '', satHours = '';
-        let weeklyHours = 0;
-        // Monday-Friday
-        const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
-        let monFriCount = 0;
-        let monFriTotal = 0;
-        days.forEach(day => {
-          let st = daily && daily[day] ? daily[day] : (user.scheduleInOutTime ? user.scheduleInOutTime : undefined);
-          if (st && st.inTime && st.outTime && !st.isHoliday) {
-            if (!monFriIn) monFriIn = st.inTime;
-            monFriOut = st.outTime;
-            // Calculate hours
-            const [inH, inM] = st.inTime.split(':').map(Number);
-            const [outH, outM] = st.outTime.split(':').map(Number);
-            let hours = (outH * 60 + outM) - (inH * 60 + inM);
-            if (st.isHalfDay) hours /= 2;
-            monFriTotal += hours;
-            monFriCount++;
-          }
-        });
-        if (monFriCount > 0) {
-          monFriHours = (monFriTotal / monFriCount / 60).toFixed(2);
-        }
-        // Saturday
-        let satSt = daily && daily['saturday'] ? daily['saturday'] : (user.scheduleInOutTimeSat ? user.scheduleInOutTimeSat : undefined);
-        if (satSt && satSt.inTime && satSt.outTime && !satSt.isHoliday) {
-          satIn = satSt.inTime;
-          satOut = satSt.outTime;
-          let hours = (Number(satSt.outTime.split(':')[0]) * 60 + Number(satSt.outTime.split(':')[1])) - (Number(satSt.inTime.split(':')[0]) * 60 + Number(satSt.inTime.split(':')[1]));
-          // Do NOT halve for half-day, keep original value
-          satHours = (hours / 60).toFixed(2);
-          weeklyHours = monFriTotal + hours;
-        } else {
-          weeklyHours = monFriTotal;
-        }
-        return {
-          workTimingsMonFri: monFriIn && monFriOut ? `${monFriIn} - ${monFriOut}` : '',
-          scheduledHoursMonFri: monFriHours,
-          workTimingsSat: satIn && satOut ? `${satIn} - ${satOut}` : '',
-          scheduledHoursSat: satHours,
-          weeklyScheduledHours: (weeklyHours / 60).toFixed(2),
-        };
-      };
-
-      const scheduleInfo = getScheduleExportInfo(u);
       const rowData: { [key: string]: any } = {
         name: u.name || '',
         registrationNo: u.registrationNo || '',
@@ -1761,20 +1685,12 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         panNumber: u.panNumber || '',
         basicSalary: u.basicSalary || '',
         laptopAllowance: u.laptopAllowance || '',
-        otherAllowance: u.otherAllowance || '',
-        bonus: u.bonus || '',
-        incentive: u.incentive || '',
         totalSalaryPerMonth: u.totalSalaryPerMonth || '',
         totalSalaryPerAnnum: u.totalSalaryPerAnnum || '',
         pf: u.pf || '',
         esi: u.esi || '',
         gratuity: u.gratuity || '',
-        leavesBalanceAsOfJan26: u.leaveBalance?.balanceAsOfJan26 || 0,
-        leavesEarned: u.leaveBalance?.earned || 0,
-        leavesTaken: u.leaveBalance?.used || 0,
-        balanceLeaves: u.leaveBalance?.remaining || 0,
         joiningDate: toDateString(u.joiningDate),
-        articleCreditsAsOnJan26: typeof u.articleCreditsAsOnJan26 === 'number' ? u.articleCreditsAsOnJan26 : '',
         articleshipStartDate: toDateString(u.articleshipStartDate),
         transferCase: u.transferCase || '',
         firstYearArticleship: u.firstYearArticleship || '',
@@ -1785,14 +1701,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         nextAttemptDueDate: toDateString(u.nextAttemptDueDate),
         registeredUnderPartner: u.registeredUnderPartner || '',
         workingUnderPartner: u.workingUnderPartner || '',
-        ...scheduleInfo,
       };
-
-      // Add extra info columns
-      allExtraLabels.forEach((label, idx) => {
-        const item = u.extraInfo?.find(e => e.label === label);
-        rowData[`extra_${idx}`] = item?.value || '';
-      });
 
       worksheet.addRow(rowData);
     });
@@ -1804,16 +1713,13 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
     // Define color groups for better visual organization
     const colorGroups = {
       personal: { start: 1, end: 8, color: 'FF2E7D32' },      // Green - Personal Info
-      contact: { start: 9, end: 17, color: 'FF1565C0' },      // Blue - Contact Info
+      contact: { start: 9, end: 15, color: 'FF1565C0' },      // Blue - Contact Info
       address: { start: 16, end: 17, color: 'FF00838F' },     // Teal - Address
-      emergency: { start: 18, end: 19, color: 'FFD84315' },   // Orange - Emergency
-      family: { start: 20, end: 20, color: 'FF6A1B9A' },      // Purple - Family
+      emergency: { start: 18, end: 20, color: 'FFD84315' },   // Orange - Emergency
       bank: { start: 21, end: 26, color: 'FF00695C' },        // Dark Teal - Bank
       identity: { start: 27, end: 28, color: 'FF4527A0' },    // Deep Purple - Identity
-      salary: { start: 29, end: 38, color: 'FFC62828' },      // Red - Salary
-      leave: { start: 39, end: 41, color: 'FFEF6C00' },       // Amber - Leave
-      employment: { start: 42, end: 53, color: 'FF283593' },  // Indigo - Employment
-      extra: { start: 54, end: 999, color: 'FF37474F' },      // Blue Grey - Extra Info
+      salary: { start: 29, end: 34, color: 'FFC62828' },      // Red - Salary
+      employment: { start: 35, end: 46, color: 'FF283593' },  // Indigo - Employment
     };
 
     headerRow.eachCell((cell, colNumber) => {

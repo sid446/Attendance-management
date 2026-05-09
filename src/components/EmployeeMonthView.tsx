@@ -130,9 +130,9 @@ function resolveAttendanceCellStyle(input: {
   if (isPresentLike) {
     if (t === 'thumbmachine' || t === 'manual' || t === 'remote' || hay.includes('thumb machine')) {
       return {
-        borderClass: 'border-zinc-200',
-        bgClass: 'bg-zinc-50',
-        badgeClass: 'border-zinc-300 bg-zinc-100 text-zinc-900',
+        borderClass: 'border-border',
+        bgClass: 'bg-background',
+        badgeClass: 'border-border bg-surface text-foreground',
         Icon: Clock,
       };
     }

@@ -4,20 +4,18 @@ import { isHolidayDate } from '@/lib/holidaysClient';
 import { useRouter } from 'next/navigation';
 import { EmployeeMonthView } from '@/components/EmployeeMonthView';
 import { AttendanceRecord, AttendanceSummaryView, User } from '@/types/ui';
-// Helper to fetch users working under a partner by normalized name match
-async function fetchSubordinates(partnerName: string) {
-  // Fetch all users (or all active users)
-  const res = await fetch(`/api/users?activeOnly=true`);
+
+// Helper to fetch people visible in Team tab.
+// Server-side rules keep dashboard visibility separate from attendance approver emails.
+async function fetchSubordinates(viewerUserId: string) {
+  if (!viewerUserId) return [];
+  const res = await fetch(
+    `/api/employee/team-attendance-access?viewerUserId=${encodeURIComponent(viewerUserId)}`,
+    { cache: 'no-store' }
+  );
   const json = await res.json();
   if (!json.success || !Array.isArray(json.data)) return [];
-  // Normalize function: remove dots, spaces, lowercase
-  const normalize = (str: string) => str.replace(/[.\s]/g, '').toLowerCase();
-  const normalizedPartner = normalize(partnerName);
-  // Find users whose workingUnderPartner matches normalized partner name
-  return json.data.filter((user: any) => {
-    if (!user.workingUnderPartner) return false;
-    return normalize(user.workingUnderPartner) === normalizedPartner;
-  });
+  return json.data;
 }
 
 // Helper to fetch attendance for a user
@@ -419,9 +417,6 @@ export default function EmployeeDashboard() {
         let subs: User[] = [];
         try {
           subs = await fetchSubordinates(String(userData._id ?? ''));
-          if (!subs.length && userData.name) {
-            subs = await fetchSubordinates(String(userData.name));
-          }
         } catch {
           subs = [];
         }
@@ -737,9 +732,7 @@ export default function EmployeeDashboard() {
       let subs: User[] = subordinates;
       if (!subs.length) {
         subs = await fetchSubordinates(user._id);
-        if (!subs.length && user.name) {
-          subs = await fetchSubordinates(user.name);
-        }
+        setSubordinates(subs);
       }
       if (subs.length === 0) {
         setSubordinateAttendance({});
@@ -915,16 +908,19 @@ export default function EmployeeDashboard() {
       const timeDraft = getCorrectionTimeDraft(dayRecord);
 
       // Check if correction request is allowed
-      // Allowed when: Absent, Half Day, Holiday/Week Off, or in/out time is missing
+      // Allowed when: Absent, Present, Half Day, Holiday/Week Off, or in/out time is missing
       const status = dayRecord?.status;
       const inTime = dayRecord?.inTime;
       const outTime = dayRecord?.outTime;
       const typeOfPresence = dayRecord?.typeOfPresence;
+      const typeOfPresenceLower = typeOfPresence?.toLowerCase() || '';
 
       const isAbsent = status === 'Absent' || !dayRecord;
-      const isHalfDay = status === 'HalfDay' || typeOfPresence?.toLowerCase().includes('half');
+      const isPresent = status === 'Present';
+      const isHalfDay = status === 'HalfDay' || typeOfPresenceLower.includes('half');
       const isHoliday = status === 'Holiday' || typeOfPresence === 'Holiday' || typeOfPresence === 'Week Off';
       const isMissingPunch = !inTime || !outTime || inTime === '00:00' || outTime === '00:00';
+      const isTimeCorrection = isPresent || isMissingPunch;
 
       // Check if there's already a pending request for this date
       const existingRequest = employeeRequests.find(r => r.date.split('T')[0] === date);
@@ -933,16 +929,16 @@ export default function EmployeeDashboard() {
         return;
       }
 
-      if (!isAbsent && !isHalfDay && !isHoliday && !isMissingPunch) {
-        alert('Correction requests are only allowed for days marked as Absent, Half Day, Holiday/Week Off, or when attendance in/out is not marked.');
+      if (!isAbsent && !isPresent && !isHalfDay && !isHoliday && !isMissingPunch) {
+        alert('Correction requests are only allowed for days marked as Present, Absent, Half Day, Holiday/Week Off, or when attendance in/out is not marked.');
         return;
       }
 
       setSelectedDate(date);
       setSelectedDateStatus(isHoliday ? 'Holiday' : null);
-      setSelectedDateIsMissedEntry(isMissingPunch);
+      setSelectedDateIsMissedEntry(isTimeCorrection);
       // Set default status based on the day type
-      if (isMissingPunch) {
+      if (isTimeCorrection) {
         setRequestStatus('Present - in office');
       } else if (isHoliday) {
         setRequestStatus('Weekoff - special allowance');
@@ -1230,7 +1226,7 @@ export default function EmployeeDashboard() {
 
   if (loading || !user) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-zinc-950 px-6">
+      <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-background px-6 text-foreground">
         <div
           className="flex flex-col items-center gap-6"
           role="status"
@@ -1354,18 +1350,18 @@ export default function EmployeeDashboard() {
       desktopSidebarCollapsed ? 'md:justify-center md:gap-0 md:px-0' : 'px-3'
     } ${
       active
-        ? 'bg-zinc-100 text-zinc-900 md:bg-zinc-800 md:text-zinc-50'
-        : 'text-zinc-500 hover:bg-zinc-800/60 hover:text-zinc-200'
+        ? 'bg-surface text-foreground shadow-[inset_0_0_0_1px_rgba(147,197,253,0.35)]'
+        : 'text-muted-foreground hover:bg-surface/70 hover:text-foreground'
     }`;
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col">
-      <header className="sticky top-0 z-30 border-b border-zinc-800/80 bg-zinc-950/90 backdrop-blur-md">
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
+      <header className="sticky top-0 z-50 border-b border-border bg-background/90 backdrop-blur-md">
         <div className="flex items-center justify-between gap-3 px-3 py-2.5 sm:px-5">
           <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
             <button
               type="button"
-              className="hidden md:inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-50"
+              className="hidden md:inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground hover:bg-surface/80 hover:text-foreground"
               onClick={() => setDesktopSidebarCollapsed((c) => !c)}
               title={desktopSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               aria-expanded={!desktopSidebarCollapsed}
@@ -1378,7 +1374,7 @@ export default function EmployeeDashboard() {
             </button>
             <button
               type="button"
-              className="md:hidden inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900 text-zinc-300"
+              className="md:hidden inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground"
               onClick={() => setSidebarOpen((o) => !o)}
               aria-label={sidebarOpen ? 'Close menu' : 'Open menu'}
             >
@@ -1386,7 +1382,7 @@ export default function EmployeeDashboard() {
             </button>
             <img src="/lg.png" alt="" className="h-9 w-9 object-contain shrink-0 opacity-95" />
             <div className="min-w-0">
-              <h1 className="truncate text-sm font-semibold tracking-tight text-zinc-100 sm:text-base">
+              <h1 className="truncate text-sm font-semibold tracking-tight text-foreground sm:text-base">
                 {activeTab === 'dashboard'
                   ? 'Dashboard'
                   : activeTab === 'attendance'
@@ -1395,7 +1391,7 @@ export default function EmployeeDashboard() {
                       ? 'Client location punch'
                       : 'Team'}
               </h1>
-              <p className="truncate text-[11px] text-zinc-500 sm:text-xs">
+              <p className="truncate text-[11px] text-muted-foreground sm:text-xs">
                 <span className="hidden sm:inline">Asija and Associates LLP · </span>
                 {user.name}
               </p>
@@ -1404,7 +1400,7 @@ export default function EmployeeDashboard() {
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             <button
               type="button"
-              className="relative hidden md:inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-800 sm:text-sm"
+              className="relative hidden md:inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium text-foreground hover:bg-surface/80 sm:text-sm"
               onClick={() => setShowHolidayListModal(true)}
               title={`Holiday list (${selectedYear})`}
             >
@@ -1413,7 +1409,7 @@ export default function EmployeeDashboard() {
             </button>
             <button
               type="button"
-              className="relative hidden md:inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-800 sm:text-sm"
+              className="relative hidden md:inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium text-foreground hover:bg-surface/80 sm:text-sm"
               onClick={goPartnerReview}
               title={
                 partnerPendingReviewCount > 0
@@ -1434,7 +1430,7 @@ export default function EmployeeDashboard() {
             <button
               type="button"
               onClick={handleLogout}
-              className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-900 hover:text-rose-400"
+              className="rounded-lg p-2 text-muted-foreground hover:bg-surface hover:text-rose-600"
               title="Sign out"
             >
               <LogOut className="h-5 w-5" />
@@ -1443,7 +1439,7 @@ export default function EmployeeDashboard() {
         </div>
 
         {futureStartDate && (
-          <div className="border-t border-zinc-800/60 px-3 py-2 sm:px-5">
+          <div className="border-t border-border px-3 py-2 sm:px-5">
             <div className="flex items-center gap-2 rounded-lg border border-emerald-500/25 bg-emerald-950/30 p-2">
               <button
                 type="button"
@@ -1464,7 +1460,7 @@ export default function EmployeeDashboard() {
                   setFutureEndTime('');
                   setCalendarSelectionStart(null);
                 }}
-                className="shrink-0 rounded-md p-2 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                className="shrink-0 rounded-md p-2 text-muted-foreground hover:bg-surface hover:text-foreground"
                 title="Clear selection"
               >
                 <X className="h-4 w-4" />
@@ -1477,7 +1473,7 @@ export default function EmployeeDashboard() {
       <div className="flex min-h-0 flex-1 w-full">
         {sidebarOpen && (
           <div
-            className="fixed inset-0 z-30 bg-zinc-950/70 backdrop-blur-sm md:hidden"
+            className="fixed inset-0 z-30 bg-black/50 backdrop-blur-sm md:hidden"
             onClick={() => setSidebarOpen(false)}
             aria-hidden
           />
@@ -1486,7 +1482,7 @@ export default function EmployeeDashboard() {
         <aside
           aria-label="Workspace navigation"
           className={`
-            fixed bottom-0 left-0 top-14 z-40 flex flex-col border-r border-zinc-800 bg-zinc-900
+            fixed bottom-0 left-0 top-14 z-40 flex flex-col border-r border-border bg-surface
             transition-[transform,width] duration-200 ease-out
             ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
             md:translate-x-0 md:z-40
@@ -1495,10 +1491,10 @@ export default function EmployeeDashboard() {
           `}
         >
           <div
-            className={`mb-3 border-b border-zinc-800 pb-3 ${desktopSidebarCollapsed ? 'md:px-0 md:text-center' : ''}`}
+            className={`mb-3 border-b border-border pb-3 ${desktopSidebarCollapsed ? 'md:px-0 md:text-center' : ''}`}
           >
             <p
-              className={`text-[10px] font-medium uppercase tracking-wider text-zinc-500 ${desktopSidebarCollapsed ? 'md:sr-only' : ''}`}
+              className={`text-[10px] font-medium uppercase tracking-wider text-muted-foreground ${desktopSidebarCollapsed ? 'md:sr-only' : ''}`}
             >
               Workspace
             </p>
@@ -1623,16 +1619,16 @@ export default function EmployeeDashboard() {
             {activeTab === 'clientPunch' && (
               <section
                 aria-labelledby="client-location-punch-heading"
-                className="rounded-xl border border-zinc-800 bg-zinc-900/40 shadow-sm"
+                className="rounded-xl border border-border bg-surface shadow-[inset_0_0_0_1px_rgba(147,197,253,0.18)]"
               >
-                <header className="border-b border-zinc-800/80 bg-zinc-950/30 px-4 py-4 sm:px-5 sm:py-4">
+                <header className="border-b border-border bg-background/60 px-4 py-4 sm:px-5 sm:py-4">
                   <h2
                     id="client-location-punch-heading"
-                    className="text-lg font-semibold tracking-tight text-zinc-100"
+                    className="text-lg font-semibold tracking-tight text-foreground"
                   >
                     Client location punch
                   </h2>
-                  <p className="mt-1 text-sm text-zinc-500">
+                  <p className="mt-1 text-sm text-muted-foreground">
                     Mark in/out when visiting assigned client sites today (GPS must be on).
                   </p>
                 </header>
@@ -1646,8 +1642,8 @@ export default function EmployeeDashboard() {
               <>
                 <div className="space-y-4">
                   <div>
-                    <h2 className="text-lg font-semibold text-zinc-100">Team attendance</h2>
-                    <p className="mt-1 text-sm text-zinc-500">
+                    <h2 className="text-lg font-semibold text-foreground">Team attendance</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">
                       View monthly calendars for people reporting to you.
                     </p>
                   </div>
@@ -1660,7 +1656,7 @@ export default function EmployeeDashboard() {
                 {(subLoading || teamAttendanceLoading) && <TeamAttendanceSkeleton />}
                 {!subLoading && !teamAttendanceLoading && subordinates.length > 0 && (
                   <section className="space-y-6">
-                    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 sm:p-5">
+                    <div className="rounded-xl border border-border bg-surface p-4 sm:p-5">
                       <PartnerTeamOverview
                         monthYear={monthYear}
                         rows={partnerTeamRows}
@@ -1681,21 +1677,21 @@ export default function EmployeeDashboard() {
                       <button
                         type="button"
                         onClick={() => setShowTeamExportModal(true)}
-                        className="inline-flex items-center gap-2 rounded-md border border-zinc-700 bg-zinc-900/30 px-3 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-900/50 transition-colors"
+                        className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground hover:bg-surface/70 transition-colors"
                       >
                         Export team
                       </button>
                     </div>
 
                     
-                    <div className="flex max-w-md flex-col gap-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-                      <label htmlFor="search-subordinate" className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                    <div className="flex max-w-md flex-col gap-3 rounded-xl border border-border bg-surface p-4">
+                      <label htmlFor="search-subordinate" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                         Find employee
                       </label>
                       <input
                         id="search-subordinate"
                         type="text"
-                        className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600"
+                        className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
                         placeholder="Name or OD ID…"
                         value={searchTerm}
                         onChange={(e) => {
@@ -1705,7 +1701,7 @@ export default function EmployeeDashboard() {
                       />
                       <select
                         id="subordinate-select"
-                        className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200"
+                        className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
                         value={selectedSubordinateId ?? ''}
                         onChange={(e) => setSelectedSubordinateId(e.target.value || null)}
                       >
@@ -1729,9 +1725,9 @@ export default function EmployeeDashboard() {
                       id="team-subordinate-calendar"
                     >
                       {selectedSubordinateId && subordinateAttendance[selectedSubordinateId] ? (
-                        <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
-                          <h3 className="mb-4 flex flex-wrap items-center gap-2 text-base font-semibold text-zinc-200">
-                            <span className="rounded-md bg-zinc-800 px-2 py-0.5 font-mono text-xs text-zinc-300">
+                        <div className="rounded-xl border border-border bg-surface p-4">
+                          <h3 className="mb-4 flex flex-wrap items-center gap-2 text-base font-semibold text-foreground">
+                            <span className="rounded-md bg-background px-2 py-0.5 font-mono text-xs text-muted-foreground border border-border">
                               {subordinates.find((s) => s._id === selectedSubordinateId)?.odId}
                             </span>
                             {subordinates.find((s) => s._id === selectedSubordinateId)?.name}
@@ -1758,7 +1754,7 @@ export default function EmployeeDashboard() {
                           />
                         </div>
                       ) : (
-                        <div className="rounded-xl border border-dashed border-zinc-800 py-12 text-center text-sm text-zinc-500">
+                        <div className="rounded-xl border border-dashed border-border py-12 text-center text-sm text-muted-foreground">
                           Select an employee to load their calendar.
                         </div>
                       )}
@@ -1766,7 +1762,7 @@ export default function EmployeeDashboard() {
                   </section>
                 )}
                 {!subLoading && !teamAttendanceLoading && subordinates.length === 0 && (
-                  <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 py-12 text-center text-sm text-zinc-500">
+                  <div className="rounded-xl border border-border bg-surface py-12 text-center text-sm text-muted-foreground">
                     No team members are linked to your profile.
                   </div>
                 )}
@@ -1779,12 +1775,18 @@ export default function EmployeeDashboard() {
       {/* Correction Modal */}
       {showTeamExportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm sm:p-4">
-          <div className="w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-5xl bg-slate-50 sm:border border-slate-200 sm:rounded-xl shadow-2xl flex flex-col overflow-hidden">
-            <div className="shrink-0 p-3 sm:p-4 border-b border-slate-200 flex justify-between items-center bg-white sticky top-0 z-10">
-              <h3 className="font-semibold text-slate-900 text-sm sm:text-base">Team Export</h3>
-              <button onClick={() => setShowTeamExportModal(false)} className="p-1.5 text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-full transition-colors" aria-label="Close team export"><X className="w-5 h-5" /></button>
+          <div className="w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-5xl bg-surface sm:border border-border sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+            <div className="shrink-0 p-3 sm:p-4 border-b border-border flex justify-between items-center bg-background/80 sticky top-0 z-10 backdrop-blur">
+              <h3 className="font-semibold text-foreground text-sm sm:text-base">Team Export</h3>
+              <button
+                onClick={() => setShowTeamExportModal(false)}
+                className="p-2 text-muted-foreground hover:text-foreground bg-background hover:bg-surface rounded-full transition-colors border border-border"
+                aria-label="Close team export"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-slate-50">
+            <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-background">
               <SummarySection
                 summaries={Object.values(subordinateAttendance).map(p => p.summary).filter(Boolean) as AttendanceSummaryView[]}
                 allUsers={subordinates}
@@ -1802,12 +1804,12 @@ export default function EmployeeDashboard() {
 
       {showHolidayListModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4">
-          <div className="w-full max-w-lg bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
-            <div className="p-3 sm:p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-950">
-              <h3 className="font-semibold text-white text-sm sm:text-base">Holiday List ({selectedYear})</h3>
+          <div className="w-full max-w-lg bg-surface border border-border rounded-xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+            <div className="p-3 sm:p-4 border-b border-border flex justify-between items-center bg-background/60">
+              <h3 className="font-semibold text-foreground text-sm sm:text-base">Holiday List ({selectedYear})</h3>
               <button
                 onClick={() => setShowHolidayListModal(false)}
-                className="text-zinc-500 hover:text-white"
+                className="text-muted-foreground hover:text-foreground"
                 aria-label="Close holiday list"
               >
                 <X className="w-5 h-5" />
@@ -1815,7 +1817,7 @@ export default function EmployeeDashboard() {
             </div>
             <div className="p-4 sm:p-6">
               {holidaysForSelectedYear.length === 0 ? (
-                <div className="rounded-lg border border-zinc-700 bg-zinc-950 p-4 text-sm text-zinc-300">
+                <div className="rounded-lg border border-border bg-background p-4 text-sm text-foreground">
                   No active holidays configured for {selectedYear}.
                 </div>
               ) : (
@@ -1832,18 +1834,18 @@ export default function EmployeeDashboard() {
                     return (
                       <li
                         key={`${holiday.date}-${holiday.name}`}
-                        className="rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2"
+                        className="rounded-lg border border-border bg-background px-3 py-2 text-foreground"
                       >
                         <div className="flex items-center justify-between gap-3">
-                          <p className="text-sm font-medium text-zinc-100">{holiday.name}</p>
-                          <p className="shrink-0 text-xs text-zinc-400">{dateLabel}</p>
+                          <p className="text-sm font-medium text-foreground">{holiday.name}</p>
+                          <p className="shrink-0 text-xs text-muted-foreground">{dateLabel}</p>
                         </div>
                       </li>
                     );
                   })}
                 </ul>
               )}
-              <p className="mt-4 text-xs text-zinc-500">Read-only list. Holiday edits are managed by HR/Admin.</p>
+              <p className="mt-4 text-xs text-muted-foreground">Read-only list. Holiday edits are managed by HR/Admin.</p>
             </div>
           </div>
         </div>
@@ -1851,15 +1853,15 @@ export default function EmployeeDashboard() {
 
       {selectedDate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4">
-          <div className="w-full max-w-md bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
-            <div className="p-3 sm:p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-950">
-              <h3 className="font-semibold text-white text-sm sm:text-base">Request Correction</h3>
+          <div className="w-full max-w-md bg-surface border border-border rounded-xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+            <div className="p-3 sm:p-4 border-b border-border flex justify-between items-center bg-background/60">
+              <h3 className="font-semibold text-foreground text-sm sm:text-base">Request Correction</h3>
               <button
                 onClick={() => {
                   setSelectedDate(null);
                   setSelectedDateIsMissedEntry(false);
                 }}
-                className="text-zinc-500 hover:text-white"
+                className="text-muted-foreground hover:text-foreground"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1870,11 +1872,11 @@ export default function EmployeeDashboard() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-zinc-300">Select Correct Status</label>
+                <label className="text-sm font-medium text-muted-foreground">Select Correct Status</label>
                 <select
                   value={requestStatus}
                   onChange={(e) => setRequestStatus(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2.5 text-zinc-200 outline-none focus:border-emerald-500 text-sm sm:text-base"
+                  className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-emerald-500 text-sm sm:text-base"
                 >
                   {getCorrectionStatusOptions().map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
@@ -1883,39 +1885,39 @@ export default function EmployeeDashboard() {
               {correctionStatusRequiresTimePair && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-zinc-300">Start Time</label>
+                    <label className="text-sm font-medium text-muted-foreground">Start Time</label>
                     <input
                       type="time"
                       value={startTime}
                       onChange={(e) => setStartTime(e.target.value)}
-                      className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2.5 text-zinc-200 outline-none focus:border-emerald-500 text-sm sm:text-base"
+                      className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-emerald-500 text-sm sm:text-base"
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-zinc-300">End Time</label>
+                    <label className="text-sm font-medium text-muted-foreground">End Time</label>
                     <input
                       type="time"
                       value={endTime}
                       onChange={(e) => setEndTime(e.target.value)}
-                      className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2.5 text-zinc-200 outline-none focus:border-emerald-500 text-sm sm:text-base"
+                      className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-emerald-500 text-sm sm:text-base"
                     />
                   </div>
                 </div>
               )}
 
               {correctionStatusRequiresTimePair && (
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-muted-foreground">
                   Enter both times in 24-hour format. In time must be earlier than out time.
                 </p>
               )}
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-zinc-300">Reason *</label>
+                <label className="text-sm font-medium text-muted-foreground">Reason *</label>
                 <textarea
                   value={requestReason}
                   onChange={(e) => setRequestReason(e.target.value)}
                   placeholder="E.g., Forgot to punch out due to client meeting..."
-                  className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-3 text-zinc-200 outline-none focus:border-emerald-500 min-h-20 text-sm sm:text-base"
+                  className="w-full bg-background border border-border rounded-lg p-3 text-foreground outline-none focus:border-emerald-500 min-h-20 text-sm sm:text-base"
                   required
                 />
               </div>
@@ -1935,9 +1937,9 @@ export default function EmployeeDashboard() {
 
       {showFutureModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4">
-          <div className="w-full max-w-md bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
-            <div className="p-3 sm:p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-950">
-              <h3 className="font-semibold text-white text-sm sm:text-base">Future Request</h3>
+          <div className="w-full max-w-md bg-surface border border-border rounded-xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+            <div className="p-3 sm:p-4 border-b border-border flex justify-between items-center bg-background/60">
+              <h3 className="font-semibold text-foreground text-sm sm:text-base">Future Request</h3>
               <button onClick={() => {
                 setShowFutureModal(false);
                 setFutureStartDate('');
@@ -1947,7 +1949,7 @@ export default function EmployeeDashboard() {
                 setFutureEndTime('');
                 setFutureCustomType('');
                 setCalendarSelectionStart(null);
-              }} className="text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button>
+              }} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-4 sm:p-6 space-y-4">
               <div className="p-3 bg-indigo-900/20 border border-indigo-500/30 rounded-lg text-indigo-200 text-sm">
@@ -1962,31 +1964,31 @@ export default function EmployeeDashboard() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className={TIMED_CATEGORIES.includes(futureType) ? "col-span-1 sm:col-span-2 space-y-2" : "space-y-2"}>
-                  <label className="text-sm font-medium text-zinc-300">
+                  <label className="text-sm font-medium text-muted-foreground">
                     {TIMED_CATEGORIES.includes(futureType) ? "Date" : "Start Date"}
                   </label>
                   <input
                     type="date"
                     value={futureStartDate}
                     readOnly
-                    className="w-full bg-zinc-800 border border-zinc-600 rounded-lg p-2.5 text-zinc-300 cursor-not-allowed text-sm sm:text-base"
+                    className="w-full bg-surface border border-border rounded-lg p-2.5 text-muted-foreground cursor-not-allowed text-sm sm:text-base"
                   />
                 </div>
                 {!TIMED_CATEGORIES.includes(futureType) && (
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-zinc-300">End Date</label>
+                    <label className="text-sm font-medium text-muted-foreground">End Date</label>
                     <input
                       type="date"
                       value={futureEndDate}
                       readOnly
-                      className="w-full bg-zinc-800 border border-zinc-600 rounded-lg p-2.5 text-zinc-300 cursor-not-allowed text-sm sm:text-base"
+                      className="w-full bg-surface border border-border rounded-lg p-2.5 text-muted-foreground cursor-not-allowed text-sm sm:text-base"
                     />
                   </div>
                 )}
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-zinc-300">Request Type</label>
+                <label className="text-sm font-medium text-muted-foreground">Request Type</label>
                 <select
                   value={futureType}
                   onChange={(e) => {
@@ -2001,7 +2003,7 @@ export default function EmployeeDashboard() {
                       setFutureCustomType('');
                     }
                   }}
-                  className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2.5 text-zinc-200 outline-none focus:border-indigo-500 text-sm sm:text-base"
+                  className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-indigo-500 text-sm sm:text-base"
                 >
                   {futureStatusOptions.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
@@ -2009,13 +2011,13 @@ export default function EmployeeDashboard() {
 
               {futureType === 'Other' && (
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-zinc-300">Specify Request Type *</label>
+                  <label className="text-sm font-medium text-muted-foreground">Specify Request Type *</label>
                   <input
                     type="text"
                     value={futureCustomType}
                     onChange={(e) => setFutureCustomType(e.target.value)}
                     placeholder="Enter your request type..."
-                    className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2.5 text-zinc-200 outline-none focus:border-indigo-500 text-sm sm:text-base"
+                    className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-indigo-500 text-sm sm:text-base"
                     required
                   />
                 </div>
@@ -2024,41 +2026,41 @@ export default function EmployeeDashboard() {
               {TIMED_CATEGORIES.includes(futureType) && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-zinc-300">Start Time *</label>
+                    <label className="text-sm font-medium text-muted-foreground">Start Time *</label>
                     <input
                       type="time"
                       value={futureStartTime}
                       onChange={(e) => setFutureStartTime(e.target.value)}
                       required
-                      className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2.5 text-zinc-200 outline-none focus:border-indigo-500 text-sm sm:text-base"
+                      className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-indigo-500 text-sm sm:text-base"
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-zinc-300">End Time *</label>
+                    <label className="text-sm font-medium text-muted-foreground">End Time *</label>
                     <input
                       type="time"
                       value={futureEndTime}
                       onChange={(e) => setFutureEndTime(e.target.value)}
                       required
-                      className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-2.5 text-zinc-200 outline-none focus:border-indigo-500 text-sm sm:text-base"
+                      className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-indigo-500 text-sm sm:text-base"
                     />
                   </div>
                 </div>
               )}
 
               {TIMED_CATEGORIES.includes(futureType) && (
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-muted-foreground">
                   Start time must be earlier than end time.
                 </p>
               )}
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-zinc-300">Reason *</label>
+                <label className="text-sm font-medium text-muted-foreground">Reason *</label>
                 <textarea
                   value={futureReason}
                   onChange={(e) => setFutureReason(e.target.value)}
                   placeholder="Reason for future absence..."
-                  className="w-full bg-zinc-950 border border-zinc-700 rounded-lg p-3 text-zinc-200 outline-none focus:border-indigo-500 min-h-20 text-sm sm:text-base"
+                  className="w-full bg-background border border-border rounded-lg p-3 text-foreground outline-none focus:border-indigo-500 min-h-20 text-sm sm:text-base"
                   required
                 />
               </div>

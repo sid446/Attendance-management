@@ -13,6 +13,7 @@ import { SummarySection } from '@/components/SummarySection';
 import { EmployeeMonthView } from '@/components/EmployeeMonthView';
 import { EmployeeManagementSection } from '@/components/EmployeeManagementSection';
 import { EmployeeMasterUploadSection } from '@/components/EmployeeMasterUploadSection';
+import { TeamAttendanceAccessSection } from '@/components/TeamAttendanceAccessSection';
 import { AttendanceRequestsSection } from '@/components/AttendanceRequestsSection';
 import { HolidayManagement } from '@/components/HolidayManagement';
 import { BackupManagementSection } from '@/components/BackupManagementSection';
@@ -52,7 +53,7 @@ export default function AttendanceUpload() {
   const [uploadTotal, setUploadTotal] = useState<number>(0);
   const [uploadSaved, setUploadSaved] = useState<number>(0);
   const [uploadFailed, setUploadFailed] = useState<number>(0);
-  const [activeSection, setActiveSection] = useState<'upload' | 'summary' | 'employee' | 'employees' | 'employeeMasterUpload' | 'requests' | 'holidays' | 'backup' | 'leave' | 'fines' | 'articleCredits' | 'invalid' | 'clientPlaces'>('summary');
+  const [activeSection, setActiveSection] = useState<'upload' | 'summary' | 'employee' | 'employees' | 'employeeMasterUpload' | 'teamAccess' | 'requests' | 'holidays' | 'backup' | 'leave' | 'fines' | 'articleCredits' | 'invalid' | 'clientPlaces'>('summary');
   const isITUser = userRole === 'restricted_admin';
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [selectedEmployeeMonth, setSelectedEmployeeMonth] = useState<string>(() => {
@@ -1514,6 +1515,10 @@ export default function AttendanceUpload() {
 
             {activeSection === 'employeeMasterUpload' && (
               <EmployeeMasterUploadSection onRefreshUsers={fetchUsers} />
+            )}
+
+            {activeSection === 'teamAccess' && (
+              <TeamAttendanceAccessSection allUsers={allUsers} />
             )}
             {/* Summary Section */}
             {activeSection === 'summary' && (

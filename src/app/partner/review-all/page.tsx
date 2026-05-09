@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Download } from 'lucide-react';
 
 interface Request {
   _id: string;
@@ -41,6 +41,8 @@ function ReviewAllPageContent() {
   const [processingGroups, setProcessingGroups] = useState<{ [key: string]: boolean }>({});
   const [leaveTypeFilter, setLeaveTypeFilter] = useState<string>('all');
   const [personFilter, setPersonFilter] = useState<string>('all');
+  const [exporting, setExporting] = useState(false);
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
 
   const APPROVE_CHIPS = ['Done', 'Missed Entry', 'Client Visit', 'Emergency', 'Approved'];
   const REJECT_CHIPS = ['Insufficient Hours', 'Incorrect Date', 'Incorrect Entry', 'Not Discussed', 'Proof Required'];
@@ -161,6 +163,148 @@ function ReviewAllPageContent() {
     });
   };
 
+  const getGroupIdx = (group: RequestGroup) => requestGroups.indexOf(group).toString();
+
+  const exportReviewAllToExcel = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const filtered = getFilteredRequestGroups();
+      if (filtered.length === 0) {
+        alert('No rows to export for the selected filters.');
+        return;
+      }
+
+      const ExcelJS = (await import('exceljs')).default;
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Partner Review');
+
+      const columns = [
+        { header: 'Request ID(s)', key: 'requestIds', width: 52 },
+        { header: 'Employee Name', key: 'userName', width: 24 },
+        { header: 'Requested Status', key: 'requestedStatus', width: 22 },
+        { header: 'Date(s)', key: 'dateDisplay', width: 26 },
+        { header: 'Dates (ISO)', key: 'datesIso', width: 40 },
+        { header: 'Reason', key: 'reason', width: 40 },
+        { header: 'Requested Time', key: 'timeRange', width: 18 },
+        { header: 'Original Time', key: 'originalTimeRange', width: 18 },
+        { header: 'Decision (Approve/Reject)', key: 'remarkDecision', width: 24 },
+        { header: 'Remark (Text)', key: 'remarkText', width: 36 },
+      ] as const;
+
+      worksheet.columns = columns as any;
+
+      const titleText = `Partner Review Export - Generated on ${new Date().toLocaleDateString('en-GB')} ${new Date().toLocaleTimeString()}`;
+      worksheet.spliceRows(1, 0, [titleText]);
+      worksheet.mergeCells(1, 1, 1, columns.length);
+      worksheet.getRow(1).font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
+      worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF064E3B' } }; // Emerald-900
+      worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+      worksheet.getRow(1).height = 34;
+
+      const headerRow = worksheet.getRow(2);
+      headerRow.height = 28;
+      headerRow.eachCell((cell: any) => {
+        cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF10B981' } }; // Emerald-500
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF000000' } },
+          bottom: { style: 'thin', color: { argb: 'FF000000' } },
+          left: { style: 'thin', color: { argb: 'FF000000' } },
+          right: { style: 'thin', color: { argb: 'FF000000' } },
+        };
+        cell.protection = { locked: true };
+      });
+
+      filtered.forEach((g) => {
+        worksheet.addRow({
+          requestIds: (g.requestIds || []).join(', '),
+          userName: g.userName,
+          requestedStatus: g.requestedStatus,
+          dateDisplay: g.dateDisplay,
+          datesIso: (g.dates || []).join(', '),
+          reason: g.reason || '',
+          timeRange: g.timeRange || '-',
+          originalTimeRange: g.originalTimeRange || '-',
+          remarkDecision: '',
+          remarkText: '',
+        });
+      });
+
+      // Lock everything by default; unlock only Decision + Remark Text for editing.
+      const decisionColNumber = columns.findIndex(c => c.key === 'remarkDecision') + 1; // 1-based
+      const remarkTextColNumber = columns.findIndex(c => c.key === 'remarkText') + 1; // 1-based
+      worksheet.eachRow((row: any, rowNumber: number) => {
+        if (rowNumber <= 2) return; // title + header locked
+        // ExcelJS can't auto-fit row height; use a larger default for wrapped text.
+        row.height = 48;
+        row.eachCell((cell: any, colNumber: number) => {
+          cell.font = { size: 10 };
+          cell.alignment = { vertical: 'middle', horizontal: colNumber === 7 ? 'left' : 'center', wrapText: true };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          };
+          cell.protection = { locked: colNumber !== decisionColNumber && colNumber !== remarkTextColNumber };
+        });
+
+        const decisionCell = row.getCell(decisionColNumber);
+        decisionCell.dataValidation = {
+          type: 'list',
+          allowBlank: true,
+          formulae: ['"Approve,Reject"'],
+          showErrorMessage: true,
+          errorStyle: 'error',
+          errorTitle: 'Invalid value',
+          error: 'Please select either Approve or Reject.',
+        };
+        decisionCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } }; // Amber-100
+        decisionCell.font = { bold: true, color: { argb: 'FF92400E' } }; // Amber-800
+
+        const remarkTextCell = row.getCell(remarkTextColNumber);
+        remarkTextCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEFCE8' } }; // Yellow-50
+        remarkTextCell.font = { color: { argb: 'FF1F2937' } }; // Slate-800-ish
+      });
+
+      // Enable sheet protection (keeps locked cells non-editable).
+      await worksheet.protect('', {
+        selectLockedCells: true,
+        selectUnlockedCells: true,
+        formatCells: false,
+        formatColumns: false,
+        formatRows: false,
+        insertRows: false,
+        insertColumns: false,
+        deleteRows: false,
+        deleteColumns: false,
+        sort: false,
+        autoFilter: false,
+        pivotTables: false,
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Partner_Review_Export_${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+      alert('Failed to export Excel.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const handleSelectGroup = (groupId: string, checked: boolean) => {
     setSelectedGroupIds(prev => checked ? [...prev, groupId] : prev.filter(id => id !== groupId));
   };
@@ -269,6 +413,44 @@ function ReviewAllPageContent() {
               <p className="text-[11px] font-bold text-emerald-500 uppercase tracking-widest mt-1">Partner Review Portal</p>
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <div className="hidden sm:inline-flex rounded-xl border border-white/10 bg-white/5 p-1">
+              <button
+                type="button"
+                onClick={() => setViewMode('table')}
+                className={`px-3 py-2 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all ${
+                  viewMode === 'table' ? 'bg-emerald-500 text-slate-950' : 'text-slate-300 hover:bg-white/10'
+                }`}
+                title="Table view"
+              >
+                Table
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('cards')}
+                className={`px-3 py-2 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all ${
+                  viewMode === 'cards' ? 'bg-emerald-500 text-slate-950' : 'text-slate-300 hover:bg-white/10'
+                }`}
+                title="Card view"
+              >
+                Cards
+              </button>
+            </div>
+            <button
+              onClick={exportReviewAllToExcel}
+              disabled={exporting || loading || !!error || requestGroups.length === 0}
+              className="h-10 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
+              title="Export current filtered rows to Excel"
+              type="button"
+            >
+              {exporting ? (
+                <div className="h-4 w-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+              ) : (
+                <Download className="h-4 w-4 text-slate-300" />
+              )}
+              Export Excel
+            </button>
+          </div>
         </div>
       </header>
 
@@ -313,149 +495,264 @@ function ReviewAllPageContent() {
               <span className="text-[11px] font-bold text-slate-500 bg-white/5 px-3 py-1 rounded-full uppercase tracking-tighter">{getFilteredRequestGroups().length} pending</span>
             </div>
 
-            <div className="space-y-2">
-              {getFilteredRequestGroups().map((group) => {
-                const idx = requestGroups.indexOf(group).toString();
-                const isSelected = selectedGroupIds.includes(idx);
-                const isExpanded = expandedReasons[idx];
-                const isLeave = group.requestedStatus.toLowerCase().includes('leave') || group.requestedStatus === 'On leave';
-                
-                return (
-                  <div 
-                    key={idx} 
-                    className={`relative rounded-2xl border transition-all duration-200 ${
-                      isSelected 
-                        ? 'border-emerald-500/50 bg-emerald-500/[0.03]' 
-                        : 'border-white/5 bg-slate-900/40 hover:bg-slate-900/60'
-                    }`}
-                  >
-                    <div className="p-3 sm:p-4">
-                      <div className="flex items-start gap-3">
-                        <div className="mt-1">
-                          <input 
-                            type="checkbox" 
-                            checked={isSelected} 
-                            onChange={(e) => handleSelectGroup(idx, e.target.checked)} 
-                            className="h-5 w-5 rounded border-white/10 bg-slate-800 text-emerald-500" 
+            {viewMode === 'table' ? (
+              <div className="rounded-2xl border border-white/10 bg-slate-900/40 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[980px] border-collapse text-left">
+                    <thead className="bg-slate-900">
+                      <tr className="border-b border-white/10">
+                        <th className="px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                          <input
+                            type="checkbox"
+                            checked={getFilteredRequestGroups().length > 0 && getFilteredRequestGroups().every(g => selectedGroupIds.includes(getGroupIdx(g)))}
+                            onChange={(e) => handleSelectAll(e.target.checked)}
+                            className="h-4 w-4 rounded border-white/20 bg-slate-900 text-emerald-500"
                           />
-                        </div>
-
-                        <div className="flex-1 min-w-0">
-                          {/* Row 1: Name, Status & Date */}
-                          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-2.5">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <h3 className="text-sm font-bold text-white truncate">{group.userName}</h3>
-                              <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest border ${
+                        </th>
+                        <th className="px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Employee</th>
+                        <th className="px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Type</th>
+                        <th className="px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Date(s)</th>
+                        <th className="px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Actual</th>
+                        <th className="px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Request</th>
+                        <th className="px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Reason</th>
+                        <th className="px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Remark</th>
+                        <th className="px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Value</th>
+                        <th className="px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {getFilteredRequestGroups().map((group, i) => {
+                        const idx = getGroupIdx(group);
+                        const isSelected = selectedGroupIds.includes(idx);
+                        const isLeave = group.requestedStatus.toLowerCase().includes('leave') || group.requestedStatus === 'On leave';
+                        return (
+                          <tr
+                            key={`${idx}-${i}`}
+                            className={`border-b border-white/5 ${isSelected ? 'bg-emerald-500/[0.04]' : 'hover:bg-white/[0.03]'}`}
+                          >
+                            <td className="px-3 py-3 align-top">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => handleSelectGroup(idx, e.target.checked)}
+                                className="h-4 w-4 rounded border-white/20 bg-slate-900 text-emerald-500"
+                              />
+                            </td>
+                            <td className="px-3 py-3 align-top">
+                              <div className="text-sm font-bold text-white">{group.userName}</div>
+                            </td>
+                            <td className="px-3 py-3 align-top">
+                              <span className={`inline-flex px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest border ${
                                 isLeave ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
                               }`}>
                                 {group.requestedStatus}
                               </span>
-                            </div>
-                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">{group.dateDisplay}</p>
-                          </div>
-
-                          {/* Row 2: Two-Column Side-by-Side (Time vs Reason) */}
-                          <div className="grid grid-cols-2 gap-3 mb-3">
-                            {/* Left: Times */}
-                            <div className="flex flex-col gap-1.5 p-2 bg-white/[0.02] rounded-xl border border-white/5">
-                              <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 uppercase tracking-tight">
-                                <span>Actual</span>
-                                <span>Request</span>
-                              </div>
-                              <div className="flex items-center justify-between gap-2 text-xs font-mono">
-                                <span className="text-slate-400">{group.originalTimeRange === '-' ? '--:--' : group.originalTimeRange}</span>
-                                <svg className="w-3 h-3 text-slate-700 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
-                                <span className="text-emerald-500 font-black">{group.timeRange === '-' ? '--:--' : group.timeRange}</span>
-                              </div>
-                            </div>
-
-                            {/* Right: Reason */}
-                            <div 
-                              onClick={() => toggleReason(idx)}
-                              className={`p-2 bg-white/[0.02] border border-white/5 rounded-xl cursor-pointer hover:bg-white/[0.05] transition-all relative ${isExpanded ? 'z-10' : ''}`}
-                            >
-                              <div className="flex items-center gap-1.5 mb-1 text-[10px] font-bold text-slate-500 uppercase tracking-tight">
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4" /></svg>
-                                <span>Reason</span>
-                              </div>
-                              <p className={`text-[11px] leading-relaxed text-slate-400 italic ${isExpanded ? '' : 'line-clamp-2'}`}>
-                                {group.reason || 'No reason provided'}
-                              </p>
-                              {group.reason && group.reason.length > 40 && !isExpanded && (
-                                <div className="absolute bottom-1 right-2 text-[9px] font-bold text-emerald-500/50">TAP TO EXPAND</div>
+                            </td>
+                            <td className="px-3 py-3 align-top text-[11px] font-bold text-slate-300">{group.dateDisplay}</td>
+                            <td className="px-3 py-3 align-top text-[11px] font-mono text-slate-400">{group.originalTimeRange === '-' ? '--:--' : group.originalTimeRange}</td>
+                            <td className="px-3 py-3 align-top text-[11px] font-mono text-emerald-400">{group.timeRange === '-' ? '--:--' : group.timeRange}</td>
+                            <td className="px-3 py-3 align-top text-[11px] text-slate-400">
+                              <div className="max-w-[320px] whitespace-pre-wrap break-words">{group.reason || '—'}</div>
+                            </td>
+                            <td className="px-3 py-3 align-top">
+                              <input
+                                type="text"
+                                value={remarks[idx] || ''}
+                                onChange={(e) => setRemarks({ ...remarks, [idx]: e.target.value })}
+                                className="w-56 h-9 px-3 bg-slate-900 border border-white/10 rounded-xl text-xs text-white placeholder:text-slate-600 focus:border-emerald-500/50"
+                                placeholder="Remark..."
+                              />
+                            </td>
+                            <td className="px-3 py-3 align-top">
+                              {isFixedValueType(group.requestedStatus) ? (
+                                <span className="text-[11px] font-bold text-slate-500">—</span>
+                              ) : (
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={values[idx] ?? getDefaultValueForType(group.requestedStatus)}
+                                  onChange={(e) => setValues({ ...values, [idx]: e.target.value })}
+                                  className="w-20 h-9 bg-slate-900 border border-white/10 rounded-xl text-center text-xs font-bold text-emerald-400"
+                                />
                               )}
-                            </div>
+                            </td>
+                            <td className="px-3 py-3 align-top text-right">
+                              <div className="inline-flex gap-1.5">
+                                <button
+                                  onClick={() => handleDirectAction(idx, 'reject')}
+                                  disabled={processingGroups[idx]}
+                                  className="h-9 px-3 bg-slate-800 hover:bg-rose-500/10 border border-white/5 rounded-xl text-[11px] font-bold text-slate-400 hover:text-rose-400 active:scale-95 transition-all"
+                                >
+                                  Reject
+                                </button>
+                                <button
+                                  onClick={() => handleDirectAction(idx, 'approve')}
+                                  disabled={processingGroups[idx]}
+                                  className="h-9 px-5 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-[11px] font-black text-white shadow-lg shadow-emerald-600/10 active:scale-95 transition-all flex items-center gap-2 justify-center"
+                                >
+                                  {processingGroups[idx] ? (
+                                    <div className="h-3 w-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                  ) : (
+                                    'Approve'
+                                  )}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="p-3 text-[11px] text-slate-500 border-t border-white/10">
+                  Tip: On mobile, swipe left/right to view all columns.
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {getFilteredRequestGroups().map((group) => {
+                  const idx = getGroupIdx(group);
+                  const isSelected = selectedGroupIds.includes(idx);
+                  const isExpanded = expandedReasons[idx];
+                  const isLeave = group.requestedStatus.toLowerCase().includes('leave') || group.requestedStatus === 'On leave';
+                  
+                  return (
+                    <div 
+                      key={idx} 
+                      className={`relative rounded-2xl border transition-all duration-200 ${
+                        isSelected 
+                          ? 'border-emerald-500/50 bg-emerald-500/[0.03]' 
+                          : 'border-white/5 bg-slate-900/40 hover:bg-slate-900/60'
+                      }`}
+                    >
+                      <div className="p-3 sm:p-4">
+                        <div className="flex items-start gap-3">
+                          <div className="mt-1">
+                            <input 
+                              type="checkbox" 
+                              checked={isSelected} 
+                              onChange={(e) => handleSelectGroup(idx, e.target.checked)} 
+                              className="h-5 w-5 rounded border-white/10 bg-slate-800 text-emerald-500" 
+                            />
                           </div>
 
-                          {/* Row 3: Compact Action Bar */}
-                          <div className="flex flex-col sm:flex-row gap-2">
-                            <div className="flex-1 flex flex-col gap-1.5">
-                              <div className="flex gap-2">
-                                <div className="flex-1 relative">
-                                  <input 
-                                    type="text" 
-                                    value={remarks[idx] || ''} 
-                                    onChange={(e) => setRemarks({...remarks, [idx]: e.target.value})} 
-                                    className="w-full h-9 px-3 bg-slate-900 border border-white/10 rounded-xl text-xs text-white placeholder:text-slate-600 focus:border-emerald-500/50" 
-                                    placeholder="Remark..." 
-                                  />
+                          <div className="flex-1 min-w-0">
+                            {/* Row 1: Name, Status & Date */}
+                            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-2.5">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <h3 className="text-sm font-bold text-white truncate">{group.userName}</h3>
+                                <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest border ${
+                                  isLeave ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                                }`}>
+                                  {group.requestedStatus}
+                                </span>
+                              </div>
+                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">{group.dateDisplay}</p>
+                            </div>
+
+                            {/* Row 2: Two-Column Side-by-Side (Time vs Reason) */}
+                            <div className="grid grid-cols-2 gap-3 mb-3">
+                              {/* Left: Times */}
+                              <div className="flex flex-col gap-1.5 p-2 bg-white/[0.02] rounded-xl border border-white/5">
+                                <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 uppercase tracking-tight">
+                                  <span>Actual</span>
+                                  <span>Request</span>
                                 </div>
-                                {!isFixedValueType(group.requestedStatus) && (
-                                  <input 
-                                    type="number" 
-                                    step="0.01" 
-                                    value={values[idx] ?? getDefaultValueForType(group.requestedStatus)} 
-                                    onChange={(e) => setValues({...values, [idx]: e.target.value})} 
-                                    className="w-14 h-9 bg-slate-900 border border-white/10 rounded-xl text-center text-xs font-bold text-emerald-400" 
-                                  />
+                                <div className="flex items-center justify-between gap-2 text-xs font-mono">
+                                  <span className="text-slate-400">{group.originalTimeRange === '-' ? '--:--' : group.originalTimeRange}</span>
+                                  <svg className="w-3 h-3 text-slate-700 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                                  <span className="text-emerald-500 font-black">{group.timeRange === '-' ? '--:--' : group.timeRange}</span>
+                                </div>
+                              </div>
+
+                              {/* Right: Reason */}
+                              <div 
+                                onClick={() => toggleReason(idx)}
+                                className={`p-2 bg-white/[0.02] border border-white/5 rounded-xl cursor-pointer hover:bg-white/[0.05] transition-all relative ${isExpanded ? 'z-10' : ''}`}
+                              >
+                                <div className="flex items-center gap-1.5 mb-1 text-[10px] font-bold text-slate-500 uppercase tracking-tight">
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4" /></svg>
+                                  <span>Reason</span>
+                                </div>
+                                <p className={`text-[11px] leading-relaxed text-slate-400 italic ${isExpanded ? '' : 'line-clamp-2'}`}>
+                                  {group.reason || 'No reason provided'}
+                                </p>
+                                {group.reason && group.reason.length > 40 && !isExpanded && (
+                                  <div className="absolute bottom-1 right-2 text-[9px] font-bold text-emerald-500/50">TAP TO EXPAND</div>
                                 )}
                               </div>
-                              {/* Wrapped Chips - All Visible */}
-                              <div className="flex flex-wrap items-center gap-1.5 select-none">
-                                {APPROVE_CHIPS.map(c => (
-                                  <button 
-                                    key={c} 
-                                    onClick={() => setRemarks({...remarks, [idx]: c})} 
-                                    className="px-2 py-1 bg-emerald-500/5 hover:bg-emerald-500/10 rounded-lg text-[10px] font-bold text-emerald-500/70 border border-emerald-500/10 transition-colors"
-                                  >
-                                    {c}
-                                  </button>
-                                ))}
-                                {REJECT_CHIPS.map(c => (
-                                  <button 
-                                    key={c} 
-                                    onClick={() => setRemarks({...remarks, [idx]: c})} 
-                                    className="px-2 py-1 bg-rose-500/5 hover:bg-rose-500/10 rounded-lg text-[10px] font-bold text-rose-500/60 border border-rose-500/10 transition-colors"
-                                  >
-                                    {c}
-                                  </button>
-                                ))}
-                              </div>
                             </div>
-                            <div className="flex gap-1.5 shrink-0 items-start">
-                              <button 
-                                onClick={() => handleDirectAction(idx, 'reject')} 
-                                disabled={processingGroups[idx]} 
-                                className="h-9 px-3 bg-slate-800 hover:bg-rose-500/10 border border-white/5 rounded-xl text-[11px] font-bold text-slate-400 hover:text-rose-400 active:scale-95 transition-all"
-                              >
-                                Reject
-                              </button>
-                              <button 
-                                onClick={() => handleDirectAction(idx, 'approve')} 
-                                disabled={processingGroups[idx]} 
-                                className="h-9 px-6 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-[11px] font-black text-white shadow-lg shadow-emerald-600/10 active:scale-95 transition-all flex items-center gap-2"
-                              >
-                                {processingGroups[idx] ? <div className="h-3 w-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : 'Approve'}
-                              </button>
+
+                            {/* Row 3: Compact Action Bar */}
+                            <div className="flex flex-col sm:flex-row gap-2">
+                              <div className="flex-1 flex flex-col gap-1.5">
+                                <div className="flex gap-2">
+                                  <div className="flex-1 relative">
+                                    <input 
+                                      type="text" 
+                                      value={remarks[idx] || ''} 
+                                      onChange={(e) => setRemarks({...remarks, [idx]: e.target.value})} 
+                                      className="w-full h-9 px-3 bg-slate-900 border border-white/10 rounded-xl text-xs text-white placeholder:text-slate-600 focus:border-emerald-500/50" 
+                                      placeholder="Remark..." 
+                                    />
+                                  </div>
+                                  {!isFixedValueType(group.requestedStatus) && (
+                                    <input 
+                                      type="number" 
+                                      step="0.01" 
+                                      value={values[idx] ?? getDefaultValueForType(group.requestedStatus)} 
+                                      onChange={(e) => setValues({...values, [idx]: e.target.value})} 
+                                      className="w-14 h-9 bg-slate-900 border border-white/10 rounded-xl text-center text-xs font-bold text-emerald-400" 
+                                    />
+                                  )}
+                                </div>
+                                {/* Wrapped Chips - All Visible */}
+                                <div className="flex flex-wrap items-center gap-1.5 select-none">
+                                  {APPROVE_CHIPS.map(c => (
+                                    <button 
+                                      key={c} 
+                                      onClick={() => setRemarks({...remarks, [idx]: c})} 
+                                      className="px-2 py-1 bg-emerald-500/5 hover:bg-emerald-500/10 rounded-lg text-[10px] font-bold text-emerald-500/70 border border-emerald-500/10 transition-colors"
+                                    >
+                                      {c}
+                                    </button>
+                                  ))}
+                                  {REJECT_CHIPS.map(c => (
+                                    <button 
+                                      key={c} 
+                                      onClick={() => setRemarks({...remarks, [idx]: c})} 
+                                      className="px-2 py-1 bg-rose-500/5 hover:bg-rose-500/10 rounded-lg text-[10px] font-bold text-rose-500/60 border border-rose-500/10 transition-colors"
+                                    >
+                                      {c}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="flex gap-1.5 shrink-0 items-start">
+                                <button 
+                                  onClick={() => handleDirectAction(idx, 'reject')} 
+                                  disabled={processingGroups[idx]} 
+                                  className="h-9 px-3 bg-slate-800 hover:bg-rose-500/10 border border-white/5 rounded-xl text-[11px] font-bold text-slate-400 hover:text-rose-400 active:scale-95 transition-all"
+                                >
+                                  Reject
+                                </button>
+                                <button 
+                                  onClick={() => handleDirectAction(idx, 'approve')} 
+                                  disabled={processingGroups[idx]} 
+                                  className="h-9 px-6 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-[11px] font-black text-white shadow-lg shadow-emerald-600/10 active:scale-95 transition-all flex items-center gap-2"
+                                >
+                                  {processingGroups[idx] ? <div className="h-3 w-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : 'Approve'}
+                                </button>
+                              </div>
                             </div>
                           </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </main>

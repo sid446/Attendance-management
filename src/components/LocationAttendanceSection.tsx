@@ -203,8 +203,8 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
   if (loading) {
     return (
       <div
-        className={`flex items-center justify-center gap-2 text-sm text-zinc-500 ${
-          embedded ? 'py-14' : 'rounded-xl border border-zinc-800 bg-zinc-950 p-6'
+        className={`flex items-center justify-center gap-2 text-sm text-muted-foreground ${
+          embedded ? 'py-14' : 'rounded-xl border border-border bg-surface p-6'
         }`}
       >
         <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
@@ -218,14 +218,14 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
       <div
         className={
           embedded
-            ? 'rounded-lg border border-dashed border-zinc-700 bg-zinc-950/40 py-10 text-center'
-            : 'rounded-xl border border-zinc-800 bg-zinc-950 p-6'
+            ? 'rounded-lg border border-dashed border-border bg-background py-10 text-center'
+            : 'rounded-xl border border-border bg-surface p-6'
         }
       >
         <div className={embedded ? 'px-4' : 'py-6'}>
-          <MapPin className="mx-auto mb-3 h-12 w-12 text-zinc-600" />
-          <h3 className="mb-1 text-lg font-semibold text-zinc-100">No client places assigned</h3>
-          <p className="text-sm text-zinc-500">
+          <MapPin className="mx-auto mb-3 h-12 w-12 text-muted-foreground" />
+          <h3 className="mb-1 text-lg font-semibold text-foreground">No client places assigned</h3>
+          <p className="text-sm text-muted-foreground">
             You haven&apos;t been assigned to any client locations yet.
             <br />
             Contact your administrator if you need access.
@@ -237,22 +237,22 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
 
   const rootCard =
     embedded
-      ? 'overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950/50'
-      : 'overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950';
+      ? 'overflow-hidden rounded-lg border border-border bg-surface'
+      : 'overflow-hidden rounded-xl border border-border bg-surface';
 
   return (
     <div className={rootCard}>
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-zinc-800 p-4">
+      <div className="flex items-center justify-between border-b border-border p-4">
         <div className="flex items-center gap-2">
           <MapPin className="h-5 w-5 text-emerald-400" />
-          <h3 className="font-semibold text-zinc-100">
+          <h3 className="font-semibold text-foreground">
             {embedded ? 'Mark in / out at site' : 'Mark attendance — client place & outstation'}
           </h3>
         </div>
         <button
           onClick={fetchData}
-          className="rounded p-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+          className="rounded p-1.5 text-muted-foreground transition-colors hover:bg-surface hover:text-foreground"
           title="Refresh"
           type="button"
         >
@@ -285,7 +285,7 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
 
       {/* Assigned Places List */}
       <div className="space-y-3 p-4">
-        <p className="mb-3 text-sm text-zinc-500">
+        <p className="mb-3 text-sm text-muted-foreground">
           Select a client location to mark your attendance. You must be within{' '}
           {assignedPlaces[0]?.radiusMeters || 500}m of the location.
         </p>
@@ -301,7 +301,7 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
               className={`cursor-pointer rounded-lg border p-4 transition-all ${
                 isSelected
                   ? 'border-emerald-500/50 bg-emerald-900/20'
-                  : 'border-zinc-800 bg-zinc-900/50 hover:border-zinc-600'
+                  : 'border-border bg-background hover:bg-surface/70'
               }`}
               onClick={() => {
                 if (availablePunch !== 'done') {
@@ -312,8 +312,8 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
-                  <h4 className="truncate font-medium text-zinc-100">{place.name}</h4>
-                  <p className="truncate text-sm text-zinc-500">{place.address}</p>
+                  <h4 className="truncate font-medium text-foreground">{place.name}</h4>
+                  <p className="truncate text-sm text-muted-foreground">{place.address}</p>
                 </div>
 
                 {/* Status Badge */}
@@ -338,13 +338,13 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
                       </span>
                     )}
                     {record.totalHours !== undefined && (
-                      <span className="text-xs text-zinc-500">
+                      <span className="text-xs text-muted-foreground">
                         Total: {record.totalHours.toFixed(2)} hrs
                       </span>
                     )}
                   </div>
                 ) : (
-                  <span className="rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
+                  <span className="rounded bg-background px-2 py-0.5 text-xs text-muted-foreground border border-border">
                     Not marked
                   </span>
                 )}
@@ -352,7 +352,7 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
 
               {/* Action Buttons (when selected) */}
               {isSelected && availablePunch !== 'done' && (
-                <div className="mt-4 border-t border-zinc-800 pt-4">
+                <div className="mt-4 border-t border-border pt-4">
                   {locationError && (
                     <div className="mb-3 flex items-center gap-2 text-sm text-amber-300 bg-amber-900/20 p-2 rounded">
                       <AlertCircle className="w-4 h-4 shrink-0" />
@@ -385,14 +385,14 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
                     )}
                   </button>
 
-                  <p className="mt-2 text-center text-xs text-zinc-600">
+                  <p className="mt-2 text-center text-xs text-muted-foreground">
                     Your current location will be verified against the client place coordinates
                   </p>
                 </div>
               )}
 
               {availablePunch === 'done' && (
-                <div className="mt-3 border-t border-zinc-800 pt-3">
+                <div className="mt-3 border-t border-border pt-3">
                   <div className="flex items-center gap-2 text-sm text-emerald-400">
                     <Check className="w-4 h-4" />
                     <span>Attendance complete for today</span>
@@ -406,15 +406,15 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
 
       {/* Today's Summary */}
       {todayRecords.length > 0 && (
-        <div className="border-t border-zinc-800 bg-zinc-950/70 p-4">
-          <h4 className="mb-2 text-sm font-medium text-zinc-500">Today&apos;s location attendance</h4>
-          <div className="text-sm text-zinc-300">
+        <div className="border-t border-border bg-background/60 p-4">
+          <h4 className="mb-2 text-sm font-medium text-muted-foreground">Today&apos;s location attendance</h4>
+          <div className="text-sm text-foreground">
             {todayRecords.map(record => (
               <div key={record._id} className="flex items-center justify-between py-1">
                 <span>{record.clientPlaceId.name}</span>
                 <span className={`text-xs ${
                   record.status === 'complete' ? 'text-emerald-400' :
-                  record.status === 'partial' ? 'text-amber-400' : 'text-zinc-500'
+                  record.status === 'partial' ? 'text-amber-400' : 'text-muted-foreground'
                 }`}>
                   {record.status === 'complete' ? 'Complete' :
                    record.status === 'partial' ? 'In progress' : 'Pending'}

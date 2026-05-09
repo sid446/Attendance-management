@@ -207,7 +207,7 @@ export function PartnerTeamOverview({
 
   if (rows.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-zinc-800 bg-zinc-950/30 px-4 py-8 text-center text-sm text-zinc-500">
+      <div className="rounded-xl border border-dashed border-border bg-background px-4 py-8 text-center text-sm text-muted-foreground">
         No attendance rows for your team in {period || "this month"} yet.
       </div>
     );
@@ -217,41 +217,41 @@ export function PartnerTeamOverview({
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-2">
-          <BarChart3 className="h-5 w-5 text-zinc-500" aria-hidden />
+          <BarChart3 className="h-5 w-5 text-muted-foreground" aria-hidden />
           <div>
-            <h3 className="text-base font-semibold text-zinc-100">
+            <h3 className="text-base font-semibold text-foreground">
               Team overview
             </h3>
             {period && (
-              <p className="text-xs text-zinc-500">
+              <p className="text-xs text-muted-foreground">
                 Same summary rules as admin · {period}
               </p>
             )}
           </div>
         </div>
-        <div className="flex flex-wrap gap-2 text-[11px] text-zinc-400">
-          <span className="rounded-md border border-zinc-800 bg-zinc-900/60 px-2 py-1">
-            Σ Present <strong className="text-emerald-400">{totals.present}</strong>
+        <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+          <span className="rounded-md border border-border bg-background px-2 py-1">
+            Σ Present <strong className="text-emerald-700">{totals.present}</strong>
           </span>
-          <span className="rounded-md border border-zinc-800 bg-zinc-900/60 px-2 py-1">
-            Σ Absent <strong className="text-rose-400">{totals.absent}</strong>
+          <span className="rounded-md border border-border bg-background px-2 py-1">
+            Σ Absent <strong className="text-rose-700">{totals.absent}</strong>
           </span>
-          <span className="rounded-md border border-zinc-800 bg-zinc-900/60 px-2 py-1">
-            Σ Late <strong className="text-amber-400">{totals.late}</strong>
+          <span className="rounded-md border border-border bg-background px-2 py-1">
+            Σ Late <strong className="text-amber-700">{totals.late}</strong>
           </span>
         </div>
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+        <div className="rounded-xl border border-border bg-surface p-4">
           <div className="mb-3 space-y-2">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-              <div className="flex items-center gap-2 text-zinc-300">
+              <div className="flex items-center gap-2 text-foreground">
                 <Trophy className="h-4 w-4 shrink-0 text-amber-500/90" aria-hidden />
                 <span className="text-sm font-medium">Leaderboard</span>
               </div>
               <div
-                className="flex flex-wrap gap-0.5 rounded-lg border border-zinc-700/90 bg-zinc-950 p-0.5"
+                className="flex flex-wrap gap-0.5 rounded-lg border border-border bg-background p-0.5"
                 role="group"
                 aria-label="Leaderboard ranking type"
               >
@@ -265,8 +265,8 @@ export function PartnerTeamOverview({
                     onClick={() => setLeaderMode(mode)}
                     className={`rounded-md px-2.5 py-1.5 text-[11px] font-medium transition ${
                       leaderMode === mode
-                        ? "bg-zinc-600 text-zinc-50 shadow-sm"
-                        : "text-zinc-500 hover:bg-zinc-800/80 hover:text-zinc-300"
+                        ? "bg-surface text-foreground shadow-[inset_0_0_0_1px_rgba(147,197,253,0.35)]"
+                        : "text-muted-foreground hover:bg-surface/70 hover:text-foreground"
                     }`}
                   >
                     {LEADERBOARD_MODE_LABEL[mode]}
@@ -274,7 +274,7 @@ export function PartnerTeamOverview({
                 ))}
               </div>
             </div>
-            <p className="text-[10px] leading-snug text-zinc-600">
+            <p className="text-[10px] leading-snug text-muted-foreground">
               {LEADERBOARD_MODE_HINT[leaderMode]}
             </p>
           </div>
@@ -291,7 +291,7 @@ export function PartnerTeamOverview({
                 titleHint = `${r.name} — discipline score ${disc.toFixed(1)} (absent + late + ½×half; lower is better)`;
                 badge = (
                   <span
-                    className="rounded bg-zinc-800/80 px-1.5 py-px font-mono text-[10px] tabular-nums text-zinc-400"
+                    className="rounded bg-background px-1.5 py-px font-mono text-[10px] tabular-nums text-muted-foreground border border-border"
                     title="Absent + late + ½×half day (lower is better)"
                   >
                     D {disc % 1 === 0 ? String(disc) : disc.toFixed(1)}
@@ -301,7 +301,7 @@ export function PartnerTeamOverview({
                 titleHint = `${r.name} — ${late} late arrival${late === 1 ? "" : "s"} this month`;
                 badge = (
                   <span
-                    className="rounded bg-amber-950/80 px-1.5 py-px font-mono text-[10px] tabular-nums text-amber-400/90"
+                    className="rounded bg-amber-500/15 px-1.5 py-px font-mono text-[10px] tabular-nums text-amber-800"
                     title="Late count (lower is better)"
                   >
                     L {late}
@@ -316,16 +316,16 @@ export function PartnerTeamOverview({
                   <span
                     className={`rounded px-1.5 py-px font-mono text-[10px] tabular-nums ${
                       perDay > 0
-                        ? "bg-emerald-950/60 text-emerald-400/90"
+                        ? "bg-emerald-500/15 text-emerald-800"
                         : perDay < 0
-                          ? "bg-rose-950/60 text-rose-400/90"
-                          : "bg-zinc-800/80 text-zinc-500"
+                          ? "bg-rose-500/15 text-rose-800"
+                          : "bg-background text-muted-foreground border border-border"
                     }`}
                     title={`Avg vs scheduled on days present; ${absent} absent this month`}
                   >
                     {perDay > 0 ? "+" : perDay < 0 ? "−" : ""}
                     {formatHoursMinutes(Math.abs(perDay))}
-                    <span className="text-zinc-500">/d</span>
+                    <span className="text-muted-foreground">/d</span>
                   </span>
                 );
               }
@@ -336,31 +336,31 @@ export function PartnerTeamOverview({
                   type="button"
                   onClick={() => onSelectMember?.(r.userId)}
                   title={titleHint}
-                  className="flex w-full items-center gap-3 rounded-lg border border-zinc-800/80 bg-zinc-950/40 px-3 py-2 text-left transition hover:border-zinc-700 hover:bg-zinc-900/60"
+                  className="flex w-full items-center gap-3 rounded-lg border border-border bg-background px-3 py-2 text-left transition hover:bg-surface/70"
                 >
                   <span
                     className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
                       i === 0
-                        ? "bg-amber-500/20 text-amber-400"
+                        ? "bg-amber-500/15 text-amber-800"
                         : i === 1
-                          ? "bg-zinc-600/40 text-zinc-300"
+                          ? "bg-surface text-foreground shadow-[inset_0_0_0_1px_rgba(147,197,253,0.25)]"
                           : i === 2
-                            ? "bg-orange-900/40 text-orange-300"
-                            : "bg-zinc-800 text-zinc-500"
+                            ? "bg-orange-500/15 text-orange-800"
+                            : "bg-background text-muted-foreground border border-border"
                     }`}
                   >
                     {i + 1}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-zinc-200">
+                    <p className="truncate text-sm font-medium text-foreground">
                       {r.name}
                     </p>
                     <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                      <p className="font-mono text-[10px] text-zinc-500">{r.code}</p>
+                      <p className="font-mono text-[10px] text-muted-foreground">{r.code}</p>
                       {badge}
                       {qRate != null && leaderMode !== "hour" && (
                         <span
-                          className="rounded bg-zinc-800/60 px-1.5 py-px font-mono text-[10px] tabular-nums text-zinc-500"
+                          className="rounded bg-background px-1.5 py-px font-mono text-[10px] tabular-nums text-muted-foreground border border-border"
                           title="% of working days (present + ½ per half day)"
                         >
                           {Math.round(qRate * 100)}%
@@ -368,20 +368,20 @@ export function PartnerTeamOverview({
                       )}
                     </div>
                   </div>
-                  <div className="shrink-0 text-right text-[11px] tabular-nums text-zinc-400">
-                    <span className="text-emerald-400/90">
+                  <div className="shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
+                    <span className="text-emerald-700">
                       P {r.metrics.totalPresent}
                     </span>
-                    <span className="mx-1 text-zinc-700">·</span>
-                    <span className="text-rose-400/90">
+                    <span className="mx-1 text-muted-foreground/50">·</span>
+                    <span className="text-rose-700">
                       A {r.metrics.totalAbsent}
                     </span>
-                    <span className="mx-1 text-zinc-700">·</span>
-                    <span className="text-amber-400/90">
+                    <span className="mx-1 text-muted-foreground/50">·</span>
+                    <span className="text-amber-700">
                       L {r.metrics.calcLate}
                     </span>
                   </div>
-                  <div className="hidden w-20 shrink-0 text-right font-mono text-[10px] text-zinc-500 sm:block">
+                  <div className="hidden w-20 shrink-0 text-right font-mono text-[10px] text-muted-foreground sm:block">
                     {r.metrics.calcExcessDeficit > 0 ? "+" : r.metrics.calcExcessDeficit < 0 ? "−" : ""}
                     {formatHoursMinutes(Math.abs(r.metrics.calcExcessDeficit))}
                   </div>
@@ -392,16 +392,16 @@ export function PartnerTeamOverview({
           </ol>
         </div>
 
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-          <div className="mb-3 flex items-center gap-2 text-zinc-300">
-            <AlertTriangle className="h-4 w-4 text-orange-400/90" aria-hidden />
+        <div className="rounded-xl border border-border bg-surface p-4">
+          <div className="mb-3 flex items-center gap-2 text-foreground">
+            <AlertTriangle className="h-4 w-4 text-orange-600" aria-hidden />
             <span className="text-sm font-medium">Needs attention</span>
-            <span className="text-[10px] font-normal text-zinc-600">
+            <span className="text-[10px] font-normal text-muted-foreground">
               weight: absent » late » half day
             </span>
           </div>
           {attentionList.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-zinc-800/80 py-6 text-center text-xs text-zinc-600">
+            <p className="rounded-lg border border-dashed border-border py-6 text-center text-xs text-muted-foreground">
               No absent, late, or half-day flags this month.
             </p>
           ) : (
@@ -412,16 +412,16 @@ export function PartnerTeamOverview({
                     type="button"
                     onClick={() => onSelectMember?.(r.userId)}
                     title={`A${r.metrics.totalAbsent} · L${r.metrics.calcLate} · H${r.metrics.totalHalfDay} — score ${r.score} (100×A + 50×L + 10×H)`}
-                    className="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-800/60 bg-zinc-950/30 px-3 py-2 text-left text-sm hover:border-orange-900/50 hover:bg-zinc-900/50"
+                    className="flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-background px-3 py-2 text-left text-sm hover:bg-surface/70"
                   >
-                    <span className="truncate text-zinc-200">{r.name}</span>
-                    <span className="flex shrink-0 flex-wrap items-center justify-end gap-x-1.5 gap-y-0.5 font-mono text-xs text-zinc-500">
-                      <span className="text-rose-400/90">A{r.metrics.totalAbsent}</span>
-                      <span className="text-zinc-700">·</span>
-                      <span className="text-amber-400/90">L{r.metrics.calcLate}</span>
-                      <span className="text-zinc-700">·</span>
-                      <span className="text-zinc-400">H{r.metrics.totalHalfDay}</span>
-                      <span className="ml-0.5 text-orange-400/90">{r.score}</span>
+                    <span className="truncate text-foreground">{r.name}</span>
+                    <span className="flex shrink-0 flex-wrap items-center justify-end gap-x-1.5 gap-y-0.5 font-mono text-xs text-muted-foreground">
+                      <span className="text-rose-700">A{r.metrics.totalAbsent}</span>
+                      <span className="text-muted-foreground/50">·</span>
+                      <span className="text-amber-700">L{r.metrics.calcLate}</span>
+                      <span className="text-muted-foreground/50">·</span>
+                      <span className="text-muted-foreground">H{r.metrics.totalHalfDay}</span>
+                      <span className="ml-0.5 text-orange-700">{r.score}</span>
                     </span>
                   </button>
                 </li>

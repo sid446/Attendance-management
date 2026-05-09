@@ -1,9 +1,9 @@
 import React from 'react';
-import { FileSpreadsheet, Upload, CheckCircle, Clock, Users, LogOut, Calendar, Database, TrendingUp, IndianRupee, AlertTriangle, MapPin } from 'lucide-react';
+import { FileSpreadsheet, Upload, CheckCircle, Clock, Users, LogOut, Calendar, Database, TrendingUp, IndianRupee, AlertTriangle, MapPin, ShieldCheck } from 'lucide-react';
 
 interface SidebarProps {
-  activeSection: 'upload' | 'summary' | 'employee' | 'employees' | 'employeeMasterUpload' | 'requests' | 'holidays' | 'backup' | 'leave' | 'fines' | 'articleCredits' | 'invalid' | 'clientPlaces';
-  setActiveSection: (section: 'upload' | 'summary' | 'employee' | 'employees' | 'employeeMasterUpload' | 'requests' | 'holidays' | 'backup' | 'leave' | 'fines' | 'articleCredits' | 'invalid' | 'clientPlaces') => void;
+  activeSection: 'upload' | 'summary' | 'employee' | 'employees' | 'employeeMasterUpload' | 'teamAccess' | 'requests' | 'holidays' | 'backup' | 'leave' | 'fines' | 'articleCredits' | 'invalid' | 'clientPlaces';
+  setActiveSection: (section: 'upload' | 'summary' | 'employee' | 'employees' | 'employeeMasterUpload' | 'teamAccess' | 'requests' | 'holidays' | 'backup' | 'leave' | 'fines' | 'articleCredits' | 'invalid' | 'clientPlaces') => void;
   uploadTotal: number;
   uploadSaved: number;
   uploadFailed: number;
@@ -59,6 +59,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
         >
           <FileSpreadsheet className="w-4 h-4" />
           <span>Employee Master Upload</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSection('teamAccess')}
+          className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
+            activeSection === 'teamAccess'
+              ? 'border border-blue-200 bg-blue-50 text-blue-900'
+              : 'text-slate-600 hover:bg-blue-100/75'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4" />
+          <span>Team Access</span>
         </button>
 
         <button
