@@ -44,23 +44,29 @@ export const HolidayManagement: React.FC<HolidayManagementProps> = ({
   });
 
   // Load holidays for selected year
-  const loadHolidays = async (year: number) => {
+  const loadHolidays = async (year: number, silent = false) => {
     try {
-      setLoading(true);
-      setError(null);
+      if (!silent) {
+        setLoading(true);
+        setError(null);
+      }
       const response = await fetch(`/api/holidays?year=${year}&activeOnly=false`);
       const result = await response.json();
 
       if (result.success) {
-        setHolidays(result.data);
-      } else {
+        setHolidays(Array.isArray(result.data) ? result.data : []);
+      } else if (!silent) {
         setError(result.error || 'Failed to load holidays');
       }
     } catch (err) {
-      setError('Failed to load holidays');
+      if (!silent) {
+        setError('Failed to load holidays');
+      }
       console.error('Error loading holidays:', err);
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 
@@ -87,7 +93,6 @@ export const HolidayManagement: React.FC<HolidayManagementProps> = ({
       const result = await response.json();
 
       if (result.success) {
-        setHolidays(prev => [...prev, result.data]);
         setNewHoliday({
           date: '',
           name: '',
@@ -96,6 +101,7 @@ export const HolidayManagement: React.FC<HolidayManagementProps> = ({
           year: selectedYear,
         });
         setShowAddForm(false);
+        await loadHolidays(selectedYear, true);
       } else {
         setError(result.error || 'Failed to add holiday');
       }
@@ -109,19 +115,25 @@ export const HolidayManagement: React.FC<HolidayManagementProps> = ({
   const handleUpdateHoliday = async (holiday: Holiday) => {
     try {
       setError(null);
-      const response = await fetch(`/api/holidays?id=${holiday._id}`, {
+      const calendarYear =
+        /^(\d{4})-\d{2}-\d{2}$/.test(holiday.date)
+          ? parseInt(holiday.date.slice(0, 4), 10)
+          : holiday.year;
+      const payload = { ...holiday, year: calendarYear };
+
+      const response = await fetch(`/api/holidays?id=${encodeURIComponent(String(holiday._id))}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(holiday),
+        body: JSON.stringify(payload),
       });
 
       const result = await response.json();
 
       if (result.success) {
-        setHolidays(prev => prev.map(h => h._id === holiday._id ? result.data : h));
         setEditingHoliday(null);
+        await loadHolidays(selectedYear, true);
       } else {
         setError(result.error || 'Failed to update holiday');
       }
@@ -137,14 +149,14 @@ export const HolidayManagement: React.FC<HolidayManagementProps> = ({
 
     try {
       setError(null);
-      const response = await fetch(`/api/holidays?id=${id}`, {
+      const response = await fetch(`/api/holidays?id=${encodeURIComponent(id)}`, {
         method: 'DELETE',
       });
 
       const result = await response.json();
 
       if (result.success) {
-        setHolidays(prev => prev.filter(h => h._id !== id));
+        await loadHolidays(selectedYear, true);
       } else {
         setError(result.error || 'Failed to delete holiday');
       }

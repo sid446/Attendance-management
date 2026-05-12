@@ -33,6 +33,7 @@ import { getScheduledTimes } from '@/lib/scheduleUtils';
 import LeaveTransaction from '@/models/LeaveTransaction';
 import { verifyPartnerReviewToken } from '@/lib/partnerReviewToken';
 import { transporter, mailOptions } from '@/lib/mailer';
+import { isAttendanceDatePartnerOnlyIst } from '@/lib/attendanceRequestApprovalWindow';
 
 function normalizePartnerName(name: string): string {
     return String(name || '').replace(/[.\s]/g, '').toLowerCase();
@@ -141,9 +142,16 @@ export async function POST(request: NextRequest) {
         let successCount = 0;
         const processedRequestsByUser: Record<string, { user: any; requests: any[] }> = {};
 
+        const partnerActor = !!secureApprovedBy;
+
         for (const id of ids) {
             const reqRecord = await AttendanceRequest.findById(id);
-            if (!reqRecord || reqRecord.status !== 'Pending') continue;
+            if (!reqRecord) continue;
+            if (partnerActor) {
+                if (reqRecord.status !== 'Pending') continue;
+            } else if (reqRecord.status !== 'Pending' && reqRecord.status !== 'PendingHr') {
+                continue;
+            }
 
             let isAuthorized = false;
             
@@ -165,25 +173,45 @@ export async function POST(request: NextRequest) {
                 );
             }
 
-            reqRecord.status = action === 'approve' ? 'Approved' : 'Rejected';
+            let deferredToHrOnly = false;
+
             if (action === 'approve') {
-                reqRecord.approvedBy = appliedApprovedBy;
-                reqRecord.approvedByEmail = appliedApprovedByEmail;
-                reqRecord.approvedAt = new Date();
-                reqRecord.hrRemarks = appliedRemark;
-                if (appliedValue !== undefined) reqRecord.hrValue = String(appliedValue);
+                if (partnerActor && !isAttendanceDatePartnerOnlyIst(reqRecord.date)) {
+                    reqRecord.status = 'PendingHr';
+                    reqRecord.partnerRemarks = appliedRemark;
+                    reqRecord.partnerApprovedAt = new Date();
+                    if (appliedValue !== undefined) reqRecord.partnerProposedValue = String(appliedValue);
+                    deferredToHrOnly = true;
+                } else {
+                    reqRecord.status = 'Approved';
+                    reqRecord.approvedBy = appliedApprovedBy;
+                    reqRecord.approvedByEmail = appliedApprovedByEmail;
+                    reqRecord.approvedAt = new Date();
+                    if (partnerActor) {
+                        reqRecord.partnerRemarks = appliedRemark;
+                        if (appliedValue !== undefined) reqRecord.partnerProposedValue = String(appliedValue);
+                    } else {
+                        reqRecord.hrRemarks = appliedRemark;
+                        if (appliedValue !== undefined) reqRecord.hrValue = String(appliedValue);
+                    }
+                }
             } else {
+                reqRecord.status = 'Rejected';
                 reqRecord.rejectedBy = appliedApprovedBy;
                 reqRecord.rejectedByEmail = appliedApprovedByEmail;
                 reqRecord.rejectedAt = new Date();
-                reqRecord.hrRemarks = appliedRemark;
+                if (partnerActor) {
+                    reqRecord.partnerRemarks = appliedRemark;
+                } else {
+                    reqRecord.hrRemarks = appliedRemark;
+                }
             }
             await reqRecord.save();
 
             const { userId, date, requestedStatus, monthYear, startTime, endTime } = reqRecord;
             const userObj = await User.findById(userId);
 
-            if (action === 'approve') {
+            if (action === 'approve' && !deferredToHrOnly) {
                 // Update Attendance Logic
                 let attendance = await Attendance.findOne({ userId, monthYear });
                 const isNewAttendanceRecord = !attendance;
@@ -538,12 +566,16 @@ export async function POST(request: NextRequest) {
             const { user, requests } = processedRequestsByUser[uId];
             if (user && (user.attendanceEmail || user.email)) {
                 try {
-                    const subject = `Attendance Requests ${action === 'approve' ? 'Approved' : 'Rejected'}`;
+                    const hasPendingHr = requests.some((r: any) => r.status === 'PendingHr');
+                    const subject = hasPendingHr
+                        ? `Attendance requests — partner approved, HR review pending`
+                        : `Attendance Requests ${action === 'approve' ? 'Approved' : 'Rejected'}`;
                     const requestsHtml = requests.map((req: any) => `
                         <tr style="border-bottom: 1px solid #e5e5e7;">
                             <td style="padding: 12px 0; font-size: 14px; color: #1d1d1f;">${new Date(req.date).toLocaleDateString('en-GB')}</td>
                             <td style="padding: 12px 0; font-size: 14px; color: #1d1d1f; text-align: center;">${req.requestedStatus}</td>
                             <td style="padding: 12px 0; font-size: 14px; color: #1d1d1f; text-align: right;">${req.reason || '-'}</td>
+                            <td style="padding: 12px 0; font-size: 14px; color: #1d1d1f; text-align: center;">${req.status === 'PendingHr' ? 'Awaiting HR' : req.status}</td>
                         </tr>
                     `).join('');
 
@@ -553,13 +585,17 @@ export async function POST(request: NextRequest) {
                                 <div style="padding: 40px 40px 20px; text-align: center;">
                                     <img src="https://attendance.asija.in/lg.png" alt="Asija Logo" style="width: 56px; height: 56px; margin-bottom: 24px;">
                                     <h1 style="font-size: 26px; font-weight: 600; margin: 0; letter-spacing: -0.02em;">Bulk Action Update</h1>
-                                    <div style="margin-top: 16px; display: inline-block; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; background-color: ${action === 'approve' ? '#e6f4ea' : '#fce8e6'}; color: ${action === 'approve' ? '#008040' : '#d21a0c'}; text-transform: uppercase;">
-                                        ${action === 'approve' ? 'Approved' : 'Rejected'}
+                                    <div style="margin-top: 16px; display: inline-block; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; background-color: ${action === 'approve' ? (hasPendingHr ? '#fef3c7' : '#e6f4ea') : '#fce8e6'}; color: ${action === 'approve' ? (hasPendingHr ? '#92400e' : '#008040') : '#d21a0c'}; text-transform: uppercase;">
+                                        ${action === 'approve' ? (hasPendingHr ? 'Partner approved — HR pending' : 'Approved') : 'Rejected'}
                                     </div>
                                 </div>
                                 <div style="padding: 0 40px 40px;">
                                     <p style="font-size: 17px; color: #424245; margin-bottom: 32px; text-align: center;">
-                                        Hello ${user.name},<br>Multiple attendance correction requests have been ${action === 'approve' ? 'approved' : 'rejected'}.
+                                        Hello ${user.name},<br>${
+                                          hasPendingHr
+                                            ? 'Your partner has approved one or more requests that require HR final approval before attendance is updated.'
+                                            : `Multiple attendance correction requests have been ${action === 'approve' ? 'approved' : 'rejected'}.`
+                                        }
                                     </p>
                                     <div style="background-color: #fbfbfd; border-radius: 14px; padding: 24px; border: 1px solid #d2d2d7;">
                                         <table style="width: 100%; border-collapse: collapse;">
@@ -568,6 +604,7 @@ export async function POST(request: NextRequest) {
                                                     <th style="padding-bottom: 12px; font-size: 12px; color: #86868b; text-align: left; font-weight: 500;">DATE</th>
                                                     <th style="padding-bottom: 12px; font-size: 12px; color: #86868b; text-align: center; font-weight: 500;">STATUS</th>
                                                     <th style="padding-bottom: 12px; font-size: 12px; color: #86868b; text-align: right; font-weight: 500;">REASON</th>
+                                                    <th style="padding-bottom: 12px; font-size: 12px; color: #86868b; text-align: center; font-weight: 500;">STATE</th>
                                                 </tr>
                                             </thead>
                                             <tbody>

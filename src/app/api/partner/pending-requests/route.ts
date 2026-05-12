@@ -4,6 +4,7 @@ import '@/models/User';
 import AttendanceRequest from '@/models/AttendanceRequest';
 import Attendance from '@/models/Attendance';
 import { verifyPartnerReviewToken } from '@/lib/partnerReviewToken';
+import { isAttendanceDatePartnerOnlyIst } from '@/lib/attendanceRequestApprovalWindow';
 
 function normalizePartnerName(name: string): string {
   return String(name || '').replace(/[.\s]/g, '').toLowerCase();
@@ -113,6 +114,7 @@ export async function GET(request: NextRequest) {
           const userEmail = String(userDoc?.email || '').trim().toLowerCase();
           const attendanceEmail = String(userDoc?.attendanceEmail || '').trim().toLowerCase();
           if (!userEmail || !attendanceEmail) return false;
+          if (!isAttendanceDatePartnerOnlyIst(String(r.date || ''))) return false;
           return userEmail === tokenEmail && attendanceEmail === tokenEmail;
         })
         .map((r: any) => String(r._id))

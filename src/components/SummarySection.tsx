@@ -24,18 +24,30 @@ const getEmploymentTypeForDate = (user: User | undefined, date: Date): string | 
   return user.employmentType;
 };
 
+/** Sort key for `YYYY-MM-DD` — integer compare avoids any timezone parsing. */
+function isoCalendarKeyToSortNumber(iso: string): number | null {
+  const t = iso.trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(t);
+  if (!m) return null;
+  return Number(m[1]) * 10000 + Number(m[2]) * 100 + Number(m[3]);
+}
+
+/** Display-only: calendar cell as dd.mm.yyyy from DB key (never pass JS Date into Excel for this). */
+function formatIsoKeyAsDdMmYyyy(isoKey: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(isoKey || '').trim());
+  if (!m) return String(isoKey || '');
+  return `${m[3]}.${m[2]}.${m[1]}`;
+}
+
 /** Chronological sort for attendance date keys (`yyyy-mm-dd` or parseable ISO). Object key order is not reliable. */
 function sortRecordDetailsEntries<T>(recordDetails: Record<string, T> | undefined | null): [string, T][] {
   return Object.entries(recordDetails || {}).sort(([a], [b]) => {
-    const parse = (s: string) => {
-      const t = s.trim();
-      if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return new Date(`${t}T12:00:00`).getTime();
-      const ms = Date.parse(t);
-      return Number.isNaN(ms) ? Number.NaN : ms;
-    };
-    const ta = parse(a);
-    const tb = parse(b);
-    if (!Number.isNaN(ta) && !Number.isNaN(tb)) return ta - tb;
+    const na = isoCalendarKeyToSortNumber(a);
+    const nb = isoCalendarKeyToSortNumber(b);
+    if (na != null && nb != null) return na - nb;
+    const msA = Date.parse(a.trim());
+    const msB = Date.parse(b.trim());
+    if (!Number.isNaN(msA) && !Number.isNaN(msB)) return msA - msB;
     return a.localeCompare(b);
   });
 }
@@ -2628,6 +2640,84 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     ];
     worksheet.insertRow(1, daywiseHeaderLabels);
 
+    /** Calendar day from attendance key `YYYY-MM-DD` without UTC drift (never `new Date('YYYY-MM-DD')`). */
+    const calendarDateFromIsoKey = (iso: string): Date => {
+      const parts = String(iso || '')
+        .trim()
+        .split('-');
+      if (parts.length !== 3) return new Date(iso);
+      const y = Number(parts[0]);
+      const mo = Number(parts[1]);
+      const d = Number(parts[2]);
+      if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return new Date(iso);
+      return new Date(y, mo - 1, d);
+    };
+
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+    const toIsoFromLocalDate = (dt: Date) =>
+      `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+
+    /** Selected summary period as inclusive ISO date bounds (string compare safe for YYYY-MM-DD). */
+    const getDaywiseExportIsoInclusiveRange = (): { min: string; max: string } | null => {
+      if (filterType === 'month') {
+        const y = selectedYear;
+        const m = selectedMonth;
+        const lastD = new Date(y, m, 0).getDate();
+        return { min: `${y}-${pad2(m)}-01`, max: `${y}-${pad2(m)}-${pad2(lastD)}` };
+      }
+      if (filterType === 'week' && currentWeekStart && /^\d{4}-\d{2}-\d{2}$/.test(currentWeekStart.trim())) {
+        const [wy, wm, wd] = currentWeekStart.trim().split('-').map(Number);
+        let ws = new Date(wy, wm - 1, wd);
+        const firstDay = new Date(selectedYear, selectedMonth - 1, 1);
+        const lastDayMonth = new Date(selectedYear, selectedMonth, 0);
+        if (ws < firstDay) ws = new Date(firstDay);
+        let we = new Date(ws);
+        we.setDate(we.getDate() + 6);
+        if (we > lastDayMonth) we = new Date(lastDayMonth);
+        return { min: toIsoFromLocalDate(ws), max: toIsoFromLocalDate(we) };
+      }
+      if (filterType === 'range' && rangeStart && rangeEnd) {
+        const min = rangeStart.trim().substring(0, 10);
+        const max = rangeEnd.trim().substring(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(min) && /^\d{4}-\d{2}-\d{2}$/.test(max)) {
+          return min <= max ? { min, max } : { min: max, max: min };
+        }
+      }
+      return null;
+    };
+
+    const daywiseIsoRange = getDaywiseExportIsoInclusiveRange();
+    const includeDaywiseIsoDate = (isoKey: string) => {
+      if (!daywiseIsoRange) return true;
+      const k = String(isoKey || '').trim().substring(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) return true;
+      return k >= daywiseIsoRange.min && k <= daywiseIsoRange.max;
+    };
+
+    const round2 = (n: number): number => {
+      if (!Number.isFinite(n)) return n;
+      return Math.round(n * 100) / 100;
+    };
+
+    /** Parse H:MM / HH:MM to decimal hours for numeric cells (same string pattern as formatHoursMinutes output). */
+    const hmStringToDecimalHours = (s: string): number | '' => {
+      if (!s || typeof s !== 'string') return '';
+      const t = s.trim();
+      if (t === '' || /^0h\s*0m$/i.test(t)) return 0;
+      const match = t.match(/^(\d+):(\d{2})$/);
+      if (!match) return '';
+      const h = Number(match[1]);
+      const min = Number(match[2]);
+      if (!Number.isFinite(h) || !Number.isFinite(min)) return '';
+      return round2(h + min / 60);
+    };
+
+    const daywiseNumericOrString = (s: string): number | string => {
+      if (!s || String(s).trim() === '') return '';
+      const n = Number(s);
+      return Number.isFinite(n) ? round2(n) : s;
+    };
+
     const formatSecondsToHMS = (seconds: number): string => {
       const sign = seconds < 0 ? '-' : '';
       const abs = Math.abs(seconds);
@@ -2786,7 +2876,7 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
 
     // Helper to get Weekdays/Weekoffs
     const getWeekType = (date: string, record: any) => {
-      const d = new Date(date);
+      const d = calendarDateFromIsoKey(date);
       const day = d.getDay();
       if (record && typeof record.status === 'string' && record.status.toLowerCase().includes('weekoff')) return 'Weekoff';
       return day === 0 ? 'Weekoff' : 'Weekdays';
@@ -2803,7 +2893,8 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
     const [year, month] = monthYear.split('-').map(Number);
     const recordsMonth = item.recordDetails || {};
     sortRecordDetailsEntries(recordsMonth).forEach(([date, record]: [string, any]) => {
-      const d = new Date(date);
+      if (!includeDaywiseIsoDate(date)) return;
+      const d = calendarDateFromIsoKey(date);
       if (d.getFullYear() === year && d.getMonth() + 1 === month) {
         // Use edited in/out times for calculation
         const actualIn = (record.editedCheckin ?? record.inTime ?? '').trim();
@@ -2823,9 +2914,10 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
         const user = allUsers.find(u => u._id === item.userId);
         if (user && item.recordDetails) {
           for (const [dateStr, rec] of sortRecordDetailsEntries(item.recordDetails)) {
+            if (!includeDaywiseIsoDate(dateStr)) continue;
             if (holidayDates.has(dateStr)) continue; // skip API holidays
             if (rec.typeOfPresence === 'Holiday') continue;
-            const dateObj = new Date(dateStr);
+            const dateObj = calendarDateFromIsoKey(dateStr);
             const dayName = dateObj.toLocaleString('en-US', { weekday: 'long' }).toLowerCase();
             // Find applicable schedule entry for this date
             let scheduleEntry;
@@ -2882,7 +2974,8 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       }
       const records = item.recordDetails || {};
       sortRecordDetailsEntries(records).forEach(([date, record]: [string, any]) => {
-        const d = new Date(date);
+        if (!includeDaywiseIsoDate(date)) return;
+        const d = calendarDateFromIsoKey(date);
         const dayName = d.toLocaleString('en-US', { weekday: 'long' });
         // Robust extraction for each column
         // Helper to format time as H:M
@@ -3056,10 +3149,30 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           daySeconds = 0;
         }
         dailyExcessShortSeconds.push(daySeconds);
+
+        let workingHrsExport: number | string = '';
+        if (typeof workingHrs === 'number' && !Number.isNaN(workingHrs)) {
+          workingHrsExport = round2(workingHrs);
+        } else {
+          const hm = formatTime(workingHrs);
+          const dec = hmStringToDecimalHours(hm);
+          workingHrsExport = dec === '' ? hm : dec;
+        }
+
+        let scheduledTimeExport: number | string = '';
+        if (scheduledTime === '') {
+          scheduledTimeExport = '';
+        } else if (/^0h\s*0m$/i.test(String(scheduledTime).trim())) {
+          scheduledTimeExport = 0;
+        } else {
+          const dec = hmStringToDecimalHours(String(scheduledTime));
+          scheduledTimeExport = dec === '' ? scheduledTime : dec;
+        }
+
         worksheet.addRow({
           weekType,
           source: getSource(record),
-          date,
+          date: formatIsoKeyAsDdMmYyyy(date),
           day: dayName,
           employeeName: item.userName,
           designation: item.designation || '',
@@ -3072,18 +3185,16 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           trueFalseOutTime: String(actualOutTimeOriginal) === String(actualOutTimeEditable) ? 'True' : 'False',
           scheduledInTime: formatTime(scheduledInTime),
           scheduledOutTime: formatTime(scheduledOutTime),
-          maxWFH: String(maxWFH),
-          actualWFH: String(actualWFH),
-          maxOutstation: String(maxOutstation),
-          actualOutstation: String(actualOutstation),
-          workingHrs: typeof workingHrs === 'number' && !isNaN(workingHrs)
-            ? `${Math.floor(workingHrs)}:${Math.round((workingHrs % 1) * 60).toString().padStart(2, '0')}`
-            : formatTime(workingHrs),
-          scheduledTime: scheduledTime,
-          scheduledHrsMonth: scheduledHrsMonth ? formatHoursMinutes(scheduledHrsMonth) : '',
-          workingHrsMonth: workingHrsMonth ? formatHoursMinutes(workingHrsMonth) : '',
+          maxWFH: maxWFH === '' ? '' : round2(Number(maxWFH)),
+          actualWFH: actualWFH === '' ? '' : daywiseNumericOrString(String(actualWFH)),
+          maxOutstation: maxOutstation === '' ? '' : round2(Number(maxOutstation)),
+          actualOutstation: actualOutstation === '' ? '' : daywiseNumericOrString(String(actualOutstation)),
+          workingHrs: workingHrsExport,
+          scheduledTime: scheduledTimeExport,
+          scheduledHrsMonth: scheduledHrsMonth ? round2(scheduledHrsMonth) : '',
+          workingHrsMonth: workingHrsMonth ? round2(workingHrsMonth) : '',
           excessShortHrsMonth: '',
-          excessShortHrsDay: formatSecondsToHMS(daySeconds),
+          excessShortHrsDay: round2(daySeconds / 3600),
           halfDays,
         });
         rowIndexes.push(worksheet.rowCount);
@@ -3091,9 +3202,9 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
       // After all rows for this user/month, sum daily seconds and update monthly column
       if (dailyExcessShortSeconds.length > 0) {
         const totalMonthSeconds = dailyExcessShortSeconds.reduce((a: number, b: number) => a + b, 0);
-        const excessShortHrsMonth = formatSecondsToHMS(totalMonthSeconds);
+        const excessShortHrsMonthHours = round2(totalMonthSeconds / 3600);
         for (const rowIdx of rowIndexes) {
-          worksheet.getRow(rowIdx).getCell('excessShortHrsMonth').value = excessShortHrsMonth;
+          worksheet.getRow(rowIdx).getCell('excessShortHrsMonth').value = excessShortHrsMonthHours;
         }
       }
     };
@@ -3119,6 +3230,20 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
 
     const daywiseLeftAlignKeys = new Set(['source', 'employeeName', 'designation']);
 
+    const daywiseNumericColumnFmt: Record<string, string> = {
+      date: '@',
+      maxWFH: '0.00',
+      maxOutstation: '0.00',
+      actualWFH: '0.00',
+      actualOutstation: '0.00',
+      workingHrs: '0.00',
+      scheduledTime: '0.00',
+      scheduledHrsMonth: '0.00',
+      workingHrsMonth: '0.00',
+      excessShortHrsMonth: '0.00',
+      excessShortHrsDay: '0.00',
+    };
+
     worksheet.eachRow((row, rowNumber) => {
       if (rowNumber === 1) return;
       row.height = 15;
@@ -3140,6 +3265,9 @@ export const SummarySection: React.FC<SummarySectionProps> = ({
           indent: alignLeft ? 1 : 0,
         };
         cell.border = daywiseBorderThin;
+        if (colKey && daywiseNumericColumnFmt[colKey]) {
+          cell.numFmt = daywiseNumericColumnFmt[colKey];
+        }
       });
 
       const presentAbsentCell = row.getCell('presentAbsent');

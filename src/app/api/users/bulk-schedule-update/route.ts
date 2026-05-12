@@ -1,10 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import User, { IUser } from '@/models/User';
+import { getHrOperatorEmailFromRequest } from '@/lib/hrAuthServer';
+import { loadHrConsolePermissionDoc } from '@/lib/hrConsolePermissionDb';
+import { assertHrSection, effectiveFromDoc } from '@/lib/hrConsolePermissionUtils';
 
 export async function POST(request: NextRequest) {
   try {
     await dbConnect();
+
+    const operatorEmail = await getHrOperatorEmailFromRequest(request);
+    if (!operatorEmail) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+    const permDoc = await loadHrConsolePermissionDoc(operatorEmail);
+    const effective = effectiveFromDoc(operatorEmail, permDoc);
+    const sec = assertHrSection(effective, 'employeeMasterUpload', 'edit');
+    if (sec) return sec;
+    if (effective.sections.employees !== 'edit' || effective.employeeTabs.schedule !== 'edit') {
+      return NextResponse.json({ success: false, error: 'Not allowed to bulk-update schedules' }, { status: 403 });
+    }
 
     const body = await request.json();
     const { schedules } = body;

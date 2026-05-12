@@ -88,7 +88,6 @@ export const TeamAttendanceAccessSection: React.FC<TeamAttendanceAccessSectionPr
   const filteredUsers = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     return activeUsers.filter((user) => {
-      if (user._id === selectedViewerId) return false;
       if (!term) return true;
       return (
         String(user.name || '').toLowerCase().includes(term) ||
@@ -96,7 +95,7 @@ export const TeamAttendanceAccessSection: React.FC<TeamAttendanceAccessSectionPr
         String(user.odId || '').toLowerCase().includes(term)
       );
     });
-  }, [activeUsers, searchTerm, selectedViewerId]);
+  }, [activeUsers, searchTerm]);
 
   const previewUsers = useMemo(() => {
     if (!selectedViewer || !isActive) return [];
@@ -112,7 +111,7 @@ export const TeamAttendanceAccessSection: React.FC<TeamAttendanceAccessSectionPr
     }
 
     activeUsers.forEach((user) => {
-      if (user._id !== selectedViewerId && extraUserIds.includes(user._id)) {
+      if (extraUserIds.includes(user._id)) {
         visible.set(user._id, user);
       }
       if (
@@ -362,6 +361,21 @@ export const TeamAttendanceAccessSection: React.FC<TeamAttendanceAccessSectionPr
               <h3 className="text-sm font-semibold text-slate-900">Extra Employees</h3>
               <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">{extraUserIds.length} selected</span>
             </div>
+            {selectedViewer && (
+              <label className="mb-3 flex items-start gap-3 rounded-lg border border-blue-100 bg-blue-50/70 px-3 py-2.5 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={extraUserIds.includes(selectedViewerId)}
+                  onChange={() => toggleUser(selectedViewerId)}
+                  disabled={!isActive}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300"
+                />
+                <span>
+                  <span className="block font-medium text-slate-900">Include viewer (self)</span>
+                  <span className="text-xs text-slate-600">Show {selectedViewer.name}&apos;s own row in the Team Attendance list for this viewer.</span>
+                </span>
+              </label>
+            )}
             <input
               type="text"
               value={searchTerm}

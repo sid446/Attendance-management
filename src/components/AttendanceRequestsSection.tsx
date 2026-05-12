@@ -18,7 +18,9 @@ interface AttendanceRequest {
   originalStatus: string;
   reason?: string;
   partnerRemarks?: string;
-  status: 'Pending' | 'Approved' | 'Rejected';
+  partnerApprovedAt?: string;
+  partnerProposedValue?: string;
+  status: 'Pending' | 'PendingHr' | 'Approved' | 'Rejected';
   startTime?: string;
   endTime?: string;
   approvedBy?: string;
@@ -41,7 +43,9 @@ interface DateRangeGroup {
   requestedStatus: string;
   reason?: string;
   partnerRemarks?: string;
-  status: 'Pending' | 'Approved' | 'Rejected';
+  partnerApprovedAt?: string;
+  partnerProposedValue?: string;
+  status: 'Pending' | 'PendingHr' | 'Approved' | 'Rejected';
   dates: string[];
   startDate: string;
   endDate: string;
@@ -74,10 +78,11 @@ const REQUESTS_WORKFLOW_STEPS = ['Set filters', 'Table or cards', 'Export or act
 const DateRangeRequestBlock: React.FC<{
   rangeGroup: DateRangeGroup;
   isAdminView?: boolean;
+  hrAdminHighlight?: boolean;
   onApproveReject?: (requestId: string | string[], action: 'approve' | 'reject', remarks?: string) => void;
   processingRequest?: string | null;
   openApprovalModal?: (requestId: string | string[], action: 'approve' | 'reject') => void;
-}> = ({ rangeGroup, isAdminView = false, onApproveReject, processingRequest, openApprovalModal }) => {
+}> = ({ rangeGroup, isAdminView = false, hrAdminHighlight = false, onApproveReject, processingRequest, openApprovalModal }) => {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'Approved':
@@ -86,6 +91,8 @@ const DateRangeRequestBlock: React.FC<{
         return <XCircle className="h-5 w-5 text-rose-600" aria-hidden />;
       case 'Pending':
         return <Clock className="h-5 w-5 text-amber-600" aria-hidden />;
+      case 'PendingHr':
+        return <AlertCircle className="h-5 w-5 text-rose-600" aria-hidden />;
       default:
         return <AlertCircle className="h-5 w-5 text-slate-500" aria-hidden />;
     }
@@ -99,6 +106,8 @@ const DateRangeRequestBlock: React.FC<{
         return 'border-rose-200 bg-rose-50';
       case 'Pending':
         return 'border-amber-200 bg-amber-50';
+      case 'PendingHr':
+        return 'border-rose-300 bg-rose-50';
       default:
         return 'border-slate-200 bg-slate-50';
     }
@@ -115,8 +124,11 @@ const DateRangeRequestBlock: React.FC<{
     return `${start.toLocaleDateString('en-GB')} - ${end.toLocaleDateString('en-GB')}`;
   };
 
+  const blockHr = hrAdminHighlight && rangeGroup.status === 'PendingHr';
   return (
-    <div className={`mb-4 rounded-lg border p-4 shadow-sm ${getStatusColor(rangeGroup.status)}`}>
+    <div
+      className={`mb-4 rounded-lg border p-4 shadow-sm ${blockHr ? 'border-rose-400 bg-rose-50 ring-1 ring-rose-200' : getStatusColor(rangeGroup.status)}`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -152,6 +164,13 @@ const DateRangeRequestBlock: React.FC<{
             <div className="mb-2">
               <span className="font-medium text-slate-700">Reason: </span>
               <span className="text-slate-900">{rangeGroup.reason}</span>
+            </div>
+          )}
+
+          {rangeGroup.status === 'PendingHr' && (
+            <div className="mb-2 rounded-md border border-rose-200 bg-rose-100/80 px-3 py-2 text-sm text-rose-900">
+              Partner approved — <strong>HR approval required</strong> (attendance date outside the current or previous
+              calendar month, IST). Final approval updates attendance.
             </div>
           )}
 
@@ -191,13 +210,15 @@ const DateRangeRequestBlock: React.FC<{
                   ? 'text-emerald-800'
                   : rangeGroup.status === 'Rejected'
                     ? 'text-rose-800'
-                    : 'text-amber-800'
+                    : rangeGroup.status === 'PendingHr'
+                      ? 'text-rose-800'
+                      : 'text-amber-800'
               }`}
             >
-              {rangeGroup.status}
+              {rangeGroup.status === 'PendingHr' ? 'Pending (HR)' : rangeGroup.status}
             </span>
           </div>
-          {isAdminView && rangeGroup.status === 'Pending' && (
+          {isAdminView && (rangeGroup.status === 'Pending' || rangeGroup.status === 'PendingHr') && (
             <div className="flex gap-2">
               <button
                 type="button"
@@ -295,6 +316,8 @@ const groupRequestsIntoRanges = (requests: AttendanceRequest[]): {
           requestedStatus: firstRequest.requestedStatus,
           reason: firstRequest.reason,
           partnerRemarks: firstRequest.partnerRemarks,
+          partnerApprovedAt: firstRequest.partnerApprovedAt,
+          partnerProposedValue: firstRequest.partnerProposedValue,
           status: firstRequest.status,
           dates: range.map(r => r.date),
           startDate: range[0].date,
@@ -326,13 +349,26 @@ const AttendanceRequestsTable: React.FC<{
   getStatusIcon: (status: string) => React.ReactNode;
   getStatusColor: (status: string) => string;
   isAdminView?: boolean;
+  hrAdminHighlight?: boolean;
   onApproveReject?: (requestId: string | string[], action: 'approve' | 'reject', remarks?: string) => void;
   processingRequest?: string | null;
   openApprovalModal?: (requestId: string | string[], action: 'approve' | 'reject') => void;
-}> = ({ rangeGroups, individualRequests, getStatusIcon, getStatusColor, isAdminView = false, onApproveReject, processingRequest, openApprovalModal }) => {
+}> = ({
+  rangeGroups,
+  individualRequests,
+  getStatusIcon,
+  getStatusColor,
+  isAdminView = false,
+  hrAdminHighlight = false,
+  onApproveReject,
+  processingRequest,
+  openApprovalModal,
+}) => {
   const thCls =
     'border-b border-slate-200 px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500';
   const tdCls = 'border-b border-slate-200 px-4 py-3 align-top';
+  const pendingHrRow = (status: string) =>
+    hrAdminHighlight && status === 'PendingHr' ? 'bg-rose-50 hover:bg-rose-100/80' : 'hover:bg-slate-50/80';
   return (
     <div className="overflow-x-auto rounded-md border border-blue-200/65 bg-panel">
       <table className="w-full min-w-[1100px] border-collapse text-left text-sm">
@@ -355,7 +391,7 @@ const AttendanceRequestsTable: React.FC<{
         </thead>
         <tbody className="bg-panel">
           {rangeGroups.map((group) => (
-            <tr key={`range-${group.ids.join('-')}`} className="transition-colors hover:bg-slate-50/80">
+            <tr key={`range-${group.ids.join('-')}`} className={`transition-colors ${pendingHrRow(group.status)}`}>
               <td className={tdCls}>
                 <div>
                   <div className="font-medium text-slate-900">{group.userName}</div>
@@ -385,8 +421,13 @@ const AttendanceRequestsTable: React.FC<{
                   className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${getStatusColor(group.status)}`}
                 >
                   {getStatusIcon(group.status)}
-                  {group.status}
+                  {group.status === 'PendingHr' ? 'Pending (HR)' : group.status}
                 </div>
+                {group.status === 'PendingHr' && (
+                  <div className="mt-1 max-w-xs text-xs leading-snug text-rose-800">
+                    Partner approved — HR required (date outside current/previous month, IST).
+                  </div>
+                )}
               </td>
               <td className={tdCls}>
                 <span className="text-slate-600">{group.approvedBy || group.rejectedBy || '—'}</span>
@@ -405,7 +446,9 @@ const AttendanceRequestsTable: React.FC<{
                 <span className="text-slate-600">{group.approvedByEmail || group.rejectedByEmail || '—'}</span>
               </td>
               <td className={tdCls}>
-                <span className="text-slate-600">{group.hrValue || '—'}</span>
+                <span className="text-slate-600">
+                  {group.hrValue || (group.status === 'PendingHr' ? group.partnerProposedValue : '') || '—'}
+                </span>
               </td>
               <td className={tdCls}>
                 <span className="text-slate-600">{group.partnerName}</span>
@@ -418,7 +461,7 @@ const AttendanceRequestsTable: React.FC<{
               </td>
               {isAdminView && (
                 <td className={tdCls}>
-                  {group.status === 'Pending' && (
+                  {group.status === 'Pending' || group.status === 'PendingHr' ? (
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
@@ -437,14 +480,14 @@ const AttendanceRequestsTable: React.FC<{
                         {processingRequest === group.ids[0] ? '…' : 'Reject'}
                       </button>
                     </div>
-                  )}
+                  ) : null}
                 </td>
               )}
             </tr>
           ))}
 
           {individualRequests.map((request) => (
-            <tr key={request._id} className="transition-colors hover:bg-slate-50/80">
+            <tr key={request._id} className={`transition-colors ${pendingHrRow(request.status)}`}>
               <td className={tdCls}>
                 <div>
                   <div className="font-medium text-slate-900">{request.userName}</div>
@@ -472,8 +515,13 @@ const AttendanceRequestsTable: React.FC<{
                   className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${getStatusColor(request.status)}`}
                 >
                   {getStatusIcon(request.status)}
-                  {request.status}
+                  {request.status === 'PendingHr' ? 'Pending (HR)' : request.status}
                 </div>
+                {request.status === 'PendingHr' && (
+                  <div className="mt-1 max-w-xs text-xs leading-snug text-rose-800">
+                    Partner approved — HR required (date outside current/previous month, IST).
+                  </div>
+                )}
               </td>
               <td className={tdCls}>
                 <span className="text-slate-600">{request.approvedBy || request.rejectedBy || '—'}</span>
@@ -492,7 +540,9 @@ const AttendanceRequestsTable: React.FC<{
                 <span className="text-slate-600">{request.approvedByEmail || request.rejectedByEmail || '—'}</span>
               </td>
               <td className={tdCls}>
-                <span className="text-slate-600">{request.hrValue || '—'}</span>
+                <span className="text-slate-600">
+                  {request.hrValue || (request.status === 'PendingHr' ? request.partnerProposedValue : '') || '—'}
+                </span>
               </td>
               <td className={tdCls}>
                 <span className="text-slate-600">{request.partnerName}</span>
@@ -505,7 +555,7 @@ const AttendanceRequestsTable: React.FC<{
               </td>
               {isAdminView && (
                 <td className={tdCls}>
-                  {request.status === 'Pending' && (
+                  {request.status === 'Pending' || request.status === 'PendingHr' ? (
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
@@ -524,7 +574,7 @@ const AttendanceRequestsTable: React.FC<{
                         {processingRequest === request._id ? '…' : 'Reject'}
                       </button>
                     </div>
-                  )}
+                  ) : null}
                 </td>
               )}
             </tr>
@@ -547,6 +597,8 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'Pending' | 'Approved' | 'Rejected'>('all');
+  const matchesStatusFilter = (status: string) =>
+    filter === 'all' || status === filter || (filter === 'Pending' && status === 'PendingHr');
   const [monthFilter, setMonthFilter] = useState<string>('all');
   const [leaveTypeFilter, setLeaveTypeFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('table');
@@ -568,34 +620,57 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
     return status.includes('half') || status.includes('leave') || requestedStatus === 'On leave';
   };
 
-  // Helper function to get default value based on request type
+  const isLeaveRequestType = (requestedStatus: string): boolean => {
+    const status = requestedStatus.toLowerCase();
+    return status.includes('leave') || requestedStatus === 'On leave';
+  };
+
+  /** Align with partner review-all: WFH 0.75, OS/outstation/client/onsite 1.2, else 1; half 0.5; leave none. */
   const getDefaultValueForType = (requestedStatus: string): string => {
     const status = requestedStatus.toLowerCase();
-    if (status.includes('half')) {
-      return '0.5';
-    }
-    if (status.includes('leave') || requestedStatus === 'On leave') {
-      return ''; // No value needed for leave
-    }
-    if (status.includes('wfh')) {
-      return '0.75';
-    }
-    if (status.includes('outstation')) {
+    if (status.includes('half')) return '0.5';
+    if (isLeaveRequestType(requestedStatus)) return '';
+    if (status.includes('wfh')) return '0.75';
+    if (
+      status.includes('outstation') ||
+      status.includes('client place') ||
+      status.includes('clientplace') ||
+      status.includes('onsite') ||
+      status.includes('os-p')
+    ) {
       return '1.2';
     }
     return '1';
   };
 
-  // Helper function to get max value for a request type
   const getMaxValueForType = (requestedStatus: string): number | null => {
     const status = requestedStatus.toLowerCase();
-    if (status.includes('wfh')) {
-      return 0.75;
-    }
-    if (status.includes('outstation')) {
+    if (status.includes('half')) return 0.5;
+    if (isLeaveRequestType(requestedStatus)) return null;
+    if (status.includes('wfh')) return 0.75;
+    if (
+      status.includes('outstation') ||
+      status.includes('client place') ||
+      status.includes('clientplace') ||
+      status.includes('onsite') ||
+      status.includes('os-p')
+    ) {
       return 1.2;
     }
-    return null;
+    return 1;
+  };
+
+  /** Resolve numeric attendance value for approve (leave → undefined). */
+  const resolveApproveValueNumber = (requestedStatus: string, raw?: string): number | undefined => {
+    if (isLeaveRequestType(requestedStatus)) return undefined;
+    const trimmed = String(raw ?? '').trim().replace(',', '.');
+    const defStr = getDefaultValueForType(requestedStatus);
+    let n = trimmed === '' ? NaN : parseFloat(trimmed);
+    if (!Number.isFinite(n)) n = defStr === '' ? NaN : parseFloat(defStr);
+    if (!Number.isFinite(n)) return undefined;
+    const max = getMaxValueForType(requestedStatus);
+    if (max != null) n = Math.min(Math.max(0, n), max);
+    return n;
   };
 
   const fetchRequests = async () => {
@@ -640,10 +715,8 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
   const computeApprovalValueForIds = (ids: string[]): string => {
     const first = requests.find(r => r._id === ids[0]);
     if (!first) return '';
-    const status = first.requestedStatus || '';
-    if (status.toLowerCase().includes('half')) return '0.5';
-    if (isFixedValueType(status)) return '';
-    return getDefaultValueForType(status);
+    const n = resolveApproveValueNumber(first.requestedStatus, '');
+    return n !== undefined ? String(n) : '';
   };
 
   const applyActionsFromExcel = async (file: File) => {
@@ -723,6 +796,12 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
         colIndex('Remark') >= 0 ? colIndex('Remark') :
         colIndex('Remarks');
 
+      const valueCol =
+        colIndex('Value') >= 0 ? colIndex('Value') :
+        colIndex('Approval Value') >= 0 ? colIndex('Approval Value') :
+        colIndex('Attendance Value') >= 0 ? colIndex('Attendance Value') :
+        -1;
+
       if (requestIdsCol < 0) {
         alert('Missing "Request ID(s)" column in the Excel.');
         return;
@@ -749,6 +828,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
 
         const decision = String(decisionRaw ?? '').trim().toLowerCase();
         const remarks = String(remarkRaw ?? '').trim();
+        const valueRaw = valueCol >= 0 ? row[valueCol] : '';
 
         if (!ids.length) {
           results.push({ rowIndex: excelRowNumber, ok: false, message: 'Missing Request ID(s)' });
@@ -763,6 +843,16 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
           continue;
         }
 
+        const firstReq = requests.find(r => r._id === ids[0]);
+        const excelValueStr =
+          valueRaw !== undefined && valueRaw !== null && String(valueRaw).trim() !== ''
+            ? String(valueRaw)
+            : '';
+        const resolvedNum =
+          action === 'approve' && firstReq
+            ? resolveApproveValueNumber(firstReq.requestedStatus, excelValueStr)
+            : undefined;
+
         // Use the same APIs as UI (single vs bulk), but avoid re-fetching after every row.
         try {
           let response: Response;
@@ -774,10 +864,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
                 action,
                 ids,
                 remark: remarks,
-                value: action === 'approve' ? (() => {
-                  const v = computeApprovalValueForIds(ids);
-                  return v ? parseFloat(v) : undefined;
-                })() : undefined,
+                value: action === 'approve' ? resolvedNum : undefined,
                 approvedBy: 'HR',
                 approvedByEmail: 'hr@asija.in'
               }),
@@ -790,7 +877,12 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
                 requestId: ids[0],
                 action,
                 remarks,
-                value: action === 'approve' ? computeApprovalValueForIds(ids) : '',
+                value:
+                  action === 'approve'
+                    ? resolvedNum !== undefined
+                      ? String(resolvedNum)
+                      : ''
+                    : '',
                 approvedBy: 'HR',
                 approvedByEmail: 'hr@asija.in'
               }),
@@ -904,7 +996,11 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
       const reqIds = Array.isArray(requestId) ? requestId : [requestId];
       const req = requests.find(r => r._id === reqIds[0]);
       if (req) {
-        setApprovalValue(getDefaultValueForType(req.requestedStatus));
+        if (req.status === 'PendingHr' && req.partnerProposedValue) {
+          setApprovalValue(req.partnerProposedValue);
+        } else {
+          setApprovalValue(getDefaultValueForType(req.requestedStatus));
+        }
       } else {
         setApprovalValue('');
       }
@@ -930,7 +1026,6 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
 
     // Value cap logic for approval
     if (approvalAction === 'approve') {
-      // Find the request(s) being approved
       let reqs: AttendanceRequest[] = [];
       if (Array.isArray(selectedRequestId)) {
         reqs = requests.filter(r => selectedRequestId.includes(r._id));
@@ -938,40 +1033,32 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
         const req = requests.find(r => r._id === selectedRequestId);
         if (req) reqs = [req];
       }
-      // Only check if value is entered
-      if (approvalValue) {
-        let maxVal = null;
-        let status = reqs[0]?.requestedStatus || '';
-        if (status === 'WFH - weekdays' || status === 'WFH - weekoff') {
-          maxVal = 0.75;
-        } else if (status === 'Present - outstation') {
-          maxVal = 1.2;
-        }
-        if (maxVal !== null) {
-          const valNum = parseFloat(approvalValue);
-          if (isNaN(valNum) || valNum > maxVal) {
-            setApprovalValueError(`Max value for ${status} is ${maxVal}`);
-            return;
-          }
+      const req = reqs[0];
+      if (req && !isLeaveRequestType(req.requestedStatus) && !req.requestedStatus.toLowerCase().includes('half')) {
+        const maxVal = getMaxValueForType(req.requestedStatus);
+        const effectiveRaw = approvalValue.trim() === '' ? getDefaultValueForType(req.requestedStatus) : approvalValue;
+        const valNum = parseFloat(effectiveRaw.replace(',', '.'));
+        if (maxVal != null && (!Number.isFinite(valNum) || valNum > maxVal || valNum < 0)) {
+          setApprovalValueError(`Value must be between 0 and ${maxVal} for ${req.requestedStatus}`);
+          return;
         }
       }
     }
 
     setApprovalValueError(null);
     
-    // Determine the value to send
     let valueToSend = approvalValue;
     if (approvalAction === 'approve') {
       const reqIds = Array.isArray(selectedRequestId) ? selectedRequestId : [selectedRequestId];
       const req = requests.find(r => r._id === reqIds[0]);
       if (req) {
-        // For half-day, always use 0.5
         if (req.requestedStatus.toLowerCase().includes('half')) {
           valueToSend = '0.5';
-        }
-        // For leave, don't send value
-        else if (isFixedValueType(req.requestedStatus)) {
+        } else if (isLeaveRequestType(req.requestedStatus)) {
           valueToSend = '';
+        } else {
+          const n = resolveApproveValueNumber(req.requestedStatus, approvalValue);
+          valueToSend = n !== undefined ? String(n) : '';
         }
       }
     }
@@ -1133,7 +1220,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
   const exportToExcel = async () => {
     const { rangeGroups, individualRequests } = groupRequestsIntoRanges(requests);
     const filteredRangeGroups = rangeGroups.filter(group =>
-      (filter === 'all' || group.status === filter) &&
+      matchesStatusFilter(group.status) &&
       (monthFilter === 'all' || group.dates.some(date => {
         const requestDate = new Date(date);
         const monthYear = `${requestDate.getFullYear()}-${String(requestDate.getMonth() + 1).padStart(2, '0')}`;
@@ -1142,7 +1229,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
       (leaveTypeFilter === 'all' || group.requestedStatus === leaveTypeFilter)
     );
     const filteredIndividualRequests = individualRequests.filter(request =>
-      (filter === 'all' || request.status === filter) &&
+      matchesStatusFilter(request.status) &&
       (monthFilter === 'all' || request.monthYear === monthFilter) &&
       (leaveTypeFilter === 'all' || request.requestedStatus === leaveTypeFilter)
     );
@@ -1161,6 +1248,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
       { header: 'End Date', key: 'endDate', width: 15 },
       { header: 'Days', key: 'days', width: 8 },
       { header: 'Requested Status', key: 'requestedStatus', width: 25 },
+      { header: 'Value (default if approve)', key: 'defaultApproveValue', width: 18 },
       { header: 'Time (Start)', key: 'startTime', width: 12 },
       { header: 'Time (End)', key: 'endTime', width: 12 },
       { header: 'Reason', key: 'reason', width: 35 },
@@ -1187,15 +1275,17 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
         endDate: new Date(isRange ? item.endDate : item.date).toLocaleDateString('en-GB'),
         days: isRange ? item.dates.length : 1,
         requestedStatus: item.requestedStatus,
+        defaultApproveValue:
+          isLeaveRequestType(item.requestedStatus) ? '' : getDefaultValueForType(item.requestedStatus),
         startTime: item.startTime || '',
         endTime: item.endTime || '',
         reason: item.reason || '',
-        status: item.status,
+        status: item.status === 'PendingHr' ? 'PendingHr (await HR)' : item.status,
         actionBy: item.approvedBy || item.rejectedBy || '-',
         processedDate: (item.approvedAt || item.rejectedAt) ? new Date(item.approvedAt || item.rejectedAt).toLocaleDateString('en-GB') : '-',
         processedTime: (item.approvedAt || item.rejectedAt) ? new Date(item.approvedAt || item.rejectedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-',
         email: item.approvedByEmail || item.rejectedByEmail || '',
-        hrValue: item.hrValue || '',
+        hrValue: item.hrValue || (item.status === 'PendingHr' ? item.partnerProposedValue : '') || '',
         submittedDate: new Date(item.createdAt).toLocaleDateString('en-GB'),
         submittedTime: new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         partnerRemarks: item.partnerRemarks || '',
@@ -1258,6 +1348,9 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
           if (val === 'Approved') cell.font = { color: { argb: 'FF059669' }, bold: true };
           if (val === 'Rejected') cell.font = { color: { argb: 'FFDC2626' }, bold: true };
           if (val === 'Pending') cell.font = { color: { argb: 'FFD97706' }, bold: true };
+          if (val === 'PendingHr' || (typeof val === 'string' && val.includes('PendingHr'))) {
+            cell.font = { color: { argb: 'FFDC2626' }, bold: true };
+          }
         }
       });
     });
@@ -1279,7 +1372,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
   const { rangeGroups, individualRequests } = groupRequestsIntoRanges(requests);
 
   const filteredRangeGroups = rangeGroups.filter(group =>
-    (filter === 'all' || group.status === filter) &&
+    matchesStatusFilter(group.status) &&
     (monthFilter === 'all' || group.dates.some(date => {
       const requestDate = new Date(date);
       const monthYear = `${requestDate.getFullYear()}-${String(requestDate.getMonth() + 1).padStart(2, '0')}`;
@@ -1289,10 +1382,12 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
   );
 
   const filteredIndividualRequests = individualRequests.filter(request =>
-    (filter === 'all' || request.status === filter) &&
+    matchesStatusFilter(request.status) &&
     (monthFilter === 'all' || request.monthYear === monthFilter) &&
     (leaveTypeFilter === 'all' || request.requestedStatus === leaveTypeFilter)
   );
+
+  const hrAdminHighlight = isAdminView && userRole === 'HR';
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -1302,6 +1397,8 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
         return <XCircle className="h-4 w-4 text-rose-600" aria-hidden />;
       case 'Pending':
         return <Clock className="h-4 w-4 text-amber-600" aria-hidden />;
+      case 'PendingHr':
+        return <AlertCircle className="h-4 w-4 text-rose-600" aria-hidden />;
       default:
         return <AlertCircle className="h-4 w-4 text-slate-500" aria-hidden />;
     }
@@ -1315,6 +1412,8 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
         return 'border-rose-200 bg-rose-50 text-rose-900';
       case 'Pending':
         return 'border-amber-200 bg-amber-50 text-amber-900';
+      case 'PendingHr':
+        return 'border-rose-300 bg-rose-50 text-rose-900';
       default:
         return 'border-slate-200 bg-slate-50 text-slate-800';
     }
@@ -1502,6 +1601,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
           getStatusIcon={getStatusIcon}
           getStatusColor={getStatusColor}
           isAdminView={isAdminView}
+          hrAdminHighlight={hrAdminHighlight}
           onApproveReject={handleApproveReject}
           processingRequest={processingRequest}
           openApprovalModal={openApprovalModal}
@@ -1513,6 +1613,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
               key={`range-${rangeGroup.ids.join('-')}`}
               rangeGroup={rangeGroup}
               isAdminView={isAdminView}
+              hrAdminHighlight={hrAdminHighlight}
               onApproveReject={handleApproveReject}
               processingRequest={processingRequest}
               openApprovalModal={openApprovalModal}
@@ -1520,10 +1621,16 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
           ))}
 
           {/* Render individual requests */}
-          {filteredIndividualRequests.map((request) => (
+          {filteredIndividualRequests.map((request) => {
+            const cardHr = hrAdminHighlight && request.status === 'PendingHr';
+            return (
             <div
               key={request._id}
-              className="rounded-lg border border-blue-200/65 bg-panel p-4 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50/60"
+              className={`rounded-lg border p-4 shadow-sm transition-colors ${
+                cardHr
+                  ? 'border-rose-400 bg-rose-50 ring-1 ring-rose-200 hover:border-rose-500'
+                  : 'border-blue-200/65 bg-panel hover:border-slate-300 hover:bg-slate-50/60'
+              }`}
             >
               <div className="mb-3 flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
@@ -1555,9 +1662,16 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
                   className={`flex shrink-0 items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${getStatusColor(request.status)}`}
                 >
                   {getStatusIcon(request.status)}
-                  {request.status}
+                  {request.status === 'PendingHr' ? 'Pending (HR)' : request.status}
                 </div>
               </div>
+
+              {request.status === 'PendingHr' && (
+                <div className="mb-3 rounded-md border border-rose-200 bg-rose-100/80 px-3 py-2 text-sm text-rose-900">
+                  Partner approved — <strong>HR approval required</strong> (attendance date outside the current or
+                  previous calendar month, IST).
+                </div>
+              )}
 
               {request.reason && (
                 <div className="mb-3">
@@ -1605,7 +1719,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
                 <span>Submitted: {new Date(request.createdAt).toLocaleDateString('en-GB')}</span>
               </div>
 
-              {isAdminView && request.status === 'Pending' && (
+              {isAdminView && (request.status === 'Pending' || request.status === 'PendingHr') && (
                 <div className="mt-3 flex gap-2 border-t border-slate-200 pt-3">
                   <button
                     type="button"
@@ -1626,7 +1740,8 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

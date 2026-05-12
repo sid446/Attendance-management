@@ -6,6 +6,7 @@ import User from '@/models/User';
 import { transporter, mailOptions } from '@/lib/mailer';
 import { calculateLeaveUsage, updateLeaveBalanceOnApproval } from '@/lib/leaveManagement';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
+import { isAttendanceDatePartnerOnlyIst } from '@/lib/attendanceRequestApprovalWindow';
 
 function calculateDuration(start: string, end: string): number {
     if (!start || !end) return 0;
@@ -187,6 +188,22 @@ export async function GET(request: NextRequest) {
     }
 
     if (action === 'approve') {
+        if (!isAttendanceDatePartnerOnlyIst(reqRecord.date)) {
+          reqRecord.status = 'PendingHr';
+          reqRecord.partnerRemarks = 'Approved via email link (awaiting HR)';
+          reqRecord.partnerApprovedAt = new Date();
+          await reqRecord.save();
+          return new NextResponse(
+            `
+            <html><body style="font-family:sans-serif; text-align:center; padding:40px;">
+                <h1 style="color:#b45309">Partner approved</h1>
+                <p>This request is outside the current/previous calendar month (IST) and requires <strong>HR final approval</strong> before attendance is updated.</p>
+            </body></html>
+        `,
+            { headers: { 'Content-Type': 'text/html' } }
+          );
+        }
+
         reqRecord.status = 'Approved';
         await reqRecord.save();
 
@@ -296,28 +313,55 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Request not found' }, { status: 404 });
     }
 
-    if (reqRecord.status !== 'Pending') {
+    const actorIsHr = (approvedBy || '') === 'HR';
+    if (!actorIsHr && reqRecord.status !== 'Pending') {
+      return NextResponse.json({ success: false, error: `Request already ${reqRecord.status}` }, { status: 400 });
+    }
+    if (actorIsHr && reqRecord.status !== 'Pending' && reqRecord.status !== 'PendingHr') {
       return NextResponse.json({ success: false, error: `Request already ${reqRecord.status}` }, { status: 400 });
     }
 
-    // Update request status, remarks, and who took the action
-    reqRecord.status = action === 'approve' ? 'Approved' : 'Rejected';
-    reqRecord.partnerRemarks = remarks || null;
-    
+    let deferredToHrOnly = false;
+
     if (action === 'approve') {
-      reqRecord.approvedBy = approvedBy || 'Partner';
-      reqRecord.approvedByEmail = approvedByEmail || null;
-      reqRecord.approvedAt = new Date();
+      if (!actorIsHr && !isAttendanceDatePartnerOnlyIst(reqRecord.date)) {
+        reqRecord.status = 'PendingHr';
+        reqRecord.partnerRemarks = remarks || null;
+        reqRecord.partnerApprovedAt = new Date();
+        if (attendanceValue !== undefined && attendanceValue !== null) {
+          reqRecord.partnerProposedValue = String(attendanceValue);
+        }
+        deferredToHrOnly = true;
+      } else {
+        reqRecord.status = 'Approved';
+        if (actorIsHr) {
+          if (remarks) reqRecord.hrRemarks = remarks;
+          if (attendanceValue !== undefined && attendanceValue !== null) {
+            reqRecord.hrValue = String(attendanceValue);
+          }
+        } else {
+          reqRecord.partnerRemarks = remarks || null;
+        }
+        reqRecord.approvedBy = approvedBy || (actorIsHr ? 'HR' : 'Partner');
+        reqRecord.approvedByEmail = approvedByEmail || null;
+        reqRecord.approvedAt = new Date();
+      }
     } else {
-      reqRecord.rejectedBy = approvedBy || 'Partner';
+      reqRecord.status = 'Rejected';
+      if (actorIsHr) {
+        if (remarks) reqRecord.hrRemarks = remarks;
+      } else {
+        reqRecord.partnerRemarks = remarks || null;
+      }
+      reqRecord.rejectedBy = approvedBy || (actorIsHr ? 'HR' : 'Partner');
       reqRecord.rejectedByEmail = approvedByEmail || null;
       reqRecord.rejectedAt = new Date();
     }
-    
+
     await reqRecord.save();
 
     // If approved, update the actual attendance record
-    if (action === 'approve') {
+    if (action === 'approve' && !deferredToHrOnly) {
       const { userId, date, requestedStatus, monthYear, startTime, endTime } = reqRecord;
 
       // Find attendance doc
@@ -508,8 +552,9 @@ export async function POST(request: NextRequest) {
     // Send email notification to employee
     try {
       const employeeEmail = (reqRecord.userId as any).attendanceEmail || (reqRecord.userId as any).email;
-      const statusText = action === 'approve' ? 'Approved' : 'Rejected';
-      const statusColor = action === 'approve' ? '#10b981' : '#ef4444';
+      const statusText =
+        action === 'approve' ? (deferredToHrOnly ? 'Partner approved — HR pending' : 'Approved') : 'Rejected';
+      const statusColor = action === 'approve' ? (deferredToHrOnly ? '#d97706' : '#10b981') : '#ef4444';
 
       await transporter.sendMail({
         ...mailOptions,
@@ -537,7 +582,13 @@ export async function POST(request: NextRequest) {
         
         <div style="background-color: #f9fafb; border-left: 4px solid ${statusColor}; padding: 16px; margin-bottom: 24px; border-radius: 4px;">
           <p style="margin: 0; font-size: 15px; color: #374151; line-height:1.5;">
-            <strong>Your attendance correction request has been ${statusText.toLowerCase()}.</strong>
+            <strong>${
+              deferredToHrOnly
+                ? 'Your partner has approved this request. HR must still approve it before your attendance is updated.'
+                : action === 'approve'
+                  ? 'Your attendance correction request has been approved.'
+                  : 'Your attendance correction request has been rejected.'
+            }</strong>
           </p>
         </div>
 
@@ -572,7 +623,13 @@ export async function POST(request: NextRequest) {
 
         <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 16px;">
           <p style="margin: 0; font-size: 14px; color: #1e40af; line-height: 1.5;">
-            <strong>📋 Next Steps:</strong> ${action === 'approve' ? 'Your attendance record has been updated accordingly.' : 'Please contact your partner for further clarification if needed.'}
+            <strong>📋 Next Steps:</strong> ${
+              action === 'approve'
+                ? deferredToHrOnly
+                  ? 'Wait for HR final approval. You will receive another email when processing is complete.'
+                  : 'Your attendance record has been updated accordingly.'
+                : 'Please contact your partner for further clarification if needed.'
+            }
           </p>
         </div>
 

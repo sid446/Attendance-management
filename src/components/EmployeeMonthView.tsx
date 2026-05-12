@@ -26,7 +26,7 @@ interface ApprovedRequest {
   _id: string;
   date: string;
   requestedStatus: string;
-  status: 'Pending' | 'Approved' | 'Rejected';
+  status: 'Pending' | 'PendingHr' | 'Approved' | 'Rejected';
   approvedBy?: string;
   approvedByEmail?: string;
   approvedAt?: string;
@@ -770,7 +770,13 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                             </>
                           )}
                           {requestDetailModal.status === 'Pending' && (
-                            <p className="pt-1 text-slate-600">Awaiting approval from partner/HR.</p>
+                            <p className="pt-1 text-slate-600">Awaiting approval from your partner.</p>
+                          )}
+                          {requestDetailModal.status === 'PendingHr' && (
+                            <p className="pt-1 text-rose-800">
+                              Partner approved. <strong>HR final approval</strong> is required before your attendance is
+                              updated.
+                            </p>
                           )}
                           {requestDetailModal.status === 'Rejected' && (
                             <p className="pt-1 text-slate-600">This request was rejected.</p>
@@ -1091,7 +1097,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                   if (approvedReq.status === 'Approved') {
                     borderClass = 'border-teal-200';
                     bgClass = 'bg-teal-50';
-                  } else if (approvedReq.status === 'Pending') {
+                  } else if (approvedReq.status === 'Pending' || approvedReq.status === 'PendingHr') {
                     borderClass = 'border-teal-200';
                     bgClass = 'bg-teal-50/70';
                   } else {
@@ -1144,11 +1150,15 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                               isCustomRequestType
                                 ? approvedReq.status === 'Pending'
                                   ? 'border border-teal-200 bg-teal-50 text-teal-900 hover:bg-teal-100'
+                                  : approvedReq.status === 'PendingHr'
+                                    ? 'border border-rose-300 bg-rose-50 text-rose-900 hover:bg-rose-100'
                                   : approvedReq.status === 'Rejected'
                                     ? 'border border-rose-200 bg-rose-50 text-rose-900 hover:bg-rose-100'
                                     : 'border border-teal-200 bg-teal-50 text-teal-900 hover:bg-teal-100'
                                 : approvedReq.status === 'Pending'
                                   ? 'border border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100'
+                                  : approvedReq.status === 'PendingHr'
+                                    ? 'border border-rose-300 bg-rose-50 text-rose-900 hover:bg-rose-100'
                                   : approvedReq.status === 'Rejected'
                                     ? 'border border-rose-200 bg-rose-50 text-rose-900 hover:bg-rose-100'
                                     : 'border border-violet-200 bg-violet-50 text-violet-900 hover:bg-violet-100'
@@ -1163,7 +1173,13 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                             <span className="hidden sm:inline">
                               {isCustomRequestType 
                                 ? approvedReq.requestedStatus.toUpperCase().slice(0, 8)
-                                : approvedReq.status === 'Pending' ? 'PENDING' : approvedReq.status === 'Rejected' ? 'REJECTED' : 'APPROVED'
+                                : approvedReq.status === 'Pending'
+                                  ? 'PENDING'
+                                  : approvedReq.status === 'PendingHr'
+                                    ? 'HR REVIEW'
+                                    : approvedReq.status === 'Rejected'
+                                      ? 'REJECTED'
+                                      : 'APPROVED'
                               }
                             </span>
                           </span>

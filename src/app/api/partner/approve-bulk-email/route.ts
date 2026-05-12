@@ -4,6 +4,7 @@ import AttendanceRequest from '@/models/AttendanceRequest';
 import Attendance from '@/models/Attendance';
 import User from '@/models/User';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
+import { isAttendanceDatePartnerOnlyIst } from '@/lib/attendanceRequestApprovalWindow';
 
 function calculateDuration(start: string, end: string): number {
     if (!start || !end) return 0;
@@ -82,6 +83,16 @@ export async function POST(request: NextRequest) {
         for (const id of requestIds) {
             const reqRecord = await AttendanceRequest.findById(id);
             if (!reqRecord || reqRecord.status !== 'Pending') continue;
+
+            if (!isAttendanceDatePartnerOnlyIst(reqRecord.date)) {
+                reqRecord.status = 'PendingHr';
+                reqRecord.partnerRemarks = appliedRemark;
+                reqRecord.partnerApprovedAt = new Date();
+                reqRecord.partnerProposedValue = String(appliedValue);
+                await reqRecord.save();
+                successCount++;
+                continue;
+            }
 
             reqRecord.status = 'Approved';
             reqRecord.partnerRemarks = appliedRemark;

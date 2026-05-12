@@ -1,10 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import User, { IUser } from '@/models/User';
+import { getHrOperatorEmailFromRequest } from '@/lib/hrAuthServer';
+import { loadHrConsolePermissionDoc } from '@/lib/hrConsolePermissionDb';
+import { effectiveFromDoc } from '@/lib/hrConsolePermissionUtils';
 
 export async function POST(request: NextRequest) {
   try {
     await dbConnect();
+
+    const operatorEmail = await getHrOperatorEmailFromRequest(request);
+    if (!operatorEmail) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+    const permDoc = await loadHrConsolePermissionDoc(operatorEmail);
+    const effective = effectiveFromDoc(operatorEmail, permDoc);
+    if (effective.sections.employees !== 'edit' || effective.employeeTabs.salary !== 'edit') {
+      return NextResponse.json({ success: false, error: 'Not allowed to bulk-update leave' }, { status: 403 });
+    }
 
     const body = await request.json();
     const { leaveData } = body;

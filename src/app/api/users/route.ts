@@ -1,11 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
+import { reconcilePendingAttendanceForUser } from '@/lib/reconcilePendingAttendance';
+import { getHrOperatorEmailFromRequest } from '@/lib/hrAuthServer';
+import { loadHrConsolePermissionDoc } from '@/lib/hrConsolePermissionDb';
+import {
+  assertCanApplyUserPutBody,
+  assertCanReadEmployees,
+  effectiveFromDoc,
+} from '@/lib/hrConsolePermissionUtils';
 
 // GET - Fetch all users (?listOnly=1 omits heavy fieldHistories for list views)
 export async function GET(request: NextRequest) {
   try {
     await dbConnect();
+
+    const operatorEmail = await getHrOperatorEmailFromRequest(request);
+    if (!operatorEmail) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+    const permDoc = await loadHrConsolePermissionDoc(operatorEmail);
+    const effective = effectiveFromDoc(operatorEmail, permDoc);
+    const readDenied = assertCanReadEmployees(effective);
+    if (readDenied) return readDenied;
 
     const { searchParams } = new URL(request.url);
     const listOnly =
@@ -47,7 +64,15 @@ export async function POST(request: NextRequest) {
   try {
     await dbConnect();
 
+    const operatorEmail = await getHrOperatorEmailFromRequest(request);
+    if (!operatorEmail) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+    const permDoc = await loadHrConsolePermissionDoc(operatorEmail);
+    const effective = effectiveFromDoc(operatorEmail, permDoc);
     const body = await request.json();
+    const putDenied = assertCanApplyUserPutBody(body as Record<string, unknown>, effective);
+    if (putDenied) return putDenied;
     const { 
       odId, 
       name, 
@@ -213,6 +238,12 @@ export async function POST(request: NextRequest) {
       ...(workingUnderPartner && { workingUnderPartner }),
       ...(workingTiming && { workingTiming }),
     });
+
+    try {
+      await reconcilePendingAttendanceForUser(String(user._id));
+    } catch (reconErr) {
+      console.error('reconcilePendingAttendanceForUser:', reconErr);
+    }
 
     return NextResponse.json(
       { success: true, data: user },

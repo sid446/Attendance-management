@@ -38,10 +38,14 @@ export interface IAttendanceRequest extends Document {
   requestedStatus: TypeOfPresence | string;
   originalStatus: TypeOfPresence | string;
   reason?: string;
-  status: 'Pending' | 'Approved' | 'Rejected';
+  status: 'Pending' | 'PendingHr' | 'Approved' | 'Rejected';
   startTime?: string;
   endTime?: string;
   partnerRemarks?: string;
+  /** Set when partner approves but HR must finalize (stale attendance date). */
+  partnerApprovedAt?: Date;
+  /** Partner-proposed attendance value (string) before HR final approval. */
+  partnerProposedValue?: string;
   hrRemarks?: string; // HR remarks when approved by HR
   hrValue?: string; // HR value when approved by HR
   approvedBy?: string; // 'HR' or partner name
@@ -130,12 +134,14 @@ const AttendanceRequestSchema: Schema = new Schema(
     reason: { type: String },
     status: { 
         type: String, 
-        enum: ['Pending', 'Approved', 'Rejected'], 
+        enum: ['Pending', 'PendingHr', 'Approved', 'Rejected'], 
         default: 'Pending' 
     },
     startTime: { type: String },
     endTime: { type: String },
     partnerRemarks: { type: String },
+    partnerApprovedAt: { type: Date },
+    partnerProposedValue: { type: String },
     hrRemarks: { type: String },
     hrValue: { type: String },
     approvedBy: { type: String },

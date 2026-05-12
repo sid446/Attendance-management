@@ -53,10 +53,12 @@ export async function GET(request: NextRequest) {
     const viewerData = viewer as VisibleUser;
     const visible = new Map<string, VisibleUser>();
 
-    const addUsers = (users: VisibleUser[]) => {
+    const addUsers = (users: VisibleUser[], opts?: { includeViewer?: boolean }) => {
       users.forEach((user) => {
         const id = String(user?._id || '');
-        if (id && id !== viewerUserId) visible.set(id, user);
+        if (!id) return;
+        if (!opts?.includeViewer && id === viewerUserId) return;
+        visible.set(id, user);
       });
     };
 
@@ -86,11 +88,12 @@ export async function GET(request: NextRequest) {
 
     const extraUserIds = (rule?.extraUserIds || [])
       .map((id: unknown) => String(id || '').trim())
-      .filter((id: string) => mongoose.Types.ObjectId.isValid(id) && id !== viewerUserId);
+      .filter((id: string) => mongoose.Types.ObjectId.isValid(id));
 
     if (extraUserIds.length > 0) {
       addUsers(
-        (await User.find({ _id: { $in: extraUserIds }, isActive: true }).sort({ name: 1 }).lean()) as VisibleUser[]
+        (await User.find({ _id: { $in: extraUserIds }, isActive: true }).sort({ name: 1 }).lean()) as VisibleUser[],
+        { includeViewer: true }
       );
     }
 

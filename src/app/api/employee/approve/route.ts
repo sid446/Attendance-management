@@ -6,6 +6,7 @@ import User from '@/models/User';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { transporter, mailOptions } from '@/lib/mailer';
 import LeaveTransaction from '@/models/LeaveTransaction';
+import { isAttendanceDatePartnerOnlyIst } from '@/lib/attendanceRequestApprovalWindow';
 
 export async function POST(request: NextRequest) {
   try {
@@ -34,6 +35,32 @@ export async function POST(request: NextRequest) {
         success: false,
         error: 'Request not found'
       }, { status: 404 });
+    }
+
+    const isHr = approvedBy === 'HR';
+    if (isHr) {
+      if (attendanceRequest.status !== 'Pending' && attendanceRequest.status !== 'PendingHr') {
+        return NextResponse.json(
+          { success: false, error: `Request already ${attendanceRequest.status}` },
+          { status: 400 }
+        );
+      }
+    } else if (attendanceRequest.status !== 'Pending') {
+      return NextResponse.json(
+        { success: false, error: `Request already ${attendanceRequest.status}` },
+        { status: 400 }
+      );
+    }
+
+    // Partner cannot finalize without HR for stale dates (should be PendingHr, not Pending)
+    if (!isHr && attendanceRequest.status === 'Pending' && !isAttendanceDatePartnerOnlyIst(attendanceRequest.date)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'This request must be approved by your partner first; it then requires HR approval.',
+        },
+        { status: 400 }
+      );
     }
 
     // Update the request

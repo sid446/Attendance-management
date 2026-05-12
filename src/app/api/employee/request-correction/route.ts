@@ -86,12 +86,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'No Partner assigned to this employee' }, { status: 400 });
     }
 
-    // Use the employee's login email so partner review access follows the current account.
+    /** Who receives the request mail + signed review links: this employee's `attendanceEmail` (approver inbox), not login email. */
     const partnerName = user.workingUnderPartner;
-    const partnerEmail = user.email?.trim();
-    
-    if (!partnerEmail) {
-      return NextResponse.json({ success: false, error: 'No attendance email configured for this employee. Please contact admin.' }, { status: 400 });
+    const approverNotificationEmail = String((user as any).attendanceEmail || user.email || '').trim();
+
+    if (!approverNotificationEmail) {
+      return NextResponse.json(
+        { success: false, error: 'No attendance email configured for this employee. Please contact admin.' },
+        { status: 400 }
+      );
     }
 
     const monthYear = date.substring(0, 7); // YYYY-MM
@@ -158,7 +161,7 @@ export async function POST(request: NextRequest) {
     });
 
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || request.headers.get('origin') || 'http://localhost:3000';
-    const reviewAllLink = createPartnerReviewAllLink(baseUrl, partnerName, partnerEmail);
+    const reviewAllLink = createPartnerReviewAllLink(baseUrl, partnerName, approverNotificationEmail);
 
     // Fetch all pending requests assigned to this partner (across all employees)
     const pendingRequests = await AttendanceRequest.find({ partnerName: partnerName, status: 'Pending' }).sort({ createdAt: 1 });
@@ -226,7 +229,7 @@ export async function POST(request: NextRequest) {
     try {
       await transporter.sendMail({
         ...mailOptions,
-        to: partnerEmail,
+        to: approverNotificationEmail,
         subject: `Attendance Correction Requests: ${user.name}`,
         html: `
 <!DOCTYPE html>
@@ -354,7 +357,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: 'Request sent to partner',
-      sentTo: partnerEmail,
+      sentTo: approverNotificationEmail,
       emailSent,
       warning: emailWarning,
     });

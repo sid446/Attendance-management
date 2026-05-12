@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Download, Loader2, X, Newspaper, CreditCard, Award } from 'lucide-react';
 import { User } from '@/types/ui';
+import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
 
 const ARTICLE_CREDITS_WORKFLOW_STEPS = ['Set attendance period', 'Search or sort table', 'Export or view breakdown'] as const;
 
@@ -16,7 +17,7 @@ interface ArticleCreditRow {
 }
 
 const fetchUsers = async (): Promise<User[]> => {
-  const res = await fetch('/api/users?listOnly=1');
+  const res = await fetch('/api/users?listOnly=1', hrCredentialsInit());
   const json = await res.json();
   return json.success ? json.data : [];
 };

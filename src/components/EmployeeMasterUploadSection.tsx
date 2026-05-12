@@ -1,5 +1,6 @@
 import React, { ChangeEvent, useState } from 'react';
 import { Upload, FileSpreadsheet, Users, Download } from 'lucide-react';
+import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
 
 interface EmployeeMasterUploadSectionProps {
   onRefreshUsers?: () => void;
@@ -395,11 +396,11 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
         throw new Error('No valid employee rows found in file.');
       }
 
-      const response = await fetch('/api/users/basic-master-upload', {
+      const response = await fetch('/api/users/basic-master-upload', hrCredentialsInit({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mode, employees, effectiveFrom }),
-      });
+      }));
 
       const result = await response.json();
       if (!response.ok || !result.success) {
@@ -488,11 +489,11 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
         throw new Error('No valid schedule rows found in file.');
       }
 
-      const response = await fetch('/api/users/basic-schedule-upload', {
+      const response = await fetch('/api/users/basic-schedule-upload', hrCredentialsInit({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ effectiveFrom: scheduleEffectiveFrom, schedules }),
-      });
+      }));
 
       const result = await response.json();
       if (!response.ok || !result.success) {

@@ -1,5 +1,5 @@
 import React, { ChangeEvent, useState, useEffect } from 'react';
-import { Upload, AlertCircle, ChevronDown, ChevronUp, FileSpreadsheet, ChevronRight, Download, History, Clock } from 'lucide-react';
+import { Upload, AlertCircle, ChevronDown, ChevronUp, FileSpreadsheet, ChevronRight, Download, History, Clock, Users } from 'lucide-react';
 
 interface MachineFormat {
   machineId: string;
@@ -75,6 +75,20 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   const [logs, setLogs] = useState<any[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
 
+  const [showPendingReview, setShowPendingReview] = useState(false);
+  const [pendingReviewRows, setPendingReviewRows] = useState<
+    {
+      _id: string;
+      uploadName: string;
+      monthYear: string;
+      dayCount: number;
+      candidates: { userId: string; name: string; odId: string; employeeCode: string; score: number }[];
+    }[]
+  >([]);
+  const [loadingPendingReview, setLoadingPendingReview] = useState(false);
+  const [assigningPendingId, setAssigningPendingId] = useState<string | null>(null);
+  const [selectedCandidateByPending, setSelectedCandidateByPending] = useState<Record<string, string>>({});
+
   const fetchLogs = async () => {
     setLoadingLogs(true);
     try {
@@ -95,6 +109,61 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       fetchLogs();
     }
   }, [showLogs]);
+
+  useEffect(() => {
+    if (!showPendingReview) return;
+    let cancelled = false;
+    (async () => {
+      setLoadingPendingReview(true);
+      try {
+        const response = await fetch('/api/pending-attendance/review');
+        const result = await response.json();
+        if (cancelled || !result.success || !Array.isArray(result.data)) return;
+        const rows = result.data as typeof pendingReviewRows;
+        setPendingReviewRows(rows);
+        const defaults: Record<string, string> = {};
+        for (const row of rows) {
+          const top = row.candidates?.[0];
+          if (top) defaults[row._id] = top.userId;
+        }
+        setSelectedCandidateByPending(defaults);
+      } catch (e) {
+        console.error('Failed to load pending review queue:', e);
+      } finally {
+        if (!cancelled) setLoadingPendingReview(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showPendingReview]);
+
+  const assignPendingMatch = async (pendingId: string) => {
+    const userId = selectedCandidateByPending[pendingId];
+    if (!userId) return;
+    setAssigningPendingId(pendingId);
+    try {
+      const response = await fetch('/api/pending-attendance/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pendingId, userId }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Could not apply match');
+      }
+      setPendingReviewRows((prev) => prev.filter((r) => r._id !== pendingId));
+      setSelectedCandidateByPending((prev) => {
+        const next = { ...prev };
+        delete next[pendingId];
+        return next;
+      });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Assign failed');
+    } finally {
+      setAssigningPendingId(null);
+    }
+  };
 
   const groupedCurrentErrors = React.useMemo(() => {
     return uploadErrors.reduce((acc, curr) => {
@@ -676,6 +745,92 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       {saveMessage && (
         <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{saveMessage}</div>
       )}
+
+      <div className="mt-6 rounded-lg border border-indigo-200 bg-indigo-50/80 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-indigo-950">Pending names (HR)</h3>
+            <p className="mt-1 text-xs text-indigo-900/90">
+              Machine names that did not match anyone were stored by month. Pick the correct employee and apply — suggestions are ranked by similarity, not guaranteed.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowPendingReview(!showPendingReview)}
+            className="inline-flex shrink-0 items-center gap-2 rounded-md border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-900 hover:bg-indigo-50"
+          >
+            <Users className="h-4 w-4" />
+            {showPendingReview ? 'Hide queue' : 'Review & match'}
+          </button>
+        </div>
+
+        {showPendingReview && (
+          <div className="mt-4 rounded-md border border-indigo-200 bg-white">
+            {loadingPendingReview ? (
+              <div className="flex items-center justify-center gap-2 p-8 text-sm text-slate-600">
+                <span className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-200 border-t-indigo-600" />
+                Loading pending queue…
+              </div>
+            ) : pendingReviewRows.length === 0 ? (
+              <p className="p-6 text-center text-sm text-slate-600">No pending attendance buckets. Unknown names from uploads appear here.</p>
+            ) : (
+              <div className="max-h-[min(28rem,70vh)] overflow-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="sticky top-0 bg-slate-50 font-medium text-slate-700">
+                    <tr>
+                      <th className="px-3 py-2">Name from file</th>
+                      <th className="px-3 py-2">Month</th>
+                      <th className="px-3 py-2 text-center">Days</th>
+                      <th className="px-3 py-2">Match to employee</th>
+                      <th className="px-3 py-2 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {pendingReviewRows.map((row) => (
+                      <tr key={row._id} className="hover:bg-slate-50/80">
+                        <td className="px-3 py-2 font-medium text-slate-900">{row.uploadName}</td>
+                        <td className="px-3 py-2 text-slate-700">{row.monthYear}</td>
+                        <td className="px-3 py-2 text-center tabular-nums">{row.dayCount}</td>
+                        <td className="px-3 py-2">
+                          <select
+                            className="max-w-[min(100%,280px)] rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-900"
+                            value={selectedCandidateByPending[row._id] ?? ''}
+                            onChange={(e) =>
+                              setSelectedCandidateByPending((prev) => ({
+                                ...prev,
+                                [row._id]: e.target.value,
+                              }))
+                            }
+                          >
+                            <option value="">Select employee…</option>
+                            {row.candidates.map((c) => (
+                              <option key={c.userId} value={c.userId}>
+                                {c.name}
+                                {c.employeeCode ? ` (${c.employeeCode})` : ''}
+                                {c.odId ? ` · ${c.odId}` : ''} — {(c.score * 100).toFixed(0)}%
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <button
+                            type="button"
+                            disabled={!selectedCandidateByPending[row._id] || assigningPendingId === row._id}
+                            onClick={() => assignPendingMatch(row._id)}
+                            className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {assigningPendingId === row._id ? 'Applying…' : 'Apply match'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       <div className="mt-6 border-t border-slate-200 pt-6">
         <div className="flex items-center justify-between">

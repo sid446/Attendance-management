@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
+import { reconcilePendingAttendanceForUser } from '@/lib/reconcilePendingAttendance';
 import User, { IUser } from '@/models/User';
 import {
   applyManagedEffectiveHistories,
@@ -7,6 +8,14 @@ import {
   ManagedEffectiveField,
   normalizeManagedFieldValue,
 } from '@/lib/userFieldHistory';
+import { getHrOperatorEmailFromRequest } from '@/lib/hrAuthServer';
+import { loadHrConsolePermissionDoc } from '@/lib/hrConsolePermissionDb';
+import {
+  assertCanApplyUserPutBody,
+  assertHrSection,
+  collectUserFieldKeysFromEmployeeRecords,
+  effectiveFromDoc,
+} from '@/lib/hrConsolePermissionUtils';
 
 type UploadMode = 'update' | 'add';
 
@@ -28,6 +37,15 @@ export async function POST(request: NextRequest) {
   try {
     await dbConnect();
 
+    const operatorEmail = await getHrOperatorEmailFromRequest(request);
+    if (!operatorEmail) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+    const permDoc = await loadHrConsolePermissionDoc(operatorEmail);
+    const effective = effectiveFromDoc(operatorEmail, permDoc);
+    const sec = assertHrSection(effective, 'employeeMasterUpload', 'edit');
+    if (sec) return sec;
+
     const body = await request.json();
     const employees = Array.isArray(body?.employees) ? body.employees : [];
     const mode: UploadMode = body?.mode === 'add' ? 'add' : 'update';
@@ -37,6 +55,9 @@ export async function POST(request: NextRequest) {
     if (!employees.length) {
       return NextResponse.json({ success: false, error: 'No employee data provided' }, { status: 400 });
     }
+
+    const bulkDenied = assertCanApplyUserPutBody(collectUserFieldKeysFromEmployeeRecords(employees), effective);
+    if (bulkDenied) return bulkDenied;
 
     const stats = {
       created: 0,
@@ -231,6 +252,11 @@ export async function POST(request: NextRequest) {
         }
 
         await newUser.save();
+        try {
+          await reconcilePendingAttendanceForUser(String(newUser._id));
+        } catch (reconErr) {
+          console.error('reconcilePendingAttendanceForUser (basic-master-upload):', reconErr);
+        }
         stats.created++;
       } catch (e) {
         stats.failed++;

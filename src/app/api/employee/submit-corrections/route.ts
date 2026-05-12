@@ -45,12 +45,12 @@ export async function POST(request: NextRequest) {
     }
 
     const partnerName = user.workingUnderPartner;
-    const partnerEmail = user.email?.trim();
+    const approverNotificationEmail = String((user as any).attendanceEmail || user.email || '').trim();
 
-    if (!partnerEmail) {
+    if (!approverNotificationEmail) {
       return NextResponse.json({
         success: false,
-        error: 'No partner email configured. Please contact admin.'
+        error: 'No attendance email configured for this employee. Please contact admin.'
       }, { status: 400 });
     }
 
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
         const existingRequest = await AttendanceRequest.findOne({
           userId: user._id,
           date,
-          status: 'Pending'
+          status: { $in: ['Pending', 'PendingHr'] },
         });
 
         if (existingRequest) {
@@ -174,11 +174,11 @@ export async function POST(request: NextRequest) {
         }).join('');
 
         // Review all link
-        const reviewAllLink = createPartnerReviewAllLink(baseUrl, partnerName, partnerEmail);
+        const reviewAllLink = createPartnerReviewAllLink(baseUrl, partnerName, approverNotificationEmail);
 
         await transporter.sendMail({
           ...mailOptions,
-          to: partnerEmail,
+          to: approverNotificationEmail,
           subject: `Time Correction Request from ${user.name}`,
           html: `
 <!DOCTYPE html>

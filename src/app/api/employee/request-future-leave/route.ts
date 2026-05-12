@@ -48,16 +48,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
     }
 
-    // Partner Email Logic - use employee's login email so review access stays in sync.
     if (!user.workingUnderPartner) {
         return NextResponse.json({ success: false, error: 'No Partner assigned to this employee' }, { status: 400 });
     }
 
     const partnerName = user.workingUnderPartner;
-    const partnerEmail = user.email?.trim();
-    
-    if (!partnerEmail) {
-      return NextResponse.json({ success: false, error: 'No attendance email configured for this employee. Please contact admin.' }, { status: 400 });
+    const approverNotificationEmail = String((user as any).attendanceEmail || user.email || '').trim();
+
+    if (!approverNotificationEmail) {
+        return NextResponse.json({ success: false, error: 'No attendance email configured for this employee. Please contact admin.' }, { status: 400 });
     }
 
     const start = new Date(startDate);
@@ -328,7 +327,7 @@ export async function POST(request: NextRequest) {
       `;
     }).join('');
 
-    const reviewAllLink = createPartnerReviewAllLink(baseUrl, partnerName, partnerEmail);
+    const reviewAllLink = createPartnerReviewAllLink(baseUrl, partnerName, approverNotificationEmail);
 
     // Generate Bulk Approve Link
     const newRequestIds = createdRequests.map(r => r._id).join(',');
@@ -336,7 +335,7 @@ export async function POST(request: NextRequest) {
     try {
         await transporter.sendMail({
             ...mailOptions,
-            to: partnerEmail, 
+            to: approverNotificationEmail,
             subject: `Future Leave Requests: ${user.name}`,
             html: `
 <!DOCTYPE html>
@@ -462,7 +461,7 @@ export async function POST(request: NextRequest) {
         // Let's keep it as warning.
     }
 
-    return NextResponse.json({ success: true, count: createdRequests.length, sentTo: partnerEmail });
+    return NextResponse.json({ success: true, count: createdRequests.length, sentTo: approverNotificationEmail });
 
   } catch (error) {
     console.error('Future request error:', error);

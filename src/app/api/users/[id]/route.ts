@@ -3,6 +3,13 @@ import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
 import EmployeeHistory from '@/models/EmployeeHistory';
 import Attendance from '@/models/Attendance';
+import { getHrOperatorEmailFromRequest } from '@/lib/hrAuthServer';
+import { loadHrConsolePermissionDoc } from '@/lib/hrConsolePermissionDb';
+import {
+  assertCanApplyUserPutBody,
+  assertCanReadEmployees,
+  effectiveFromDoc,
+} from '@/lib/hrConsolePermissionUtils';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import {
   applyManagedEffectiveHistories,
@@ -21,6 +28,15 @@ interface RouteParams {
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     await dbConnect();
+
+    const operatorEmail = await getHrOperatorEmailFromRequest(request);
+    if (!operatorEmail) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+    const permDoc = await loadHrConsolePermissionDoc(operatorEmail);
+    const effective = effectiveFromDoc(operatorEmail, permDoc);
+    const readDenied = assertCanReadEmployees(effective);
+    if (readDenied) return readDenied;
 
     const { id } = await params;
     const user = await User.findById(id).lean();
@@ -56,8 +72,17 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     await dbConnect();
 
+    const operatorEmail = await getHrOperatorEmailFromRequest(request);
+    if (!operatorEmail) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+    const permDoc = await loadHrConsolePermissionDoc(operatorEmail);
+    const effective = effectiveFromDoc(operatorEmail, permDoc);
+
     const { id } = await params;
     const body = await request.json();
+    const putDenied = assertCanApplyUserPutBody(body as Record<string, unknown>, effective);
+    if (putDenied) return putDenied;
     const {
       odId,
       name,
@@ -722,6 +747,16 @@ async function syncExtraInfoLabelsFromUser(sourceUserId: string) {
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     await dbConnect();
+
+    const operatorEmail = await getHrOperatorEmailFromRequest(request);
+    if (!operatorEmail) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+    const permDoc = await loadHrConsolePermissionDoc(operatorEmail);
+    const effective = effectiveFromDoc(operatorEmail, permDoc);
+    if (effective.sections.employees !== 'edit' || effective.employeeTabs.basic !== 'edit') {
+      return NextResponse.json({ success: false, error: 'Not allowed to deactivate employees' }, { status: 403 });
+    }
 
     const { id } = await params;
     const now = new Date();

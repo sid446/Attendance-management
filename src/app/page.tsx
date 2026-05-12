@@ -21,11 +21,18 @@ import { LeaveManagementSection } from '@/components/LeaveManagementSection';
 import { FineManagementSection } from '@/components/FineManagementSection';
 import { InvalidAttendanceSection } from '@/components/InvalidAttendanceSection';
 import { ClientPlaceManagement } from '@/components/ClientPlaceManagement';
+import { HrConsoleAccessSection } from '@/components/HrConsoleAccessSection';
+import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
+import {
+  HR_CONSOLE_SECTION_IDS,
+  type EmployeeManagementTabId,
+  type HrAccessLevel,
+  type HrConsoleSectionId,
+} from '@/lib/hrConsolePermissionUtils';
 
 export default function AttendanceUpload() {
   // Auth state
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [authToken, setAuthToken] = useState<string | null>(null);
   const [loginStep, setLoginStep] = useState<'password' | 'otp'>('password');
   const [password, setPassword] = useState<string>('');
   const [otp, setOtp] = useState<string>('');
@@ -53,8 +60,12 @@ export default function AttendanceUpload() {
   const [uploadTotal, setUploadTotal] = useState<number>(0);
   const [uploadSaved, setUploadSaved] = useState<number>(0);
   const [uploadFailed, setUploadFailed] = useState<number>(0);
-  const [activeSection, setActiveSection] = useState<'upload' | 'summary' | 'employee' | 'employees' | 'employeeMasterUpload' | 'teamAccess' | 'requests' | 'holidays' | 'backup' | 'leave' | 'fines' | 'articleCredits' | 'invalid' | 'clientPlaces'>('summary');
-  const isITUser = userRole === 'restricted_admin';
+  const [uploadPendingQueued, setUploadPendingQueued] = useState<number>(0);
+  const [activeSection, setActiveSection] = useState<HrConsoleSectionId>('summary');
+  const [hrPermState, setHrPermState] = useState<{
+    sections: Record<HrConsoleSectionId, HrAccessLevel>;
+    employeeTabs: Record<EmployeeManagementTabId, HrAccessLevel>;
+  } | null>(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [selectedEmployeeMonth, setSelectedEmployeeMonth] = useState<string>(() => {
     const d = new Date();
@@ -77,33 +88,29 @@ export default function AttendanceUpload() {
   // Holidays state for SummarySection
   const [holidays, setHolidays] = useState<{date: string; name: string}[]>([]);
 
-  // Check for existing auth token on mount
+  // Restore HR session from HttpOnly cookie (same-origin).
   useEffect(() => {
-    const storedToken = localStorage.getItem('attendanceAuthToken');
-    if (storedToken) {
-      setAuthToken(storedToken);
-      setIsAuthenticated(true);
-      const storedEmail = localStorage.getItem('attendanceUserEmail');
-      if (storedEmail) {
-        setUserEmail(storedEmail);
-        const storedRole = localStorage.getItem('attendanceUserRole');
-        if (storedRole) {
-          setUserRole(storedRole);
-          if (storedRole === 'restricted_admin') {
-            setActiveSection('upload');
-          }
+    void (async () => {
+      localStorage.removeItem('attendanceAuthToken');
+      try {
+        const res = await fetch('/api/auth/hr-session', { credentials: 'include' });
+        if (!res.ok) return;
+        const j = await res.json();
+        if (!j.success || !j.data?.email) return;
+        setIsAuthenticated(true);
+        setUserEmail(String(j.data.email));
+        const role = String(j.data.role || 'admin');
+        setUserRole(role);
+        localStorage.setItem('attendanceUserEmail', String(j.data.email));
+        localStorage.setItem('attendanceUserRole', role);
+        if (role === 'restricted_admin') {
+          setActiveSection('upload');
         }
+      } catch {
+        // ignore
       }
-    }
+    })();
   }, []);
-
-  // Fetch users when authenticated (so dropdowns are populated)
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchUsers();
-      fetchHolidays();
-    }
-  }, [isAuthenticated]);
 
   // Fetch holidays from database
   const fetchHolidays = useCallback(async () => {
@@ -211,6 +218,7 @@ export default function AttendanceUpload() {
       const response = await fetch('/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ sessionId, otp }),
       });
 
@@ -220,14 +228,11 @@ export default function AttendanceUpload() {
         throw new Error(result.error || 'Verification failed');
       }
 
-      const token = result.data.authToken;
       const email = result.data.email || loginEmail;
       const role = result.data.role || 'admin';
-      setAuthToken(token);
       setIsAuthenticated(true);
       setUserEmail(email);
       setUserRole(role);
-      localStorage.setItem('attendanceAuthToken', token);
       localStorage.setItem('attendanceUserEmail', email);
       localStorage.setItem('attendanceUserRole', role);
       
@@ -246,11 +251,16 @@ export default function AttendanceUpload() {
   };
 
   // Handle logout
-  const handleLogout = () => {
+  const handleLogout = useCallback(async () => {
+    try {
+      await fetch('/api/auth/hr-logout', { method: 'POST', credentials: 'include' });
+    } catch {
+      // ignore network errors; still clear client state
+    }
     setIsAuthenticated(false);
-    setAuthToken(null);
     setUserEmail('');
     setUserRole('');
+    setHrPermState(null);
     localStorage.removeItem('attendanceAuthToken');
     localStorage.removeItem('attendanceUserEmail');
     localStorage.removeItem('attendanceUserRole');
@@ -260,7 +270,7 @@ export default function AttendanceUpload() {
     setOtp('');
     setSessionId(null);
     setLoginError(null);
-  };
+  }, []);
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const list = e.target.files ? Array.from(e.target.files) : [];
@@ -800,6 +810,7 @@ export default function AttendanceUpload() {
         setUploadTotal(processed.length);
         setUploadSaved(0);
         setUploadFailed(0);
+        setUploadPendingQueued(0);
         await uploadToServer(processed, inferredMonthYear || undefined);
       }
     } catch (err) {
@@ -906,6 +917,7 @@ export default function AttendanceUpload() {
         setUploadTotal(processed.length);
         setUploadSaved(0);
         setUploadFailed(0);
+        setUploadPendingQueued(0);
         await uploadToServer(processed, inferredMonthYear || undefined);
       }
     } catch (err) {
@@ -929,7 +941,7 @@ export default function AttendanceUpload() {
     setSaveMessage(null);
     setError(null);
     setUploadErrors([]);//check if the attendance is empty also help user know data saving  and set the error to null
-
+    setUploadPendingQueued(0);
 
     if (data && data.length > 0) {
       setUploadTotal(data.length);
@@ -939,6 +951,7 @@ export default function AttendanceUpload() {
     const CHUNK_SIZE = 50;
     let localSaved = 0;
     let localFailed = 0;
+    let localPendingQueued = 0;
     const localErrors: { odId: string; reason: string }[] = [];
 
     try {
@@ -962,14 +975,19 @@ export default function AttendanceUpload() {
          const processedCount = result.data?.processed?.length ?? 0;
          const errorCount = result.data?.errors?.length ?? 0;
          const errorsList = result.data?.errors ?? [];
+         const pendingCount = Array.isArray(result.data?.pendingQueued)
+           ? result.data.pendingQueued.length
+           : 0;
 
          localSaved += processedCount;
          localFailed += errorCount;
+         localPendingQueued += pendingCount;
          localErrors.push(...errorsList);
 
          // Update state progressively
          setUploadSaved(localSaved);
          setUploadFailed(localFailed);
+         setUploadPendingQueued(localPendingQueued);
          setUploadErrors(prev => [...prev, ...errorsList]);
       }
 
@@ -1007,12 +1025,17 @@ export default function AttendanceUpload() {
 
       const baseMessage = `Saved ${localSaved} attendance record${localSaved === 1 ? '' : 's'} to the server.`;
 
+      let pendingMessage = '';
+      if (localPendingQueued > 0) {
+        pendingMessage = ` ${localPendingQueued} row${localPendingQueued === 1 ? '' : 's'} queued for unknown employees (pending); they apply after matching staff are added.`;
+      }
+
       let errorMessage = '';
       if (localFailed > 0) {
         errorMessage = ` ${localFailed} record${localFailed === 1 ? '' : 's'} failed to save. See details below.`;
       }
       
-      setSaveMessage(baseMessage + errorMessage);
+      setSaveMessage(baseMessage + pendingMessage + errorMessage);
 
       const monthYearToFetch =
         monthYearOverride || currentMonthYear || (data[0] ? getMonthYearFromDate(data[0].date) : null);
@@ -1029,7 +1052,7 @@ export default function AttendanceUpload() {
 
   const fetchUsers = useCallback(async () => {
     try {
-      const response = await fetch('/api/users?listOnly=1');
+      const response = await fetch('/api/users?listOnly=1', hrCredentialsInit());
       const result = await response.json();
       if (result.success && Array.isArray(result.data)) {
         setAllUsers(result.data);
@@ -1038,6 +1061,46 @@ export default function AttendanceUpload() {
       console.error('Failed to fetch users:', err);
     }
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setHrPermState(null);
+      return;
+    }
+    void fetchHolidays();
+    void (async () => {
+      try {
+        const res = await fetch('/api/hr-console-permissions?me=1', hrCredentialsInit());
+        const j = await res.json();
+        if (res.status === 401) {
+          handleLogout();
+          return;
+        }
+        if (!res.ok || !j.success || !j.data) {
+          setHrPermState(null);
+          return;
+        }
+        setHrPermState({
+          sections: j.data.sections,
+          employeeTabs: j.data.employeeTabs,
+        });
+        if (j.data.sections.employees !== 'none') {
+          await fetchUsers();
+        } else {
+          setAllUsers([]);
+        }
+      } catch {
+        setHrPermState(null);
+      }
+    })();
+  }, [isAuthenticated, fetchHolidays, handleLogout, fetchUsers]);
+
+  useEffect(() => {
+    if (!hrPermState) return;
+    if (hrPermState.sections[activeSection] !== 'none') return;
+    const next = HR_CONSOLE_SECTION_IDS.find((id) => hrPermState.sections[id] !== 'none');
+    if (next) setActiveSection(next);
+  }, [hrPermState, activeSection]);
 
   const calculateScheduledHoursForDate = (date: Date, schedules: any): number => {
     if (!schedules) return 0;
@@ -1104,7 +1167,7 @@ export default function AttendanceUpload() {
       }
 
       // Fetch all users with schedules for schedule lookup
-      const usersResponse = await fetch('/api/users?listOnly=1');
+      const usersResponse = await fetch('/api/users?listOnly=1', hrCredentialsInit());
       const usersResult = await usersResponse.json();
       const allUsersWithSchedules = usersResult.success ? usersResult.data : [];
       const userScheduleMap = new Map<string, any>();
@@ -1430,7 +1493,11 @@ export default function AttendanceUpload() {
         <Sidebar
           activeSection={activeSection}
           setActiveSection={(section) => {
-            if (isITUser && section !== 'upload') return;
+            if (hrPermState) {
+              if (hrPermState.sections[section] === 'none') return;
+            } else if (userRole === 'restricted_admin' && section !== 'upload') {
+              return;
+            }
             setActiveSection(section);
           }}
           uploadTotal={uploadTotal}
@@ -1438,7 +1505,9 @@ export default function AttendanceUpload() {
           uploadFailed={uploadFailed}
           currentMonthYear={currentMonthYear}
           onLogout={handleLogout}
-          isITUser={isITUser}
+          sectionAccess={hrPermState?.sections ?? null}
+          permissionsLoaded={hrPermState !== null}
+          userRole={userRole}
         />
 
         {/* Main content */}
@@ -1510,6 +1579,8 @@ export default function AttendanceUpload() {
               <EmployeeManagementSection
                 selectedUserId={selectedEmployeeId}
                 onRefreshUsers={fetchUsers}
+                employeesSectionAccess={hrPermState?.sections.employees ?? 'edit'}
+                employeeTabAccess={hrPermState?.employeeTabs}
               />
             )}
 
@@ -1739,6 +1810,8 @@ export default function AttendanceUpload() {
                     <EmployeeManagementSection
                       selectedUserId={employeeManagementModal.userId}
                       onRefreshUsers={fetchUsers}
+                      employeesSectionAccess={hrPermState?.sections.employees ?? 'edit'}
+                      employeeTabAccess={hrPermState?.employeeTabs}
                     />
                   </div>
                 </div>
@@ -1785,6 +1858,21 @@ export default function AttendanceUpload() {
             {/* Client Places Section */}
             {activeSection === 'clientPlaces' && (
               <ClientPlaceManagement allUsers={allUsers} />
+            )}
+
+            {activeSection === 'accessControl' && (
+              <HrConsoleAccessSection
+                onSaved={async () => {
+                  const res = await fetch('/api/hr-console-permissions?me=1', hrCredentialsInit());
+                  const j = await res.json();
+                  if (res.ok && j.success && j.data) {
+                    setHrPermState({
+                      sections: j.data.sections,
+                      employeeTabs: j.data.employeeTabs,
+                    });
+                  }
+                }}
+              />
             )}
           </div>
         </main>

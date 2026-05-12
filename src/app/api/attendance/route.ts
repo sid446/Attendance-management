@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Attendance from '@/models/Attendance';
 import AttendanceRequest from '@/models/AttendanceRequest';
+import PendingAttendance from '@/models/PendingAttendance';
 import User, { IUser } from '@/models/User';
 import Holiday from '@/models/Holiday';
+import { normalizeForMatch } from '@/lib/attendanceNameMatch';
 import { calculateLeaveUsageForMultipleDays, updateLeaveBalanceOnApproval, reconcilePartialLeaveFromAttendance } from '@/lib/leaveManagement';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 
@@ -98,6 +100,7 @@ export async function POST(request: NextRequest) {
     if (Array.isArray(records) && records.length > 0) {
       const processed: Array<{ odId: string; userId: string; monthYear: string; date: string; createdUser: boolean }> = [];
       const errors: Array<{ odId: string; reason: string }> = [];
+      const pendingQueued: Array<{ odId: string; uploadName: string; isoDate: string }> = [];
       const uploadedMonths = new Set<string>();
       // Track uploaded absent/leave candidates by user for paid-leave allocation.
       const uploadedLeaveCandidates = new Map<string, Set<string>>();
@@ -109,9 +112,6 @@ export async function POST(request: NextRequest) {
       // Pre-fetch all users and holidays for efficient in-memory matching
       const allUsers = await User.find({}).select('name _id odId employeeCode designation category employmentType schedules seasonalSchedules scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth');
       const allHolidays = await Holiday.find({ isActive: true });
-      
-      // Helper to strip non-alphanumeric characters for fuzzy matching
-      const normalizeForMatch = (s: string) => s.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
 
       for (const rec of records) {
         try {
@@ -139,10 +139,48 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          // 2. If still not found, skip this record
+          // 2. If still not found, queue pending attendance (same raw row) when name + date are valid
           if (!user) {
-             errors.push({ odId, reason: `User not found by Name "${recName}"` });
-             continue;
+            if (!recName) {
+              errors.push({ odId, reason: 'User not found: missing name in row' });
+              continue;
+            }
+            const rawDateStr = rec.date != null ? String(rec.date) : '';
+            if (!rawDateStr.trim()) {
+              errors.push({ odId, reason: `User not found by Name "${recName}" — missing date` });
+              continue;
+            }
+            const { isoDate, isoMonthYear } = normalizeExcelDate(rawDateStr);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate) || Number.isNaN(Date.parse(isoDate))) {
+              errors.push({ odId, reason: `User not found by Name "${recName}" — invalid date` });
+              continue;
+            }
+            try {
+              const rawRecord = JSON.parse(JSON.stringify(rec)) as Record<string, unknown>;
+              const nn = normalizeForMatch(recName);
+              const dayPath = `records.${isoDate}`;
+              await PendingAttendance.updateOne(
+                { nameNormalized: nn, monthYear: isoMonthYear, status: 'pending' },
+                {
+                  $set: {
+                    uploadName: recName,
+                    nameNormalized: nn,
+                    monthYear: isoMonthYear,
+                    [dayPath]: { odId, rawRecord },
+                    'source.uploadedAt': new Date(),
+                  },
+                },
+                { upsert: true }
+              );
+              pendingQueued.push({ odId, uploadName: recName, isoDate });
+            } catch (pendErr) {
+              console.error('Pending attendance save failed:', pendErr);
+              errors.push({
+                odId,
+                reason: `User not found by Name "${recName}" — could not queue pending`,
+              });
+            }
+            continue;
           }
 
           // 3. Process attendance record
@@ -840,6 +878,7 @@ export async function POST(request: NextRequest) {
           data: {
             processed,
             errors,
+            pendingQueued,
           },
         },
         { status: 201 }

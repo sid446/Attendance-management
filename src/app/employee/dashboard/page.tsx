@@ -356,7 +356,7 @@ export default function EmployeeDashboard() {
     _id: string;
     date: string;
     requestedStatus: string;
-    status: 'Pending' | 'Approved' | 'Rejected';
+    status: 'Pending' | 'PendingHr' | 'Approved' | 'Rejected';
     approvedBy?: string;
     approvedByEmail?: string;
     approvedAt?: string;
@@ -924,7 +924,7 @@ export default function EmployeeDashboard() {
 
       // Check if there's already a pending request for this date
       const existingRequest = employeeRequests.find(r => r.date.split('T')[0] === date);
-      if (existingRequest && existingRequest.status === 'Pending') {
+      if (existingRequest && (existingRequest.status === 'Pending' || existingRequest.status === 'PendingHr')) {
         alert('You already have a pending request for this date. Please wait for it to be processed.');
         return;
       }
@@ -1279,7 +1279,9 @@ export default function EmployeeDashboard() {
     })
     .sort((a, b) => Number(new Date(a.date).getTime()) - Number(new Date(b.date).getTime()));
 
-  const pendingRequestCount = employeeRequests.filter((r) => r.status === 'Pending').length;
+  const pendingRequestCount = employeeRequests.filter(
+    (r) => r.status === 'Pending' || r.status === 'PendingHr'
+  ).length;
 
   // Correction request dropdown options (simplified)
   const statusOptions = [

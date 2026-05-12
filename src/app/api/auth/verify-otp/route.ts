@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
-import { hrOtpStore, employeeOtpStore } from '../login/route';
+import HrAuthSession, { defaultHrSessionExpiresAt } from '@/models/HrAuthSession';
+import HrOtpPending from '@/models/HrOtpPending';
+import { attachHrAuthCookie } from '@/lib/hrAuthCookieServer';
+import { employeeOtpStore } from '../login/route';
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,36 +18,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // HR/Admin OTP verification
+    // HR/Admin OTP verification (pending OTP stored in Mongo — survives multi-instance / serverless)
     if (!role || role === 'hr') {
-      const stored = hrOtpStore.get(sessionId);
+      await dbConnect();
+      const sid = String(sessionId || '').trim();
+      const otpStr = String(otp || '').trim();
 
-      if (!stored) {
+      const pending = await HrOtpPending.findOne({ sessionId: sid }).lean();
+      if (!pending) {
         return NextResponse.json(
           { success: false, error: 'Invalid or expired session. Please login again.' },
           { status: 401 }
         );
       }
 
-      // Check expiration
-      if (stored.expiresAt < Date.now()) {
-        hrOtpStore.delete(sessionId);
+      if (new Date(pending.expiresAt).getTime() < Date.now()) {
+        await HrOtpPending.deleteOne({ sessionId: sid });
         return NextResponse.json(
           { success: false, error: 'OTP has expired. Please login again.' },
           { status: 401 }
         );
       }
 
-      // Verify OTP
-      if (stored.otp !== otp) {
-        return NextResponse.json(
-          { success: false, error: 'Invalid OTP' },
-          { status: 401 }
-        );
+      if (pending.otp !== otpStr) {
+        return NextResponse.json({ success: false, error: 'Invalid OTP' }, { status: 401 });
       }
 
-      // OTP verified - remove from store
-      hrOtpStore.delete(sessionId);
+      await HrOtpPending.deleteOne({ sessionId: sid });
+
+      const emailLower = String(pending.email || '').trim().toLowerCase();
 
       // Generate auth token (simple approach - in production use JWT)
       const authToken =
@@ -52,18 +54,32 @@ export async function POST(request: NextRequest) {
         Date.now().toString(36) +
         Math.random().toString(36).substring(2);
 
-      // Role-based access control (RBAC) - server side logic
-      const userRole = stored.email.toLowerCase() === 'it@asija.in' ? 'restricted_admin' : 'admin';
+      try {
+        await HrAuthSession.findOneAndUpdate(
+          { token: authToken },
+          { $set: { email: emailLower, expiresAt: defaultHrSessionExpiresAt() } },
+          { upsert: true, new: true }
+        );
+      } catch (sessionErr) {
+        console.error('HrAuthSession persist error:', sessionErr);
+        return NextResponse.json(
+          { success: false, error: 'Could not create session. Please try again.' },
+          { status: 500 }
+        );
+      }
 
-      return NextResponse.json({
+      const userRole = emailLower === 'it@asija.in' ? 'restricted_admin' : 'admin';
+
+      const res = NextResponse.json({
         success: true,
         data: {
-          authToken,
-          email: stored.email,
+          email: pending.email,
           role: userRole,
           message: 'Login successful',
         },
       });
+      attachHrAuthCookie(res, authToken);
+      return res;
     }
 
     // Employee/Partner OTP verification

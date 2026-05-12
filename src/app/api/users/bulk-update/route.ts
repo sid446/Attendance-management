@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
+import { reconcilePendingAttendanceForUser } from '@/lib/reconcilePendingAttendance';
 import User, { IUser } from '@/models/User';
 import {
   applyManagedEffectiveHistories,
@@ -7,12 +8,26 @@ import {
   ManagedEffectiveField,
   normalizeManagedFieldValue,
 } from '@/lib/userFieldHistory';
+import { getHrOperatorEmailFromRequest } from '@/lib/hrAuthServer';
+import { loadHrConsolePermissionDoc } from '@/lib/hrConsolePermissionDb';
+import {
+  assertCanApplyUserPutBody,
+  collectUserFieldKeysFromEmployeeRecords,
+  effectiveFromDoc,
+} from '@/lib/hrConsolePermissionUtils';
 
 const DEFAULT_BASELINE_EFFECTIVE_FROM = new Date('2025-12-31T00:00:00.000Z');
 
 export async function POST(request: NextRequest) {
   try {
     await dbConnect();
+
+    const operatorEmail = await getHrOperatorEmailFromRequest(request);
+    if (!operatorEmail) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+    const permDoc = await loadHrConsolePermissionDoc(operatorEmail);
+    const effective = effectiveFromDoc(operatorEmail, permDoc);
 
     const body = await request.json();
     const { employees } = body;
@@ -23,6 +38,9 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const bulkDenied = assertCanApplyUserPutBody(collectUserFieldKeysFromEmployeeRecords(employees), effective);
+    if (bulkDenied) return bulkDenied;
 
     const stats = {
       created: 0,
@@ -264,6 +282,11 @@ export async function POST(request: NextRequest) {
             }
 
             await newUser.save();
+            try {
+              await reconcilePendingAttendanceForUser(String(newUser._id));
+            } catch (reconErr) {
+              console.error('reconcilePendingAttendanceForUser (bulk-update):', reconErr);
+            }
             stats.created++;
         }
 

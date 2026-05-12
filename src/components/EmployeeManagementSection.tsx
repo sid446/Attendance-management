@@ -2,6 +2,9 @@ import React, { useState, useEffect, ChangeEvent, useMemo, useCallback, useRef }
 import { Edit2, Save, X, Plus, Upload, FileUp, Filter, Trash2, Search, Download, ChevronDown, ChevronUp, FileSpreadsheet, Settings, Users, Briefcase, CreditCard, Tag } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { User as UserBase, ScheduleTime, DailySchedule } from '@/types/ui';
+import { fullEditDefaults, type EmployeeManagementTabId, type HrAccessLevel } from '@/lib/hrConsolePermissionUtils';
+import { pickEditableUserPutBody, type EmployeeTabAccess } from '@/lib/hrEmployeeSaveFilter';
+import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
 
 // Extend User type to include articleCreditsAsOnJan26 for local use
 type User = UserBase & {
@@ -186,7 +189,12 @@ function EmployeeManagementTableSkeleton() {
 
 import type { Workbook, Worksheet, Row, Cell } from 'exceljs';
 
-export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | null; onRefreshUsers?: () => void }> = ({ selectedUserId, onRefreshUsers }) => {
+export const EmployeeManagementSection: React.FC<{
+  selectedUserId?: string | null;
+  onRefreshUsers?: () => void;
+  employeesSectionAccess?: HrAccessLevel;
+  employeeTabAccess?: EmployeeTabAccess;
+}> = ({ selectedUserId, onRefreshUsers, employeesSectionAccess = 'edit', employeeTabAccess: employeeTabAccessProp }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -218,6 +226,20 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   const [activeTab, setActiveTab] = useState<'basic' | 'schedule' | 'extended' | 'bank' | 'salary' | 'history'>('basic');
   const [showBulkUploadFormat, setShowBulkUploadFormat] = useState<boolean>(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState<boolean>(false);
+
+  const tabAccess = useMemo(
+    () => employeeTabAccessProp ?? fullEditDefaults().employeeTabs,
+    [employeeTabAccessProp]
+  );
+  const employeesCanEdit = employeesSectionAccess === 'edit';
+  const denyEdits = !employeesCanEdit || tabAccess[activeTab] !== 'edit';
+
+  useEffect(() => {
+    if (tabAccess[activeTab] !== 'none') return;
+    const order: EmployeeManagementTabId[] = ['basic', 'schedule', 'extended', 'bank', 'salary', 'history'];
+    const next = order.find((t) => tabAccess[t] !== 'none');
+    if (next) setActiveTab(next);
+  }, [activeTab, tabAccess]);
 
   // Predefined Values State
   const [showPredefinedValues, setShowPredefinedValues] = useState<boolean>(false);
@@ -284,7 +306,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       setError(null);
     }
     try {
-      const response = await fetch(USERS_LIST_ENDPOINT, { cache: 'no-store' });
+      const response = await fetch(USERS_LIST_ENDPOINT, hrCredentialsInit({ cache: 'no-store' }));
       const result = await response.json();
       if (gen !== usersListFetchGenerationRef.current) {
         return;
@@ -308,7 +330,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   const fetchEmployeeHistory = useCallback(async (userId: string) => {
     setHistoryLoading(true);
     try {
-      const response = await fetch(`/api/users/${userId}/history`);
+      const response = await fetch(`/api/users/${userId}/history`, hrCredentialsInit());
       const result = await response.json();
       if (result.success) {
         setEmployeeHistory(result.data);
@@ -357,7 +379,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         return;
       }
       try {
-        const response = await fetch(`/api/users/${encodeURIComponent(uid)}`);
+        const response = await fetch(`/api/users/${encodeURIComponent(uid)}`, hrCredentialsInit());
         const result = await response.json();
         if (!result.success) {
           throw new Error(result.error || 'Failed to load employee');
@@ -389,6 +411,10 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   }, [selectedUserId, users, openUserForEdit]);
 
   const handleDeleteUser = async (user: User) => {
+    if (!employeesCanEdit || tabAccess.basic !== 'edit') {
+      alert('You do not have permission to deactivate employees.');
+      return;
+    }
     if (!window.confirm(`Are you sure you want to delete employee "${user.name}"? This will deactivate their account.`)) {
       return;
     }
@@ -400,9 +426,9 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
     }
 
     try {
-      const response = await fetch(`/api/users/${encodeURIComponent(id)}`, {
+      const response = await fetch(`/api/users/${encodeURIComponent(id)}`, hrCredentialsInit({
         method: 'DELETE',
-      });
+      }));
 
       const text = await response.text();
       let result: { success?: boolean; error?: string; data?: User } = {};
@@ -462,6 +488,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   const [newEmploymentTypeDate, setNewEmploymentTypeDate] = useState<string>('');
 
   const handleInputChange = (field: keyof User, value: any) => {
+    if (denyEdits) return;
     setFormData(prev => {
       const newData = { ...prev, [field]: value };
       // When workingUnderPartner changes, also update team to the same value
@@ -575,11 +602,11 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
 
     setIsSavingExtraLabel(true);
     try {
-      const res = await fetch('/api/users/extra-info', {
+      const res = await fetch('/api/users/extra-info', hrCredentialsInit({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ label }),
-      });
+      }));
       const json = await res.json();
       if (!res.ok || !json.success) {
         throw new Error(json.error || 'Failed to add field');
@@ -597,7 +624,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   // Predefined Values Functions
   const fetchPredefinedValues = async () => {
     try {
-      const res = await fetch('/api/users/predefined-values');
+      const res = await fetch('/api/users/predefined-values', hrCredentialsInit());
       const json = await res.json();
       if (res.ok && json.success) {
         setPredefinedValues(json.data);
@@ -634,11 +661,11 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
 
     setIsSavingPredefinedValue(true);
     try {
-      const res = await fetch('/api/users/predefined-values', {
+      const res = await fetch('/api/users/predefined-values', hrCredentialsInit({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: mappedType, value: trimmedValue }),
-      });
+      }));
       const json = await res.json();
       if (!res.ok || !json.success) {
         throw new Error(json.error || 'Failed to add value');
@@ -658,11 +685,11 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
     if (!window.confirm(`Remove "${value}" from ${type}?`)) return;
     
     try {
-      const res = await fetch('/api/users/predefined-values', {
+      const res = await fetch('/api/users/predefined-values', hrCredentialsInit({
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type, value }),
-      });
+      }));
       const json = await res.json();
       if (!res.ok || !json.success) {
         throw new Error(json.error || 'Failed to remove value');
@@ -680,8 +707,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       setError(null);
       try {
         const [usersRes, preRes] = await Promise.all([
-          fetch(USERS_LIST_ENDPOINT, { cache: 'no-store' }),
-          fetch('/api/users/predefined-values', { cache: 'no-store' }),
+          fetch(USERS_LIST_ENDPOINT, hrCredentialsInit({ cache: 'no-store' })),
+          fetch('/api/users/predefined-values', hrCredentialsInit({ cache: 'no-store' })),
         ]);
         const usersJson = await usersRes.json();
         const preJson = await preRes.json();
@@ -799,6 +826,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
 
 
   const handleScheduleEntryChange = (entryIndex: number, day: string, field: 'inTime' | 'outTime' | 'isHoliday' | 'isHalfDay', value: string | boolean) => {
+    if (denyEdits) return;
     setFormData(prev => {
       const schedules = Array.isArray(prev.schedules) ? [...prev.schedules] : [];
       if (!schedules[entryIndex]) return prev;
@@ -823,6 +851,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   };
 
   const handleEffectiveFromChange = (entryIndex: number, value: string) => {
+    if (denyEdits) return;
     setFormData(prev => {
       const schedules = Array.isArray(prev.schedules) ? [...prev.schedules] : [];
       if (!schedules[entryIndex]) return prev;
@@ -836,6 +865,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   };
 
   const handleAddScheduleEntry = () => {
+    if (denyEdits) return;
     const newEffectiveFrom = toDateInputValue(new Date());
     setFormData(prev => {
       const schedules = Array.isArray(prev.schedules) ? [...prev.schedules] : [];
@@ -858,6 +888,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   };
 
   const handleRemoveScheduleEntry = (entryIndex: number) => {
+    if (denyEdits) return;
     setFormData(prev => {
       const schedules = Array.isArray(prev.schedules) ? [...prev.schedules] : [];
       schedules.splice(entryIndex, 1);
@@ -866,6 +897,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   };
 
   const handleAddSeasonalSchedule = () => {
+    if (denyEdits) return;
     setFormData(prev => {
       const seasonalSchedules = Array.isArray(prev.seasonalSchedules) ? [...prev.seasonalSchedules] : [];
       seasonalSchedules.push({
@@ -887,6 +919,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   };
 
   const handleRemoveSeasonalSchedule = (index: number) => {
+    if (denyEdits) return;
     setFormData(prev => {
       const seasonalSchedules = Array.isArray(prev.seasonalSchedules) ? [...prev.seasonalSchedules] : [];
       seasonalSchedules.splice(index, 1);
@@ -895,6 +928,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   };
 
   const handleSeasonalScheduleFieldChange = (index: number, field: string, value: any) => {
+    if (denyEdits) return;
     setFormData(prev => {
       const seasonalSchedules = Array.isArray(prev.seasonalSchedules) ? [...prev.seasonalSchedules] : [];
       if (!seasonalSchedules[index]) return prev;
@@ -904,6 +938,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   };
 
   const handleSeasonalScheduleTimeChange = (index: number, day: string, field: string, value: any) => {
+    if (denyEdits) return;
     setFormData(prev => {
       const seasonalSchedules = Array.isArray(prev.seasonalSchedules) ? [...prev.seasonalSchedules] : [];
       if (!seasonalSchedules[index]) return prev;
@@ -937,6 +972,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
   };
 
   const handleIsActiveChange = (checked: boolean) => {
+    if (denyEdits) return;
     setFormData((prev) => ({
       ...prev,
       isActive: checked,
@@ -959,18 +995,25 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
     setError(null);
 
     try {
-      const response = await fetch(`/api/users/${editingUser._id}`, {
+      const prepared = prepareFormDataForSave(formData) as Record<string, unknown>;
+      const payload = pickEditableUserPutBody(prepared, tabAccess, {
+        changedBy: 'HR Admin',
+        changeReason: changeReason || 'Employee information update',
+        managedEffectiveFromByField: managedFieldsEffectiveFromByField,
+      });
+      if (Object.keys(payload).length === 0) {
+        setError('Nothing to save for your access level on this tab.');
+        setSaveLoading(false);
+        return;
+      }
+
+      const response = await fetch(`/api/users/${editingUser._id}`, hrCredentialsInit({
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          ...prepareFormDataForSave(formData),
-          changedBy: 'HR Admin', // You can make this dynamic based on logged-in user
-          changeReason: changeReason || 'Employee information update',
-          managedEffectiveFromByField: managedFieldsEffectiveFromByField,
-        }),
-      });
+        body: JSON.stringify(payload),
+      }));
 
       const result = await response.json();
 
@@ -1012,17 +1055,22 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
       }
     }
 
+    if (!employeesCanEdit || tabAccess.basic !== 'edit') {
+      setError('You do not have permission to create employees.');
+      return;
+    }
+
     setSaveLoading(true);
     setError(null);
 
     try {
-      const response = await fetch('/api/users', {
+      const response = await fetch('/api/users', hrCredentialsInit({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(prepareFormDataForSave(formData)),
-      });
+      }));
 
       const result = await response.json();
 
@@ -1325,11 +1373,11 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         };
       }).filter(Boolean);
 
-      const response = await fetch('/api/users/bulk-update', {
+      const response = await fetch('/api/users/bulk-update', hrCredentialsInit({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ employees }),
-      });
+      }));
 
       const result = await response.json();
       if (!result.success) {
@@ -1419,11 +1467,11 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           });
       }
 
-      const response = await fetch('/api/users/bulk-schedule-update', {
+      const response = await fetch('/api/users/bulk-schedule-update', hrCredentialsInit({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ schedules })
-      });
+      }));
 
       const result = await response.json();
       if (result.success) {
@@ -1521,11 +1569,11 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
         throw new Error('No leave data found in the file');
       }
 
-      const response = await fetch('/api/users/bulk-leave-update', {
+      const response = await fetch('/api/users/bulk-leave-update', hrCredentialsInit({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ leaveData })
-      });
+      }));
 
       const result = await response.json();
       if (result.success) {
@@ -2021,6 +2069,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           {/* Tab Navigation */}
           <div className="md:col-span-2 mb-4">
             <div className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1">
+              {tabAccess.basic !== 'none' && (
               <button
                 type="button"
                 onClick={() => setActiveTab('basic')}
@@ -2032,6 +2081,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               >
                 Basic Info
               </button>
+              )}
+              {tabAccess.schedule !== 'none' && (
               <button
                 type="button"
                 onClick={() => setActiveTab('schedule')}
@@ -2043,6 +2094,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               >
                 Schedule
               </button>
+              )}
+              {tabAccess.extended !== 'none' && (
               <button
                 type="button"
                 onClick={() => setActiveTab('extended')}
@@ -2054,6 +2107,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               >
                 Extended
               </button>
+              )}
+              {tabAccess.bank !== 'none' && (
               <button
                 type="button"
                 onClick={() => setActiveTab('bank')}
@@ -2065,6 +2120,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               >
                 Bank Details
               </button>
+              )}
+              {tabAccess.salary !== 'none' && (
               <button
                 type="button"
                 onClick={() => setActiveTab('salary')}
@@ -2076,6 +2133,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               >
                 Salary & Leave
               </button>
+              )}
+              {tabAccess.history !== 'none' && (
               <button
                 type="button"
                 onClick={() => setActiveTab('history')}
@@ -2087,6 +2146,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               >
                 History
               </button>
+              )}
             </div>
           </div>
 
@@ -3628,7 +3688,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           <button
             type="button"
             onClick={handleSave}
-            disabled={saveLoading}
+            disabled={saveLoading || denyEdits}
             className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Save className="h-4 w-4" aria-hidden />
@@ -3689,6 +3749,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           {/* Tab Navigation */}
           <div className="mb-4 md:col-span-2">
             <div className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1">
+              {tabAccess.basic !== 'none' && (
               <button
                 type="button"
                 onClick={() => setActiveTab('basic')}
@@ -3700,6 +3761,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               >
                 Basic Info
               </button>
+              )}
+              {tabAccess.schedule !== 'none' && (
               <button
                 type="button"
                 onClick={() => setActiveTab('schedule')}
@@ -3711,6 +3774,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               >
                 Schedule
               </button>
+              )}
+              {tabAccess.extended !== 'none' && (
               <button
                 type="button"
                 onClick={() => setActiveTab('extended')}
@@ -3722,6 +3787,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               >
                 Extended
               </button>
+              )}
             </div>
           </div>
 
@@ -4621,7 +4687,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
           <button
             type="button"
             onClick={handleCreateNew}
-            disabled={saveLoading || !formData.name || !formData.email || !formData.odId || !formData.joiningDate}
+            disabled={saveLoading || denyEdits || !formData.name || !formData.email || !formData.odId || !formData.joiningDate}
             className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Plus className="h-4 w-4" aria-hidden />
@@ -4897,7 +4963,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   setFormData({ isActive: true, inactiveAsOf: undefined });
                   setIsAddingNew(true);
                 }}
-                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                disabled={!employeesCanEdit || tabAccess.basic !== 'edit'}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Plus className="h-4 w-4" aria-hidden />
                 Add employee
@@ -4921,7 +4988,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
               <button
                 type="button"
                 onClick={() => setShowSettingsPanel(!showSettingsPanel)}
-                className={`rounded-lg border p-2.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/30 ${
+                disabled={!employeesCanEdit}
+                className={`rounded-lg border p-2.5 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:cursor-not-allowed disabled:opacity-50 ${
                   showSettingsPanel
                     ? 'border-blue-200 bg-blue-50 text-blue-900'
                     : 'border-blue-200/65 bg-panel text-slate-600 hover:bg-slate-50'
@@ -4956,7 +5024,7 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                   accept=".xlsx,.xls"
                   onChange={handleBulkUpload}
                   className="hidden"
-                  disabled={isUploading}
+                  disabled={isUploading || !employeesCanEdit}
                 />
               </label>
             </div>
@@ -5105,11 +5173,11 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                               onClick={async () => {
                                 if (!window.confirm(`Remove field "${label}" from all employees?`)) return;
                                 try {
-                                  const res = await fetch('/api/users/extra-info', {
+                                  const res = await fetch('/api/users/extra-info', hrCredentialsInit({
                                     method: 'DELETE',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ label }),
-                                  });
+                                  }));
                                   const json = await res.json();
                                   if (!res.ok || !json.success) {
                                     throw new Error(json.error || 'Failed to remove field');
@@ -5539,7 +5607,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                         <button
                           type="button"
                           onClick={() => handleEditClick(user)}
-                          className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                          disabled={employeesSectionAccess === 'none'}
+                          className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label={`Edit ${user.name ?? 'employee'}`}
                         >
                           <Edit2 className="h-4 w-4" aria-hidden />
@@ -5547,7 +5616,8 @@ export const EmployeeManagementSection: React.FC<{ selectedUserId?: string | nul
                         <button
                           type="button"
                           onClick={() => handleDeleteUser(user)}
-                          className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-rose-50 hover:text-rose-800 focus:outline-none focus:ring-2 focus:ring-rose-500/30"
+                          disabled={!employeesCanEdit || tabAccess.basic !== 'edit'}
+                          className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-rose-50 hover:text-rose-800 focus:outline-none focus:ring-2 focus:ring-rose-500/30 disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label={`Deactivate ${user.name ?? 'employee'}`}
                         >
                           <Trash2 className="h-4 w-4" aria-hidden />

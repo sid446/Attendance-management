@@ -2,15 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
 import { sendOTPEmail } from '@/lib/mailer';
+import { isAllowedHrAdminEmail } from '@/lib/hrAdminAllowlistServer';
+import HrOtpPending from '@/models/HrOtpPending';
 
 // Fixed HR password
 const HR_PASSWORD = 'Asija@2026';
 const EMAIL_DOMAIN = '@asija.in';
 
-// In-memory OTP stores
-// For HR/Partner: Map<sessionId, { otp: string, expiresAt: number, email: string }>
-// For Employee: Map<sessionId, { otp: string, expiresAt: number, email: string, userId: string }>
-const hrOtpStore = new Map<string, { otp: string; expiresAt: number; email: string }>();
+// In-memory OTP store for employee/partner flow via this route only (HR OTP uses Mongo: HrOtpPending).
 const employeeOtpStore = new Map<
   string,
   {
@@ -55,9 +54,8 @@ export async function POST(request: NextRequest) {
 
       // Validate admin email
       const rawEmail = String(email || '').trim().toLowerCase();
-      const ALLOWED_ADMIN_EMAILS = ['it@asija.in', 'hr@asija.in', 'service@asija.in']; // Add authorized emails here
-      
-      if (!rawEmail || !ALLOWED_ADMIN_EMAILS.includes(rawEmail)) {
+
+      if (!rawEmail || !(await isAllowedHrAdminEmail(rawEmail))) {
         return NextResponse.json(
           { success: false, error: 'This email is not authorized for HR access' },
           { status: 403 }
@@ -69,15 +67,19 @@ export async function POST(request: NextRequest) {
       const sessionId = generateSessionId();
       const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
 
-      // Store OTP
-      hrOtpStore.set(sessionId, { otp, expiresAt, email: String(email || '').trim().toLowerCase() });
-
-      // Clean up expired OTPs
-      for (const [key, value] of hrOtpStore.entries()) {
-        if (value.expiresAt < Date.now()) {
-          hrOtpStore.delete(key);
-        }
-      }
+      // Store OTP in Mongo so verify-otp works across serverless instances / dev workers
+      await dbConnect();
+      await HrOtpPending.findOneAndUpdate(
+        { sessionId },
+        {
+          $set: {
+            otp,
+            email: rawEmail,
+            expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+          },
+        },
+        { upsert: true }
+      );
 
       // Send OTP email
       try {
@@ -195,6 +197,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Export for use by verify-otp route
-export { hrOtpStore, employeeOtpStore };
+// Export for use by verify-otp route (employee/partner branch only)
+export { employeeOtpStore };
 

@@ -47,22 +47,51 @@ function ReviewAllPageContent() {
   const APPROVE_CHIPS = ['Done', 'Missed Entry', 'Client Visit', 'Emergency', 'Approved'];
   const REJECT_CHIPS = ['Insufficient Hours', 'Incorrect Date', 'Incorrect Entry', 'Not Discussed', 'Proof Required'];
 
-  // Helper function to get max value based on request type
-  const getMaxValueForType = (requestedStatus: string): number => {
+  // Align caps with HR dashboard (AttendanceRequestsSection): WFH 0.75, OS/outstation/client/onsite 1.2, else 1; half 0.5; leave none.
+  const getMaxValueForType = (requestedStatus: string): number | null => {
     const status = requestedStatus.toLowerCase();
     if (status.includes('half')) return 0.5;
+    if (status.includes('leave') || requestedStatus === 'On leave') return null;
     if (status.includes('wfh')) return 0.75;
-    if (status.includes('outstation')) return 1.2;
+    if (
+      status.includes('outstation') ||
+      status.includes('client place') ||
+      status.includes('clientplace') ||
+      status.includes('onsite') ||
+      status.includes('os-p')
+    ) {
+      return 1.2;
+    }
     return 1;
   };
 
-  // Helper function to get default value based on request type
   const getDefaultValueForType = (requestedStatus: string): string => {
     const status = requestedStatus.toLowerCase();
     if (status.includes('half')) return '0.5';
+    if (status.includes('leave') || requestedStatus === 'On leave') return '';
     if (status.includes('wfh')) return '0.75';
-    if (status.includes('outstation')) return '1.2';
+    if (
+      status.includes('outstation') ||
+      status.includes('client place') ||
+      status.includes('clientplace') ||
+      status.includes('onsite') ||
+      status.includes('os-p')
+    ) {
+      return '1.2';
+    }
     return '1';
+  };
+
+  const resolveApproveValueForGroup = (group: RequestGroup, raw: string | undefined): number | undefined => {
+    if (isLeaveRequestType(group.requestedStatus)) return undefined;
+    const trimmed = String(raw ?? '').trim().replace(',', '.');
+    const defStr = getDefaultValueForType(group.requestedStatus);
+    let n = trimmed === '' ? NaN : parseFloat(trimmed);
+    if (!Number.isFinite(n)) n = defStr === '' ? NaN : parseFloat(defStr);
+    if (!Number.isFinite(n)) return undefined;
+    const max = getMaxValueForType(group.requestedStatus);
+    if (max != null) n = Math.min(Math.max(0, n), max);
+    return n;
   };
 
   const isFixedValueType = (requestedStatus: string): boolean => {
@@ -89,10 +118,13 @@ function ReviewAllPageContent() {
           const groups = groupRequests(data.data);
           setRequestGroups(groups);
           const initialRemarks: { [key: string]: string } = {};
-          groups.forEach((_, index) => {
+          const initialValues: { [key: string]: string } = {};
+          groups.forEach((g, index) => {
             initialRemarks[index.toString()] = 'Done';
+            initialValues[index.toString()] = getDefaultValueForType(g.requestedStatus);
           });
           setRemarks(initialRemarks);
+          setValues(initialValues);
         } else {
           setError(data.error || 'Failed to load requests');
         }
@@ -190,6 +222,7 @@ function ReviewAllPageContent() {
         { header: 'Original Time', key: 'originalTimeRange', width: 18 },
         { header: 'Decision (Approve/Reject)', key: 'remarkDecision', width: 24 },
         { header: 'Remark (Text)', key: 'remarkText', width: 36 },
+        { header: 'Value', key: 'approvalValue', width: 12 },
       ] as const;
 
       worksheet.columns = columns as any;
@@ -218,7 +251,13 @@ function ReviewAllPageContent() {
       });
 
       filtered.forEach((g) => {
-        worksheet.addRow({
+        const defStr = getDefaultValueForType(g.requestedStatus);
+        let approvalNum: number | undefined = undefined;
+        if (!isLeaveRequestType(g.requestedStatus) && defStr !== '') {
+          const n = parseFloat(defStr);
+          if (Number.isFinite(n)) approvalNum = n;
+        }
+        const row = worksheet.addRow({
           requestIds: (g.requestIds || []).join(', '),
           userName: g.userName,
           requestedStatus: g.requestedStatus,
@@ -229,26 +268,42 @@ function ReviewAllPageContent() {
           originalTimeRange: g.originalTimeRange || '-',
           remarkDecision: '',
           remarkText: '',
+          approvalValue: approvalNum ?? '',
         });
+        const vc = row.getCell('approvalValue');
+        if (approvalNum !== undefined && Number.isFinite(approvalNum)) {
+          vc.value = approvalNum;
+          vc.numFmt = '0.00';
+        } else {
+          vc.value = null;
+        }
       });
 
-      // Lock everything by default; unlock only Decision + Remark Text for editing.
-      const decisionColNumber = columns.findIndex(c => c.key === 'remarkDecision') + 1; // 1-based
-      const remarkTextColNumber = columns.findIndex(c => c.key === 'remarkText') + 1; // 1-based
+      const decisionColNumber = columns.findIndex((c) => c.key === 'remarkDecision') + 1;
+      const remarkTextColNumber = columns.findIndex((c) => c.key === 'remarkText') + 1;
+      const valueColNumber = columns.findIndex((c) => c.key === 'approvalValue') + 1;
+      const reasonColNumber = columns.findIndex((c) => c.key === 'reason') + 1;
       worksheet.eachRow((row: any, rowNumber: number) => {
-        if (rowNumber <= 2) return; // title + header locked
-        // ExcelJS can't auto-fit row height; use a larger default for wrapped text.
+        if (rowNumber <= 2) return;
         row.height = 48;
         row.eachCell((cell: any, colNumber: number) => {
           cell.font = { size: 10 };
-          cell.alignment = { vertical: 'middle', horizontal: colNumber === 7 ? 'left' : 'center', wrapText: true };
+          cell.alignment = {
+            vertical: 'middle',
+            horizontal: colNumber === reasonColNumber ? 'left' : 'center',
+            wrapText: true,
+          };
           cell.border = {
             top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
             bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
             left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
             right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
           };
-          cell.protection = { locked: colNumber !== decisionColNumber && colNumber !== remarkTextColNumber };
+          const unlocked =
+            colNumber === decisionColNumber ||
+            colNumber === remarkTextColNumber ||
+            colNumber === valueColNumber;
+          cell.protection = { locked: !unlocked };
         });
 
         const decisionCell = row.getCell(decisionColNumber);
@@ -261,12 +316,17 @@ function ReviewAllPageContent() {
           errorTitle: 'Invalid value',
           error: 'Please select either Approve or Reject.',
         };
-        decisionCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } }; // Amber-100
-        decisionCell.font = { bold: true, color: { argb: 'FF92400E' } }; // Amber-800
+        decisionCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+        decisionCell.font = { bold: true, color: { argb: 'FF92400E' } };
 
         const remarkTextCell = row.getCell(remarkTextColNumber);
-        remarkTextCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEFCE8' } }; // Yellow-50
-        remarkTextCell.font = { color: { argb: 'FF1F2937' } }; // Slate-800-ish
+        remarkTextCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEFCE8' } };
+        remarkTextCell.font = { color: { argb: 'FF1F2937' } };
+
+        const valueCell = row.getCell(valueColNumber);
+        valueCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0F2FE' } };
+        valueCell.font = { color: { argb: 'FF0C4A6E' } };
+        valueCell.numFmt = '0.00';
       });
 
       // Enable sheet protection (keeps locked cells non-editable).
@@ -328,7 +388,9 @@ function ReviewAllPageContent() {
       const results = await Promise.all(groupIds.map(async (id) => {
         const group = requestGroups[parseInt(id)];
         const remark = remarks[id] || 'Done';
-        const value = values[id] || getDefaultValueForType(group.requestedStatus);
+        const valueRaw = values[id] ?? getDefaultValueForType(group.requestedStatus);
+        const value =
+          action === 'approve' ? resolveApproveValueForGroup(group, valueRaw) : undefined;
 
         try {
           const res = await fetch('/api/partner/bulk-action', {
@@ -378,48 +440,49 @@ function ReviewAllPageContent() {
   };
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-950">
+    <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
       <div className="text-center">
-        <div className="animate-spin rounded-full h-10 w-10 border-2 border-slate-700 border-t-emerald-500 mx-auto"></div>
-        <p className="mt-4 text-slate-400 text-sm">Loading requests...</p>
+        <div className="animate-spin rounded-full h-10 w-10 border-2 border-border border-t-emerald-600 mx-auto" />
+        <p className="mt-4 text-muted-foreground text-sm">Loading requests...</p>
       </div>
     </div>
   );
 
   if (error) return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4">
-      <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl text-center max-w-sm w-full">
-        <h2 className="text-lg font-semibold text-white mb-2">Something went wrong</h2>
-        <p className="text-slate-400 text-sm">{error}</p>
-        <button onClick={() => window.location.reload()} className="mt-4 px-4 py-2 bg-emerald-600 rounded-lg text-white text-sm">Retry</button>
+    <div className="min-h-screen flex items-center justify-center bg-background text-foreground p-4">
+      <div className="bg-surface border border-border p-6 rounded-2xl text-center max-w-sm w-full shadow-[inset_0_0_0_1px_rgba(147,197,253,0.25)]">
+        <h2 className="text-lg font-semibold text-foreground mb-2">Something went wrong</h2>
+        <p className="text-muted-foreground text-sm">{error}</p>
+        <button onClick={() => window.location.reload()} className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-white text-sm transition-colors">
+          Retry
+        </button>
       </div>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-slate-950 selection:bg-emerald-500/30">
-      {/* Refined Header */}
-      <header className="sticky top-0 z-50 bg-slate-900/90 backdrop-blur-lg border-b border-white/10">
-        <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
+    <div className="min-h-screen bg-background text-foreground selection:bg-emerald-500/25">
+      <header className="sticky top-0 z-50 border-b border-border bg-background/90 backdrop-blur-md">
+        <div className="w-full max-w-none mx-auto px-4 sm:px-6 xl:px-10 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <button 
               onClick={() => router.push('/employee/dashboard')} 
-              className="p-2 -ml-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-all"
+              className="p-2 -ml-2 rounded-lg border border-transparent text-muted-foreground hover:text-foreground hover:bg-surface transition-colors"
             >
               <ArrowLeft className="h-6 w-6" />
             </button>
             <div>
-              <h1 className="text-lg font-bold text-white tracking-tight leading-none">Review Requests</h1>
-              <p className="text-[11px] font-bold text-emerald-500 uppercase tracking-widest mt-1">Partner Review Portal</p>
+              <h1 className="text-lg font-bold text-foreground tracking-tight leading-none">Review Requests</h1>
+              <p className="text-[11px] font-bold text-emerald-700 uppercase tracking-widest mt-1">Partner Review Portal</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="hidden sm:inline-flex rounded-xl border border-white/10 bg-white/5 p-1">
+            <div className="hidden sm:inline-flex rounded-lg border border-border bg-surface p-1 shadow-[inset_0_0_0_1px_rgba(147,197,253,0.18)]">
               <button
                 type="button"
                 onClick={() => setViewMode('table')}
-                className={`px-3 py-2 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all ${
-                  viewMode === 'table' ? 'bg-emerald-500 text-slate-950' : 'text-slate-300 hover:bg-white/10'
+                className={`px-3 py-2 rounded-md text-[11px] font-black uppercase tracking-widest transition-all ${
+                  viewMode === 'table' ? 'bg-emerald-600 text-white shadow-sm' : 'text-muted-foreground hover:bg-background hover:text-foreground'
                 }`}
                 title="Table view"
               >
@@ -428,8 +491,8 @@ function ReviewAllPageContent() {
               <button
                 type="button"
                 onClick={() => setViewMode('cards')}
-                className={`px-3 py-2 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all ${
-                  viewMode === 'cards' ? 'bg-emerald-500 text-slate-950' : 'text-slate-300 hover:bg-white/10'
+                className={`px-3 py-2 rounded-md text-[11px] font-black uppercase tracking-widest transition-all ${
+                  viewMode === 'cards' ? 'bg-emerald-600 text-white shadow-sm' : 'text-muted-foreground hover:bg-background hover:text-foreground'
                 }`}
                 title="Card view"
               >
@@ -439,14 +502,14 @@ function ReviewAllPageContent() {
             <button
               onClick={exportReviewAllToExcel}
               disabled={exporting || loading || !!error || requestGroups.length === 0}
-              className="h-10 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
+              className="h-10 px-3 rounded-lg border border-border bg-surface hover:bg-surface/80 text-xs font-bold text-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
               title="Export current filtered rows to Excel"
               type="button"
             >
               {exporting ? (
-                <div className="h-4 w-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                <div className="h-4 w-4 border-2 border-border border-t-emerald-600 rounded-full animate-spin" />
               ) : (
-                <Download className="h-4 w-4 text-slate-300" />
+                <Download className="h-4 w-4 text-muted-foreground" />
               )}
               Export Excel
             </button>
@@ -454,19 +517,18 @@ function ReviewAllPageContent() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-2 py-4 pb-40">
+      <main className="w-full max-w-none mx-auto px-2 sm:px-4 xl:px-10 py-4 pb-40">
         {requestGroups.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 text-slate-500">
-            <p className="text-base font-medium">All pending requests cleared!</p>
+          <div className="flex flex-col items-center justify-center py-24 text-muted-foreground">
+            <p className="text-base font-medium text-foreground">All pending requests cleared!</p>
           </div>
         ) : (
           <div className="space-y-4">
-            {/* Clearer Filters */}
-            <div className="grid grid-cols-2 gap-3 mb-4 px-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 px-1 max-w-2xl lg:max-w-none">
               <select 
                 value={leaveTypeFilter} 
                 onChange={(e) => setLeaveTypeFilter(e.target.value)} 
-                className="w-full h-10 px-3 bg-slate-900 border border-white/10 rounded-xl text-xs text-slate-200"
+                className="w-full h-10 px-3 bg-background border border-border rounded-lg text-xs text-foreground focus:border-emerald-500 outline-none"
               >
                 <option value="all">All Types</option>
                 {getUniqueLeaveTypes().map(t => <option key={t} value={t}>{t}</option>)}
@@ -474,50 +536,49 @@ function ReviewAllPageContent() {
               <select 
                 value={personFilter} 
                 onChange={(e) => setPersonFilter(e.target.value)} 
-                className="w-full h-10 px-3 bg-slate-900 border border-white/10 rounded-xl text-xs text-slate-200"
+                className="w-full h-10 px-3 bg-background border border-border rounded-lg text-xs text-foreground focus:border-emerald-500 outline-none"
               >
                 <option value="all">All Employees</option>
                 {getUniquePersons().map(p => <option key={p} value={p}>{p}</option>)}
               </select>
             </div>
 
-            {/* Selection Status */}
             <div className="flex items-center justify-between px-2 mb-2">
               <label className="flex items-center gap-3 cursor-pointer group">
                 <input 
                   type="checkbox" 
                   checked={getFilteredRequestGroups().length > 0 && getFilteredRequestGroups().every(g => selectedGroupIds.includes(requestGroups.indexOf(g).toString()))} 
                   onChange={(e) => handleSelectAll(e.target.checked)} 
-                  className="h-5 w-5 rounded border-white/20 bg-slate-900 text-emerald-500" 
+                  className="h-5 w-5 rounded border-border bg-background text-emerald-600 accent-emerald-600" 
                 />
-                <span className="text-[11px] font-bold text-slate-400 uppercase">Select All</span>
+                <span className="text-[11px] font-bold text-muted-foreground uppercase">Select All</span>
               </label>
-              <span className="text-[11px] font-bold text-slate-500 bg-white/5 px-3 py-1 rounded-full uppercase tracking-tighter">{getFilteredRequestGroups().length} pending</span>
+              <span className="text-[11px] font-bold text-muted-foreground bg-surface border border-border px-3 py-1 rounded-full uppercase tracking-tighter">{getFilteredRequestGroups().length} pending</span>
             </div>
 
             {viewMode === 'table' ? (
-              <div className="rounded-2xl border border-white/10 bg-slate-900/40 overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[980px] border-collapse text-left">
-                    <thead className="bg-slate-900">
-                      <tr className="border-b border-white/10">
-                        <th className="px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
+              <div className="rounded-xl border border-border bg-surface overflow-hidden w-full shadow-[inset_0_0_0_1px_rgba(147,197,253,0.18)]">
+                <div className="overflow-x-auto lg:overflow-x-visible w-full">
+                  <table className="w-full min-w-[980px] lg:min-w-0 lg:table-fixed border-collapse text-left">
+                    <thead className="bg-background/70 border-b border-border">
+                      <tr>
+                        <th className="px-3 py-3 w-11 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                           <input
                             type="checkbox"
                             checked={getFilteredRequestGroups().length > 0 && getFilteredRequestGroups().every(g => selectedGroupIds.includes(getGroupIdx(g)))}
                             onChange={(e) => handleSelectAll(e.target.checked)}
-                            className="h-4 w-4 rounded border-white/20 bg-slate-900 text-emerald-500"
+                            className="h-4 w-4 rounded border-border bg-background text-emerald-600 accent-emerald-600"
                           />
                         </th>
-                        <th className="px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Employee</th>
-                        <th className="px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Type</th>
-                        <th className="px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Date(s)</th>
-                        <th className="px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Actual</th>
-                        <th className="px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Request</th>
-                        <th className="px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Reason</th>
-                        <th className="px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Remark</th>
-                        <th className="px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Value</th>
-                        <th className="px-3 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Action</th>
+                        <th className="px-3 py-3 lg:w-[12%] text-[10px] font-black uppercase tracking-widest text-muted-foreground">Employee</th>
+                        <th className="px-3 py-3 lg:w-[14%] text-[10px] font-black uppercase tracking-widest text-muted-foreground">Type</th>
+                        <th className="px-3 py-3 lg:w-[12%] text-[10px] font-black uppercase tracking-widest text-muted-foreground">Date(s)</th>
+                        <th className="px-3 py-3 lg:w-[9%] text-[10px] font-black uppercase tracking-widest text-muted-foreground">Actual</th>
+                        <th className="px-3 py-3 lg:w-[9%] text-[10px] font-black uppercase tracking-widest text-muted-foreground">Request</th>
+                        <th className="px-3 py-3 lg:w-[22%] text-[10px] font-black uppercase tracking-widest text-muted-foreground">Reason</th>
+                        <th className="px-3 py-3 lg:w-[200px] min-w-[180px] text-[10px] font-black uppercase tracking-widest text-muted-foreground">Remark</th>
+                        <th className="px-3 py-3 lg:w-24 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Value</th>
+                        <th className="px-3 py-3 lg:w-[200px] min-w-[180px] text-[10px] font-black uppercase tracking-widest text-muted-foreground text-right">Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -528,51 +589,51 @@ function ReviewAllPageContent() {
                         return (
                           <tr
                             key={`${idx}-${i}`}
-                            className={`border-b border-white/5 ${isSelected ? 'bg-emerald-500/[0.04]' : 'hover:bg-white/[0.03]'}`}
+                            className={`border-b border-border ${isSelected ? 'bg-emerald-600/10' : 'hover:bg-background/60'}`}
                           >
                             <td className="px-3 py-3 align-top">
                               <input
                                 type="checkbox"
                                 checked={isSelected}
                                 onChange={(e) => handleSelectGroup(idx, e.target.checked)}
-                                className="h-4 w-4 rounded border-white/20 bg-slate-900 text-emerald-500"
+                                className="h-4 w-4 rounded border-border bg-background text-emerald-600 accent-emerald-600"
                               />
                             </td>
                             <td className="px-3 py-3 align-top">
-                              <div className="text-sm font-bold text-white">{group.userName}</div>
+                              <div className="text-sm font-bold text-foreground">{group.userName}</div>
                             </td>
                             <td className="px-3 py-3 align-top">
                               <span className={`inline-flex px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest border ${
-                                isLeave ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                                isLeave ? 'bg-amber-500/15 text-amber-800 border-amber-500/35' : 'bg-blue-500/15 text-blue-800 border-blue-500/35'
                               }`}>
                                 {group.requestedStatus}
                               </span>
                             </td>
-                            <td className="px-3 py-3 align-top text-[11px] font-bold text-slate-300">{group.dateDisplay}</td>
-                            <td className="px-3 py-3 align-top text-[11px] font-mono text-slate-400">{group.originalTimeRange === '-' ? '--:--' : group.originalTimeRange}</td>
-                            <td className="px-3 py-3 align-top text-[11px] font-mono text-emerald-400">{group.timeRange === '-' ? '--:--' : group.timeRange}</td>
-                            <td className="px-3 py-3 align-top text-[11px] text-slate-400">
-                              <div className="max-w-[320px] whitespace-pre-wrap break-words">{group.reason || '—'}</div>
+                            <td className="px-3 py-3 align-top text-[11px] font-bold text-foreground">{group.dateDisplay}</td>
+                            <td className="px-3 py-3 align-top text-[11px] font-mono text-muted-foreground">{group.originalTimeRange === '-' ? '--:--' : group.originalTimeRange}</td>
+                            <td className="px-3 py-3 align-top text-[11px] font-mono font-semibold text-emerald-700">{group.timeRange === '-' ? '--:--' : group.timeRange}</td>
+                            <td className="px-3 py-3 align-top text-[11px] text-muted-foreground lg:overflow-hidden">
+                              <div className="max-w-[320px] lg:max-w-none whitespace-pre-wrap break-words">{group.reason || '—'}</div>
                             </td>
                             <td className="px-3 py-3 align-top">
                               <input
                                 type="text"
                                 value={remarks[idx] || ''}
                                 onChange={(e) => setRemarks({ ...remarks, [idx]: e.target.value })}
-                                className="w-56 h-9 px-3 bg-slate-900 border border-white/10 rounded-xl text-xs text-white placeholder:text-slate-600 focus:border-emerald-500/50"
+                                className="w-full max-w-[14rem] lg:max-w-full min-w-0 h-9 px-2 lg:px-3 bg-background border border-border rounded-lg text-xs text-foreground placeholder:text-muted-foreground focus:border-emerald-500 outline-none"
                                 placeholder="Remark..."
                               />
                             </td>
                             <td className="px-3 py-3 align-top">
                               {isFixedValueType(group.requestedStatus) ? (
-                                <span className="text-[11px] font-bold text-slate-500">—</span>
+                                <span className="text-[11px] font-bold text-muted-foreground">—</span>
                               ) : (
                                 <input
                                   type="number"
                                   step="0.01"
                                   value={values[idx] ?? getDefaultValueForType(group.requestedStatus)}
                                   onChange={(e) => setValues({ ...values, [idx]: e.target.value })}
-                                  className="w-20 h-9 bg-slate-900 border border-white/10 rounded-xl text-center text-xs font-bold text-emerald-400"
+                                  className="w-20 h-9 bg-background border border-border rounded-lg text-center text-xs font-bold text-emerald-700 focus:border-emerald-500 outline-none"
                                 />
                               )}
                             </td>
@@ -581,17 +642,17 @@ function ReviewAllPageContent() {
                                 <button
                                   onClick={() => handleDirectAction(idx, 'reject')}
                                   disabled={processingGroups[idx]}
-                                  className="h-9 px-3 bg-slate-800 hover:bg-rose-500/10 border border-white/5 rounded-xl text-[11px] font-bold text-slate-400 hover:text-rose-400 active:scale-95 transition-all"
+                                  className="h-9 px-3 bg-surface hover:bg-rose-500/15 border border-border rounded-lg text-[11px] font-bold text-muted-foreground hover:text-rose-700 active:scale-95 transition-all"
                                 >
                                   Reject
                                 </button>
                                 <button
                                   onClick={() => handleDirectAction(idx, 'approve')}
                                   disabled={processingGroups[idx]}
-                                  className="h-9 px-5 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-[11px] font-black text-white shadow-lg shadow-emerald-600/10 active:scale-95 transition-all flex items-center gap-2 justify-center"
+                                  className="h-9 px-5 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-[11px] font-black text-white shadow-md shadow-emerald-600/15 active:scale-95 transition-all flex items-center gap-2 justify-center"
                                 >
                                   {processingGroups[idx] ? (
-                                    <div className="h-3 w-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    <div className="h-3 w-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
                                   ) : (
                                     'Approve'
                                   )}
@@ -604,8 +665,8 @@ function ReviewAllPageContent() {
                     </tbody>
                   </table>
                 </div>
-                <div className="p-3 text-[11px] text-slate-500 border-t border-white/10">
-                  Tip: On mobile, swipe left/right to view all columns.
+                <div className="p-3 text-[11px] text-muted-foreground border-t border-border lg:hidden bg-background/40">
+                  Tip: Swipe sideways to view all columns. On desktop the table uses the full width.
                 </div>
               </div>
             ) : (
@@ -619,10 +680,10 @@ function ReviewAllPageContent() {
                   return (
                     <div 
                       key={idx} 
-                      className={`relative rounded-2xl border transition-all duration-200 ${
+                      className={`relative rounded-xl border transition-all duration-200 shadow-[inset_0_0_0_1px_rgba(147,197,253,0.12)] ${
                         isSelected 
-                          ? 'border-emerald-500/50 bg-emerald-500/[0.03]' 
-                          : 'border-white/5 bg-slate-900/40 hover:bg-slate-900/60'
+                          ? 'border-emerald-600/45 bg-emerald-600/[0.08]' 
+                          : 'border-border bg-surface hover:bg-surface/90'
                       }`}
                     >
                       <div className="p-3 sm:p-4">
@@ -632,7 +693,7 @@ function ReviewAllPageContent() {
                               type="checkbox" 
                               checked={isSelected} 
                               onChange={(e) => handleSelectGroup(idx, e.target.checked)} 
-                              className="h-5 w-5 rounded border-white/10 bg-slate-800 text-emerald-500" 
+                              className="h-5 w-5 rounded border-border bg-background text-emerald-600 accent-emerald-600" 
                             />
                           </div>
 
@@ -640,45 +701,45 @@ function ReviewAllPageContent() {
                             {/* Row 1: Name, Status & Date */}
                             <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-2.5">
                               <div className="flex items-center gap-2 min-w-0">
-                                <h3 className="text-sm font-bold text-white truncate">{group.userName}</h3>
+                                <h3 className="text-sm font-bold text-foreground truncate">{group.userName}</h3>
                                 <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest border ${
-                                  isLeave ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                                  isLeave ? 'bg-amber-500/15 text-amber-800 border-amber-500/35' : 'bg-blue-500/15 text-blue-800 border-blue-500/35'
                                 }`}>
                                   {group.requestedStatus}
                                 </span>
                               </div>
-                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">{group.dateDisplay}</p>
+                              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-tighter">{group.dateDisplay}</p>
                             </div>
 
                             {/* Row 2: Two-Column Side-by-Side (Time vs Reason) */}
                             <div className="grid grid-cols-2 gap-3 mb-3">
                               {/* Left: Times */}
-                              <div className="flex flex-col gap-1.5 p-2 bg-white/[0.02] rounded-xl border border-white/5">
-                                <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 uppercase tracking-tight">
+                              <div className="flex flex-col gap-1.5 p-2 bg-background/70 rounded-lg border border-border">
+                                <div className="flex items-center justify-between text-[10px] font-mono text-muted-foreground uppercase tracking-tight">
                                   <span>Actual</span>
                                   <span>Request</span>
                                 </div>
                                 <div className="flex items-center justify-between gap-2 text-xs font-mono">
-                                  <span className="text-slate-400">{group.originalTimeRange === '-' ? '--:--' : group.originalTimeRange}</span>
-                                  <svg className="w-3 h-3 text-slate-700 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
-                                  <span className="text-emerald-500 font-black">{group.timeRange === '-' ? '--:--' : group.timeRange}</span>
+                                  <span className="text-muted-foreground">{group.originalTimeRange === '-' ? '--:--' : group.originalTimeRange}</span>
+                                  <svg className="w-3 h-3 text-muted-foreground/70 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                                  <span className="text-emerald-700 font-black">{group.timeRange === '-' ? '--:--' : group.timeRange}</span>
                                 </div>
                               </div>
 
                               {/* Right: Reason */}
                               <div 
                                 onClick={() => toggleReason(idx)}
-                                className={`p-2 bg-white/[0.02] border border-white/5 rounded-xl cursor-pointer hover:bg-white/[0.05] transition-all relative ${isExpanded ? 'z-10' : ''}`}
+                                className={`p-2 bg-background/70 border border-border rounded-lg cursor-pointer hover:bg-background transition-colors relative ${isExpanded ? 'z-10' : ''}`}
                               >
-                                <div className="flex items-center gap-1.5 mb-1 text-[10px] font-bold text-slate-500 uppercase tracking-tight">
+                                <div className="flex items-center gap-1.5 mb-1 text-[10px] font-bold text-muted-foreground uppercase tracking-tight">
                                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4" /></svg>
                                   <span>Reason</span>
                                 </div>
-                                <p className={`text-[11px] leading-relaxed text-slate-400 italic ${isExpanded ? '' : 'line-clamp-2'}`}>
+                                <p className={`text-[11px] leading-relaxed text-muted-foreground italic ${isExpanded ? '' : 'line-clamp-2'}`}>
                                   {group.reason || 'No reason provided'}
                                 </p>
                                 {group.reason && group.reason.length > 40 && !isExpanded && (
-                                  <div className="absolute bottom-1 right-2 text-[9px] font-bold text-emerald-500/50">TAP TO EXPAND</div>
+                                  <div className="absolute bottom-1 right-2 text-[9px] font-bold text-emerald-700/70">TAP TO EXPAND</div>
                                 )}
                               </div>
                             </div>
@@ -692,7 +753,7 @@ function ReviewAllPageContent() {
                                       type="text" 
                                       value={remarks[idx] || ''} 
                                       onChange={(e) => setRemarks({...remarks, [idx]: e.target.value})} 
-                                      className="w-full h-9 px-3 bg-slate-900 border border-white/10 rounded-xl text-xs text-white placeholder:text-slate-600 focus:border-emerald-500/50" 
+                                      className="w-full h-9 px-3 bg-background border border-border rounded-lg text-xs text-foreground placeholder:text-muted-foreground focus:border-emerald-500 outline-none" 
                                       placeholder="Remark..." 
                                     />
                                   </div>
@@ -702,7 +763,7 @@ function ReviewAllPageContent() {
                                       step="0.01" 
                                       value={values[idx] ?? getDefaultValueForType(group.requestedStatus)} 
                                       onChange={(e) => setValues({...values, [idx]: e.target.value})} 
-                                      className="w-14 h-9 bg-slate-900 border border-white/10 rounded-xl text-center text-xs font-bold text-emerald-400" 
+                                      className="w-14 h-9 bg-background border border-border rounded-lg text-center text-xs font-bold text-emerald-700 focus:border-emerald-500 outline-none" 
                                     />
                                   )}
                                 </div>
@@ -712,7 +773,7 @@ function ReviewAllPageContent() {
                                     <button 
                                       key={c} 
                                       onClick={() => setRemarks({...remarks, [idx]: c})} 
-                                      className="px-2 py-1 bg-emerald-500/5 hover:bg-emerald-500/10 rounded-lg text-[10px] font-bold text-emerald-500/70 border border-emerald-500/10 transition-colors"
+                                      className="px-2 py-1 bg-emerald-600/10 hover:bg-emerald-600/18 rounded-lg text-[10px] font-bold text-emerald-800 border border-emerald-600/25 transition-colors"
                                     >
                                       {c}
                                     </button>
@@ -721,7 +782,7 @@ function ReviewAllPageContent() {
                                     <button 
                                       key={c} 
                                       onClick={() => setRemarks({...remarks, [idx]: c})} 
-                                      className="px-2 py-1 bg-rose-500/5 hover:bg-rose-500/10 rounded-lg text-[10px] font-bold text-rose-500/60 border border-rose-500/10 transition-colors"
+                                      className="px-2 py-1 bg-rose-500/12 hover:bg-rose-500/20 rounded-lg text-[10px] font-bold text-rose-700 border border-rose-500/25 transition-colors"
                                     >
                                       {c}
                                     </button>
@@ -732,16 +793,16 @@ function ReviewAllPageContent() {
                                 <button 
                                   onClick={() => handleDirectAction(idx, 'reject')} 
                                   disabled={processingGroups[idx]} 
-                                  className="h-9 px-3 bg-slate-800 hover:bg-rose-500/10 border border-white/5 rounded-xl text-[11px] font-bold text-slate-400 hover:text-rose-400 active:scale-95 transition-all"
+                                  className="h-9 px-3 bg-surface hover:bg-rose-500/15 border border-border rounded-lg text-[11px] font-bold text-muted-foreground hover:text-rose-700 active:scale-95 transition-all"
                                 >
                                   Reject
                                 </button>
                                 <button 
                                   onClick={() => handleDirectAction(idx, 'approve')} 
                                   disabled={processingGroups[idx]} 
-                                  className="h-9 px-6 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-[11px] font-black text-white shadow-lg shadow-emerald-600/10 active:scale-95 transition-all flex items-center gap-2"
+                                  className="h-9 px-6 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-[11px] font-black text-white shadow-md shadow-emerald-600/15 active:scale-95 transition-all flex items-center gap-2"
                                 >
-                                  {processingGroups[idx] ? <div className="h-3 w-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : 'Approve'}
+                                  {processingGroups[idx] ? <div className="h-3 w-3 border-2 border-white/40 border-t-white rounded-full animate-spin"></div> : 'Approve'}
                                 </button>
                               </div>
                             </div>
@@ -760,22 +821,22 @@ function ReviewAllPageContent() {
       {/* Prominent Bulk Action Bar */}
       {requestGroups.length > 0 && selectedGroupIds.length > 0 && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[94%] max-w-lg z-[60] animate-in fade-in slide-in-from-bottom-6 duration-500">
-          <div className="bg-slate-900/95 backdrop-blur-2xl border border-white/10 rounded-3xl p-3 shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
+          <div className="bg-surface/95 backdrop-blur-md border border-border rounded-2xl p-3 shadow-[0_20px_50px_rgba(12,31,54,0.18),inset_0_0_0_1px_rgba(147,197,253,0.2)]">
             <div className="flex items-center gap-3">
               <button 
                 onClick={() => handleBulkAction('reject')} 
                 disabled={processing}
-                className="flex-1 h-14 bg-white/5 hover:bg-rose-500/10 rounded-2xl text-sm font-bold text-slate-300 hover:text-rose-400 transition-all active:scale-95 disabled:opacity-50"
+                className="flex-1 h-14 bg-background/80 hover:bg-rose-500/15 border border-border rounded-xl text-sm font-bold text-foreground hover:text-rose-700 transition-all active:scale-95 disabled:opacity-50"
               >
                 Bulk Reject ({selectedGroupIds.length})
               </button>
               <button 
                 onClick={() => handleBulkAction('approve')} 
                 disabled={processing}
-                className="flex-[1.5] h-14 bg-emerald-500 hover:bg-emerald-400 rounded-2xl text-sm font-black text-white shadow-2xl shadow-emerald-500/30 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                className="flex-[1.5] h-14 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-sm font-black text-white shadow-lg shadow-emerald-600/25 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {processing ? (
-                  <div className="h-5 w-5 border-3 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  <div className="h-5 w-5 border-2 border-white/35 border-t-white rounded-full animate-spin"></div>
                 ) : (
                   <>
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}><path d="M5 13l4 4L19 7" /></svg>
@@ -793,7 +854,13 @@ function ReviewAllPageContent() {
 
 export default function ReviewAllPage() {
   return (
-    <Suspense fallback={<div className="flex justify-center items-center min-h-screen">Loading...</div>}>
+    <Suspense
+      fallback={
+        <div className="flex justify-center items-center min-h-screen bg-background text-muted-foreground">
+          <p className="text-sm">Loading...</p>
+        </div>
+      }
+    >
       <ReviewAllPageContent />
     </Suspense>
   );
