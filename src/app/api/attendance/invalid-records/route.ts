@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Attendance from '@/models/Attendance';
 import User from '@/models/User';
+import { getWorkingUnderPartnerForDate, lastDayOfMonthYear } from '@/lib/userFieldHistory';
 
 interface InvalidRecord {
   date: string;
@@ -37,8 +38,13 @@ export async function GET(request: NextRequest) {
 
     // Fetch all attendance records for the specified month
     const attendanceRecords = await Attendance.find({ monthYear })
-      .populate('userId', 'name email designation workingUnderPartner attendanceEmail employmentType')
+      .populate(
+        'userId',
+        'name email designation workingUnderPartner team attendanceEmail employmentType fieldHistories'
+      )
       .lean();
+
+    const partnerAsOf = lastDayOfMonthYear(monthYear);
 
     const employeesWithInvalidRecords: EmployeeWithInvalidRecords[] = [];
 
@@ -125,7 +131,7 @@ export async function GET(request: NextRequest) {
           name: user.name || 'Unknown',
           email: user.email || '',
           designation: user.designation || '',
-          workingUnderPartner: user.workingUnderPartner || '',
+          workingUnderPartner: getWorkingUnderPartnerForDate(user, partnerAsOf),
           attendanceEmail: user.attendanceEmail || '',
           invalidRecords
         });

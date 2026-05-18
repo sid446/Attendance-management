@@ -106,6 +106,7 @@ export interface IUser extends Document {
   workingTiming?: string;
 
   fieldHistories?: {
+    designation?: IEffectiveValueHistory[];
     registeredUnderPartner?: IEffectiveValueHistory[];
     workingUnderPartner?: IEffectiveValueHistory[];
     basicSalary?: IEffectiveValueHistory[];
@@ -472,6 +473,10 @@ const UserSchema = new Schema(
       trim: true,
     },
     fieldHistories: {
+      designation: {
+        type: [EffectiveValueHistorySchema],
+        default: [],
+      },
       registeredUnderPartner: {
         type: [EffectiveValueHistorySchema],
         default: [],

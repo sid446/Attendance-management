@@ -4,6 +4,7 @@ import User, { IUser } from '@/models/User';
 import { getHrOperatorEmailFromRequest } from '@/lib/hrAuthServer';
 import { loadHrConsolePermissionDoc } from '@/lib/hrConsolePermissionDb';
 import { assertHrSection, effectiveFromDoc } from '@/lib/hrConsolePermissionUtils';
+import { formatRowIdentifier } from '@/lib/uploadErrorLogUtils';
 
 type IncomingSchedule = {
   name?: string;
@@ -93,6 +94,7 @@ export async function POST(request: NextRequest) {
       updated: 0,
       failed: 0,
       errors: [] as string[],
+      rowErrors: [] as { identifier: string; reason: string }[],
       effectiveFrom: effectiveFrom.toISOString().split('T')[0],
     };
 
@@ -121,6 +123,7 @@ export async function POST(request: NextRequest) {
         if (!name && !employeeCode) {
           stats.failed++;
           stats.errors.push('Row skipped: missing both Name and Employee Code');
+          stats.rowErrors.push({ identifier: '(blank row)', reason: 'Row skipped: missing both Name and Employee Code' });
           continue;
         }
 
@@ -135,8 +138,10 @@ export async function POST(request: NextRequest) {
         }
 
         if (!user) {
+          const id = formatRowIdentifier(name, employeeCode);
           stats.failed++;
-          stats.errors.push(`User not found: ${name || employeeCode}`);
+          stats.errors.push(`User not found: ${id}`);
+          stats.rowErrors.push({ identifier: id, reason: 'User not found' });
           continue;
         }
 
@@ -172,8 +177,10 @@ export async function POST(request: NextRequest) {
           hasDayRange = true;
           const slot = parseRangeSlot(raw);
           if (!slot) {
+            const id = formatRowIdentifier(name, employeeCode);
             stats.failed++;
-            stats.errors.push(`Invalid ${day} schedule format for: ${name || employeeCode} (${raw})`);
+            stats.errors.push(`Invalid ${day} schedule format for: ${id} (${raw})`);
+            stats.rowErrors.push({ identifier: id, reason: `Invalid ${day} schedule format` });
             continue;
           }
           if (!slot.inTime || !slot.outTime) {
@@ -189,8 +196,10 @@ export async function POST(request: NextRequest) {
         }
 
         if (!hasDayRange && !(inTime && outTime)) {
+          const id = formatRowIdentifier(name, employeeCode);
           stats.failed++;
-          stats.errors.push(`Missing schedule values for: ${name || employeeCode}`);
+          stats.errors.push(`Missing schedule values for: ${id}`);
+          stats.rowErrors.push({ identifier: id, reason: 'Missing schedule values' });
           continue;
         }
 
@@ -240,8 +249,10 @@ export async function POST(request: NextRequest) {
         await user.save();
         stats.updated++;
       } catch (error) {
+        const id = formatRowIdentifier(normalizeText(row?.name), normalizeText(row?.employeeCode));
         stats.failed++;
-        stats.errors.push(`Failed schedule row ${normalizeText(row?.name) || '(unknown)'}: ${(error as Error).message}`);
+        stats.errors.push(`Failed schedule row ${id}: ${(error as Error).message}`);
+        stats.rowErrors.push({ identifier: id, reason: `Row processing failed: ${(error as Error).message}` });
       }
     }
 

@@ -14,11 +14,10 @@ import { getScheduledTimes } from '@/lib/scheduleUtils';
 import {
   applyManagedEffectiveHistories,
   ManagedEffectiveField,
+  LEGACY_BASELINE_EFFECTIVE_FROM,
   MANAGED_EFFECTIVE_FIELDS,
   normalizeManagedFieldValue,
 } from '@/lib/userFieldHistory';
-
-const DEFAULT_BASELINE_EFFECTIVE_FROM = new Date('2025-12-31T00:00:00.000Z');
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -156,15 +155,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   const managedChangeAt = parseAnyDate(managedEffectiveFrom) || new Date();
   const managedFieldDates: Partial<Record<ManagedEffectiveField, Date>> = {};
   if (managedEffectiveFromByField && typeof managedEffectiveFromByField === 'object') {
-    const managedFields: ManagedEffectiveField[] = [
-      'registeredUnderPartner',
-      'workingUnderPartner',
-      'basicSalary',
-      'laptopAllowance',
-      'totalSalaryPerMonth',
-      'totalSalaryPerAnnum',
-    ];
-    for (const field of managedFields) {
+    for (const field of MANAGED_EFFECTIVE_FIELDS) {
       const parsed = parseAnyDate((managedEffectiveFromByField as any)[field]);
       if (parsed) {
         managedFieldDates[field] = parsed;
@@ -354,7 +345,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     applyManagedEffectiveHistories(currentUser as any, managedEffectiveIncoming, {
       changedAt: managedChangeAt,
       source: 'manual-update',
-      baselineEffectiveFrom: DEFAULT_BASELINE_EFFECTIVE_FROM,
+      baselineEffectiveFrom: LEGACY_BASELINE_EFFECTIVE_FROM,
       fieldChangedAt: managedFieldDates,
       priorValues: priorManaged,
     });

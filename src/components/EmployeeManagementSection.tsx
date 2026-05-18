@@ -5,6 +5,9 @@ import { User as UserBase, ScheduleTime, DailySchedule } from '@/types/ui';
 import { fullEditDefaults, type EmployeeManagementTabId, type HrAccessLevel } from '@/lib/hrConsolePermissionUtils';
 import { pickEditableUserPutBody, type EmployeeTabAccess } from '@/lib/hrEmployeeSaveFilter';
 import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
+import { createDefaultDailySchedule, cloneDailySchedule } from '@/lib/defaultDailySchedule';
+import { ScheduleTemplateToolbar } from '@/components/ScheduleTemplateToolbar';
+import { ScheduleTemplateModal, type ScheduleTemplateRecord } from '@/components/ScheduleTemplateModal';
 
 // Extend User type to include articleCreditsAsOnJan26 for local use
 type User = UserBase & {
@@ -12,6 +15,7 @@ type User = UserBase & {
 };
 
 type ManagedFieldKey =
+  | 'designation'
   | 'registeredUnderPartner'
   | 'workingUnderPartner'
   | 'basicSalary'
@@ -21,6 +25,7 @@ type ManagedFieldKey =
 
 const getDefaultManagedEffectiveDates = (): Record<ManagedFieldKey, string> => {
   return {
+    designation: '',
     registeredUnderPartner: '',
     workingUnderPartner: '',
     basicSalary: '',
@@ -73,6 +78,7 @@ const getManagedEffectiveDatesFromUser = (user?: Partial<User>): Record<ManagedF
   const fieldHistories = (user as any)?.fieldHistories || {};
 
   const fields: ManagedFieldKey[] = [
+    'designation',
     'registeredUnderPartner',
     'workingUnderPartner',
     'basicSalary',
@@ -98,6 +104,13 @@ type SalaryHistoryFieldKey =
   | 'laptopAllowance'
   | 'totalSalaryPerMonth'
   | 'totalSalaryPerAnnum';
+
+/** Fields that show expandable effective-dated history (salary + HR basics). */
+type FieldHistoryKey =
+  | SalaryHistoryFieldKey
+  | 'designation'
+  | 'workingUnderPartner'
+  | 'registeredUnderPartner';
 
 function sortSalaryHistoryDesc(fieldHistory: unknown): Array<{
   value?: string;
@@ -261,18 +274,25 @@ export const EmployeeManagementSection: React.FC<{
   const predefinedValueInputRef = useRef<HTMLInputElement | null>(null);
   const [isSavingPredefinedValue, setIsSavingPredefinedValue] = useState<boolean>(false);
 
+  const [scheduleTemplates, setScheduleTemplates] = useState<ScheduleTemplateRecord[]>([]);
+  const [scheduleTemplateModal, setScheduleTemplateModal] = useState<{
+    isOpen: boolean;
+    template: ScheduleTemplateRecord | null;
+  }>({ isOpen: false, template: null });
+  const [isSavingScheduleTemplate, setIsSavingScheduleTemplate] = useState(false);
+
   // History State
   const [employeeHistory, setEmployeeHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState<boolean>(false);
   const [changeReason, setChangeReason] = useState<string>('');
   const [managedFieldsEffectiveFromByField, setManagedFieldsEffectiveFromByField] = useState<Record<ManagedFieldKey, string>>(getDefaultManagedEffectiveDates());
-  const [salaryRevisionPanel, setSalaryRevisionPanel] = useState<{
-    field: SalaryHistoryFieldKey;
+  const [fieldRevisionPanel, setFieldRevisionPanel] = useState<{
+    field: FieldHistoryKey;
     value: string;
     effectiveFrom: string;
   } | null>(null);
-  /** Per salary field: expanded "all history" panel (effective from + end date for every segment). */
-  const [salaryHistoryExpanded, setSalaryHistoryExpanded] = useState<Partial<Record<SalaryHistoryFieldKey, boolean>>>({});
+  /** Per field: expanded history panel (effective from + end date for every segment). */
+  const [fieldHistoryExpanded, setFieldHistoryExpanded] = useState<Partial<Record<FieldHistoryKey, boolean>>>({});
   const openedForSelectionRef = useRef<string | null>(null);
   /** Bumped on unmount and before each users-list fetch so stale responses cannot overwrite newer state (e.g. after delete). */
   const usersListFetchGenerationRef = useRef(0);
@@ -478,8 +498,8 @@ export const EmployeeManagementSection: React.FC<{
     setEmployeeHistory([]);
     setChangeReason('');
     setManagedFieldsEffectiveFromByField(getDefaultManagedEffectiveDates());
-    setSalaryRevisionPanel(null);
-    setSalaryHistoryExpanded({});
+    setFieldRevisionPanel(null);
+    setFieldHistoryExpanded({});
     setError(null);
   };
 
@@ -706,12 +726,14 @@ export const EmployeeManagementSection: React.FC<{
       setLoading(true);
       setError(null);
       try {
-        const [usersRes, preRes] = await Promise.all([
+        const [usersRes, preRes, templatesRes] = await Promise.all([
           fetch(USERS_LIST_ENDPOINT, hrCredentialsInit({ cache: 'no-store' })),
           fetch('/api/users/predefined-values', hrCredentialsInit({ cache: 'no-store' })),
+          fetch('/api/schedule-templates', hrCredentialsInit({ cache: 'no-store' })),
         ]);
         const usersJson = await usersRes.json();
         const preJson = await preRes.json();
+        const templatesJson = await templatesRes.json();
         if (gen !== usersListFetchGenerationRef.current) {
           return;
         }
@@ -722,6 +744,9 @@ export const EmployeeManagementSection: React.FC<{
         }
         if (preJson.success && preJson.data) {
           setPredefinedValues(preJson.data);
+        }
+        if (templatesJson.success && Array.isArray(templatesJson.data)) {
+          setScheduleTemplates(templatesJson.data);
         }
       } catch (err) {
         if (gen === usersListFetchGenerationRef.current) {
@@ -864,27 +889,86 @@ export const EmployeeManagementSection: React.FC<{
     });
   };
 
-  const handleAddScheduleEntry = () => {
+  const fetchScheduleTemplates = async () => {
+    try {
+      const res = await fetch('/api/schedule-templates', hrCredentialsInit({ cache: 'no-store' }));
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        setScheduleTemplates(json.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch schedule templates:', err);
+    }
+  };
+
+  const handleAddScheduleEntry = (dailyOverride?: DailySchedule) => {
     if (denyEdits) return;
     const newEffectiveFrom = toDateInputValue(new Date());
     setFormData(prev => {
       const schedules = Array.isArray(prev.schedules) ? [...prev.schedules] : [];
       const newEntry = {
         effectiveFrom: newEffectiveFrom,
-        daily: {
-          monday: { inTime: '10:45', outTime: '19:45' },
-          tuesday: { inTime: '10:45', outTime: '19:45' },
-          wednesday: { inTime: '10:45', outTime: '19:45' },
-          thursday: { inTime: '10:45', outTime: '19:45' },
-          friday: { inTime: '10:45', outTime: '19:45' },
-          saturday: { inTime: '10:45', outTime: '13:45', isHalfDay: true },
-          sunday: { inTime: '', outTime: '', isHoliday: true }
-        }
+        daily: dailyOverride ? cloneDailySchedule(dailyOverride) : createDefaultDailySchedule(),
       };
       schedules.push(newEntry);
       schedules.sort((a, b) => new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime());
       return { ...prev, schedules };
     });
+  };
+
+  const handleApplyScheduleTemplate = (templateId: string) => {
+    if (denyEdits) return;
+    const template = scheduleTemplates.find((t) => t._id === templateId);
+    if (!template) return;
+    handleAddScheduleEntry(template.daily);
+  };
+
+  const handleSaveScheduleTemplate = async (payload: {
+    _id?: string;
+    name: string;
+    daily: DailySchedule;
+  }) => {
+    setIsSavingScheduleTemplate(true);
+    try {
+      const isEdit = Boolean(payload._id);
+      const res = await fetch('/api/schedule-templates', hrCredentialsInit({
+        method: isEdit ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }));
+      const json = await res.json();
+      if (!json.success) {
+        throw new Error(json.error || 'Failed to save schedule template');
+      }
+      await fetchScheduleTemplates();
+      setScheduleTemplateModal({ isOpen: false, template: null });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save schedule template');
+    } finally {
+      setIsSavingScheduleTemplate(false);
+    }
+  };
+
+  const handleDeleteScheduleTemplate = async (id: string) => {
+    if (!window.confirm('Delete this predefined schedule? This cannot be undone.')) return;
+    setIsSavingScheduleTemplate(true);
+    try {
+      const res = await fetch('/api/schedule-templates', hrCredentialsInit({
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ _id: id }),
+      }));
+      const json = await res.json();
+      if (!json.success) {
+        throw new Error(json.error || 'Failed to delete schedule template');
+      }
+      await fetchScheduleTemplates();
+      setScheduleTemplateModal({ isOpen: false, template: null });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete schedule template');
+    } finally {
+      setIsSavingScheduleTemplate(false);
+    }
   };
 
   const handleRemoveScheduleEntry = (entryIndex: number) => {
@@ -904,15 +988,7 @@ export const EmployeeManagementSection: React.FC<{
         startMonth: 11, // December
         endMonth: 0,    // January
         effectiveFrom: toDateInputValue(new Date()),
-        daily: {
-          monday: { inTime: '10:45', outTime: '19:45' },
-          tuesday: { inTime: '10:45', outTime: '19:45' },
-          wednesday: { inTime: '10:45', outTime: '19:45' },
-          thursday: { inTime: '10:45', outTime: '19:45' },
-          friday: { inTime: '10:45', outTime: '19:45' },
-          saturday: { inTime: '10:45', outTime: '13:45', isHalfDay: true },
-          sunday: { inTime: '', outTime: '', isHoliday: true }
-        }
+        daily: createDefaultDailySchedule(),
       });
       return { ...prev, seasonalSchedules };
     });
@@ -1028,8 +1104,8 @@ export const EmployeeManagementSection: React.FC<{
       setEmployeeHistory([]);
       setChangeReason('');
       setManagedFieldsEffectiveFromByField(getDefaultManagedEffectiveDates());
-      setSalaryRevisionPanel(null);
-      setSalaryHistoryExpanded({});
+      setFieldRevisionPanel(null);
+      setFieldHistoryExpanded({});
 
       // Refresh user data to ensure schedule changes are reflected
       if (onRefreshUsers) {
@@ -1858,28 +1934,63 @@ export const EmployeeManagementSection: React.FC<{
     window.URL.revokeObjectURL(url);
   };
 
-  const openSalaryRevisionPanel = (field: SalaryHistoryFieldKey) => {
-    setSalaryHistoryExpanded((prev) => ({ ...prev, [field]: true }));
-    setSalaryRevisionPanel({
+  const applyFieldRevisionValue = (field: FieldHistoryKey, value: string) => {
+    if (field === 'workingUnderPartner') {
+      handleInputChange('workingUnderPartner', value);
+      handleInputChange('team', value);
+      return;
+    }
+    handleInputChange(field as keyof User, value);
+  };
+
+  const openFieldRevisionPanel = (field: FieldHistoryKey) => {
+    setFieldHistoryExpanded((prev) => ({ ...prev, [field]: true }));
+    setFieldRevisionPanel({
       field,
       value: '',
       effectiveFrom: toDateInputValue(new Date()),
     });
   };
 
-  const applySalaryRevision = () => {
-    if (!salaryRevisionPanel) return;
-    const { field, value, effectiveFrom } = salaryRevisionPanel;
+  const applyFieldRevision = () => {
+    if (!fieldRevisionPanel) return;
+    const { field, value, effectiveFrom } = fieldRevisionPanel;
     if (!effectiveFrom.trim()) {
-      alert('Please select the effective from date for the new salary.');
+      alert('Please select the effective from date.');
       return;
     }
-    handleInputChange(field as keyof User, value);
+    applyFieldRevisionValue(field, value);
     setManagedFieldsEffectiveFromByField((prev) => ({ ...prev, [field]: effectiveFrom }));
-    setSalaryRevisionPanel(null);
+    setFieldRevisionPanel(null);
   };
 
-  const renderSalaryFieldWithHistory = (field: SalaryHistoryFieldKey, label: string, theme: 'salary' | 'extended' = 'salary') => {
+  const renderFieldWithHistory = (config: {
+    field: FieldHistoryKey;
+    label: string;
+    historyLabel: string;
+    emptyHistoryMessage: string;
+    addButtonLabel: string;
+    revisionHint: string;
+    revisionPlaceholder?: string;
+    theme?: 'salary' | 'extended' | 'basic';
+    inputType: 'text' | 'select';
+    selectOptions?: string[];
+    selectEmptyLabel?: string;
+  }) => {
+    const {
+      field,
+      label,
+      historyLabel,
+      emptyHistoryMessage,
+      addButtonLabel,
+      revisionHint,
+      revisionPlaceholder,
+      theme = 'salary',
+      inputType,
+      selectOptions = [],
+      selectEmptyLabel = 'Select…',
+    } = config;
+
     const inputCls =
       'w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
     const dateCls =
@@ -1890,7 +2001,8 @@ export const EmployeeManagementSection: React.FC<{
       'rounded-md bg-blue-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40';
 
     const histAll = sortSalaryHistoryDesc((formData as any)?.fieldHistories?.[field]);
-    const historyOpen = Boolean(salaryHistoryExpanded[field]);
+    const historyOpen = Boolean(fieldHistoryExpanded[field]);
+    const currentValue = String((formData as any)[field] || '');
     const historyCount = histAll.length;
 
     return (
@@ -1898,7 +2010,7 @@ export const EmployeeManagementSection: React.FC<{
         <button
           type="button"
           onClick={() =>
-            setSalaryHistoryExpanded((prev) => ({
+            setFieldHistoryExpanded((prev) => ({
               ...prev,
               [field]: !prev[field],
             }))
@@ -1909,7 +2021,7 @@ export const EmployeeManagementSection: React.FC<{
           <span className="flex items-center gap-2">
             {historyOpen ? <ChevronUp className="h-3.5 w-3.5 shrink-0 text-slate-500" /> : <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-500" />}
             <span>
-              Salary history
+              {historyLabel}
               {historyCount > 0 ? (
                 <span className="ml-1.5 text-slate-500">({historyCount})</span>
               ) : null}
@@ -1920,10 +2032,7 @@ export const EmployeeManagementSection: React.FC<{
         {historyOpen && (
           <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 p-2">
             {historyCount === 0 ? (
-              <p className="py-1 text-[11px] text-slate-600">
-                No saved history for this field yet. After you add a new salary and save, previous amounts appear here with
-                start and end dates.
-              </p>
+              <p className="py-1 text-[11px] text-slate-600">{emptyHistoryMessage}</p>
             ) : (
               <ul className="max-h-56 space-y-0 overflow-y-auto divide-y divide-slate-200 text-[11px]">
                 {histAll.map((row, idx) => {
@@ -1950,17 +2059,33 @@ export const EmployeeManagementSection: React.FC<{
           </div>
         )}
         <label className="block text-xs font-medium text-slate-600 mb-1">{label}</label>
-        <input
-          type="text"
-          value={(formData as any)[field] || ''}
-          onChange={(e) => handleInputChange(field as keyof User, e.target.value)}
-          className={inputCls}
-        />
+        {inputType === 'select' ? (
+          <select
+            value={currentValue}
+            onChange={(e) => applyFieldRevisionValue(field, e.target.value)}
+            className={inputCls}
+          >
+            <option value="">{selectEmptyLabel}</option>
+            {selectOptions.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type="text"
+            value={currentValue}
+            onChange={(e) => handleInputChange(field as keyof User, e.target.value)}
+            className={inputCls}
+          />
+        )}
+        {hasManagedFieldValue(field as ManagedFieldKey) && (
         <div className="mt-2">
-          <label className="block text-[11px] text-slate-500 mb-1">Effective from (current amount)</label>
+          <label className="block text-[11px] text-slate-500 mb-1">Effective from (current value)</label>
           <input
             type="date"
-            value={managedFieldsEffectiveFromByField[field]}
+            value={managedFieldsEffectiveFromByField[field as ManagedFieldKey]}
             onChange={(e) =>
               setManagedFieldsEffectiveFromByField((prev) => ({
                 ...prev,
@@ -1970,41 +2095,59 @@ export const EmployeeManagementSection: React.FC<{
             className={dateCls}
           />
         </div>
+        )}
         <button
           type="button"
-          onClick={() => openSalaryRevisionPanel(field)}
+          onClick={() => openFieldRevisionPanel(field)}
           className="mt-2 inline-flex items-center gap-1 rounded-md border border-blue-200/65 bg-panel px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm hover:border-blue-200 hover:bg-blue-50/60 hover:text-blue-900"
         >
           <Plus className="w-3.5 h-3.5" />
-          Add new salary
+          {addButtonLabel}
         </button>
-        {salaryRevisionPanel?.field === field && (
+        {fieldRevisionPanel?.field === field && (
           <div className={`mt-2 space-y-2 rounded-md border ${panelBorder} bg-slate-50 p-2`}>
-            <div className={`text-[11px] ${panelTitle}`}>New amount (applies to the form; save employee to persist)</div>
-            <input
-              type="text"
-              value={salaryRevisionPanel.value}
-              onChange={(e) =>
-                setSalaryRevisionPanel((p) => (p && p.field === field ? { ...p, value: e.target.value } : p))
-              }
-              placeholder="Amount"
-              className={inputCls}
-            />
+            <div className={`text-[11px] ${panelTitle}`}>{revisionHint}</div>
+            {inputType === 'select' ? (
+              <select
+                value={fieldRevisionPanel.value}
+                onChange={(e) =>
+                  setFieldRevisionPanel((p) => (p && p.field === field ? { ...p, value: e.target.value } : p))
+                }
+                className={inputCls}
+              >
+                <option value="">{selectEmptyLabel}</option>
+                {selectOptions.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={fieldRevisionPanel.value}
+                onChange={(e) =>
+                  setFieldRevisionPanel((p) => (p && p.field === field ? { ...p, value: e.target.value } : p))
+                }
+                placeholder={revisionPlaceholder}
+                className={inputCls}
+              />
+            )}
             <input
               type="date"
-              value={salaryRevisionPanel.effectiveFrom}
+              value={fieldRevisionPanel.effectiveFrom}
               onChange={(e) =>
-                setSalaryRevisionPanel((p) => (p && p.field === field ? { ...p, effectiveFrom: e.target.value } : p))
+                setFieldRevisionPanel((p) => (p && p.field === field ? { ...p, effectiveFrom: e.target.value } : p))
               }
               className={dateCls}
             />
             <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={applySalaryRevision} className={panelBtn}>
+              <button type="button" onClick={applyFieldRevision} className={panelBtn}>
                 Apply to current row
               </button>
               <button
                 type="button"
-                onClick={() => setSalaryRevisionPanel(null)}
+                onClick={() => setFieldRevisionPanel(null)}
                 className="rounded-md border border-blue-200/65 bg-panel px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
               >
                 Cancel
@@ -2016,9 +2159,35 @@ export const EmployeeManagementSection: React.FC<{
     );
   };
 
+  const renderSalaryFieldWithHistory = (field: SalaryHistoryFieldKey, label: string, theme: 'salary' | 'extended' = 'salary') =>
+    renderFieldWithHistory({
+      field,
+      label,
+      historyLabel: 'Salary history',
+      emptyHistoryMessage:
+        'No saved history for this field yet. After you add a new value and save, previous values appear here with start and end dates.',
+      addButtonLabel: 'Add new salary',
+      revisionHint: 'New amount (applies to the form; save employee to persist)',
+      revisionPlaceholder: 'Amount',
+      theme,
+      inputType: 'text',
+    });
+
+  const scheduleTemplateModalEl = (
+    <ScheduleTemplateModal
+      isOpen={scheduleTemplateModal.isOpen}
+      onClose={() => setScheduleTemplateModal({ isOpen: false, template: null })}
+      template={scheduleTemplateModal.template}
+      onSave={handleSaveScheduleTemplate}
+      onDelete={scheduleTemplateModal.template ? handleDeleteScheduleTemplate : undefined}
+      saving={isSavingScheduleTemplate}
+    />
+  );
+
   // ============== EDIT FORM VIEW =================
   if (editingUser) {
     return (
+      <>
       <section
         className="employee-edit-date-inputs rounded-lg border border-blue-200/65 bg-panel p-6 shadow-sm"
         aria-labelledby="edit-employee-heading"
@@ -2209,52 +2378,33 @@ export const EmployeeManagementSection: React.FC<{
                   </div>
                 )}
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Designation</label>
-                  <select
-                    value={formData.designation || ''}
-                    onChange={(e) => handleInputChange('designation', e.target.value)}
-                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                  >
-                    <option value="">Select designation</option>
-                    {predefinedValues.designations.map((designation) => (
-                      <option key={designation} value={designation}>{designation}</option>
-                    ))}
-                  </select>
-                </div>
+                {renderFieldWithHistory({
+                  field: 'designation',
+                  label: 'Designation',
+                  historyLabel: 'Designation history',
+                  emptyHistoryMessage:
+                    'No saved history yet. After you change designation and save, previous values appear here with start and end dates.',
+                  addButtonLabel: 'Add new designation',
+                  revisionHint: 'New designation (applies to the form; save employee to persist)',
+                  theme: 'basic',
+                  inputType: 'select',
+                  selectOptions: predefinedValues.designations,
+                  selectEmptyLabel: 'Select designation',
+                })}
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Work Partner</label>
-                  <select
-                    value={formData.workingUnderPartner || ''}
-                    onChange={(e) => {
-                      handleInputChange('workingUnderPartner', e.target.value);
-                      handleInputChange('team', e.target.value); // Auto-fill team from work partner
-                    }}
-                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                  >
-                    <option value="">Select work partner</option>
-                    {predefinedValues.teams.map((team) => (
-                      <option key={team} value={team}>{team}</option>
-                    ))}
-                  </select>
-                  {hasManagedFieldValue('workingUnderPartner') && (
-                    <div className="mt-2">
-                      <label className="block text-[11px] text-slate-500 mb-1">Work Partner Effective From</label>
-                      <input
-                        type="date"
-                        value={managedFieldsEffectiveFromByField.workingUnderPartner}
-                        onChange={(e) =>
-                          setManagedFieldsEffectiveFromByField((prev) => ({
-                            ...prev,
-                            workingUnderPartner: e.target.value,
-                          }))
-                        }
-                        className="w-full min-h-9 rounded border border-slate-300 bg-panel px-3 py-2 text-xs text-slate-900 [color-scheme:light] focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25"
-                      />
-                    </div>
-                  )}
-                </div>
+                {renderFieldWithHistory({
+                  field: 'workingUnderPartner',
+                  label: 'Work Partner',
+                  historyLabel: 'Work partner history',
+                  emptyHistoryMessage:
+                    'No saved history yet. After you change work partner and save, previous partners appear here with start and end dates.',
+                  addButtonLabel: 'Add new work partner',
+                  revisionHint: 'New work partner (applies to the form; save employee to persist)',
+                  theme: 'basic',
+                  inputType: 'select',
+                  selectOptions: predefinedValues.teams,
+                  selectEmptyLabel: 'Select work partner',
+                })}
 
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Team <span className="text-slate-500">(auto-filled from Work Partner)</span></label>
@@ -2368,15 +2518,16 @@ export const EmployeeManagementSection: React.FC<{
           {/* Schedule Tab */}
           {activeTab === 'schedule' && (
             <div className="md:col-span-2 space-y-6">
-              <div className="flex flex-col gap-3 border-b border-slate-200 pb-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-3 border-b border-slate-200 pb-3">
                 <h3 className="text-sm font-semibold text-slate-900">Work schedule entries</h3>
-                <button
-                  type="button"
-                  onClick={handleAddScheduleEntry}
-                  className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                >
-                  Add schedule entry
-                </button>
+                <ScheduleTemplateToolbar
+                  templates={scheduleTemplates}
+                  disabled={denyEdits}
+                  onApplyTemplate={handleApplyScheduleTemplate}
+                  onAddBlankEntry={() => handleAddScheduleEntry()}
+                  onNewTemplate={() => setScheduleTemplateModal({ isOpen: true, template: null })}
+                  onEditTemplate={(t) => setScheduleTemplateModal({ isOpen: true, template: t })}
+                />
               </div>
 
               {(formData.schedules || []).map((entry, index) => (
@@ -3034,6 +3185,19 @@ export const EmployeeManagementSection: React.FC<{
                 </div>
 
                 {/* Articleship & Professional */}
+                {renderFieldWithHistory({
+                  field: 'registeredUnderPartner',
+                  label: 'Reg. Partner',
+                  historyLabel: 'Registered partner history',
+                  emptyHistoryMessage:
+                    'No saved history yet. After you change registered partner and save, previous values appear here with start and end dates.',
+                  addButtonLabel: 'Add new registered partner',
+                  revisionHint: 'New registered partner (applies to the form; save employee to persist)',
+                  revisionPlaceholder: 'Partner name',
+                  theme: 'extended',
+                  inputType: 'text',
+                })}
+
                 {[
                   { label: 'Transfer Case', key: 'transferCase' },
                   { label: '1st Year Art.', key: 'firstYearArticleship' },
@@ -3041,8 +3205,6 @@ export const EmployeeManagementSection: React.FC<{
                   { label: '3rd Year Art.', key: 'thirdYearArticleship' },
                   { label: 'Filled Scholarship', key: 'filledScholarship' },
                   { label: 'Qualification', key: 'qualificationLevel' },
-                  { label: 'Reg. Partner', key: 'registeredUnderPartner' },
-                  { label: 'Work. Partner', key: 'workingUnderPartner' },
                   { label: 'Work Timing (Text)', key: 'workingTiming' },
                 ].map((field) => (
                   <div key={field.key}>
@@ -3055,23 +3217,6 @@ export const EmployeeManagementSection: React.FC<{
                     />
                   </div>
                 ))}
-
-                {hasManagedFieldValue('registeredUnderPartner') && (
-                  <div>
-                    <label className="block text-[11px] text-slate-500 mb-1">Registered Under Partner Effective From</label>
-                    <input
-                      type="date"
-                      value={managedFieldsEffectiveFromByField.registeredUnderPartner}
-                      onChange={(e) =>
-                        setManagedFieldsEffectiveFromByField((prev) => ({
-                          ...prev,
-                          registeredUnderPartner: e.target.value,
-                        }))
-                      }
-                      className="w-full min-h-9 rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-xs text-slate-900 [color-scheme:light] shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                    />
-                  </div>
-                )}
 
                 {/* Dates */}
                  <div>
@@ -3522,6 +3667,19 @@ export const EmployeeManagementSection: React.FC<{
                 </div>
 
                 {/* Articleship & Professional */}
+                {renderFieldWithHistory({
+                  field: 'registeredUnderPartner',
+                  label: 'Reg. Partner',
+                  historyLabel: 'Registered partner history',
+                  emptyHistoryMessage:
+                    'No saved history yet. After you change registered partner and save, previous values appear here with start and end dates.',
+                  addButtonLabel: 'Add new registered partner',
+                  revisionHint: 'New registered partner (applies to the form; save employee to persist)',
+                  revisionPlaceholder: 'Partner name',
+                  theme: 'extended',
+                  inputType: 'text',
+                })}
+
                 {[
                   { label: 'Transfer Case', key: 'transferCase' },
                   { label: '1st Year Art.', key: 'firstYearArticleship' },
@@ -3529,8 +3687,6 @@ export const EmployeeManagementSection: React.FC<{
                   { label: '3rd Year Art.', key: 'thirdYearArticleship' },
                   { label: 'Filled Scholarship', key: 'filledScholarship' },
                   { label: 'Qualification', key: 'qualificationLevel' },
-                  { label: 'Reg. Partner', key: 'registeredUnderPartner' },
-                  { label: 'Work. Partner', key: 'workingUnderPartner' },
                   { label: 'Work Timing (Text)', key: 'workingTiming' },
                 ].map((field) => (
                   <div key={field.key}>
@@ -3696,12 +3852,15 @@ export const EmployeeManagementSection: React.FC<{
           </button>
         </div>
       </section>
+      {scheduleTemplateModalEl}
+    </>
     );
   }
 
   // ============== ADD NEW EMPLOYEE FORM VIEW =================
   if (isAddingNew) {
     return (
+      <>
       <section
         className="employee-edit-date-inputs rounded-lg border border-blue-200/65 bg-panel p-6 shadow-sm"
         aria-labelledby="add-employee-heading"
@@ -3830,36 +3989,33 @@ export const EmployeeManagementSection: React.FC<{
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Designation</label>
-                  <select
-                    value={formData.designation || ''}
-                    onChange={(e) => handleInputChange('designation', e.target.value)}
-                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                  >
-                    <option value="">Select designation</option>
-                    {predefinedValues.designations.map((designation) => (
-                      <option key={designation} value={designation}>{designation}</option>
-                    ))}
-                  </select>
-                </div>
+                {renderFieldWithHistory({
+                  field: 'designation',
+                  label: 'Designation',
+                  historyLabel: 'Designation history',
+                  emptyHistoryMessage:
+                    'No saved history yet. After you change designation and save, previous values appear here with start and end dates.',
+                  addButtonLabel: 'Add new designation',
+                  revisionHint: 'New designation (applies to the form; save employee to persist)',
+                  theme: 'basic',
+                  inputType: 'select',
+                  selectOptions: predefinedValues.designations,
+                  selectEmptyLabel: 'Select designation',
+                })}
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Work Partner</label>
-                  <select
-                    value={formData.workingUnderPartner || ''}
-                    onChange={(e) => {
-                      handleInputChange('workingUnderPartner', e.target.value);
-                      handleInputChange('team', e.target.value); // Auto-fill team from work partner
-                    }}
-                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                  >
-                    <option value="">Select work partner</option>
-                    {predefinedValues.teams.map((team) => (
-                      <option key={team} value={team}>{team}</option>
-                    ))}
-                  </select>
-                </div>
+                {renderFieldWithHistory({
+                  field: 'workingUnderPartner',
+                  label: 'Work Partner',
+                  historyLabel: 'Work partner history',
+                  emptyHistoryMessage:
+                    'No saved history yet. After you change work partner and save, previous partners appear here with start and end dates.',
+                  addButtonLabel: 'Add new work partner',
+                  revisionHint: 'New work partner (applies to the form; save employee to persist)',
+                  theme: 'basic',
+                  inputType: 'select',
+                  selectOptions: predefinedValues.teams,
+                  selectEmptyLabel: 'Select work partner',
+                })}
 
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Team <span className="text-slate-500">(auto-filled from Work Partner)</span></label>
@@ -3921,15 +4077,16 @@ export const EmployeeManagementSection: React.FC<{
           {/* Schedule Tab */}
           {activeTab === 'schedule' && (
             <div className="md:col-span-2 space-y-6">
-              <div className="flex flex-col gap-3 border-b border-slate-200 pb-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-3 border-b border-slate-200 pb-3">
                 <h3 className="text-sm font-semibold text-slate-900">Work schedule entries</h3>
-                <button
-                  type="button"
-                  onClick={handleAddScheduleEntry}
-                  className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                >
-                  Add schedule entry
-                </button>
+                <ScheduleTemplateToolbar
+                  templates={scheduleTemplates}
+                  disabled={denyEdits}
+                  onApplyTemplate={handleApplyScheduleTemplate}
+                  onAddBlankEntry={() => handleAddScheduleEntry()}
+                  onNewTemplate={() => setScheduleTemplateModal({ isOpen: true, template: null })}
+                  onEditTemplate={(t) => setScheduleTemplateModal({ isOpen: true, template: t })}
+                />
               </div>
 
               {(formData.schedules || []).map((entry, index) => (
@@ -4629,6 +4786,19 @@ export const EmployeeManagementSection: React.FC<{
                 </div>
 
                 {/* Articleship & Professional */}
+                {renderFieldWithHistory({
+                  field: 'registeredUnderPartner',
+                  label: 'Reg. Partner',
+                  historyLabel: 'Registered partner history',
+                  emptyHistoryMessage:
+                    'No saved history yet. After you change registered partner and save, previous values appear here with start and end dates.',
+                  addButtonLabel: 'Add new registered partner',
+                  revisionHint: 'New registered partner (applies to the form; save employee to persist)',
+                  revisionPlaceholder: 'Partner name',
+                  theme: 'extended',
+                  inputType: 'text',
+                })}
+
                 {[
                   { label: 'Transfer Case', key: 'transferCase' },
                   { label: '1st Year Art.', key: 'firstYearArticleship' },
@@ -4636,8 +4806,6 @@ export const EmployeeManagementSection: React.FC<{
                   { label: '3rd Year Art.', key: 'thirdYearArticleship' },
                   { label: 'Filled Scholarship', key: 'filledScholarship' },
                   { label: 'Qualification', key: 'qualificationLevel' },
-                  { label: 'Reg. Partner', key: 'registeredUnderPartner' },
-                  { label: 'Work. Partner', key: 'workingUnderPartner' },
                   { label: 'Work Timing (Text)', key: 'workingTiming' },
                 ].map((field) => (
                   <div key={field.key}>
@@ -4695,6 +4863,8 @@ export const EmployeeManagementSection: React.FC<{
           </button>
         </div>
       </section>
+      {scheduleTemplateModalEl}
+    </>
     );
   }
 
@@ -5631,6 +5801,8 @@ export const EmployeeManagementSection: React.FC<{
           </div>
         )}
       </div>
+
+      {scheduleTemplateModalEl}
 
       {/* Predefined values modal — dialog pattern, focus-friendly */}
       {predefinedModal.isOpen && predefinedModal.type && (

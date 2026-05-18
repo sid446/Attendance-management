@@ -4,6 +4,7 @@ import { reconcilePendingAttendanceForUser } from '@/lib/reconcilePendingAttenda
 import User, { IUser } from '@/models/User';
 import {
   applyManagedEffectiveHistories,
+  LEGACY_BASELINE_EFFECTIVE_FROM,
   MANAGED_EFFECTIVE_FIELDS,
   ManagedEffectiveField,
   normalizeManagedFieldValue,
@@ -16,7 +17,7 @@ import {
   effectiveFromDoc,
 } from '@/lib/hrConsolePermissionUtils';
 
-const DEFAULT_BASELINE_EFFECTIVE_FROM = new Date('2025-12-31T00:00:00.000Z');
+const DEFAULT_BASELINE_EFFECTIVE_FROM = LEGACY_BASELINE_EFFECTIVE_FROM;
 
 export async function POST(request: NextRequest) {
   try {

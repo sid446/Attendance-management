@@ -487,7 +487,12 @@ export default function EmployeeDashboard() {
               status: status,
               typeOfPresence: value.typeOfPresence,
               value: value.value,
-              schedule: schedule
+              schedule: schedule,
+              remarks: value.remarks ?? '',
+              checkin: value.checkin ?? '',
+              checkout: value.checkout ?? '',
+              editedCheckin: value.editedCheckin ?? '',
+              editedCheckout: value.editedCheckout ?? '',
             };
           });
           const daily: any = {};
@@ -640,7 +645,12 @@ export default function EmployeeDashboard() {
               status: status,
               typeOfPresence: value.typeOfPresence,
               value: value.value,
-              schedule: schedule // Attach schedule for this day
+              schedule: schedule, // Attach schedule for this day
+              remarks: value.remarks ?? '',
+              checkin: value.checkin ?? '',
+              checkout: value.checkout ?? '',
+              editedCheckin: value.editedCheckin ?? '',
+              editedCheckout: value.editedCheckout ?? '',
             };
           })
         );
@@ -803,7 +813,12 @@ export default function EmployeeDashboard() {
               status: status,
               typeOfPresence: value.typeOfPresence,
               value: value.value,
-              schedule: schedule
+              schedule: schedule,
+              remarks: value.remarks ?? '',
+              checkin: value.checkin ?? '',
+              checkout: value.checkout ?? '',
+              editedCheckin: value.editedCheckin ?? '',
+              editedCheckout: value.editedCheckout ?? '',
             };
           });
           const daily: any = {};
@@ -918,9 +933,23 @@ export default function EmployeeDashboard() {
       const isAbsent = status === 'Absent' || !dayRecord;
       const isPresent = status === 'Present';
       const isHalfDay = status === 'HalfDay' || typeOfPresenceLower.includes('half');
-      const isHoliday = status === 'Holiday' || typeOfPresence === 'Holiday' || typeOfPresence === 'Week Off';
-      const isMissingPunch = !inTime || !outTime || inTime === '00:00' || outTime === '00:00';
-      const isTimeCorrection = isPresent || isMissingPunch;
+      const isHoliday =
+        status === 'Holiday' ||
+        typeOfPresence === 'Holiday' ||
+        typeOfPresence === 'Week Off' ||
+        typeOfPresenceLower.includes('weekoff') ||
+        typeOfPresenceLower.includes('week off');
+      const isLeaveDay =
+        status === 'Leave' ||
+        status === 'On leave' ||
+        typeOfPresenceLower.includes('leave');
+      const inMarked = !!inTime && inTime !== '00:00';
+      const outMarked = !!outTime && outTime !== '00:00';
+      const isPartialPunch = inMarked !== outMarked;
+      const isMissingPunch = !inMarked && !outMarked;
+      /** Single-sided punch only — not every present day with both times filled. */
+      const isMissedEntry =
+        !!dayRecord && isPartialPunch && !isHoliday && !isLeaveDay && !isAbsent;
 
       // Check if there's already a pending request for this date
       const existingRequest = employeeRequests.find(r => r.date.split('T')[0] === date);
@@ -936,12 +965,18 @@ export default function EmployeeDashboard() {
 
       setSelectedDate(date);
       setSelectedDateStatus(isHoliday ? 'Holiday' : null);
-      setSelectedDateIsMissedEntry(isTimeCorrection);
+      setSelectedDateIsMissedEntry(isMissedEntry);
       // Set default status based on the day type
-      if (isTimeCorrection) {
+      if (isMissedEntry) {
         setRequestStatus('Present - in office');
       } else if (isHoliday) {
         setRequestStatus('Weekoff - special allowance');
+      } else if (isHalfDay) {
+        setRequestStatus('Half Day');
+      } else if (isAbsent || !dayRecord) {
+        setRequestStatus('On leave');
+      } else if (isPresent) {
+        setRequestStatus('Present - in office');
       } else {
         setRequestStatus('On leave');
       }

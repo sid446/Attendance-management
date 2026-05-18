@@ -16,6 +16,7 @@ import {
   FileText,
   Search,
 } from 'lucide-react';
+import { getWorkingUnderPartnerForDate, lastDayOfMonthYear } from '@/lib/userFieldHistory';
 
 interface FineRecord {
   serialNo: string;
@@ -217,7 +218,12 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
       if (categoryFilter !== 'all' && fine.category !== categoryFilter) return false;
       // Team filter
       if (teamFilter !== 'all') {
-        const teamVal = fine.userId?.team || fine.userId?.workingUnderPartner || '';
+        const teamVal = fine.userId
+          ? getWorkingUnderPartnerForDate(
+              fine.userId,
+              lastDayOfMonthYear(fine.monthYear || monthYear)
+            )
+          : '';
         if (teamVal !== teamFilter) return false;
       }
       // Status filter - check if any record matches
@@ -276,7 +282,11 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
           employeeName: fine.userId?.name || '',
           employeeId: fine.userId?.odId || '',
           category: fine.category,
-          vertical: record.vertical || fine.userId?.team || fine.userId?.workingUnderPartner || '',
+          vertical:
+            record.vertical ||
+            (fine.userId
+              ? getWorkingUnderPartnerForDate(fine.userId, record.date)
+              : ''),
           penaltyImposedBy: record.penaltyImposedBy || '',
           fineAmount: record.isWarning ? 'Warning' : record.fineAmount,
           reason: record.reason || '',
@@ -1033,13 +1043,24 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
           className={`${selectCls} min-w-[10rem]`}
         >
           <option value="all">All teams</option>
-          {Array.from(new Set(fines.map((f) => f.userId?.team || f.userId?.workingUnderPartner).filter(Boolean))).map(
-            (team) => (
+          {Array.from(
+            new Set(
+              fines
+                .map((f) =>
+                  f.userId
+                    ? getWorkingUnderPartnerForDate(
+                        f.userId,
+                        lastDayOfMonthYear(f.monthYear || monthYear)
+                      )
+                    : ''
+                )
+                .filter(Boolean)
+            )
+          ).map((team) => (
               <option key={team} value={team}>
                 {team}
               </option>
-            ),
-          )}
+            ))}
         </select>
         <label htmlFor="fine-status-filter" className="sr-only">
           Status
@@ -1146,7 +1167,12 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
                         </span>
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-600">
-                        {fine.userId?.team || fine.userId?.workingUnderPartner || '—'}
+                        {fine.userId
+                          ? getWorkingUnderPartnerForDate(
+                              fine.userId,
+                              lastDayOfMonthYear(fine.monthYear || monthYear)
+                            ) || '—'
+                          : '—'}
                       </td>
                       <td className="px-4 py-3 text-center">
                         {fine.totalWarnings > 0 && (

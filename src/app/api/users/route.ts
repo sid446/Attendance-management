@@ -33,8 +33,14 @@ export async function GET(request: NextRequest) {
 
     const match = includeInactive ? {} : { isActive: true };
 
+    // listOnly: omit heavy salary histories but keep work-partner timeline for reports
     const users = listOnly
-      ? await User.find(match).sort({ name: 1 }).select('-fieldHistories').lean()
+      ? await User.find(match)
+          .sort({ name: 1 })
+          .select(
+            '-fieldHistories.basicSalary -fieldHistories.laptopAllowance -fieldHistories.totalSalaryPerMonth -fieldHistories.totalSalaryPerAnnum'
+          )
+          .lean()
       : await User.find(match).sort({ name: 1 }).lean();
 
     // Ensure attendanceEmail is set for backward compatibility

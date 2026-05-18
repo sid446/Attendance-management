@@ -1,6 +1,14 @@
 import React, { ChangeEvent, useState } from 'react';
 import { Upload, FileSpreadsheet, Users, Download } from 'lucide-react';
 import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
+import { UploadErrorLogPanel } from '@/components/UploadErrorLogPanel';
+import {
+  groupRowErrors,
+  GroupedUploadError,
+  RowUploadError,
+  rowErrorsFromMessages,
+  saveUploadErrorLog,
+} from '@/lib/uploadErrorLogUtils';
 
 interface EmployeeMasterUploadSectionProps {
   onRefreshUsers?: () => void;
@@ -23,6 +31,7 @@ const SCHEDULE_UPLOAD_WORKFLOW_STEPS = ['Schedule effective date', 'Choose Excel
 
 export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionProps> = ({ onRefreshUsers }) => {
   const [mode, setMode] = useState<UploadMode>('update');
+  const [deactivateMissing, setDeactivateMissing] = useState(true);
   const [effectiveFrom, setEffectiveFrom] = useState<string>(new Date().toISOString().split('T')[0]);
   const [scheduleEffectiveFrom, setScheduleEffectiveFrom] = useState<string>(new Date().toISOString().split('T')[0]);
   const [isUploading, setIsUploading] = useState(false);
@@ -31,6 +40,21 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [stats, setStats] = useState<any>(null);
   const [scheduleStats, setScheduleStats] = useState<any>(null);
+  const [masterGroupedErrors, setMasterGroupedErrors] = useState<GroupedUploadError[]>([]);
+  const [scheduleGroupedErrors, setScheduleGroupedErrors] = useState<GroupedUploadError[]>([]);
+
+  const applyUploadErrors = async (
+    rowErrors: RowUploadError[],
+    fileName: string,
+    logType: 'employee-master' | 'employee-schedule',
+    setGrouped: (errors: GroupedUploadError[]) => void
+  ) => {
+    const grouped = groupRowErrors(rowErrors);
+    setGrouped(grouped);
+    if (grouped.length > 0) {
+      await saveUploadErrorLog(fileName, grouped, logType);
+    }
+  };
 
   const normalize = (value: any) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
@@ -263,6 +287,7 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
     setIsUploading(true);
     setError(null);
     setStats(null);
+    setMasterGroupedErrors([]);
 
     try {
       const XLSX = await import('xlsx');
@@ -399,7 +424,12 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
       const response = await fetch('/api/users/basic-master-upload', hrCredentialsInit({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode, employees, effectiveFrom }),
+        body: JSON.stringify({
+          mode,
+          employees,
+          effectiveFrom,
+          deactivateMissing: mode === 'update' && deactivateMissing,
+        }),
       }));
 
       const result = await response.json();
@@ -408,9 +438,17 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
       }
 
       setStats(result.data);
+      const rowErrors: RowUploadError[] = Array.isArray(result.data?.rowErrors)
+        ? result.data.rowErrors
+        : rowErrorsFromMessages(Array.isArray(result.data?.errors) ? result.data.errors : []);
+      await applyUploadErrors(rowErrors, file.name, 'employee-master', setMasterGroupedErrors);
       onRefreshUsers?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed');
+      const message = err instanceof Error ? err.message : 'Upload failed';
+      setError(message);
+      const grouped = groupRowErrors(rowErrorsFromMessages([message]));
+      setMasterGroupedErrors(grouped);
+      await saveUploadErrorLog(file.name, grouped, 'employee-master');
     } finally {
       setIsUploading(false);
       e.target.value = '';
@@ -424,6 +462,7 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
     setIsScheduleUploading(true);
     setScheduleError(null);
     setScheduleStats(null);
+    setScheduleGroupedErrors([]);
 
     try {
       const XLSX = await import('xlsx');
@@ -501,9 +540,17 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
       }
 
       setScheduleStats(result.data);
+      const rowErrors: RowUploadError[] = Array.isArray(result.data?.rowErrors)
+        ? result.data.rowErrors
+        : rowErrorsFromMessages(Array.isArray(result.data?.errors) ? result.data.errors : []);
+      await applyUploadErrors(rowErrors, file.name, 'employee-schedule', setScheduleGroupedErrors);
       onRefreshUsers?.();
     } catch (err) {
-      setScheduleError(err instanceof Error ? err.message : 'Schedule upload failed');
+      const message = err instanceof Error ? err.message : 'Schedule upload failed';
+      setScheduleError(message);
+      const grouped = groupRowErrors(rowErrorsFromMessages([message]));
+      setScheduleGroupedErrors(grouped);
+      await saveUploadErrorLog(file.name, grouped, 'employee-schedule');
     } finally {
       setIsScheduleUploading(false);
       e.target.value = '';
@@ -584,6 +631,26 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
         <p className="mt-1 text-[11px] text-slate-600">Defaults to today; change before upload if you need a back-dated effective date.</p>
       </div>
 
+      {mode === 'update' && (
+        <div className="mb-5 rounded-md border border-amber-200/80 bg-amber-50/50 px-4 py-3">
+          <label className="flex cursor-pointer items-start gap-2 text-sm text-slate-800">
+            <input
+              type="checkbox"
+              checked={deactivateMissing}
+              onChange={(e) => setDeactivateMissing(e.target.checked)}
+              className="mt-0.5 border-slate-300 text-blue-600 focus:ring-blue-500/40"
+            />
+            <span>
+              <span className="font-medium">Mark missing employees inactive</span>
+              <span className="mt-1 block text-xs text-slate-600">
+                Active employees not in this file are set inactive with inactive date = effective from above
+                (left or no longer on master). Rows in the file reactivate previously inactive employees.
+              </span>
+            </span>
+          </label>
+        </div>
+      )}
+
       <div className="mb-5 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
         <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50/80 px-4 py-3 transition-colors hover:border-blue-300 hover:bg-blue-50/40">
           <span className="flex items-center gap-2 text-sm text-slate-700">
@@ -622,17 +689,42 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
           <div className="font-semibold">Upload complete ({stats.mode})</div>
           <div className="mt-1">
             Updated: {stats.updated || 0}, Created: {stats.created || 0}, Failed: {stats.failed || 0}
+            {(stats.reactivated > 0 || stats.deactivated > 0) && (
+              <>
+                {', '}
+                Reactivated: {stats.reactivated || 0}, Deactivated: {stats.deactivated || 0}
+              </>
+            )}
           </div>
           <div className="mt-1">Effective from: {stats.effectiveFrom || effectiveFrom}</div>
-          {Array.isArray(stats.errors) && stats.errors.length > 0 && (
-            <ul className="mt-2 max-h-32 list-inside list-disc overflow-y-auto text-red-800">
-              {stats.errors.map((msg: string, idx: number) => (
-                <li key={idx}>{msg}</li>
-              ))}
-            </ul>
+          {Array.isArray(stats.deactivatedNames) && stats.deactivatedNames.length > 0 && (
+            <div className="mt-2">
+              <div className="text-xs font-medium text-slate-700">Marked inactive (not in file):</div>
+              <ul className="mt-1 max-h-32 list-inside list-disc overflow-y-auto text-xs text-slate-800">
+                {stats.deactivatedNames.map((name: string, idx: number) => (
+                  <li key={idx}>{name}</li>
+                ))}
+              </ul>
+              {stats.deactivated > stats.deactivatedNames.length && (
+                <p className="mt-1 text-xs text-slate-600">
+                  …and {stats.deactivated - stats.deactivatedNames.length} more
+                </p>
+              )}
+            </div>
+          )}
+          {stats.failed > 0 && (
+            <p className="mt-2 text-xs text-red-800">See error details in the log section below.</p>
           )}
         </div>
       )}
+
+      <UploadErrorLogPanel
+        groupedErrors={masterGroupedErrors}
+        logType="employee-master"
+        sectionTitle="Master upload history & logs"
+        currentErrorsLabel="Current master upload errors"
+        exportFilePrefix="Employee_Master_Upload"
+      />
 
       <div className="flex items-start gap-2 rounded-md border border-blue-100 bg-blue-50/60 px-3 py-2 text-[11px] text-slate-700">
         <Users className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-700" aria-hidden />
@@ -716,15 +808,19 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
               Updated: {scheduleStats.updated || 0}, Failed: {scheduleStats.failed || 0}
             </div>
             <div className="mt-1">Effective from: {scheduleStats.effectiveFrom || scheduleEffectiveFrom}</div>
-            {Array.isArray(scheduleStats.errors) && scheduleStats.errors.length > 0 && (
-              <ul className="mt-2 max-h-32 list-inside list-disc overflow-y-auto text-red-800">
-                {scheduleStats.errors.map((msg: string, idx: number) => (
-                  <li key={idx}>{msg}</li>
-                ))}
-              </ul>
+            {scheduleStats.failed > 0 && (
+              <p className="mt-2 text-xs text-red-800">See error details in the log section below.</p>
             )}
           </div>
         )}
+
+        <UploadErrorLogPanel
+          groupedErrors={scheduleGroupedErrors}
+          logType="employee-schedule"
+          sectionTitle="Schedule upload history & logs"
+          currentErrorsLabel="Current schedule upload errors"
+          exportFilePrefix="Employee_Schedule_Upload"
+        />
       </div>
     </section>
   );

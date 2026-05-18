@@ -20,11 +20,15 @@ export function pickEditableUserPutBody(
     out[key] = formData[key];
   }
   const anyField = Object.keys(out).length > 0;
-  const salaryMeta = employeeTabs.salary === 'edit' && meta.managedEffectiveFromByField !== undefined;
-  if (anyField || salaryMeta) {
+  const canSendManagedDates =
+    meta.managedEffectiveFromByField !== undefined &&
+    (employeeTabs.salary === 'edit' ||
+      employeeTabs.basic === 'edit' ||
+      employeeTabs.extended === 'edit');
+  if (anyField || canSendManagedDates) {
     if (meta.changedBy !== undefined) out.changedBy = meta.changedBy;
     if (meta.changeReason !== undefined) out.changeReason = meta.changeReason;
-    if (salaryMeta) {
+    if (canSendManagedDates) {
       out.managedEffectiveFromByField = meta.managedEffectiveFromByField;
     }
   }

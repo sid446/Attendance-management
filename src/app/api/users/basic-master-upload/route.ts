@@ -4,6 +4,7 @@ import { reconcilePendingAttendanceForUser } from '@/lib/reconcilePendingAttenda
 import User, { IUser } from '@/models/User';
 import {
   applyManagedEffectiveHistories,
+  LEGACY_BASELINE_EFFECTIVE_FROM,
   MANAGED_EFFECTIVE_FIELDS,
   ManagedEffectiveField,
   normalizeManagedFieldValue,
@@ -16,6 +17,7 @@ import {
   collectUserFieldKeysFromEmployeeRecords,
   effectiveFromDoc,
 } from '@/lib/hrConsolePermissionUtils';
+import { formatRowIdentifier } from '@/lib/uploadErrorLogUtils';
 
 type UploadMode = 'update' | 'add';
 
@@ -31,7 +33,39 @@ function parseDate(value: unknown): Date | undefined {
   return Number.isNaN(d.getTime()) ? undefined : d;
 }
 
-const DEFAULT_BASELINE_EFFECTIVE_FROM = new Date('2025-12-31T00:00:00.000Z');
+const DEFAULT_BASELINE_EFFECTIVE_FROM = LEGACY_BASELINE_EFFECTIVE_FROM;
+
+function nameLookupKeys(name: string): string[] {
+  const key = normalizeText(name).toLowerCase();
+  if (!key) return [];
+  return [key, key.replace(/\s+/g, '.'), key.replace(/\./g, ' ')];
+}
+
+function buildUploadPresence(employees: unknown[]) {
+  const codes = new Set<string>();
+  const names = new Set<string>();
+  for (const emp of employees) {
+    if (!emp || typeof emp !== 'object') continue;
+    const row = emp as Record<string, unknown>;
+    const code = normalizeText(row.employeeCode).toLowerCase();
+    if (code) codes.add(code);
+    const rowName = normalizeText(row.name);
+    for (const k of nameLookupKeys(rowName)) names.add(k);
+  }
+  return { codes, names };
+}
+
+function isUserPresentInUpload(
+  user: IUser,
+  presence: { codes: Set<string>; names: Set<string> }
+): boolean {
+  const code = normalizeText((user as any).employeeCode).toLowerCase();
+  if (code && presence.codes.has(code)) return true;
+  for (const k of nameLookupKeys(normalizeText((user as any).name))) {
+    if (presence.names.has(k)) return true;
+  }
+  return false;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -49,6 +83,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const employees = Array.isArray(body?.employees) ? body.employees : [];
     const mode: UploadMode = body?.mode === 'add' ? 'add' : 'update';
+    const deactivateMissing = mode === 'update' && body?.deactivateMissing === true;
     const parsedEffectiveFrom = parseDate(body?.effectiveFrom);
     const effectiveFrom = parsedEffectiveFrom || new Date();
 
@@ -59,12 +94,25 @@ export async function POST(request: NextRequest) {
     const bulkDenied = assertCanApplyUserPutBody(collectUserFieldKeysFromEmployeeRecords(employees), effective);
     if (bulkDenied) return bulkDenied;
 
+    if (deactivateMissing) {
+      const statusDenied = assertCanApplyUserPutBody(
+        { isActive: false, inactiveAsOf: effectiveFrom.toISOString() },
+        effective
+      );
+      if (statusDenied) return statusDenied;
+    }
+
     const stats = {
       created: 0,
       updated: 0,
+      reactivated: 0,
+      deactivated: 0,
+      deactivatedNames: [] as string[],
       failed: 0,
       errors: [] as string[],
+      rowErrors: [] as { identifier: string; reason: string }[],
       mode,
+      deactivateMissing,
       effectiveFrom: effectiveFrom.toISOString().split('T')[0],
     };
 
@@ -96,6 +144,7 @@ export async function POST(request: NextRequest) {
         if (!name) {
           stats.failed++;
           stats.errors.push('Row skipped: Missing Name');
+          stats.rowErrors.push({ identifier: '(blank row)', reason: 'Row skipped: Missing Name' });
           continue;
         }
 
@@ -179,8 +228,10 @@ export async function POST(request: NextRequest) {
 
         if (mode === 'update') {
           if (!matchedUser) {
+            const id = formatRowIdentifier(name, employeeCode);
             stats.failed++;
-            stats.errors.push(`Not found for update: ${name}${employeeCode ? ` (${employeeCode})` : ''}`);
+            stats.errors.push(`Not found for update: ${id}`);
+            stats.rowErrors.push({ identifier: id, reason: 'Not found for update' });
             continue;
           }
 
@@ -191,6 +242,12 @@ export async function POST(request: NextRequest) {
               managedIncoming[field] = updateData[field as keyof typeof updateData] as unknown;
               priorManaged[field] = normalizeManagedFieldValue(matchedUser[field as keyof IUser]);
             }
+          }
+
+          if (matchedUser.isActive === false) {
+            matchedUser.isActive = true;
+            matchedUser.inactiveAsOf = null;
+            stats.reactivated++;
           }
 
           Object.assign(matchedUser, updateData);
@@ -217,8 +274,10 @@ export async function POST(request: NextRequest) {
 
         // mode === 'add'
         if (matchedUser) {
+          const id = formatRowIdentifier(name, employeeCode);
           stats.failed++;
-          stats.errors.push(`Already exists, skipped add: ${name}${employeeCode ? ` (${employeeCode})` : ''}`);
+          stats.errors.push(`Already exists, skipped add: ${id}`);
+          stats.rowErrors.push({ identifier: id, reason: 'Already exists, skipped add' });
           continue;
         }
 
@@ -259,8 +318,33 @@ export async function POST(request: NextRequest) {
         }
         stats.created++;
       } catch (e) {
+        const rowName = normalizeText(emp?.name);
+        const rowCode = normalizeText(emp?.employeeCode);
+        const id = formatRowIdentifier(rowName, rowCode);
         stats.failed++;
-        stats.errors.push(`Failed row ${normalizeText(emp?.name) || '(unknown)'}: ${(e as Error).message}`);
+        stats.errors.push(`Failed row ${id}: ${(e as Error).message}`);
+        stats.rowErrors.push({ identifier: id, reason: `Row processing failed: ${(e as Error).message}` });
+      }
+    }
+
+    if (deactivateMissing) {
+      const presence = buildUploadPresence(employees);
+      for (const user of existingUsers) {
+        if (user.isActive === false) continue;
+        if (isUserPresentInUpload(user, presence)) continue;
+
+        user.isActive = false;
+        user.inactiveAsOf = effectiveFrom;
+        await user.save();
+
+        stats.deactivated++;
+        if (stats.deactivatedNames.length < 50) {
+          const label =
+            normalizeText((user as any).name) ||
+            normalizeText((user as any).employeeCode) ||
+            normalizeText((user as any).email);
+          if (label) stats.deactivatedNames.push(label);
+        }
       }
     }
 

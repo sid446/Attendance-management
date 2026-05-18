@@ -1,6 +1,10 @@
 import { IUser } from '@/models/User';
 
+/** Baseline effective-from for existing DB values before dated history was introduced. */
+export const LEGACY_BASELINE_EFFECTIVE_FROM = new Date('2025-12-12T00:00:00.000Z');
+
 export const MANAGED_EFFECTIVE_FIELDS = [
+  'designation',
   'registeredUnderPartner',
   'workingUnderPartner',
   'basicSalary',
@@ -17,6 +21,167 @@ export function normalizeManagedFieldValue(value: unknown): string {
   if (value === null || value === undefined) return '';
   return String(value).trim();
 }
+
+/** Local calendar midnight — avoids timezone drift when comparing effective dates. */
+export function startOfCalendarDay(input: Date | string): Date {
+  const d = input instanceof Date ? new Date(input.getTime()) : new Date(input);
+  if (Number.isNaN(d.getTime())) return new Date(NaN);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+type FieldHistoryEntry = {
+  value?: string;
+  effectiveFrom?: string | Date;
+  effectiveTo?: string | Date | null;
+  source?: string;
+};
+
+type UserWithFieldHistories = {
+  fieldHistories?: Partial<Record<ManagedEffectiveField, FieldHistoryEntry[]>>;
+} & Partial<Record<ManagedEffectiveField, unknown>>;
+
+/**
+ * Value of a managed field (e.g. workingUnderPartner) that was active on `date`.
+ * Inclusive on effectiveFrom and effectiveTo (e.g. old partner still applies on their last day).
+ */
+export function getManagedFieldValueForDate(
+  user: UserWithFieldHistories | null | undefined,
+  field: ManagedEffectiveField,
+  date: Date | string
+): string {
+  if (!user) return '';
+  const day = startOfCalendarDay(date);
+  if (Number.isNaN(day.getTime())) {
+    return normalizeManagedFieldValue(user[field]);
+  }
+
+  const history = user.fieldHistories?.[field];
+  if (Array.isArray(history) && history.length > 0) {
+    const matches = history.filter((entry) => {
+      if (!entry?.value) return false;
+      const from = startOfCalendarDay(new Date(entry.effectiveFrom as string | Date));
+      if (Number.isNaN(from.getTime()) || day < from) return false;
+      if (entry.effectiveTo != null && entry.effectiveTo !== '') {
+        const to = startOfCalendarDay(new Date(entry.effectiveTo as string | Date));
+        if (!Number.isNaN(to.getTime()) && day > to) return false;
+      }
+      return true;
+    });
+
+    if (matches.length > 0) {
+      matches.sort(
+        (a, b) =>
+          new Date(b.effectiveFrom as string | Date).getTime() -
+          new Date(a.effectiveFrom as string | Date).getTime()
+      );
+      return normalizeManagedFieldValue(matches[0].value);
+    }
+  }
+
+  return normalizeManagedFieldValue(user[field]);
+}
+
+export function getWorkingUnderPartnerForDate(
+  user: UserWithFieldHistories | null | undefined,
+  date: Date | string
+): string {
+  const fromHistory = getManagedFieldValueForDate(user, 'workingUnderPartner', date);
+  if (fromHistory) return fromHistory;
+  return normalizeManagedFieldValue((user as { team?: unknown })?.team);
+}
+
+/** Last calendar day of `YYYY-MM`. */
+export function lastDayOfMonthYear(monthYear: string): Date {
+  const [y, m] = monthYear.split('-').map(Number);
+  if (!y || !m) return startOfCalendarDay(new Date());
+  return startOfCalendarDay(new Date(y, m, 0));
+}
+
+export type SummaryPeriodContext = {
+  filterType: 'month' | 'week' | 'range';
+  selectedYear: number;
+  selectedMonth: number;
+  currentWeekStart?: string;
+  rangeEnd?: string;
+  monthYear?: string;
+};
+
+/** End date of the summary/report period (partner shown as of this day). */
+export function getSummaryPeriodEndDate(ctx: SummaryPeriodContext): Date {
+  if (ctx.filterType === 'range' && ctx.rangeEnd) {
+    return startOfCalendarDay(ctx.rangeEnd);
+  }
+
+  if (ctx.filterType === 'week' && ctx.currentWeekStart) {
+    const start = startOfCalendarDay(ctx.currentWeekStart);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    const lastDayOfMonth = startOfCalendarDay(new Date(ctx.selectedYear, ctx.selectedMonth, 0));
+    return end > lastDayOfMonth ? lastDayOfMonth : startOfCalendarDay(end);
+  }
+
+  if (ctx.monthYear) {
+    return lastDayOfMonthYear(ctx.monthYear);
+  }
+
+  return startOfCalendarDay(new Date(ctx.selectedYear, ctx.selectedMonth, 0));
+}
+
+export function getWorkingUnderPartnerForSummary(
+  user: UserWithFieldHistories | null | undefined,
+  ctx: SummaryPeriodContext
+): string {
+  const periodEnd = getSummaryPeriodEndDate(ctx);
+  return getWorkingUnderPartnerForDate(user, periodEnd);
+}
+
+export function getDesignationForDate(
+  user: UserWithFieldHistories | null | undefined,
+  date: Date | string
+): string {
+  return getManagedFieldValueForDate(user, 'designation', date);
+}
+
+export function getDesignationForSummary(
+  user: UserWithFieldHistories | null | undefined,
+  ctx: SummaryPeriodContext
+): string {
+  return getDesignationForDate(user, getSummaryPeriodEndDate(ctx));
+}
+
+/** Seed a single open-ended history segment when the field has a value but no history yet. */
+export function seedFieldHistoryIfMissing(
+  user: {
+    fieldHistories?: Record<string, FieldHistoryEntry[]>;
+  } & Partial<Record<ManagedEffectiveField, unknown>>,
+  field: ManagedEffectiveField,
+  effectiveFrom: Date = LEGACY_BASELINE_EFFECTIVE_FROM
+): boolean {
+  const value = normalizeManagedFieldValue(user[field]);
+  if (!value) return false;
+
+  if (!user.fieldHistories) {
+    user.fieldHistories = {};
+  }
+
+  const history = user.fieldHistories[field];
+  if (Array.isArray(history) && history.length > 0) {
+    return false;
+  }
+
+  user.fieldHistories[field] = [
+    {
+      value,
+      effectiveFrom,
+      effectiveTo: null,
+      source: 'system',
+    },
+  ];
+  return true;
+}
+
+export const LEGACY_SEED_FIELDS: ManagedEffectiveField[] = ['designation', 'workingUnderPartner'];
 
 function getAnchorEffectiveFrom(user: Partial<IUser>, changedAt: Date): Date {
   const schedules = Array.isArray((user as any).schedules) ? (user as any).schedules : [];

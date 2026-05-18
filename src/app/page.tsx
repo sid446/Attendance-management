@@ -1,7 +1,7 @@
                       
            
 "use client";
-import React, { useState, ChangeEvent, useEffect, useCallback } from "react";
+import React, { useState, ChangeEvent, useEffect, useCallback, useRef } from "react";
 import * as XLSX from 'xlsx';
 import { X } from 'lucide-react';
 import { AttendanceRecord, AttendanceSummaryView, User, DailySchedule } from '@/types/ui';
@@ -23,6 +23,11 @@ import { InvalidAttendanceSection } from '@/components/InvalidAttendanceSection'
 import { ClientPlaceManagement } from '@/components/ClientPlaceManagement';
 import { HrConsoleAccessSection } from '@/components/HrConsoleAccessSection';
 import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
+import {
+  getDesignationForDate,
+  getWorkingUnderPartnerForDate,
+  lastDayOfMonthYear,
+} from '@/lib/userFieldHistory';
 import {
   HR_CONSOLE_SECTION_IDS,
   type EmployeeManagementTabId,
@@ -56,6 +61,7 @@ export default function AttendanceUpload() {
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [summaries, setSummaries] = useState<AttendanceSummaryView[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]); // All users for dropdowns
+  const fieldHistoriesSeededRef = useRef(false);
   const [currentMonthYear, setCurrentMonthYear] = useState<string | null>(null);
   const [uploadTotal, setUploadTotal] = useState<number>(0);
   const [uploadSaved, setUploadSaved] = useState<number>(0);
@@ -1015,7 +1021,8 @@ export default function AttendanceUpload() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               fileName: file?.name || fixedFile?.name || 'Unknown File',
-              errorDetails: groupedErrors
+              errorDetails: groupedErrors,
+              logType: 'attendance',
             })
           });
         } catch (err) {
@@ -1056,6 +1063,21 @@ export default function AttendanceUpload() {
       const result = await response.json();
       if (result.success && Array.isArray(result.data)) {
         setAllUsers(result.data);
+        if (!fieldHistoriesSeededRef.current) {
+          fieldHistoriesSeededRef.current = true;
+          void fetch('/api/users/seed-field-histories', {
+            method: 'POST',
+            ...hrCredentialsInit(),
+          })
+            .then(() => fetch('/api/users?listOnly=1', hrCredentialsInit()))
+            .then((r) => r.json())
+            .then((seedRefresh) => {
+              if (seedRefresh.success && Array.isArray(seedRefresh.data)) {
+                setAllUsers(seedRefresh.data);
+              }
+            })
+            .catch(() => {});
+        }
       }
     } catch (err) {
       console.error('Failed to fetch users:', err);
@@ -1335,8 +1357,15 @@ export default function AttendanceUpload() {
           userName: item.userId?.name ?? 'Unknown',
           odId: item.userId?.odId ?? '',
           employeeCode: item.userId?.employeeCode ?? '',
-          team: item.userId?.workingUnderPartner || item.userId?.team || '',
-          designation: item.userId?.designation || '',
+          team: (() => {
+            const u = userFromMap || item.userId;
+            const asOf = lastDayOfMonthYear(monthYear);
+            return getWorkingUnderPartnerForDate(u, asOf) || u?.team || '';
+          })(),
+          designation: (() => {
+            const u = userFromMap || item.userId;
+            return getDesignationForDate(u, lastDayOfMonthYear(monthYear)) || u?.designation || '';
+          })(),
           monthYear: monthYear,
           schedules: yearSchedule,
           summary: {
@@ -1441,10 +1470,15 @@ export default function AttendanceUpload() {
           status: status,
           typeOfPresence: value.typeOfPresence ?? '',
           value: value.value ?? undefined,
-          // Add missing properties if AttendanceRecord expects them
+          remarks: value.remarks ?? '',
+          checkin: value.checkin ?? '',
+          checkout: value.checkout ?? '',
+          editedCheckin: value.editedCheckin ?? '',
+          editedCheckout: value.editedCheckout ?? '',
+          schedule: undefined,
           ...(value.totalHour !== undefined ? { totalHour: value.totalHour } : {}),
           ...(value.halfDay !== undefined ? { halfDay: value.halfDay } : {}),
-        } as AttendanceRecord;
+        } satisfies AttendanceRecord;
       });
 
       days.sort((a, b) => {

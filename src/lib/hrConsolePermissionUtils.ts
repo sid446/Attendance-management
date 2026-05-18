@@ -202,7 +202,7 @@ export const USER_PUT_KEY_TO_EMPLOYEE_TABS: Record<string, EmployeeManagementTab
   esi: ['salary'],
   gratuity: ['salary'],
   managedEffectiveFrom: ['salary'],
-  managedEffectiveFromByField: ['salary'],
+  managedEffectiveFromByField: ['basic', 'extended', 'salary'],
   articleCreditsAsOnJan26: ['salary'],
   leaveBalance: ['salary'],
 };

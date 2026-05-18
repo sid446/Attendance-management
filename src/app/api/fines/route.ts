@@ -3,6 +3,7 @@ import dbConnect from '@/lib/mongodb';
 import Fine from '@/models/Fine';
 import Attendance  from '@/models/Attendance';
 import User from '@/models/User';
+import { getWorkingUnderPartnerForDate } from '@/lib/userFieldHistory';
 
 // Fine calculation rules
 // Staff: 2 late days in month = warning, 3-7 late days = 50 each, 8+ = 100 each
@@ -119,7 +120,10 @@ export async function GET(request: NextRequest) {
       query.userId = userId;
     }
 
-    const fines = await Fine.find(query).populate('userId', 'name odId category team designation workingUnderPartner');
+    const fines = await Fine.find(query).populate(
+      'userId',
+      'name odId category team designation workingUnderPartner fieldHistories'
+    );
 
     return NextResponse.json({ success: true, fines });
   } catch (error) {
@@ -207,7 +211,7 @@ export async function POST(request: NextRequest) {
         const rec = records[dateStr];
         const effectiveCheckin = rec.editedCheckin || rec.checkin;
         const scheduledIn = getScheduledInTime(user, dateStr);
-        const vertical = user?.team || user?.workingUnderPartner || (attendance.userId as any)?.team || (attendance.userId as any)?.workingUnderPartner || '';
+        const vertical = getWorkingUnderPartnerForDate(user, dateStr);
         let isWarning = false;
         let fineAmount = 0;
         let remark = '';
@@ -273,7 +277,7 @@ export async function POST(request: NextRequest) {
           totalWarnings,
         },
         { upsert: true, new: true }
-      ).populate('userId', 'name odId category team designation workingUnderPartner');
+      ).populate('userId', 'name odId category team designation workingUnderPartner fieldHistories');
 
       results.push(fine);
     }
@@ -327,7 +331,7 @@ export async function PUT(request: NextRequest) {
 
     await fine.save();
 
-    const updatedFine = await Fine.findById(fineId).populate('userId', 'name odId category team designation workingUnderPartner');
+    const updatedFine = await Fine.findById(fineId).populate('userId', 'name odId category team designation workingUnderPartner fieldHistories');
 
     return NextResponse.json({ success: true, fine: updatedFine });
   } catch (error) {

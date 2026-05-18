@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
 import LeaveTransaction from '@/models/LeaveTransaction';
+import { getWorkingUnderPartnerForDate } from '@/lib/userFieldHistory';
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,7 +10,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch all users with their leave balance information
     const users = await User.find({ isActive: true })
-      .select('name employeeCode team workingUnderPartner leaveBalance joiningDate employmentType')
+      .select('name employeeCode team workingUnderPartner fieldHistories leaveBalance joiningDate employmentType')
       .sort({ name: 1 });
 
     // Sum used leave from transaction ledger from 31-Dec-2025 onward.
@@ -45,7 +46,7 @@ export async function GET(request: NextRequest) {
         userId: user._id.toString(),
         userName: user.name,
         employeeCode: user.employeeCode,
-        team: user.workingUnderPartner || user.team,
+        team: getWorkingUnderPartnerForDate(user, new Date()),
         employmentType: user.employmentType,
         balanceAsOfJan26: balanceAsOfJan26,
         earned: earned,

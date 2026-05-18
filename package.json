@@ -12,12 +12,14 @@
     "migrate:attendance-email": "tsx scripts/migrate-attendance-email.ts",
     "migrate:employment-type-history": "tsx --env-file=.env.local scripts/migrate-employment-type-history.ts",
     "migrate:schedule-effective-date": "tsx --env-file=.env.local scripts/migrate-schedule-effective-date.ts",
-    "backfill:managed-field-histories": "tsx --env-file=.env.local scripts/backfill-managed-field-histories.ts",
+    "backfill:managed-field-histories": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/backfill-managed-field-histories.ts",
     "backfill:nonworking-attendance": "tsx --env-file=.env.local scripts/backfill-nonworking-day-attendance.ts",
     "test:api": "tsx scripts/test-api.ts",
     "backup": "tsx scripts/backup-database.ts",
     "backup:create": "tsx scripts/backup-database.ts",
-    "backfill:leave-snapshots": "tsx scripts/backfill-leave-snapshots.ts"
+    "backfill:leave-snapshots": "tsx scripts/backfill-leave-snapshots.ts",
+    "reconcile:leave": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/reconcile-leave-from-attendance.ts",
+    "reconcile:leave:apply": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/reconcile-leave-from-attendance.ts --apply"
   },
   "dependencies": {
     "dotenv": "^17.2.3",

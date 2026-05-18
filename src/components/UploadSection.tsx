@@ -92,7 +92,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   const fetchLogs = async () => {
     setLoadingLogs(true);
     try {
-      const response = await fetch('/api/upload-logs');
+      const response = await fetch('/api/upload-logs?type=attendance');
       const result = await response.json();
       if (result.success) {
         setLogs(result.data);

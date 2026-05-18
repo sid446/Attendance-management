@@ -145,6 +145,7 @@ export interface User {
   workingTiming?: string;
 
   fieldHistories?: {
+    designation?: Array<{ value: string; effectiveFrom: string | Date; effectiveTo?: string | Date | null; source?: string }>;
     registeredUnderPartner?: Array<{ value: string; effectiveFrom: string | Date; effectiveTo?: string | Date | null; source?: string }>;
     workingUnderPartner?: Array<{ value: string; effectiveFrom: string | Date; effectiveTo?: string | Date | null; source?: string }>;
     basicSalary?: Array<{ value: string; effectiveFrom: string | Date; effectiveTo?: string | Date | null; source?: string }>;

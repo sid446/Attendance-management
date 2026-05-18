@@ -508,6 +508,28 @@ export async function POST(request: NextRequest) {
             finalHalfDay = false;
           }
 
+          // Machine punch with no in/out on a working day → absent, eligible for paid-leave allocation
+          if (!isFixedDataUpload && bothTimesInvalid) {
+            const machinePunchTypes = new Set(['ThumbMachine', 'Manual', 'Remote']);
+            const typeLower = String(typeOfPresence || '').toLowerCase();
+            const isNonWorkingDay =
+              new Date(isoDate).getDay() === 0 ||
+              allHolidays.some((h) => h.date === isoDate) ||
+              typeOfPresence === 'Holiday' ||
+              typeOfPresence === 'Sunday' ||
+              typeOfPresence === 'Weekoff' ||
+              typeLower.includes('holiday') ||
+              typeLower.includes('weekoff') ||
+              typeLower.includes('week off');
+
+            if (machinePunchTypes.has(typeOfPresence) && !isNonWorkingDay) {
+              typeOfPresence = 'Absent';
+              finalValue = 0;
+              finalTotalHour = 0;
+              remarksStr += (remarksStr ? ' | ' : '') + 'No machine punch (00:00–00:00)';
+            }
+          }
+
           attendance.records.set(isoDate, {
             checkin: finalCheckin,
             checkout: finalCheckout,

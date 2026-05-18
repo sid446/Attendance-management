@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Fine, { IFineRecord } from '@/models/Fine';
 import User from '@/models/User';
+import { getWorkingUnderPartnerForDate } from '@/lib/userFieldHistory';
 
 export async function POST(request: NextRequest) {
   try {
@@ -42,10 +43,12 @@ export async function POST(request: NextRequest) {
     }
     const newSerialNo = `F${serialNo.toString().padStart(3, '0')}`;
 
+    const fineDate = new Date().toISOString().split('T')[0];
+
     // Add the manual fine record
     const newRecord: IFineRecord = {
       serialNo: newSerialNo,
-      date: new Date().toISOString().split('T')[0], // Today's date
+      date: fineDate,
       consecutiveDay: 0, // Manual fine
       fineAmount: amount,
       isWarning: false,
@@ -55,7 +58,7 @@ export async function POST(request: NextRequest) {
       remark: remark || '',
       paymentDate: '',
       paymentMode: '' as const,
-      vertical: user.team || user.workingUnderPartner || '',
+      vertical: getWorkingUnderPartnerForDate(user, fineDate),
     };
 
     fine.fineRecords.push(newRecord);

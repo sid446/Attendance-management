@@ -42,6 +42,18 @@ type CellStyleResult = {
   statusLabel?: string;
 };
 
+/** True when HR directly edited attendance or gave final approval on a correction. */
+function isHrModifiedAttendance(
+  rec: AttendanceRecord | null,
+  approvedReq?: ApprovedRequest | null
+): boolean {
+  if (approvedReq?.status === 'Approved' && String(approvedReq.approvedBy || '').toUpperCase() === 'HR') {
+    return true;
+  }
+  const remarks = String(rec?.remarks ?? '');
+  return /updated\s+by\s+hr/i.test(remarks);
+}
+
 /** Distinct calendar cell colours by `status`, `typeOfPresence`, and `halfDay`. */
 function resolveAttendanceCellStyle(input: {
   status: any;
@@ -1218,6 +1230,15 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                             LATE
                           </span>
                         )}
+                        {isHrModifiedAttendance(rec, approvedReq) && (
+                          <span
+                            className="inline-flex items-center rounded border border-fuchsia-200 bg-fuchsia-50 px-1 py-0.5 text-[9px] font-bold text-fuchsia-900"
+                            title="Attendance was modified by HR"
+                          >
+                            <span className="hidden sm:inline">Modified by HR</span>
+                            <span className="sm:hidden">HR</span>
+                          </span>
+                        )}
                       </div>
                     </div>
                     
@@ -1278,6 +1299,9 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                           <div className="truncate text-[10px] text-slate-500" title={type}>
                             {type}
                           </div>
+                        )}
+                        {isHrModifiedAttendance(rec, approvedReq) && (
+                          <div className="text-[10px] font-medium text-fuchsia-800">Modified by HR</div>
                         )}
                       </div>
                     )}
@@ -1352,6 +1376,10 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
           <div className="flex items-center gap-2">
             <div className="h-4 w-4 rounded border border-slate-300 bg-panel" />
             <span className="text-slate-700">No record</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-4 w-4 rounded border border-fuchsia-300 bg-fuchsia-100" />
+            <span className="text-slate-700">Modified by HR</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="h-4 w-4 rounded border border-indigo-300 bg-indigo-100" />
