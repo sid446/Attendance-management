@@ -1,9 +1,14 @@
 import type { User } from '@/types/ui';
-import { formatHoursMinutes, getEmploymentTypeForDate } from '@/lib/attendanceSummaryMetrics';
+import { getEmploymentTypeForDate } from '@/lib/attendanceSummaryMetrics';
 import { getDesignationForDate } from '@/lib/userFieldHistory';
 import { formatIsoKeyAsDdMmYyyy, sortRecordDetailsEntries } from '../summaryDateUtils';
 import { calendarDateFromIsoKey } from '../summaryDateUtils';
 import type { SummaryExportContext } from './exportTypes';
+import {
+  decimalHoursToExcelDuration,
+  EXCEL_DURATION_NUM_FMT,
+  hhmmStringToExcelTime,
+} from './exportExcelDuration';
 import { downloadWorkbook } from './downloadWorkbook';
 
 
@@ -164,12 +169,6 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
     const round2 = (n: number): number => {
       if (!Number.isFinite(n)) return n;
       return Math.round(n * 100) / 100;
-    };
-
-    /** Decimal hours → `H:MM` (same as summary table / formatHoursMinutes). */
-    const formatDaywiseHoursCell = (hours: number | '' | null | undefined): string => {
-      if (hours === '' || hours == null || !Number.isFinite(hours)) return '';
-      return formatHoursMinutes(hours);
     };
 
     /** Parse H:MM / HH:MM to decimal hours for re-formatting legacy strings. */
@@ -624,23 +623,23 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
         }
         dailyExcessShortSeconds.push(daySeconds);
 
-        let workingHrsExport = '';
+        let workingHrsExport: number | '' = '';
         if (typeof workingHrs === 'number' && !Number.isNaN(workingHrs)) {
-          workingHrsExport = formatDaywiseHoursCell(workingHrs);
+          workingHrsExport = decimalHoursToExcelDuration(workingHrs);
         } else {
           const hm = formatTime(workingHrs);
           const dec = hmStringToDecimalHours(hm);
-          workingHrsExport = dec === '' ? hm : formatDaywiseHoursCell(dec);
+          workingHrsExport = dec === '' ? '' : decimalHoursToExcelDuration(dec);
         }
 
-        let scheduledTimeExport = '';
+        let scheduledTimeExport: number | '' = '';
         if (scheduledTime === '') {
           scheduledTimeExport = '';
         } else if (/^0h\s*0m$/i.test(String(scheduledTime).trim())) {
-          scheduledTimeExport = '0:00';
+          scheduledTimeExport = decimalHoursToExcelDuration(0);
         } else {
           const dec = hmStringToDecimalHours(String(scheduledTime));
-          scheduledTimeExport = dec === '' ? String(scheduledTime) : formatDaywiseHoursCell(dec);
+          scheduledTimeExport = dec === '' ? '' : decimalHoursToExcelDuration(dec);
         }
 
         worksheet.addRow({
@@ -653,24 +652,24 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
             ? getDesignationForDate(daywiseUser as Parameters<typeof getDesignationForDate>[0], date)
             : item.designation || '',
           presentAbsent,
-          actualInTimeOriginal: String(actualInTimeOriginal),
-          actualOutTimeOriginal: String(actualOutTimeOriginal),
-          actualInTimeEditable: String(actualInTimeEditable),
-          actualOutTimeEditable: String(actualOutTimeEditable),
+          actualInTimeOriginal: hhmmStringToExcelTime(String(actualInTimeOriginal)),
+          actualOutTimeOriginal: hhmmStringToExcelTime(String(actualOutTimeOriginal)),
+          actualInTimeEditable: hhmmStringToExcelTime(String(actualInTimeEditable)),
+          actualOutTimeEditable: hhmmStringToExcelTime(String(actualOutTimeEditable)),
           trueFalseInTime: String(actualInTimeOriginal) === String(actualInTimeEditable) ? 'True' : 'False',
           trueFalseOutTime: String(actualOutTimeOriginal) === String(actualOutTimeEditable) ? 'True' : 'False',
-          scheduledInTime: formatTime(scheduledInTime),
-          scheduledOutTime: formatTime(scheduledOutTime),
+          scheduledInTime: hhmmStringToExcelTime(formatTime(scheduledInTime)),
+          scheduledOutTime: hhmmStringToExcelTime(formatTime(scheduledOutTime)),
           maxWFH: maxWFH === '' ? '' : round2(Number(maxWFH)),
           actualWFH: actualWFH === '' ? '' : daywiseNumericOrString(String(actualWFH)),
           maxOutstation: maxOutstation === '' ? '' : round2(Number(maxOutstation)),
           actualOutstation: actualOutstation === '' ? '' : daywiseNumericOrString(String(actualOutstation)),
           workingHrs: workingHrsExport,
           scheduledTime: scheduledTimeExport,
-          scheduledHrsMonth: scheduledHrsMonth ? formatDaywiseHoursCell(scheduledHrsMonth) : '',
-          workingHrsMonth: workingHrsMonth ? formatDaywiseHoursCell(workingHrsMonth) : '',
+          scheduledHrsMonth: scheduledHrsMonth ? decimalHoursToExcelDuration(scheduledHrsMonth) : '',
+          workingHrsMonth: workingHrsMonth ? decimalHoursToExcelDuration(workingHrsMonth) : '',
           excessShortHrsMonth: '',
-          excessShortHrsDay: formatDaywiseHoursCell(daySeconds / 3600),
+          excessShortHrsDay: decimalHoursToExcelDuration(daySeconds / 3600),
           halfDays,
         });
         rowIndexes.push(worksheet.rowCount);
@@ -678,7 +677,7 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
       // After all rows for this user/month, sum daily seconds and update monthly column
       if (dailyExcessShortSeconds.length > 0) {
         const totalMonthSeconds = dailyExcessShortSeconds.reduce((a: number, b: number) => a + b, 0);
-        const excessShortHrsMonthFormatted = formatDaywiseHoursCell(totalMonthSeconds / 3600);
+        const excessShortHrsMonthFormatted = decimalHoursToExcelDuration(totalMonthSeconds / 3600);
         for (const rowIdx of rowIndexes) {
           worksheet.getRow(rowIdx).getCell('excessShortHrsMonth').value = excessShortHrsMonthFormatted;
         }
@@ -708,16 +707,22 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
 
     const daywiseNumericColumnFmt: Record<string, string> = {
       date: '@',
+      actualInTimeOriginal: EXCEL_DURATION_NUM_FMT,
+      actualOutTimeOriginal: EXCEL_DURATION_NUM_FMT,
+      actualInTimeEditable: EXCEL_DURATION_NUM_FMT,
+      actualOutTimeEditable: EXCEL_DURATION_NUM_FMT,
+      scheduledInTime: EXCEL_DURATION_NUM_FMT,
+      scheduledOutTime: EXCEL_DURATION_NUM_FMT,
       maxWFH: '0.00',
       maxOutstation: '0.00',
       actualWFH: '0.00',
       actualOutstation: '0.00',
-      workingHrs: '@',
-      scheduledTime: '@',
-      scheduledHrsMonth: '@',
-      workingHrsMonth: '@',
-      excessShortHrsMonth: '@',
-      excessShortHrsDay: '@',
+      workingHrs: EXCEL_DURATION_NUM_FMT,
+      scheduledTime: EXCEL_DURATION_NUM_FMT,
+      scheduledHrsMonth: EXCEL_DURATION_NUM_FMT,
+      workingHrsMonth: EXCEL_DURATION_NUM_FMT,
+      excessShortHrsMonth: EXCEL_DURATION_NUM_FMT,
+      excessShortHrsDay: EXCEL_DURATION_NUM_FMT,
     };
 
     worksheet.eachRow((row, rowNumber) => {

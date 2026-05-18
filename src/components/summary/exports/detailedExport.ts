@@ -1,5 +1,5 @@
 import type { AttendanceSummaryView, User } from '@/types/ui';
-import { formatHoursMinutes, getEmploymentTypeForDate } from '@/lib/attendanceSummaryMetrics';
+import { getEmploymentTypeForDate } from '@/lib/attendanceSummaryMetrics';
 import {
   getDesignationForDate,
   getSummaryPeriodEndDate,

@@ -1,9 +1,16 @@
 import type { User } from '@/types/ui';
-import { formatHoursMinutes, getEmploymentTypeForDate } from '@/lib/attendanceSummaryMetrics';
 import { getDesignationForDate } from '@/lib/userFieldHistory';
 import { sortRecordDetailsEntries } from '../summaryDateUtils';
 import type { SummaryExportContext } from './exportTypes';
+import { decimalHoursToExcelDuration, EXCEL_DURATION_NUM_FMT } from './exportExcelDuration';
 import { downloadWorkbook } from './downloadWorkbook';
+
+const summaryDurationColumnKeys = new Set([
+  'scheduled',
+  'definedSchedule',
+  'workHours',
+  'excess',
+]);
 
 
 export async function exportSummaryAttendance(ctx: SummaryExportContext): Promise<void> {
@@ -125,12 +132,10 @@ export async function exportSummaryAttendance(ctx: SummaryExportContext): Promis
         halfDays: item.summary.totalHalfDay,
         absent: item.summary.totalAbsent,
         late: item.calcLate || 0,
-        scheduled: formatHoursMinutes(item.calcScheduled || 0),
-        definedSchedule: formatHoursMinutes(item.calcDefinedSchedule || 0),
-        workHours: formatHoursMinutes(item.summary.totalHour),
-        excess: (item.calcExcessDeficit !== undefined && item.calcExcessDeficit !== 0)
-          ? `${item.calcExcessDeficit > 0 ? '+' : item.calcExcessDeficit < 0 ? '-' : ''}${formatHoursMinutes(Math.abs(item.calcExcessDeficit))}`
-          : formatHoursMinutes(0),
+        scheduled: decimalHoursToExcelDuration(item.calcScheduled || 0),
+        definedSchedule: decimalHoursToExcelDuration(item.calcDefinedSchedule || 0),
+        workHours: decimalHoursToExcelDuration(item.summary.totalHour),
+        excess: decimalHoursToExcelDuration(item.calcExcessDeficit ?? 0),
       });
     });
 
@@ -159,6 +164,7 @@ export async function exportSummaryAttendance(ctx: SummaryExportContext): Promis
 
       const isEvenRow = rowNumber % 2 === 0;
       row.eachCell((cell, colNumber) => {
+        const colKey = worksheet.columns[colNumber - 1]?.key as string | undefined;
         cell.font = { size: 10 };
         cell.fill = {
           type: 'pattern',
@@ -169,6 +175,9 @@ export async function exportSummaryAttendance(ctx: SummaryExportContext): Promis
           vertical: 'middle',
           horizontal: colNumber === 2 ? 'left' : 'center'
         };
+        if (colKey && summaryDurationColumnKeys.has(colKey)) {
+          cell.numFmt = EXCEL_DURATION_NUM_FMT;
+        }
         cell.border = {
           top: { style: 'thin', color: { argb: 'FFE0E0E0' } },
           bottom: { style: 'thin', color: { argb: 'FFE0E0E0' } },
