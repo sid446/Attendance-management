@@ -46,6 +46,12 @@ export function getEmploymentTypeForDate(user: User | undefined, date: Date): st
   return user.employmentType;
 }
 
+/** Matches upload/API rules: halftime employees are never late or half-day. */
+export function isHalftimeEmploymentType(employmentType: string | undefined): boolean {
+  const t = String(employmentType || '').toLowerCase();
+  return t === 'halftime' || t.includes('half');
+}
+
 export function getApplicableSchedule(
   item: AttendanceSummaryView,
   user: User | undefined,
@@ -164,7 +170,7 @@ export function isLateArrivalLikeSummary(
   if (type === 'Holiday') return false;
   if (type.toLowerCase().includes('weekoff')) return false;
 
-  if (getEmploymentTypeForDate(user, d) === 'halftime') return false;
+  if (isHalftimeEmploymentType(getEmploymentTypeForDate(user, d))) return false;
 
   const schedule = getScheduledTimes(user, d);
   if (!schedule.inTime || schedule.inTime === '00:00') return false;
@@ -197,6 +203,7 @@ export function getHalfDayCountLikeSummary(item: AttendanceSummaryView, user: Us
       !(effectiveCheckout && effectiveCheckout !== '00:00');
     const d = new Date(date);
     const empTypeHalfDay = getEmploymentTypeForDate(user, d);
+    if (isHalftimeEmploymentType(empTypeHalfDay)) return;
     if (r.halfDay && r.typeOfPresence !== 'Holiday' && !isBothZero) {
       n += 1;
     }

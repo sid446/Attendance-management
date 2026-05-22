@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     }
 
     const attendanceRecords = await Attendance.find(query)
-      .populate('userId', 'name employeeId odId employeeCode email department team designation workingUnderPartner paidFrom category schedules scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth')
+      .populate('userId', 'name employeeId odId employeeCode email department team designation workingUnderPartner paidFrom category employmentType employmentTypeHistory schedules seasonalSchedules scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth')
       .sort({ monthYear: -1 });
 
     // Serialize records to plain JS objects and ensure summary fields are present

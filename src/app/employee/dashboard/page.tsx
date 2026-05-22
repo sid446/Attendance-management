@@ -40,6 +40,8 @@ import { SummarySection } from '@/components/SummarySection';
 import {
   computeSummaryAlignedMetrics,
   getDailyWorkedHoursSeries,
+  getEmploymentTypeForDate,
+  isHalftimeEmploymentType,
 } from '@/lib/attendanceSummaryMetrics';
 import {
   LogOut,
@@ -83,6 +85,50 @@ function formatPartnerNameForReview(name: string): string {
     .split(' ')
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
     .join(' ');
+}
+
+function mapEmployeeDayStatus(
+  value: {
+    typeOfPresence?: string;
+    halfDay?: boolean;
+    editedCheckin?: string;
+    editedCheckout?: string;
+    checkin?: string;
+    checkout?: string;
+  },
+  userForDay: User,
+  dateObj: Date
+): AttendanceRecord['status'] {
+  const effectiveCheckin = value.editedCheckin || value.checkin;
+  const effectiveCheckout = value.editedCheckout || value.checkout;
+  const typeLower = String(value.typeOfPresence || '').toLowerCase();
+  const isPresenceType =
+    typeLower.includes('wfh') ||
+    typeLower.includes('outstation') ||
+    typeLower.includes('clientplace') ||
+    typeLower.includes('half day') ||
+    !!value.halfDay;
+  const isHalftime = isHalftimeEmploymentType(getEmploymentTypeForDate(userForDay, dateObj));
+
+  let status: AttendanceRecord['status'] = 'Present';
+  if (value.typeOfPresence === 'Leave' || value.typeOfPresence === 'On leave') {
+    status = 'On leave';
+  } else if (value.typeOfPresence === 'Holiday') {
+    status = 'Holiday';
+  } else if (isPresenceType) {
+    status = !isHalftime && (value.halfDay || typeLower.includes('half day')) ? 'HalfDay' : 'Present';
+  } else if (
+    !effectiveCheckin &&
+    !effectiveCheckout &&
+    value.typeOfPresence !== 'Leave' &&
+    value.typeOfPresence !== 'On leave'
+  ) {
+    status = 'Absent';
+  }
+  if (status === 'Present' && !effectiveCheckin && !effectiveCheckout && !isPresenceType) {
+    status = 'Absent';
+  }
+  return status;
 }
 
 function mergeAttendanceProfile(session: User, docUser: unknown): User {
@@ -465,19 +511,7 @@ export default function EmployeeDashboard() {
             }
             const effectiveCheckin = value.editedCheckin || value.checkin;
             const effectiveCheckout = value.editedCheckout || value.checkout;
-            const typeLower = String(value.typeOfPresence || '').toLowerCase();
-            const isPresenceType = typeLower.includes('wfh') || 
-                                   typeLower.includes('outstation') || 
-                                   typeLower.includes('clientplace') || 
-                                   typeLower.includes('half day') ||
-                                   value.halfDay;
-
-            let status: any = 'Present';
-            if (value.typeOfPresence === 'Leave' || value.typeOfPresence === 'On leave') status = 'On leave';
-            else if (value.typeOfPresence === 'Holiday') status = 'Holiday';
-            else if (isPresenceType) status = value.halfDay ? 'HalfDay' : 'Present';
-            else if (!effectiveCheckin && !effectiveCheckout && value.typeOfPresence !== 'Leave' && value.typeOfPresence !== 'On leave') status = 'Absent';
-            if (status === 'Present' && !effectiveCheckin && !effectiveCheckout && !isPresenceType) status = 'Absent';
+            const status = mapEmployeeDayStatus(value, userForDay as User, dateObj);
             return {
               id: userForDay._id,
               name: userForDay.name,
@@ -620,21 +654,7 @@ export default function EmployeeDashboard() {
             const effectiveCheckin = value.editedCheckin || value.checkin;
             const effectiveCheckout = value.editedCheckout || value.checkout;
 
-            const typeLower = String(value.typeOfPresence || '').toLowerCase();
-            const isPresenceType = typeLower.includes('wfh') || 
-                                   typeLower.includes('outstation') || 
-                                   typeLower.includes('clientplace') || 
-                                   typeLower.includes('half day') ||
-                                   value.halfDay;
-
-            let status: any = 'Present';
-            if (value.typeOfPresence === 'Leave' || value.typeOfPresence === 'On leave') status = 'On leave';
-            else if (value.typeOfPresence === 'Holiday') status = 'Holiday';
-            else if (isPresenceType) status = value.halfDay ? 'HalfDay' : 'Present';
-            else if (!effectiveCheckin && !effectiveCheckout && value.typeOfPresence !== 'Leave' && value.typeOfPresence !== 'On leave') status = 'Absent';
-
-            // Fallback
-            if (status === 'Present' && !effectiveCheckin && !effectiveCheckout && !isPresenceType) status = 'Absent';
+            const status = mapEmployeeDayStatus(value, userForDay as User, dateObj);
 
             return {
               id: userForDay._id,
@@ -791,19 +811,7 @@ export default function EmployeeDashboard() {
             }
             const effectiveCheckin = value.editedCheckin || value.checkin;
             const effectiveCheckout = value.editedCheckout || value.checkout;
-            const typeLower = String(value.typeOfPresence || '').toLowerCase();
-            const isPresenceType = typeLower.includes('wfh') || 
-                                   typeLower.includes('outstation') || 
-                                   typeLower.includes('clientplace') || 
-                                   typeLower.includes('half day') ||
-                                   value.halfDay;
-
-            let status: any = 'Present';
-            if (value.typeOfPresence === 'Leave' || value.typeOfPresence === 'On leave') status = 'On leave';
-            else if (value.typeOfPresence === 'Holiday') status = 'Holiday';
-            else if (isPresenceType) status = value.halfDay ? 'HalfDay' : 'Present';
-            else if (!effectiveCheckin && !effectiveCheckout && value.typeOfPresence !== 'Leave' && value.typeOfPresence !== 'On leave') status = 'Absent';
-            if (status === 'Present' && !effectiveCheckin && !effectiveCheckout && !isPresenceType) status = 'Absent';
+            const status = mapEmployeeDayStatus(value, userForDay as User, dateObj);
             return {
               id: userForDay._id,
               name: userForDay.name,

@@ -21,7 +21,11 @@ import {
 } from 'lucide-react';
 import { AttendanceSummaryView, AttendanceRecord, User, DailySchedule } from '@/types/ui';
 import { ScheduleEntry } from '@/types/ui';
-import { isLateArrivalLikeSummary } from '@/lib/attendanceSummaryMetrics';
+import {
+  getEmploymentTypeForDate,
+  isHalftimeEmploymentType,
+  isLateArrivalLikeSummary,
+} from '@/lib/attendanceSummaryMetrics';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 interface ApprovedRequest {
   _id: string;
@@ -61,8 +65,9 @@ function resolveAttendanceCellStyle(input: {
   type?: string;
   rec: AttendanceRecord;
   isLate: boolean;
+  isHalftime?: boolean;
 }): CellStyleResult {
-  const { status, type = '', rec, isLate } = input;
+  const { status, type = '', rec, isLate, isHalftime = false } = input;
   const t = type.toLowerCase();
   const s = String(status ?? '').toLowerCase();
   const hay = `${s} ${t}`;
@@ -111,16 +116,17 @@ function resolveAttendanceCellStyle(input: {
   }
 
   const isHalfDay =
-    status === 'HalfDay' ||
-    status === 'Half Day (HD)' ||
-    t.includes('half day') ||
-    (rec.halfDay &&
-      status !== 'Leave' &&
-      status !== 'On leave' &&
-      status !== 'Holiday' &&
-      status !== 'Week Off' &&
-      status !== 'Absent' &&
-      !t.includes('holiday'));
+    !isHalftime &&
+    (status === 'HalfDay' ||
+      status === 'Half Day (HD)' ||
+      t.includes('half day') ||
+      (rec.halfDay &&
+        status !== 'Leave' &&
+        status !== 'On leave' &&
+        status !== 'Holiday' &&
+        status !== 'Week Off' &&
+        status !== 'Absent' &&
+        !t.includes('holiday')));
 
   if (isHalfDay) {
     return {
@@ -190,10 +196,11 @@ function resolveAttendanceCellStyle(input: {
       };
     }
 
+    const showLate = isLate && !isHalftime;
     return {
-      borderClass: isLate ? 'border-amber-200' : 'border-emerald-200',
-      bgClass: isLate ? 'bg-amber-50' : 'bg-emerald-50',
-      badgeClass: isLate
+      borderClass: showLate ? 'border-amber-200' : 'border-emerald-200',
+      bgClass: showLate ? 'bg-amber-50' : 'bg-emerald-50',
+      badgeClass: showLate
         ? 'border-amber-300 bg-amber-100 text-amber-900'
         : 'border-emerald-300 bg-emerald-100 text-emerald-900',
       Icon: CheckCircle,
@@ -1058,8 +1065,24 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                 
                 const dateObj = new Date(selectedYear, selectedMonth - 1, day);
                 const currentDateStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const isHalftimeDay = scheduleUser
+                  ? isHalftimeEmploymentType(getEmploymentTypeForDate(scheduleUser, dateObj))
+                  : false;
+
+                if (isHalftimeDay && rec) {
+                  const tl = String(rec.typeOfPresence || '').toLowerCase();
+                  if (
+                    status === 'HalfDay' ||
+                    status === 'Half Day (HD)' ||
+                    tl.includes('half day') ||
+                    rec.halfDay
+                  ) {
+                    status = 'Present';
+                  }
+                }
+
                 let isLate = false;
-                if (rec && scheduleUser) {
+                if (rec && scheduleUser && !isHalftimeDay) {
                   isLate = isLateArrivalLikeSummary(
                     currentDateStr,
                     {
@@ -1115,7 +1138,13 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                     bgClass = 'bg-teal-50/40';
                   }
                 } else if (rec) {
-                  const cell = resolveAttendanceCellStyle({ status, type, rec, isLate });
+                  const cell = resolveAttendanceCellStyle({
+                    status,
+                    type,
+                    rec,
+                    isLate,
+                    isHalftime: isHalftimeDay,
+                  });
                   borderClass = cell.borderClass;
                   bgClass = cell.bgClass;
                   badgeClass = cell.badgeClass;
@@ -1256,7 +1285,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                               if (tl.includes('wfh') || tl.includes('work from home') || tl.includes('wo-wfh'))
                                 return 'WFH';
                               if (tl.includes('ohd') || tl.includes('official holiday duty')) return 'OHD';
-                              if (tl.includes('half day') || rec?.halfDay) return '½ day';
+                              if (!isHalftimeDay && (tl.includes('half day') || rec?.halfDay)) return '½ day';
                               if ((tl.includes('weekoff') || tl.includes('week off')) && tl.includes('present'))
                                 return 'WO+';
                               if (tl === 'thumbmachine' || tl === 'manual' || tl === 'remote') return 'Punch';
@@ -1268,7 +1297,10 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                             if (status === 'Paid Leave') return 'Paid Lv';
                             if (status === 'Unpaid Leave') return 'Unpaid';
                             if (status === 'Holiday' || status === 'Week Off') return 'Hol';
-                            if (status === 'HalfDay' || status === 'Half Day (HD)' || tl.includes('half day'))
+                            if (
+                              !isHalftimeDay &&
+                              (status === 'HalfDay' || status === 'Half Day (HD)' || tl.includes('half day'))
+                            )
                               return '½ day';
                             return typeof status === 'string' && status.length > 10
                               ? `${status.slice(0, 9)}…`
