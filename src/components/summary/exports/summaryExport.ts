@@ -1,6 +1,6 @@
 import type { User } from '@/types/ui';
 import { getDesignationForDate } from '@/lib/userFieldHistory';
-import { sortRecordDetailsEntries } from '../summaryDateUtils';
+import { sortRecordDetailsEntries } from '../utils/summaryDateUtils';
 import type { SummaryExportContext } from './exportTypes';
 import { decimalHoursToExcelDuration, EXCEL_DURATION_NUM_FMT } from './exportExcelDuration';
 import { downloadWorkbook } from './downloadWorkbook';

@@ -1,8 +1,8 @@
 import type { User } from '@/types/ui';
 import { getEmploymentTypeForDate } from '@/lib/attendanceSummaryMetrics';
 import { getDesignationForDate } from '@/lib/userFieldHistory';
-import { formatIsoKeyAsDdMmYyyy, sortRecordDetailsEntries } from '../summaryDateUtils';
-import { calendarDateFromIsoKey } from '../summaryDateUtils';
+import { formatIsoKeyAsDdMmYyyy, sortRecordDetailsEntries } from '../utils/summaryDateUtils';
+import { calendarDateFromIsoKey } from '../utils/summaryDateUtils';
 import type { SummaryExportContext } from './exportTypes';
 import {
   decimalHoursToExcelDuration,

@@ -76,24 +76,63 @@ function hasValidInOutForExcess(rec: any): boolean {
   return !!(inTime && inTime !== '00:00' && outTime && outTime !== '00:00');
 }
 
-function isExcessEligibleRecord(dateStr: string, recAny: any): boolean {
+/** Days that count toward Sched. / excess (worked vs scheduled). */
+export function isExcessEligibleRecord(dateStr: string, recAny: any): boolean {
   const rec: any = recAny || {};
-  const type = String(rec.typeOfPresence || '');
+  const type = String(rec.typeOfPresence || '').trim();
+  const typeLower = type.toLowerCase();
   const d = new Date(dateStr);
 
   if (Number.isNaN(d.getTime())) return false;
   if (d.getDay() === 0) return false;
 
+  if (type === 'Holiday' || type === 'Sunday' || type === 'Weekoff' || type === 'Absent') {
+    return false;
+  }
+  if (type === 'On leave' || type === 'Leave') return false;
+  if (typeLower.includes('weekoff')) return false;
+
+  const hasAnyPunch = () => {
+    const inTime = rec?.editedCheckin || rec?.checkin;
+    const outTime = rec?.editedCheckout || rec?.checkout;
+    return (
+      !!(inTime && inTime !== '00:00') || !!(outTime && outTime !== '00:00')
+    );
+  };
+
+  const hasWorkActivity = () =>
+    hasValidInOutForExcess(rec) ||
+    hasAnyPunch() ||
+    Number(rec.totalHour || 0) > 0 ||
+    Number(rec.value || 0) > 0;
+
   if (type === 'ThumbMachine') {
     return hasValidInOutForExcess(rec) || Number(rec.totalHour || 0) > 0;
   }
 
-  if (type === 'Present - in office - weekdays') {
+  // Default upload / thumb status for most employees
+  if (type === 'Present') {
+    return hasWorkActivity();
+  }
+
+  if (
+    type === 'Present - in office - weekdays' ||
+    type === 'Present - in office - weekoff' ||
+    typeLower.includes('present - in office')
+  ) {
     return true;
   }
 
-  if (type === 'Half Day - weekdays' || type === 'Half Day (HD)') {
+  if (
+    type === 'Half Day - weekdays' ||
+    type === 'Half Day (HD)' ||
+    type === 'Half Day - weekoff'
+  ) {
     return true;
+  }
+
+  if (typeLower.includes('present')) {
+    return hasWorkActivity();
   }
 
   return false;
@@ -101,34 +140,48 @@ function isExcessEligibleRecord(dateStr: string, recAny: any): boolean {
 
 
 
+/** Same late rules as admin Summary (schedule-aware, skips weekoff/holiday/halftime). */
+export function isLateArrivalLikeSummary(
+  dateStr: string,
+  rec: {
+    checkin?: string;
+    editedCheckin?: string;
+    inTime?: string;
+    typeOfPresence?: string;
+  },
+  user: User | undefined
+): boolean {
+  if (!user) return false;
+
+  const effectiveCheckin = rec.editedCheckin || rec.checkin || rec.inTime;
+  if (!effectiveCheckin || effectiveCheckin === '00:00') return false;
+
+  const d = new Date(`${dateStr}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return false;
+  if (d.getDay() === 0) return false;
+
+  const type = String(rec.typeOfPresence || '');
+  if (type === 'Holiday') return false;
+  if (type.toLowerCase().includes('weekoff')) return false;
+
+  if (getEmploymentTypeForDate(user, d) === 'halftime') return false;
+
+  const schedule = getScheduledTimes(user, d);
+  if (!schedule.inTime || schedule.inTime === '00:00') return false;
+
+  return effectiveCheckin > schedule.inTime;
+}
+
 export function getLateCountLikeSummary(item: AttendanceSummaryView, user: User | undefined): number {
   if (!user) return 0;
   const records = item.recordDetails || {};
-  const dates: unknown[] = [];
+  let count = 0;
 
   Object.entries(records).forEach(([date, rec]) => {
-    const effectiveCheckin = (rec as any).editedCheckin || (rec as any).checkin;
-    if (!effectiveCheckin) return;
-    const d = new Date(date);
-    if (d.getDay() === 0) return;
-    if ((rec as any).typeOfPresence === 'Holiday') return;
-    if (
-      typeof (rec as any).typeOfPresence === 'string' &&
-      (rec as any).typeOfPresence.toLowerCase().includes('weekoff')
-    ) {
-      return;
-    }
-    const empTypeLate = getEmploymentTypeForDate(user, d);
-    // Summary: halftime employees are never counted as late
-    if (empTypeLate === 'halftime') return;
-    
-    const schedule = getScheduledTimes(user, d);
-    if (effectiveCheckin > schedule.inTime) {
-      dates.push(date);
-    }
+    if (isLateArrivalLikeSummary(date, rec as any, user)) count += 1;
   });
 
-  return dates.length;
+  return count;
 }
 
 export function getHalfDayCountLikeSummary(item: AttendanceSummaryView, user: User | undefined): number {

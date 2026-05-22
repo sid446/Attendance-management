@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { X } from 'lucide-react';
-import type { SummaryDetailRow } from './types';
+import type { SummaryDetailRow } from '../../types';
 
 export interface SummaryDetailModalProps {
   isOpen: boolean;

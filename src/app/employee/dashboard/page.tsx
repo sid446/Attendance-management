@@ -1631,7 +1631,7 @@ export default function EmployeeDashboard() {
               <section aria-label="Monthly calendar and attendance requests">
                 <EmployeeMonthView
                   summaries={summary ? [summary] : []}
-                  users={[user]}
+                  users={[attendanceUser ?? user]}
                   selectedEmployeeId={user._id}
                   setSelectedEmployeeId={() => {}}
                   selectedMonthYear={monthYear}
@@ -1775,7 +1775,10 @@ export default function EmployeeDashboard() {
                                 ? [subordinateAttendance[selectedSubordinateId].summary!]
                                 : []
                             }
-                            users={[subordinates.find((s) => s._id === selectedSubordinateId)!]}
+                            users={[
+                              subordinateAttendance[selectedSubordinateId]?.userForMetrics ??
+                                subordinates.find((s) => s._id === selectedSubordinateId)!,
+                            ]}
                             selectedEmployeeId={selectedSubordinateId}
                             setSelectedEmployeeId={() => {}}
                             selectedMonthYear={monthYear}

@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { AttendanceSummaryView, AttendanceRecord, User, DailySchedule } from '@/types/ui';
 import { ScheduleEntry } from '@/types/ui';
+import { isLateArrivalLikeSummary } from '@/lib/attendanceSummaryMetrics';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 interface ApprovedRequest {
   _id: string;
@@ -400,12 +401,14 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
     onMonthYearChange(`${selectedYear - 1}-${String(selectedMonth).padStart(2, '0')}`);
   };
 
+  /** User with schedules/employment history — required for correct late vs summary. */
+  const scheduleUser: User | null = userFromList ?? null;
+
   // Helper: get scheduled times (inTime/outTime) for a specific date string YYYY-MM-DD
   const getScheduledTimesForDate = (dateStr: string) => {
-    const user = userFromList || (summaryFromList ? { ...summaryFromList, _id: summaryFromList.userId } : null);
-    if (!user) return { inTime: '', outTime: '' };
+    if (!scheduleUser) return { inTime: '', outTime: '' };
     
-    const schedule = getScheduledTimes(user, dateStr);
+    const schedule = getScheduledTimes(scheduleUser, dateStr);
     return { inTime: schedule.inTime, outTime: schedule.outTime };
   };
 
@@ -487,19 +490,6 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
 
     return { daysInMonth, startWeekday, dayRecordMap, approvedRequestMap };
   })();
-
-  // Determine lateness helper (use central utility)
-  const isLateArrival = (date: Date, inTimeStr?: string) => {
-    if (!inTimeStr || inTimeStr === '00:00') return false;
-
-    const user = userFromList || (summaryFromList ? { ...summaryFromList, _id: summaryFromList.userId } : null);
-    if (!user) return false;
-
-    const schedule = getScheduledTimes(user, date);
-    if (!schedule.inTime || schedule.inTime === '00:00') return false;
-
-    return inTimeStr > schedule.inTime;
-  };
 
   const defaultSubtitle = 'View detailed daily attendance for any employee and month.';
   const resolvedSubtitle =
@@ -1066,11 +1056,20 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                     }
                 }
                 
-                // Check lateness
                 const dateObj = new Date(selectedYear, selectedMonth - 1, day);
+                const currentDateStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                 let isLate = false;
-                if (rec) {
-                  isLate = isLateArrival(dateObj, rec.inTime);
+                if (rec && scheduleUser) {
+                  isLate = isLateArrivalLikeSummary(
+                    currentDateStr,
+                    {
+                      checkin: rec.checkin,
+                      editedCheckin: rec.editedCheckin,
+                      inTime: rec.inTime,
+                      typeOfPresence: rec.typeOfPresence,
+                    },
+                    scheduleUser
+                  );
                 }
 
                 // Check if request is a custom/other type (not standard)
@@ -1084,7 +1083,6 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                   !STANDARD_REQUEST_TYPES.includes(approvedReq.requestedStatus);
 
                 // Selection highlighting logic
-                const currentDateStr = `${selectedYear}-${String(selectedMonth).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
                 const isFutureDate = dateObj >= new Date();
                 const isSelectionStart = selectionStart === currentDateStr;
                 const isInRange = selectionStart && hoveredDate && (() => {

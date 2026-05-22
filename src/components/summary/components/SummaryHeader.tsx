@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { SUMMARY_WORKFLOW_STEPS } from './constants';
+import { SUMMARY_WORKFLOW_STEPS } from '../constants';
 
 export interface SummaryHeaderProps {
   currentPeriodLabel: string;

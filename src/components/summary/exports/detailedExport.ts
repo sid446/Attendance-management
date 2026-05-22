@@ -5,7 +5,7 @@ import {
   getSummaryPeriodEndDate,
   getWorkingUnderPartnerForDate,
 } from '@/lib/userFieldHistory';
-import { sortRecordDetailsEntries } from '../summaryDateUtils';
+import { sortRecordDetailsEntries } from '../utils/summaryDateUtils';
 import type { SummaryExportContext } from './exportTypes';
 import { downloadWorkbook } from './downloadWorkbook';
 
