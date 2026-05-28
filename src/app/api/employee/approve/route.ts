@@ -7,6 +7,7 @@ import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { transporter, mailOptions } from '@/lib/mailer';
 import LeaveTransaction from '@/models/LeaveTransaction';
 import { isAttendanceDatePartnerOnlyIst } from '@/lib/attendanceRequestApprovalWindow';
+import { sendPartnerRequestDecisionEmail } from '@/lib/attendanceRequestNotifications';
 
 export async function POST(request: NextRequest) {
   try {
@@ -639,12 +640,36 @@ export async function POST(request: NextRequest) {
           </div>
         `;
 
+        const employeeTo = user.attendanceEmail || user.email;
         await transporter.sendMail({
           ...mailOptions,
-          to: user.attendanceEmail || user.email,
+          to: employeeTo,
           subject,
           html
         });
+
+        const finalStatus = action === 'approve' ? 'Approved' : 'Rejected';
+        try {
+          await sendPartnerRequestDecisionEmail({
+            partnerName: attendanceRequest.partnerName,
+            employeeUser: user,
+            action,
+            rows: [
+              {
+                employeeName: attendanceRequest.userName,
+                date: attendanceRequest.date,
+                requestedStatus: attendanceRequest.requestedStatus,
+                requestState: finalStatus,
+                reason: attendanceRequest.reason,
+              },
+            ],
+            processedBy: approvedBy,
+            remarks,
+            skipIfSameAs: user.email || null,
+          });
+        } catch (partnerEmailError) {
+          console.error('Partner decision email failed:', partnerEmailError);
+        }
       }
     } catch (emailError) {
       console.error('Email sending failed:', emailError);

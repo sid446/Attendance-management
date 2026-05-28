@@ -7,6 +7,7 @@ import { transporter, mailOptions } from '@/lib/mailer';
 import { calculateLeaveUsage, updateLeaveBalanceOnApproval } from '@/lib/leaveManagement';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { isAttendanceDatePartnerOnlyIst } from '@/lib/attendanceRequestApprovalWindow';
+import { sendPartnerRequestDecisionEmail } from '@/lib/attendanceRequestNotifications';
 
 function calculateDuration(start: string, end: string): number {
     if (!start || !end) return 0;
@@ -179,6 +180,28 @@ export async function GET(request: NextRequest) {
     if (action === 'reject') {
         reqRecord.status = 'Rejected';
         await reqRecord.save();
+        try {
+          const employee = await User.findById(reqRecord.userId).select('email attendanceEmail').lean();
+          await sendPartnerRequestDecisionEmail({
+            partnerName: reqRecord.partnerName,
+            employeeUser: employee,
+            action: 'reject',
+            rows: [
+              {
+                employeeName: reqRecord.userName,
+                date: reqRecord.date,
+                requestedStatus: reqRecord.requestedStatus,
+                requestState: 'Rejected',
+                reason: reqRecord.reason,
+              },
+            ],
+            processedBy: 'Partner',
+            remarks: reqRecord.partnerRemarks || undefined,
+            skipIfSameAs: employee?.email || null,
+          });
+        } catch (emailErr) {
+          console.error('Partner reject notification (GET) failed:', emailErr);
+        }
         return new NextResponse(`
             <html><body style="font-family:sans-serif; text-align:center; padding:40px;">
                 <h1 style="color:red">Rejected</h1>
@@ -193,6 +216,28 @@ export async function GET(request: NextRequest) {
           reqRecord.partnerRemarks = 'Approved via email link (awaiting HR)';
           reqRecord.partnerApprovedAt = new Date();
           await reqRecord.save();
+          try {
+            const employee = await User.findById(reqRecord.userId).select('email attendanceEmail').lean();
+            await sendPartnerRequestDecisionEmail({
+              partnerName: reqRecord.partnerName,
+              employeeUser: employee,
+              action: 'approve',
+              rows: [
+                {
+                  employeeName: reqRecord.userName,
+                  date: reqRecord.date,
+                  requestedStatus: reqRecord.requestedStatus,
+                  requestState: 'PendingHr',
+                  reason: reqRecord.reason,
+                },
+              ],
+              processedBy: 'Partner',
+              remarks: reqRecord.partnerRemarks || undefined,
+              skipIfSameAs: employee?.email || null,
+            });
+          } catch (emailErr) {
+            console.error('Partner PendingHr notification (GET) failed:', emailErr);
+          }
           return new NextResponse(
             `
             <html><body style="font-family:sans-serif; text-align:center; padding:40px;">
@@ -276,6 +321,29 @@ export async function GET(request: NextRequest) {
           if (leaveUsage.isPaidLeave) {
             await updateLeaveBalanceOnApproval(userId, date, true);
           }
+        }
+
+        try {
+          const employee = await User.findById(reqRecord.userId).select('email attendanceEmail').lean();
+          await sendPartnerRequestDecisionEmail({
+            partnerName: reqRecord.partnerName,
+            employeeUser: employee,
+            action: 'approve',
+            rows: [
+              {
+                employeeName: reqRecord.userName,
+                date: reqRecord.date,
+                requestedStatus: reqRecord.requestedStatus,
+                requestState: 'Approved',
+                reason: reqRecord.reason,
+              },
+            ],
+            processedBy: 'Partner',
+            remarks: reqRecord.partnerRemarks || undefined,
+            skipIfSameAs: employee?.email || null,
+          });
+        } catch (emailErr) {
+          console.error('Partner approve notification (GET) failed:', emailErr);
         }
 
         return new NextResponse(`
@@ -650,6 +718,37 @@ export async function POST(request: NextRequest) {
     } catch (emailError) {
       console.error('Email notification failed:', emailError);
       // Don't fail the request if email fails
+    }
+
+    try {
+      const employeeDoc =
+        reqRecord.userId && typeof reqRecord.userId === 'object'
+          ? (reqRecord.userId as { email?: string; attendanceEmail?: string })
+          : await User.findById(reqRecord.userId).select('email attendanceEmail').lean();
+      const processedBy =
+        approvedBy || (actorIsHr ? 'HR' : 'Partner');
+      await sendPartnerRequestDecisionEmail({
+        partnerName: reqRecord.partnerName,
+        employeeUser: employeeDoc,
+        action,
+        rows: [
+          {
+            employeeName: reqRecord.userName,
+            date: reqRecord.date,
+            requestedStatus: reqRecord.requestedStatus,
+            requestState: reqRecord.status,
+            reason: reqRecord.reason,
+          },
+        ],
+        processedBy,
+        remarks,
+        skipIfSameAs:
+          employeeDoc && typeof employeeDoc === 'object' && 'email' in employeeDoc
+            ? employeeDoc.email || null
+            : null,
+      });
+    } catch (partnerEmailError) {
+      console.error('Partner decision email failed:', partnerEmailError);
     }
 
     return NextResponse.json({

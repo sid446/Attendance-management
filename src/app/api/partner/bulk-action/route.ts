@@ -34,6 +34,11 @@ import LeaveTransaction from '@/models/LeaveTransaction';
 import { verifyPartnerReviewToken } from '@/lib/partnerReviewToken';
 import { transporter, mailOptions } from '@/lib/mailer';
 import { isAttendanceDatePartnerOnlyIst } from '@/lib/attendanceRequestApprovalWindow';
+import {
+  type RequestDecisionRow,
+  resolvePartnerNotificationEmail,
+  sendPartnerRequestDecisionEmail,
+} from '@/lib/attendanceRequestNotifications';
 
 function normalizePartnerName(name: string): string {
     return String(name || '').replace(/[.\s]/g, '').toLowerCase();
@@ -141,6 +146,10 @@ export async function POST(request: NextRequest) {
 
         let successCount = 0;
         const processedRequestsByUser: Record<string, { user: any; requests: any[] }> = {};
+        const partnerDecisionBuckets: Record<
+          string,
+          { partnerName: string; rows: RequestDecisionRow[]; skipIfSameAs?: string | null }
+        > = {};
 
         const partnerActor = !!secureApprovedBy;
 
@@ -554,6 +563,32 @@ export async function POST(request: NextRequest) {
             }
             processedRequestsByUser[uIdStr].requests.push(reqRecord);
             successCount++;
+
+            try {
+              const partnerInbox = await resolvePartnerNotificationEmail(
+                reqRecord.partnerName,
+                userObj
+              );
+              if (partnerInbox) {
+                const bucketKey = partnerInbox.trim().toLowerCase();
+                if (!partnerDecisionBuckets[bucketKey]) {
+                  partnerDecisionBuckets[bucketKey] = {
+                    partnerName: reqRecord.partnerName,
+                    rows: [],
+                    skipIfSameAs: userObj?.email || null,
+                  };
+                }
+                partnerDecisionBuckets[bucketKey].rows.push({
+                  employeeName: reqRecord.userName,
+                  date: reqRecord.date,
+                  requestedStatus: reqRecord.requestedStatus,
+                  requestState: reqRecord.status,
+                  reason: reqRecord.reason,
+                });
+              }
+            } catch (bucketErr) {
+              console.error('Partner notification bucket error:', bucketErr);
+            }
         }
 
         // Send summary emails to each user
@@ -641,6 +676,23 @@ export async function POST(request: NextRequest) {
                     console.error('Failed to send bulk action email to', user.email, e);
                 }
             }
+        }
+
+        for (const bucket of Object.values(partnerDecisionBuckets)) {
+          if (!bucket.rows.length) continue;
+          try {
+            await sendPartnerRequestDecisionEmail({
+              partnerName: bucket.partnerName,
+              employeeUser: null,
+              action,
+              rows: bucket.rows,
+              processedBy: appliedApprovedBy,
+              remarks: appliedRemark,
+              skipIfSameAs: bucket.skipIfSameAs,
+            });
+          } catch (e) {
+            console.error('Failed to send partner bulk decision email:', e);
+          }
         }
 
         return NextResponse.json({ success: true, count: successCount });
