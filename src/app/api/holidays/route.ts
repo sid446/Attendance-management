@@ -476,6 +476,22 @@ function calculateSummary(
   };
 }
 
+function hasValidPunch(checkin?: string, checkout?: string): boolean {
+  const inT = (checkin || '').trim();
+  const outT = (checkout || '').trim();
+  return (!!inT && inT !== '00:00') || (!!outT && outT !== '00:00');
+}
+
+function isAbsentType(type?: string): boolean {
+  const t = (type || '').trim();
+  return t === 'Absent' || t === 'absent';
+}
+
+function isLeaveType(type?: string): boolean {
+  const t = (type || '').trim();
+  return t === 'On leave' || t === 'Leave';
+}
+
 async function updateAttendanceForDate(date: string, typeOfPresence: string | null, remarks: string | null) {
   const monthYear = date.substring(0, 7);
   const attendances = await Attendance.find({ monthYear }).populate('userId');
@@ -485,6 +501,9 @@ async function updateAttendanceForDate(date: string, typeOfPresence: string | nu
     if (!record) continue;
 
     if (typeOfPresence === 'Holiday') {
+      if (record.typeOfPresence !== 'Holiday') {
+        record.previousTypeOfPresence = record.typeOfPresence;
+      }
       record.typeOfPresence = 'Holiday';
       record.value = 0;
       record.totalHour = 0;
@@ -492,17 +511,42 @@ async function updateAttendanceForDate(date: string, typeOfPresence: string | nu
       record.halfDay = false;
       record.remarks = remarks || '';
     } else {
-      // Revert: set back to ThumbMachine and recalculate
-      record.typeOfPresence = 'ThumbMachine';
+      const prevType = record.previousTypeOfPresence;
       const checkin = record.editedCheckin || record.checkin;
       const checkout = record.editedCheckout || record.checkout;
-      record.totalHour = calculateTotalHours(checkin, checkout);
-      record.value = record.totalHour > 0 ? 1 : 0;
-      // Recalculate halfDay, etc., but for simplicity, keep as is or recalculate
-      record.remarks = ''; // Clear remarks
+
+      if (hasValidPunch(checkin, checkout)) {
+        const restoreType =
+          prevType && prevType !== 'Holiday' && !isAbsentType(prevType)
+            ? prevType
+            : 'ThumbMachine';
+        record.typeOfPresence = restoreType;
+        record.totalHour = calculateTotalHours(checkin, checkout);
+        record.value = record.totalHour > 0 ? 1 : 0;
+        record.remarks = '';
+        record.previousTypeOfPresence = undefined;
+      } else if (isAbsentType(prevType) || isAbsentType(record.typeOfPresence)) {
+        record.typeOfPresence = 'Absent';
+        record.value = 0;
+        record.totalHour = 0;
+        record.excessHour = 0;
+        record.halfDay = false;
+        record.remarks = '';
+        record.previousTypeOfPresence = undefined;
+      } else if (isLeaveType(prevType)) {
+        record.typeOfPresence = prevType;
+        record.value = 1;
+        record.totalHour = 0;
+        record.excessHour = 0;
+        record.halfDay = false;
+        record.remarks = '';
+        record.previousTypeOfPresence = undefined;
+      } else {
+        attendance.records.delete(date);
+        attendance.markModified('records');
+      }
     }
 
-    // Recalculate summary
     attendance.summary = calculateSummary(attendance.records, attendance.userId as unknown as IUser);
     await attendance.save();
   }

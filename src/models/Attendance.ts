@@ -12,6 +12,8 @@ export interface IDailyRecord {
   halfDay: boolean;
   value: number;          // Attendance value: 1 for present, 0 for absent, 0.5 for half day
   remarks?: string;
+  /** Set when a day is marked Holiday so reverting a moved holiday can restore the prior status. */
+  previousTypeOfPresence?: string;
 }
 
 // Monthly summary interface
@@ -114,6 +116,10 @@ const DailyRecordSchema: Schema = new Schema(
     remarks: {
       type: String,
       default: '',
+    },
+    previousTypeOfPresence: {
+      type: String,
+      default: undefined,
     },
   },
   { _id: false }
