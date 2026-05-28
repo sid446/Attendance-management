@@ -61,11 +61,6 @@ function attendanceQualityRate(m: SummaryAlignedMetrics): number | null {
   return (m.totalPresent + 0.5 * m.totalHalfDay) / w;
 }
 
-/** Lower = fewer absence / lateness / half-day issues (leaderboard discipline mode). */
-function disciplinePenalty(m: SummaryAlignedMetrics): number {
-  return m.totalAbsent + m.calcLate + 0.5 * m.totalHalfDay;
-}
-
 /** Needs attention: absent >> late >> half day (one absent outweighs many lates or half days). */
 const ATTENTION_W_ABSENT = 100;
 const ATTENTION_W_LATE = 50;
@@ -79,54 +74,53 @@ function needsAttentionScore(m: SummaryAlignedMetrics): number {
   );
 }
 
-export type LeaderboardSortMode = "discipline" | "punctuality" | "hour";
+export type LeaderboardSortMode = "present" | "absent" | "leave" | "excess" | "late";
 
-function compareDisciplineMode(a: PartnerTeamRow, b: PartnerTeamRow): number {
-  const pa = disciplinePenalty(a.metrics);
-  const pb = disciplinePenalty(b.metrics);
-  if (Math.abs(pa - pb) > 1e-9) return pa - pb;
-  return compareLeaderboardQuality(a, b);
-}
-
-function comparePunctualityMode(a: PartnerTeamRow, b: PartnerTeamRow): number {
-  const la = a.metrics.calcLate;
-  const lb = b.metrics.calcLate;
-  if (la !== lb) return la - lb;
-  const pa = disciplinePenalty(a.metrics);
-  const pb = disciplinePenalty(b.metrics);
-  if (Math.abs(pa - pb) > 1e-9) return pa - pb;
-  return compareLeaderboardQuality(a, b);
-}
-
-/** Present-equivalent days for averaging (half day = ½). */
+/** Present-equivalent days (half day = ½). */
 function presentEquivHalf(m: SummaryAlignedMetrics): number {
   return m.totalPresent + 0.5 * m.totalHalfDay;
 }
 
-/**
- * Excess vs scheduled averaged over days they actually showed up (present + ½×half).
- * Month totals alone favour people with few days; ranking then uses absent count and present count.
- */
-function excessPerPresentDay(m: SummaryAlignedMetrics): number {
-  const d = presentEquivHalf(m);
-  if (d <= 0) return Number.NEGATIVE_INFINITY;
-  return m.calcExcessDeficit / d;
+function comparePresentMode(a: PartnerTeamRow, b: PartnerTeamRow): number {
+  const pa = presentEquivHalf(a.metrics);
+  const pb = presentEquivHalf(b.metrics);
+  if (Math.abs(pb - pa) > 1e-9) return pb - pa;
+  if (a.metrics.totalAbsent !== b.metrics.totalAbsent) return a.metrics.totalAbsent - b.metrics.totalAbsent;
+  return compareLeaderboardQuality(a, b);
 }
 
-function compareHourMode(a: PartnerTeamRow, b: PartnerTeamRow): number {
-  const perA = excessPerPresentDay(a.metrics);
-  const perB = excessPerPresentDay(b.metrics);
-  if (Math.abs(perB - perA) > 1e-6) return perB - perA;
+function compareAbsentMode(a: PartnerTeamRow, b: PartnerTeamRow): number {
+  if (a.metrics.totalAbsent !== b.metrics.totalAbsent) return a.metrics.totalAbsent - b.metrics.totalAbsent;
+  const pa = presentEquivHalf(a.metrics);
+  const pb = presentEquivHalf(b.metrics);
+  if (Math.abs(pb - pa) > 1e-9) return pb - pa;
+  return compareLeaderboardQuality(a, b);
+}
 
-  const absA = a.metrics.totalAbsent;
-  const absB = b.metrics.totalAbsent;
-  if (absA !== absB) return absA - absB;
+function compareLeaveMode(a: PartnerTeamRow, b: PartnerTeamRow): number {
+  const la = a.metrics.leaveFullDaysConsumed;
+  const lb = b.metrics.leaveFullDaysConsumed;
+  if (la !== lb) return la - lb;
+  if (a.metrics.totalAbsent !== b.metrics.totalAbsent) return a.metrics.totalAbsent - b.metrics.totalAbsent;
+  const pa = presentEquivHalf(a.metrics);
+  const pb = presentEquivHalf(b.metrics);
+  if (Math.abs(pb - pa) > 1e-9) return pb - pa;
+  return compareLeaderboardQuality(a, b);
+}
 
-  const presA = a.metrics.totalPresent;
-  const presB = b.metrics.totalPresent;
-  if (presA !== presB) return presB - presA;
+function compareExcessMode(a: PartnerTeamRow, b: PartnerTeamRow): number {
+  const exA = a.metrics.calcExcessDeficit;
+  const exB = b.metrics.calcExcessDeficit;
+  if (Math.abs(exB - exA) > 1e-6) return exB - exA;
+  const pa = presentEquivHalf(a.metrics);
+  const pb = presentEquivHalf(b.metrics);
+  if (Math.abs(pb - pa) > 1e-9) return pb - pa;
+  return a.metrics.totalAbsent - b.metrics.totalAbsent;
+}
 
-  return comparePunctualityMode(a, b);
+function compareLateMode(a: PartnerTeamRow, b: PartnerTeamRow): number {
+  if (a.metrics.calcLate !== b.metrics.calcLate) return a.metrics.calcLate - b.metrics.calcLate;
+  return compareAbsentMode(a, b);
 }
 
 /** Anyone with 0 present days is sorted last in every mode (never showed up). */
@@ -141,19 +135,33 @@ function compareWithZeroPresentLast(
   return inner(a, b);
 }
 
+const LEADERBOARD_SORT_MODES: LeaderboardSortMode[] = [
+  "present",
+  "absent",
+  "leave",
+  "excess",
+  "late",
+];
+
 const LEADERBOARD_MODE_HINT: Record<LeaderboardSortMode, string> = {
-  discipline:
-    "Fewest discipline issues first (absent + late + ½×half day), then attendance quality. 0 present → last.",
-  punctuality:
-    "Fewest late arrivals first, then discipline score, then attendance quality. 0 present → last.",
-  hour:
-    "Avg excess vs scheduled per day present (½ credit per half day), then fewer absent days, then more present days. Month total in row. 0 present → last.",
+  present:
+    "Most present days first (½ per half day), then fewer absences. 0 present → last.",
+  absent:
+    "Fewest absent days first, then more present days. 0 present → last.",
+  leave:
+    "Fewest full leave days used first, then fewer absences, then more present. 0 present → last.",
+  excess:
+    "Highest excess vs scheduled first (month total; + worked more, − short). Then present, then absent. 0 present → last.",
+  late:
+    "Fewest late arrivals first, then fewer absences, then more present. 0 present → last.",
 };
 
 const LEADERBOARD_MODE_LABEL: Record<LeaderboardSortMode, string> = {
-  discipline: "Discipline",
-  punctuality: "Punctuality",
-  hour: "Hours",
+  present: "Present",
+  absent: "Absent",
+  leave: "Leave",
+  excess: "Excess / deficit",
+  late: "Late",
 };
 
 export function PartnerTeamOverview({
@@ -162,15 +170,19 @@ export function PartnerTeamOverview({
   onSelectMember,
 }: PartnerTeamOverviewProps) {
   const period = formatMonthLabel(monthYear);
-  const [leaderMode, setLeaderMode] = useState<LeaderboardSortMode>("discipline");
+  const [leaderMode, setLeaderMode] = useState<LeaderboardSortMode>("present");
 
   const sortedLeaderboard = useMemo(() => {
     const cmp =
-      leaderMode === "discipline"
-        ? compareDisciplineMode
-        : leaderMode === "punctuality"
-          ? comparePunctualityMode
-          : compareHourMode;
+      leaderMode === "present"
+        ? comparePresentMode
+        : leaderMode === "absent"
+          ? compareAbsentMode
+          : leaderMode === "leave"
+            ? compareLeaveMode
+            : leaderMode === "excess"
+              ? compareExcessMode
+              : compareLateMode;
     return [...rows].sort((a, b) => compareWithZeroPresentLast(a, b, cmp));
   }, [rows, leaderMode]);
 
@@ -239,6 +251,12 @@ export function PartnerTeamOverview({
           <span className="rounded-md border border-border bg-background px-2 py-1">
             Σ Late <strong className="text-amber-700">{totals.late}</strong>
           </span>
+          <span className="rounded-md border border-border bg-background px-2 py-1">
+            Σ Leave <strong className="text-sky-700">{totals.leave}</strong>
+          </span>
+          <span className="rounded-md border border-border bg-background px-2 py-1">
+            Σ Half <strong className="text-muted-foreground">{totals.half}</strong>
+          </span>
         </div>
       </div>
 
@@ -255,9 +273,7 @@ export function PartnerTeamOverview({
                 role="group"
                 aria-label="Leaderboard ranking type"
               >
-                {(
-                  ["discipline", "punctuality", "hour"] as LeaderboardSortMode[]
-                ).map((mode) => (
+                {LEADERBOARD_SORT_MODES.map((mode) => (
                   <button
                     key={mode}
                     type="button"
@@ -282,50 +298,66 @@ export function PartnerTeamOverview({
             {sortedLeaderboard.map((r, i) => {
               const qRate = attendanceQualityRate(r.metrics);
               const ex = r.metrics.calcExcessDeficit;
-              const disc = disciplinePenalty(r.metrics);
-              const late = r.metrics.calcLate;
+              const equiv = presentEquivHalf(r.metrics);
+              const m = r.metrics;
 
               let titleHint = r.name;
               let badge: React.ReactNode = null;
-              if (leaderMode === "discipline") {
-                titleHint = `${r.name} — discipline score ${disc.toFixed(1)} (absent + late + ½×half; lower is better)`;
+              if (leaderMode === "present") {
+                titleHint = `${r.name} — ${equiv} present-equivalent days (P ${m.totalPresent}, ½×${m.totalHalfDay})`;
                 badge = (
                   <span
-                    className="rounded bg-background px-1.5 py-px font-mono text-[10px] tabular-nums text-muted-foreground border border-border"
-                    title="Absent + late + ½×half day (lower is better)"
+                    className="rounded bg-emerald-500/15 px-1.5 py-px font-mono text-[10px] tabular-nums text-emerald-800"
+                    title="Present-equivalent days (half day = ½)"
                   >
-                    D {disc % 1 === 0 ? String(disc) : disc.toFixed(1)}
+                    P {equiv % 1 === 0 ? String(equiv) : equiv.toFixed(1)}
                   </span>
                 );
-              } else if (leaderMode === "punctuality") {
-                titleHint = `${r.name} — ${late} late arrival${late === 1 ? "" : "s"} this month`;
+              } else if (leaderMode === "absent") {
+                titleHint = `${r.name} — ${m.totalAbsent} absent day${m.totalAbsent === 1 ? "" : "s"} this month`;
+                badge = (
+                  <span
+                    className="rounded bg-rose-500/15 px-1.5 py-px font-mono text-[10px] tabular-nums text-rose-800"
+                    title="Absent days (lower is better)"
+                  >
+                    A {m.totalAbsent}
+                  </span>
+                );
+              } else if (leaderMode === "leave") {
+                titleHint = `${r.name} — ${m.leaveFullDaysConsumed} full leave day${m.leaveFullDaysConsumed === 1 ? "" : "s"} consumed`;
+                badge = (
+                  <span
+                    className="rounded bg-sky-500/15 px-1.5 py-px font-mono text-[10px] tabular-nums text-sky-900"
+                    title="Full leave days consumed (lower is better)"
+                  >
+                    Lv {m.leaveFullDaysConsumed}
+                  </span>
+                );
+              } else if (leaderMode === "excess") {
+                titleHint = `${r.name} — month ${ex > 0 ? "+" : ex < 0 ? "−" : ""}${formatHoursMinutes(Math.abs(ex))} vs scheduled`;
+                badge = (
+                  <span
+                    className={`rounded px-1.5 py-px font-mono text-[10px] tabular-nums ${
+                      ex > 0
+                        ? "bg-emerald-500/15 text-emerald-800"
+                        : ex < 0
+                          ? "bg-rose-500/15 text-rose-800"
+                          : "bg-background text-muted-foreground border border-border"
+                    }`}
+                    title="Excess (+) or deficit (−) vs scheduled hours this month"
+                  >
+                    {ex > 0 ? "+" : ex < 0 ? "−" : ""}
+                    {formatHoursMinutes(Math.abs(ex))}
+                  </span>
+                );
+              } else {
+                titleHint = `${r.name} — ${m.calcLate} late arrival${m.calcLate === 1 ? "" : "s"} this month`;
                 badge = (
                   <span
                     className="rounded bg-amber-500/15 px-1.5 py-px font-mono text-[10px] tabular-nums text-amber-800"
                     title="Late count (lower is better)"
                   >
-                    L {late}
-                  </span>
-                );
-              } else {
-                const equiv = presentEquivHalf(r.metrics);
-                const perDay = equiv > 0 ? ex / equiv : 0;
-                const absent = r.metrics.totalAbsent;
-                titleHint = `${r.name} — ${perDay > 0 ? "+" : perDay < 0 ? "−" : ""}${formatHoursMinutes(Math.abs(perDay))} avg per present day; month ${ex > 0 ? "+" : ex < 0 ? "−" : ""}${formatHoursMinutes(Math.abs(ex))} vs scheduled; ${absent} absent`;
-                badge = (
-                  <span
-                    className={`rounded px-1.5 py-px font-mono text-[10px] tabular-nums ${
-                      perDay > 0
-                        ? "bg-emerald-500/15 text-emerald-800"
-                        : perDay < 0
-                          ? "bg-rose-500/15 text-rose-800"
-                          : "bg-background text-muted-foreground border border-border"
-                    }`}
-                    title={`Avg vs scheduled on days present; ${absent} absent this month`}
-                  >
-                    {perDay > 0 ? "+" : perDay < 0 ? "−" : ""}
-                    {formatHoursMinutes(Math.abs(perDay))}
-                    <span className="text-muted-foreground">/d</span>
+                    Lt {m.calcLate}
                   </span>
                 );
               }
@@ -358,7 +390,7 @@ export function PartnerTeamOverview({
                     <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                       <p className="font-mono text-[10px] text-muted-foreground">{r.code}</p>
                       {badge}
-                      {qRate != null && leaderMode !== "hour" && (
+                      {qRate != null && leaderMode !== "excess" && (
                         <span
                           className="rounded bg-background px-1.5 py-px font-mono text-[10px] tabular-nums text-muted-foreground border border-border"
                           title="% of working days (present + ½ per half day)"
