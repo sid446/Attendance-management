@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Holiday from '@/models/Holiday';
-import Attendance from '@/models/Attendance';
+import Attendance, { type IDailyRecord } from '@/models/Attendance';
 import User, { IUser } from '@/models/User';
 
 // GET /api/holidays - Get all holidays, optionally filtered by year
@@ -516,9 +516,9 @@ async function updateAttendanceForDate(date: string, typeOfPresence: string | nu
       const checkout = record.editedCheckout || record.checkout;
 
       if (hasValidPunch(checkin, checkout)) {
-        const restoreType =
+        const restoreType: IDailyRecord['typeOfPresence'] =
           prevType && prevType !== 'Holiday' && !isAbsentType(prevType)
-            ? prevType
+            ? (prevType as IDailyRecord['typeOfPresence'])
             : 'ThumbMachine';
         record.typeOfPresence = restoreType;
         record.totalHour = calculateTotalHours(checkin, checkout);
@@ -534,7 +534,7 @@ async function updateAttendanceForDate(date: string, typeOfPresence: string | nu
         record.remarks = '';
         record.previousTypeOfPresence = undefined;
       } else if (isLeaveType(prevType)) {
-        record.typeOfPresence = prevType;
+        record.typeOfPresence = prevType as IDailyRecord['typeOfPresence'];
         record.value = 1;
         record.totalHour = 0;
         record.excessHour = 0;
