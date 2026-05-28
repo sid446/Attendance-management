@@ -27,6 +27,42 @@ async function fetchAttendanceForUser(userId: string, monthYear: string) {
   }
   return null;
 }
+
+type EmployeeAttendanceRequest = {
+  _id: string;
+  date: string;
+  requestedStatus: string;
+  status: 'Pending' | 'PendingHr' | 'Approved' | 'Rejected';
+  approvedBy?: string;
+  approvedByEmail?: string;
+  approvedAt?: string;
+  updatedAt?: string;
+};
+
+async function fetchEmployeeRequestsForMonth(
+  userId: string,
+  monthYear: string
+): Promise<EmployeeAttendanceRequest[]> {
+  try {
+    const res = await fetch(
+      `/api/employee/request-correction?userId=${encodeURIComponent(userId)}`
+    );
+    const json = await res.json();
+    if (!json.success || !Array.isArray(json.data)) return [];
+    return json.data.filter((req: EmployeeAttendanceRequest) =>
+      req.date.split('T')[0].startsWith(monthYear)
+    );
+  } catch {
+    return [];
+  }
+}
+
+type SubordinateAttendancePack = {
+  summary: AttendanceSummaryView | null;
+  employeeDays: AttendanceRecord[];
+  userForMetrics?: User;
+  requests: EmployeeAttendanceRequest[];
+};
 import { LocationAttendanceSection } from '@/components/LocationAttendanceSection';
 import { EmployeeDashboardOverview } from '@/components/EmployeeDashboardOverview';
 import { EmployeeSummaryMonthPicker } from '@/components/EmployeeSummaryMonthPicker';
@@ -277,16 +313,7 @@ export default function EmployeeDashboard() {
   // State for subordinates (if any)
   const [subordinates, setSubordinates] = useState<User[]>([]);
   const [showTeamExportModal, setShowTeamExportModal] = useState(false);
-  const [subordinateAttendance, setSubordinateAttendance] = useState<
-    Record<
-      string,
-      {
-        summary: AttendanceSummaryView | null;
-        employeeDays: AttendanceRecord[];
-        userForMetrics?: User;
-      }
-    >
-  >({});
+  const [subordinateAttendance, setSubordinateAttendance] = useState<Record<string, SubordinateAttendancePack>>({});
   const [subLoading, setSubLoading] = useState(false);
   /** Team overview + calendars refetching for a new month (after initial subordinate list exists). */
   const [teamAttendanceLoading, setTeamAttendanceLoading] = useState(false);
@@ -398,16 +425,7 @@ export default function EmployeeDashboard() {
   const [calendarSelectionStart, setCalendarSelectionStart] = useState<string | null>(null);
 
   // Employee requests state
-  const [employeeRequests, setEmployeeRequests] = useState<Array<{
-    _id: string;
-    date: string;
-    requestedStatus: string;
-    status: 'Pending' | 'PendingHr' | 'Approved' | 'Rejected';
-    approvedBy?: string;
-    approvedByEmail?: string;
-    approvedAt?: string;
-    updatedAt?: string;
-  }>>([]);
+  const [employeeRequests, setEmployeeRequests] = useState<EmployeeAttendanceRequest[]>([]);
 
   const [holidays, setHolidays] = useState<{ date: string; name: string }[]>([]);
   /** Populated user from attendance API (schedules, employment type, etc.) for summary-aligned math */
@@ -469,16 +487,12 @@ export default function EmployeeDashboard() {
         setSubordinates(subs);
         setLoading(false);
 
-        const att: Record<
-          string,
-          {
-            summary: AttendanceSummaryView | null;
-            employeeDays: AttendanceRecord[];
-            userForMetrics?: User;
-          }
-        > = {};
+        const att: Record<string, SubordinateAttendancePack> = {};
       for (const sub of subs) {
-        const attData = await fetchAttendanceForUser(sub._id, monthYear);
+        const [attData, requests] = await Promise.all([
+          fetchAttendanceForUser(sub._id, monthYear),
+          fetchEmployeeRequestsForMonth(sub._id, monthYear),
+        ]);
         if (attData) {
           // Build summary and employeeDays as in main fetchAttendance
           const recordsObj = attData.records || {};
@@ -576,9 +590,10 @@ export default function EmployeeDashboard() {
             summary: mappedSum,
             employeeDays: days,
             userForMetrics: mergeAttendanceProfile(sub, attData.userId) as User,
+            requests,
           };
         } else {
-          att[sub._id] = { summary: null, employeeDays: [] };
+          att[sub._id] = { summary: null, employeeDays: [], requests };
         }
       }
         setSubordinateAttendance(att);
@@ -593,26 +608,13 @@ export default function EmployeeDashboard() {
     setFetchLoading(true);
     setFetchError(null);
     try {
-      // Fetch Summary and Employee Requests in parallel
-      const [resSum, resRequests] = await Promise.all([
+      const [resSum, filteredRequests] = await Promise.all([
         fetch(`/api/attendance?userId=${userId}&monthYear=${my}`),
-        fetch(`/api/employee/request-correction?userId=${userId}`)
+        fetchEmployeeRequestsForMonth(userId, my),
       ]);
 
       const jsonSum = await resSum.json();
-      const jsonRequests = await resRequests.json();
-
-      // Process employee requests
-      if (jsonRequests.success && jsonRequests.data) {
-        // Filter requests for the selected month
-        const filteredRequests = jsonRequests.data.filter((req: any) => {
-          const reqDate = req.date.split('T')[0];
-          return reqDate.startsWith(my);
-        });
-        setEmployeeRequests(filteredRequests);
-      } else {
-        setEmployeeRequests([]);
-      }
+      setEmployeeRequests(filteredRequests);
 
       if (jsonSum.success && jsonSum.data && jsonSum.data.length > 0) {
         const doc = jsonSum.data[0];
@@ -769,17 +771,13 @@ export default function EmployeeDashboard() {
         return;
       }
       setTeamAttendanceLoading(true);
-      const att: Record<
-        string,
-        {
-          summary: AttendanceSummaryView | null;
-          employeeDays: AttendanceRecord[];
-          userForMetrics?: User;
-        }
-      > = {};
+      const att: Record<string, SubordinateAttendancePack> = {};
       try {
       for (const sub of subs) {
-        const attData = await fetchAttendanceForUser(sub._id, val);
+        const [attData, requests] = await Promise.all([
+          fetchAttendanceForUser(sub._id, val),
+          fetchEmployeeRequestsForMonth(sub._id, val),
+        ]);
         if (attData) {
           const recordsObj = attData.records || {};
           const days: AttendanceRecord[] = Object.entries(recordsObj).map(([dateKey, value]: [string, any]) => {
@@ -876,9 +874,10 @@ export default function EmployeeDashboard() {
             summary: mappedSum,
             employeeDays: days,
             userForMetrics: mergeAttendanceProfile(sub, attData.userId) as User,
+            requests,
           };
         } else {
-          att[sub._id] = { summary: null, employeeDays: [] };
+          att[sub._id] = { summary: null, employeeDays: [], requests };
         }
       }
       setSubordinateAttendance(att);
@@ -1795,6 +1794,9 @@ export default function EmployeeDashboard() {
                             isLoading={false}
                             error={null}
                             onLoadAttendance={() => {}}
+                            approvedRequests={
+                              subordinateAttendance[selectedSubordinateId]?.requests ?? []
+                            }
                             showSummaryStrip={true}
                             sectionTitle="Calendar"
                             subtitle={null}
