@@ -3,10 +3,9 @@ import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
 import { sendOTPEmail } from '@/lib/mailer';
 import { isAllowedHrAdminEmail } from '@/lib/hrAdminAllowlistServer';
+import { verifyHrConsolePassword } from '@/lib/hrConsolePassword';
 import HrOtpPending from '@/models/HrOtpPending';
 
-// Fixed HR password
-const HR_PASSWORD = 'Asija@2026';
 const EMAIL_DOMAIN = '@asija.in';
 
 // In-memory OTP store for employee/partner flow via this route only (HR OTP uses Mongo: HrOtpPending).
@@ -37,6 +36,34 @@ export async function POST(request: NextRequest) {
 
     // HR/Admin login with password
     if (!role || role === 'hr') {
+      const rawEmail = String(email || '').trim().toLowerCase();
+
+      if (!rawEmail) {
+        return NextResponse.json(
+          { success: false, error: 'Admin email is required' },
+          { status: 400 }
+        );
+      }
+
+      if (!rawEmail.endsWith(EMAIL_DOMAIN)) {
+        return NextResponse.json(
+          { success: false, error: `Only ${EMAIL_DOMAIN} emails are allowed for HR login` },
+          { status: 400 }
+        );
+      }
+
+      // Must be on the Access Control allowlist before password / OTP
+      if (!(await isAllowedHrAdminEmail(rawEmail))) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              'This email is not authorized for HR access. Ask an admin to add it under Access control.',
+          },
+          { status: 403 }
+        );
+      }
+
       if (!password) {
         return NextResponse.json(
           { success: false, error: 'Password is required' },
@@ -44,30 +71,16 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Verify fixed password
-      if (password !== HR_PASSWORD) {
+      if (!(await verifyHrConsolePassword(password))) {
         return NextResponse.json(
           { success: false, error: 'Invalid password' },
           { status: 401 }
         );
       }
 
-      // Validate admin email
-      const rawEmail = String(email || '').trim().toLowerCase();
-
-      if (!rawEmail || !(await isAllowedHrAdminEmail(rawEmail))) {
-        return NextResponse.json(
-          { success: false, error: 'This email is not authorized for HR access' },
-          { status: 403 }
-        );
-      }
-
-      // Generate OTP and session
       const otp = generateOTP();
       const sessionId = generateSessionId();
-      const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
 
-      // Store OTP in Mongo so verify-otp works across serverless instances / dev workers
       await dbConnect();
       await HrOtpPending.findOneAndUpdate(
         { sessionId },
@@ -81,9 +94,8 @@ export async function POST(request: NextRequest) {
         { upsert: true }
       );
 
-      // Send OTP email
       try {
-        await sendOTPEmail(otp);
+        await sendOTPEmail(otp, rawEmail);
       } catch (emailError) {
         console.error('Failed to send OTP email:', emailError);
         return NextResponse.json(
@@ -96,7 +108,8 @@ export async function POST(request: NextRequest) {
         success: true,
         data: {
           sessionId,
-          message: 'OTP sent to admin email',
+          email: rawEmail,
+          message: `OTP sent to ${rawEmail}`,
         },
       });
     }

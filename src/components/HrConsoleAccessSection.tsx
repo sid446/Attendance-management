@@ -30,6 +30,7 @@ const SECTION_LABELS: Record<HrConsoleSectionId, string> = {
   misExceptions: 'MIS Exceptions',
   clientPlaces: 'Client Places',
   accessControl: 'Access control (this page)',
+  settings: 'Settings',
 };
 
 const TAB_LABELS: Record<EmployeeManagementTabId, string> = {

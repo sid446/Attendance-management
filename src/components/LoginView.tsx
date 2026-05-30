@@ -52,6 +52,24 @@ export const LoginView: React.FC<LoginViewProps> = ({
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-2">
+                  <Mail className="w-3 h-3 inline mr-1" />
+                  Admin Email
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => onEmailChange(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && onPasswordSubmit()}
+                  placeholder="e.g. hr@asija.in"
+                  className="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/30 transition-colors"
+                />
+                <p className="mt-1.5 text-[11px] text-slate-500">
+                  Must be on the Access control allowlist. Login OTP goes to this address.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-2">
                   <Lock className="w-3 h-3 inline mr-1" />
                   Password
                 </label>
@@ -61,21 +79,6 @@ export const LoginView: React.FC<LoginViewProps> = ({
                   onChange={(e) => onPasswordChange(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && onPasswordSubmit()}
                   placeholder="Enter HR password"
-                  className="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/30 transition-colors"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-2">
-                  <Mail className="w-3 h-3 inline mr-1" />
-                  Admin Email
-                </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => onEmailChange(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && onPasswordSubmit()}
-                  placeholder="e.g. it@asija.in"
                   className="w-full rounded-md border border-slate-300 bg-white px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/30 transition-colors"
                 />
               </div>
@@ -98,7 +101,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
             <div className="space-y-4">
               <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-900">
                 <Mail className="w-3 h-3 inline mr-1" />
-                OTP sent to admin email. Please check your inbox.
+                OTP sent to <span className="font-medium">{email || 'your admin email'}</span>. Please check your inbox.
               </div>
 
               <div>
@@ -140,7 +143,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
           )}
 
           <p className="mt-6 text-center text-[11px] text-slate-500">
-            OTP will be sent to the admin email for verification
+            Sign-in OTP is sent to your admin email after password verification
           </p>
 
           <div className="mt-4 border-t border-slate-200 pt-4">

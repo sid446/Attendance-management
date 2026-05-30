@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   Lock,
   ClipboardList,
+  Settings,
   ChevronDown,
   ChevronRight,
   type LucideIcon,
@@ -84,6 +85,7 @@ const NAV_CATEGORIES: NavCategory[] = [
     key: 'settings-data',
     label: 'Settings & data',
     items: [
+      { id: 'settings', label: 'Settings', icon: Settings },
       { id: 'clientPlaces', label: 'Client Places', icon: MapPin },
       { id: 'accessControl', label: 'Access control', icon: Lock },
       { id: 'upload', label: 'Attendance Upload', icon: Upload },

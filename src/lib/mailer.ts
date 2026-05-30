@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { getServiceAdminEmail } from '@/lib/hrServiceEmail';
 
 const email = process.env.EMAIL_USER;
 const pass = process.env.EMAIL_PASS;
@@ -18,18 +19,24 @@ export const mailOptions = {
 };
 
 // Send OTP email
-export async function sendOTPEmail(otp: string, recipientEmail?: string): Promise<void> {
-  const adminEmail = process.env.ADMIN_EMAIL || 'service@asija.in';
+export async function sendOTPEmail(
+  otp: string,
+  recipientEmail?: string,
+  options?: { subject?: string; heading?: string }
+): Promise<void> {
+  const adminEmail = getServiceAdminEmail();
   const toEmail = recipientEmail || adminEmail;
-  
+  const subject = options?.subject || 'Attendance Console - Login OTP';
+  const heading = options?.heading || 'Attendance Console';
+
   await transporter.sendMail({
     ...mailOptions,
     to: toEmail,
-    subject: 'Attendance Console - Login OTP',
+    subject,
     html: `
       <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 400px;">
-        <h2 style="color: #10b981;">Attendance Console</h2>
-        <p>Your one-time password (OTP) for login is:</p>
+        <h2 style="color: #10b981;">${heading}</h2>
+        <p>Your one-time password (OTP) is:</p>
         <div style="background: #f1f5f9; padding: 16px; border-radius: 8px; text-align: center; margin: 20px 0;">
           <span style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #1e293b;">${otp}</span>
         </div>

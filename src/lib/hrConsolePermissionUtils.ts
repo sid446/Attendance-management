@@ -19,6 +19,7 @@ export const HR_CONSOLE_SECTION_IDS = [
   'misExceptions',
   'clientPlaces',
   'accessControl',
+  'settings',
 ] as const;
 
 export type HrConsoleSectionId = (typeof HR_CONSOLE_SECTION_IDS)[number];

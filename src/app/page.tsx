@@ -23,6 +23,7 @@ import { InvalidAttendanceSection } from '@/components/InvalidAttendanceSection'
 import { EmployeeMisExceptionsSection } from '@/components/EmployeeMisExceptionsSection';
 import { ClientPlaceManagement } from '@/components/ClientPlaceManagement';
 import { HrConsoleAccessSection } from '@/components/HrConsoleAccessSection';
+import { HrConsoleSettingsSection } from '@/components/HrConsoleSettingsSection';
 import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
 import {
   getDesignationForDate,
@@ -1911,6 +1912,8 @@ export default function AttendanceUpload() {
                 }}
               />
             )}
+
+            {activeSection === 'settings' && <HrConsoleSettingsSection />}
           </div>
         </main>
       </div>
