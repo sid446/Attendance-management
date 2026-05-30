@@ -42,6 +42,14 @@ function isUserMarkedInactive(user: Pick<User, 'isActive'>): boolean {
   return typeof raw === 'string' && raw.toLowerCase() === 'false';
 }
 
+function formatInactiveSinceDate(value: unknown): string {
+  const ymd = toDateInputValue(value);
+  if (!ymd) return '';
+  const d = new Date(ymd);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
 function normalizeMongoId(raw: unknown): string {
   if (raw == null) return '';
   if (typeof raw === 'string') {
@@ -160,6 +168,9 @@ function EmployeeManagementTableSkeleton() {
             <th className="hidden px-4 py-3.5 xl:table-cell" scope="col">
               Joined
             </th>
+            <th className="hidden px-4 py-3.5 md:table-cell" scope="col">
+              Status
+            </th>
             <th className="px-4 py-3.5 text-right" scope="col">
               Actions
             </th>
@@ -188,6 +199,9 @@ function EmployeeManagementTableSkeleton() {
               </td>
               <td className="hidden px-4 py-3.5 xl:table-cell">
                 <div className="h-3 w-20 rounded bg-slate-200" />
+              </td>
+              <td className="hidden px-4 py-3.5 md:table-cell">
+                <div className="h-3 w-16 rounded bg-slate-200" />
               </td>
               <td className="px-4 py-3.5 text-right">
                 <div className="ml-auto h-8 w-20 rounded-lg bg-slate-200" />
@@ -1668,7 +1682,10 @@ export const EmployeeManagementSection: React.FC<{
   };
 
   const filteredUsers = users.filter((user) => {
-    if (!showInactiveEmployees && isUserMarkedInactive(user)) {
+    const inactive = isUserMarkedInactive(user);
+    if (showInactiveEmployees) {
+      if (!inactive) return false;
+    } else if (inactive) {
       return false;
     }
     // Multi-select Designation filter
@@ -1761,6 +1778,8 @@ export const EmployeeManagementSection: React.FC<{
       { key: 'nextAttemptDueDate', header: 'Next Attempt Due Date', width: 20 },
       { key: 'registeredUnderPartner', header: 'Registered Under Partner', width: 22 },
       { key: 'workingUnderPartner', header: 'Working Under Partner', width: 20 },
+      { key: 'employmentStatus', header: 'Status (Active / Inactive)', width: 18 },
+      { key: 'inactiveAsOf', header: 'Inactive Since', width: 16 },
     ];
 
     worksheet.columns = baseColumns;
@@ -1778,6 +1797,7 @@ export const EmployeeManagementSection: React.FC<{
 
     // Add data rows
     users.forEach((u) => {
+      const inactive = isUserMarkedInactive(u);
       const rowData: { [key: string]: any } = {
         name: u.name || '',
         registrationNo: u.registrationNo || '',
@@ -1825,6 +1845,8 @@ export const EmployeeManagementSection: React.FC<{
         nextAttemptDueDate: toDateString(u.nextAttemptDueDate),
         registeredUnderPartner: u.registeredUnderPartner || '',
         workingUnderPartner: u.workingUnderPartner || '',
+        employmentStatus: inactive ? 'Inactive' : 'Active',
+        inactiveAsOf: inactive ? toDateString(u.inactiveAsOf as string | undefined) : '',
       };
 
       worksheet.addRow(rowData);
@@ -1843,7 +1865,7 @@ export const EmployeeManagementSection: React.FC<{
       bank: { start: 21, end: 26, color: 'FF00695C' },        // Dark Teal - Bank
       identity: { start: 27, end: 28, color: 'FF4527A0' },    // Deep Purple - Identity
       salary: { start: 29, end: 34, color: 'FFC62828' },      // Red - Salary
-      employment: { start: 35, end: 46, color: 'FF283593' },  // Indigo - Employment
+      employment: { start: 35, end: 48, color: 'FF283593' },  // Indigo - Employment
     };
 
     headerRow.eachCell((cell, colNumber) => {
@@ -4908,8 +4930,13 @@ export const EmployeeManagementSection: React.FC<{
               </ol>
               {!showInactiveEmployees && inactiveUserCount > 0 && (
                 <p className="text-xs text-amber-800">
-                  Inactive employees are hidden from the table. Turn on &quot;Show inactive&quot; in the toolbar to find or
-                  re-activate them.
+                  Inactive employees are hidden. Turn on &quot;Show inactive&quot; in the toolbar to view inactive
+                  employees only.
+                </p>
+              )}
+              {showInactiveEmployees && (
+                <p className="text-xs text-slate-600">
+                  Showing inactive employees only. Uncheck &quot;Show inactive&quot; to return to the active list.
                 </p>
               )}
             </header>
@@ -5675,9 +5702,11 @@ export const EmployeeManagementSection: React.FC<{
       <div className="overflow-hidden rounded-md border border-blue-200/65 bg-panel shadow-sm">
         <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
           <p className="text-sm font-medium text-slate-800" id="employee-table-summary">
-            {filteredUsers.length === users.length
-              ? `${users.length} employees`
-              : `Showing ${filteredUsers.length} of ${users.length} employees`}
+            {showInactiveEmployees
+              ? `${filteredUsers.length} inactive employee${filteredUsers.length === 1 ? '' : 's'}`
+              : filteredUsers.length === users.length
+                ? `${users.length} employees`
+                : `Showing ${filteredUsers.length} of ${users.length} employees`}
           </p>
         </div>
 
@@ -5691,7 +5720,9 @@ export const EmployeeManagementSection: React.FC<{
             <p className="text-sm text-slate-600">
               {users.length === 0
                 ? 'No employees yet. Add someone or bulk-upload from Excel to get started.'
-                : 'No rows match your filters. Try clearing search or filters.'}
+                : showInactiveEmployees
+                  ? 'No inactive employees. Uncheck "Show inactive" to view active employees.'
+                  : 'No rows match your filters. Try clearing search or filters.'}
             </p>
           </div>
         ) : (
@@ -5715,13 +5746,19 @@ export const EmployeeManagementSection: React.FC<{
                   <th scope="col" className="hidden px-4 py-3.5 xl:table-cell">
                     Joined
                   </th>
+                  <th scope="col" className="hidden px-4 py-3.5 md:table-cell">
+                    Status
+                  </th>
                   <th scope="col" className="px-4 py-3.5 text-right">
                     Actions
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {filteredUsers.map((user, index) => (
+                {filteredUsers.map((user, index) => {
+                  const inactive = isUserMarkedInactive(user);
+                  const inactiveSince = formatInactiveSinceDate(user.inactiveAsOf);
+                  return (
                   <tr
                     key={user._id}
                     className={`transition-colors hover:bg-sky-100/50 ${index % 2 === 0 ? 'bg-panel/90' : 'bg-sky-100/35'}`}
@@ -5734,14 +5771,7 @@ export const EmployeeManagementSection: React.FC<{
                           </span>
                         </div>
                         <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="font-medium text-slate-900">{user.name}</p>
-                            {isUserMarkedInactive(user) && (
-                              <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-900">
-                                Inactive
-                              </span>
-                            )}
-                          </div>
+                          <p className="font-medium text-slate-900">{user.name}</p>
                           <p className="font-mono text-xs text-slate-600">{user.odId || user.employeeCode || '—'}</p>
                         </div>
                       </div>
@@ -5772,6 +5802,24 @@ export const EmployeeManagementSection: React.FC<{
                           : '—'}
                       </span>
                     </td>
+                    <td className="hidden px-4 py-3.5 md:table-cell">
+                      {inactive ? (
+                        <div>
+                          <span className="inline-flex rounded-lg border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-950">
+                            Inactive
+                          </span>
+                          {inactiveSince ? (
+                            <p className="mt-1 text-xs text-slate-600">Since {inactiveSince}</p>
+                          ) : (
+                            <p className="mt-1 text-xs text-slate-500">Since date not set</p>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="inline-flex rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-900">
+                          Active
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3.5 text-right">
                       <div className="inline-flex items-center gap-1">
                         <button
@@ -5795,7 +5843,8 @@ export const EmployeeManagementSection: React.FC<{
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

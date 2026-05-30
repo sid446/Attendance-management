@@ -16,6 +16,7 @@ export const HR_CONSOLE_SECTION_IDS = [
   'fines',
   'articleCredits',
   'invalid',
+  'misExceptions',
   'clientPlaces',
   'accessControl',
 ] as const;

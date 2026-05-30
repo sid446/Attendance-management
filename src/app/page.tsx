@@ -20,6 +20,7 @@ import { BackupManagementSection } from '@/components/BackupManagementSection';
 import { LeaveManagementSection } from '@/components/LeaveManagementSection';
 import { FineManagementSection } from '@/components/FineManagementSection';
 import { InvalidAttendanceSection } from '@/components/InvalidAttendanceSection';
+import { EmployeeMisExceptionsSection } from '@/components/EmployeeMisExceptionsSection';
 import { ClientPlaceManagement } from '@/components/ClientPlaceManagement';
 import { HrConsoleAccessSection } from '@/components/HrConsoleAccessSection';
 import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
@@ -1888,6 +1889,8 @@ export default function AttendanceUpload() {
             {activeSection === 'invalid' && (
               <InvalidAttendanceSection onRefresh={fetchUsers} />
             )}
+
+            {activeSection === 'misExceptions' && <EmployeeMisExceptionsSection />}
 
             {/* Client Places Section */}
             {activeSection === 'clientPlaces' && (
