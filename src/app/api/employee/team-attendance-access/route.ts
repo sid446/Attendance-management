@@ -16,6 +16,7 @@ interface VisibleUser {
   _id?: unknown;
   name?: unknown;
   email?: unknown;
+  attendanceEmail?: unknown;
   workingUnderPartner?: unknown;
 }
 
@@ -73,13 +74,21 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Preserve existing attendance-head behavior until admins replace it with explicit rules.
-    if (!rule && viewerData.email) {
-      const viewerEmail = String(viewerData.email).trim().toLowerCase();
+    // Employees whose attendance approver inbox matches this viewer (login or approver email).
+    const viewerEmails = Array.from(
+      new Set(
+        [viewerData.email, viewerData.attendanceEmail]
+          .map((value) => String(value || '').trim().toLowerCase())
+          .filter(Boolean)
+      )
+    );
+    if (viewerEmails.length > 0) {
       addUsers(
         (await User.find({
           isActive: true,
-          attendanceEmail: new RegExp(`^${escapeRegex(viewerEmail)}$`, 'i'),
+          $or: viewerEmails.map((viewerEmail) => ({
+            attendanceEmail: new RegExp(`^${escapeRegex(viewerEmail)}$`, 'i'),
+          })),
         })
           .sort({ name: 1 })
           .lean()) as VisibleUser[]

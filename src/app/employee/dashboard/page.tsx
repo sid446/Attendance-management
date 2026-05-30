@@ -5,8 +5,53 @@ import { useRouter } from 'next/navigation';
 import { EmployeeMonthView } from '@/components/EmployeeMonthView';
 import { AttendanceRecord, AttendanceSummaryView, User } from '@/types/ui';
 
+function normalizeUserId(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'object' && value !== null && '_id' in value) {
+    return normalizeUserId((value as { _id?: unknown })._id);
+  }
+  return String(value).trim();
+}
+
+function normalizeSubordinateUser(raw: User): User {
+  return { ...raw, _id: normalizeUserId(raw._id) };
+}
+
+function emptyAttendanceSummary(
+  userId: string,
+  sub: User,
+  monthYear: string
+): AttendanceSummaryView {
+  return {
+    id: '',
+    userId,
+    userName: sub.name,
+    monthYear,
+    odId: sub.odId,
+    employeeCode: sub.employeeCode,
+    team: sub.team,
+    designation: sub.designation,
+    schedules: { effectiveFrom: new Date().toISOString(), daily: {} },
+    summary: {
+      scheduledHours: '0:00',
+      shortHours: '0:00',
+      excessHours: '0:00',
+      totalHour: 0,
+      totalLateArrival: 0,
+      excessHour: 0,
+      totalHalfDay: 0,
+      totalPresent: 0,
+      totalAbsent: 0,
+      totalLeave: 0,
+    },
+    recordDetails: {},
+    calcScheduled: 0,
+    calcExcessDeficit: 0,
+  };
+}
+
 // Helper to fetch people visible in Team tab.
-// Server-side rules keep dashboard visibility separate from attendance approver emails.
 async function fetchSubordinates(viewerUserId: string) {
   if (!viewerUserId) return [];
   const res = await fetch(
@@ -15,7 +60,7 @@ async function fetchSubordinates(viewerUserId: string) {
   );
   const json = await res.json();
   if (!json.success || !Array.isArray(json.data)) return [];
-  return json.data;
+  return json.data.map((user: User) => normalizeSubordinateUser(user));
 }
 
 // Helper to fetch attendance for a user
@@ -565,7 +610,7 @@ export default function EmployeeDashboard() {
           const calcExcessDeficit = attData.summary?.excessHour ?? 0;
           const mappedSum: AttendanceSummaryView = {
             id: attData._id,
-            userId: attData.userId._id,
+            userId: String(attData.userId._id ?? attData.userId),
             userName: attData.userId.name,
             monthYear: attData.monthYear,
             odId: attData.userId.odId,
@@ -586,14 +631,19 @@ export default function EmployeeDashboard() {
             calcScheduled,
             calcExcessDeficit,
           };
-          att[sub._id] = {
+          att[normalizeUserId(sub._id)] = {
             summary: mappedSum,
             employeeDays: days,
             userForMetrics: mergeAttendanceProfile(sub, attData.userId) as User,
             requests,
           };
         } else {
-          att[sub._id] = { summary: null, employeeDays: [], requests };
+          att[normalizeUserId(sub._id)] = {
+            summary: null,
+            employeeDays: [],
+            userForMetrics: sub,
+            requests,
+          };
         }
       }
         setSubordinateAttendance(att);
@@ -849,7 +899,7 @@ export default function EmployeeDashboard() {
           const calcExcessDeficit = attData.summary?.excessHour ?? 0;
           const mappedSum: AttendanceSummaryView = {
             id: attData._id,
-            userId: attData.userId._id,
+            userId: String(attData.userId._id ?? attData.userId),
             userName: attData.userId.name,
             monthYear: attData.monthYear,
             odId: attData.userId.odId,
@@ -870,14 +920,19 @@ export default function EmployeeDashboard() {
             calcScheduled,
             calcExcessDeficit,
           };
-          att[sub._id] = {
+          att[normalizeUserId(sub._id)] = {
             summary: mappedSum,
             employeeDays: days,
             userForMetrics: mergeAttendanceProfile(sub, attData.userId) as User,
             requests,
           };
         } else {
-          att[sub._id] = { summary: null, employeeDays: [], requests };
+          att[normalizeUserId(sub._id)] = {
+            summary: null,
+            employeeDays: [],
+            userForMetrics: sub,
+            requests,
+          };
         }
       }
       setSubordinateAttendance(att);
@@ -1247,17 +1302,21 @@ export default function EmployeeDashboard() {
   const partnerTeamRows: PartnerTeamRow[] = useMemo(() => {
     const out: PartnerTeamRow[] = [];
     for (const sub of subordinates) {
-      const pack = subordinateAttendance[sub._id];
-      if (!pack?.summary || !pack.userForMetrics) continue;
+      const userId = normalizeUserId(sub._id);
+      if (!userId) continue;
+      const pack = subordinateAttendance[userId];
+      const metricsUser = pack?.userForMetrics ?? sub;
+      const summaryForMetrics =
+        pack?.summary ?? emptyAttendanceSummary(userId, sub, monthYear);
       const m = computeSummaryAlignedMetrics(
-        pack.summary,
-        pack.userForMetrics,
+        summaryForMetrics,
+        metricsUser,
         holidays,
         monthYear
       );
       if (!m) continue;
       out.push({
-        userId: sub._id,
+        userId,
         name: sub.name,
         code: sub.employeeCode?.trim() || sub.odId || '—',
         metrics: m,
