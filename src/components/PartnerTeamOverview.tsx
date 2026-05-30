@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from "react";
 import type { SummaryAlignedMetrics } from "@/lib/attendanceSummaryMetrics";
 import { formatHoursMinutes } from "@/lib/attendanceSummaryMetrics";
-import { Trophy, AlertTriangle, BarChart3 } from "lucide-react";
+import { Trophy, AlertTriangle, BarChart3, ArrowUp, ArrowDown } from "lucide-react";
 
 export interface PartnerTeamRow {
   userId: string;
@@ -55,12 +55,6 @@ function compareLeaderboardQuality(a: PartnerTeamRow, b: PartnerTeamRow): number
   return mb.totalPresent - ma.totalPresent;
 }
 
-function attendanceQualityRate(m: SummaryAlignedMetrics): number | null {
-  const w = m.workingDaysInRecords;
-  if (w <= 0) return null;
-  return (m.totalPresent + 0.5 * m.totalHalfDay) / w;
-}
-
 /** Needs attention: absent >> late >> half day (one absent outweighs many lates or half days). */
 const ATTENTION_W_ABSENT = 100;
 const ATTENTION_W_LATE = 50;
@@ -75,6 +69,7 @@ function needsAttentionScore(m: SummaryAlignedMetrics): number {
 }
 
 export type LeaderboardSortMode = "present" | "absent" | "leave" | "excess" | "late";
+export type LeaderboardSortDirection = "asc" | "desc";
 
 /** Present-equivalent days (half day = ½). */
 function presentEquivHalf(m: SummaryAlignedMetrics): number {
@@ -143,17 +138,38 @@ const LEADERBOARD_SORT_MODES: LeaderboardSortMode[] = [
   "late",
 ];
 
-const LEADERBOARD_MODE_HINT: Record<LeaderboardSortMode, string> = {
-  present:
-    "Most present days first (½ per half day), then fewer absences. 0 present → last.",
-  absent:
-    "Fewest absent days first, then more present days. 0 present → last.",
-  leave:
-    "Fewest full leave days used first, then fewer absences, then more present. 0 present → last.",
-  excess:
-    "Highest excess vs scheduled first (month total; + worked more, − short). Then present, then absent. 0 present → last.",
-  late:
-    "Fewest late arrivals first, then fewer absences, then more present. 0 present → last.",
+const DEFAULT_SORT_DIRECTION: Record<LeaderboardSortMode, LeaderboardSortDirection> = {
+  present: "desc",
+  absent: "asc",
+  leave: "asc",
+  excess: "desc",
+  late: "asc",
+};
+
+const LEADERBOARD_MODE_HINT: Record<
+  LeaderboardSortMode,
+  Record<LeaderboardSortDirection, string>
+> = {
+  present: {
+    desc: "Most present days first (½ per half day), then fewer absences.",
+    asc: "Fewest present days first, then fewer absences.",
+  },
+  absent: {
+    asc: "Fewest absent days first, then more present days.",
+    desc: "Most absent days first, then fewer present days.",
+  },
+  leave: {
+    asc: "Fewest full leave days used first, then fewer absences.",
+    desc: "Most full leave days used first, then more absences.",
+  },
+  excess: {
+    desc: "Highest excess vs scheduled first (+ worked more, − short).",
+    asc: "Lowest excess / highest deficit vs scheduled first.",
+  },
+  late: {
+    asc: "Fewest late arrivals first, then fewer absences.",
+    desc: "Most late arrivals first, then more absences.",
+  },
 };
 
 const LEADERBOARD_MODE_LABEL: Record<LeaderboardSortMode, string> = {
@@ -171,6 +187,18 @@ export function PartnerTeamOverview({
 }: PartnerTeamOverviewProps) {
   const period = formatMonthLabel(monthYear);
   const [leaderMode, setLeaderMode] = useState<LeaderboardSortMode>("present");
+  const [leaderDirection, setLeaderDirection] = useState<LeaderboardSortDirection>(
+    DEFAULT_SORT_DIRECTION.present
+  );
+
+  const handleLeaderModeClick = (mode: LeaderboardSortMode) => {
+    if (mode === leaderMode) {
+      setLeaderDirection((d) => (d === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setLeaderMode(mode);
+    setLeaderDirection(DEFAULT_SORT_DIRECTION[mode]);
+  };
 
   const sortedLeaderboard = useMemo(() => {
     const cmp =
@@ -183,8 +211,11 @@ export function PartnerTeamOverview({
             : leaderMode === "excess"
               ? compareExcessMode
               : compareLateMode;
-    return [...rows].sort((a, b) => compareWithZeroPresentLast(a, b, cmp));
-  }, [rows, leaderMode]);
+    const dirMul = leaderDirection === DEFAULT_SORT_DIRECTION[leaderMode] ? 1 : -1;
+    return [...rows].sort(
+      (a, b) => dirMul * compareWithZeroPresentLast(a, b, cmp)
+    );
+  }, [rows, leaderMode, leaderDirection]);
 
   const attentionList = useMemo(() => {
     return [...rows]
@@ -273,46 +304,47 @@ export function PartnerTeamOverview({
                 role="group"
                 aria-label="Leaderboard ranking type"
               >
-                {LEADERBOARD_SORT_MODES.map((mode) => (
+                {LEADERBOARD_SORT_MODES.map((mode) => {
+                  const isActive = leaderMode === mode;
+                  const DirectionIcon =
+                    leaderDirection === "asc" ? ArrowUp : ArrowDown;
+                  return (
                   <button
                     key={mode}
                     type="button"
-                    aria-pressed={leaderMode === mode}
-                    onClick={() => setLeaderMode(mode)}
-                    className={`rounded-md px-2.5 py-1.5 text-[11px] font-medium transition ${
-                      leaderMode === mode
+                    aria-pressed={isActive}
+                    aria-label={`${LEADERBOARD_MODE_LABEL[mode]} — sort ${
+                      isActive ? leaderDirection : DEFAULT_SORT_DIRECTION[mode]
+                    }`}
+                    onClick={() => handleLeaderModeClick(mode)}
+                    className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] font-medium transition ${
+                      isActive
                         ? "bg-surface text-foreground shadow-[inset_0_0_0_1px_rgba(147,197,253,0.35)]"
                         : "text-muted-foreground hover:bg-surface/70 hover:text-foreground"
                     }`}
                   >
                     {LEADERBOARD_MODE_LABEL[mode]}
+                    {isActive && (
+                      <DirectionIcon className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
+                    )}
                   </button>
-                ))}
+                );
+                })}
               </div>
             </div>
             <p className="text-[10px] leading-snug text-muted-foreground">
-              {LEADERBOARD_MODE_HINT[leaderMode]}
+              {LEADERBOARD_MODE_HINT[leaderMode][leaderDirection]} Tap the active filter again to reverse order.
             </p>
           </div>
           <ol className="space-y-2">
             {sortedLeaderboard.map((r, i) => {
-              const qRate = attendanceQualityRate(r.metrics);
               const ex = r.metrics.calcExcessDeficit;
-              const equiv = presentEquivHalf(r.metrics);
               const m = r.metrics;
 
               let titleHint = r.name;
               let badge: React.ReactNode = null;
               if (leaderMode === "present") {
-                titleHint = `${r.name} — ${equiv} present-equivalent days (P ${m.totalPresent}, ½×${m.totalHalfDay})`;
-                badge = (
-                  <span
-                    className="rounded bg-emerald-500/15 px-1.5 py-px font-mono text-[10px] tabular-nums text-emerald-800"
-                    title="Present-equivalent days (half day = ½)"
-                  >
-                    P {equiv % 1 === 0 ? String(equiv) : equiv.toFixed(1)}
-                  </span>
-                );
+                titleHint = `${r.name} — ${m.totalPresent} present day${m.totalPresent === 1 ? "" : "s"} this month`;
               } else if (leaderMode === "absent") {
                 titleHint = `${r.name} — ${m.totalAbsent} absent day${m.totalAbsent === 1 ? "" : "s"} this month`;
                 badge = (
@@ -390,14 +422,6 @@ export function PartnerTeamOverview({
                     <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                       <p className="font-mono text-[10px] text-muted-foreground">{r.code}</p>
                       {badge}
-                      {qRate != null && leaderMode !== "excess" && (
-                        <span
-                          className="rounded bg-background px-1.5 py-px font-mono text-[10px] tabular-nums text-muted-foreground border border-border"
-                          title="% of working days (present + ½ per half day)"
-                        >
-                          {Math.round(qRate * 100)}%
-                        </span>
-                      )}
                     </div>
                   </div>
                   <div className="shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
