@@ -1,7 +1,8 @@
 "use client";
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Mail, ArrowRight, Loader2 } from 'lucide-react';
+import { Mail, ArrowRight, Loader2, ShieldCheck } from 'lucide-react';
 
 export default function EmployeeLoginPage() {
   const [email, setEmail] = useState('');
@@ -186,6 +187,16 @@ export default function EmployeeLoginPage() {
               </button>
             )}
           </form>
+
+          <div className="mt-6 border-t border-zinc-800 pt-6">
+            <Link
+              href="/"
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-zinc-700 bg-zinc-950/80 px-4 py-2.5 text-sm font-medium text-zinc-300 transition-colors hover:border-emerald-600/50 hover:bg-zinc-900 hover:text-emerald-400"
+            >
+              <ShieldCheck className="h-4 w-4 shrink-0" aria-hidden />
+              Login as admin
+            </Link>
+          </div>
         </div>
       </div>
     </div>

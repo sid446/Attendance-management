@@ -1,5 +1,6 @@
 import React from 'react';
-import { FileSpreadsheet, Lock, Mail } from 'lucide-react';
+import Link from 'next/link';
+import { FileSpreadsheet, Lock, Mail, UserCircle } from 'lucide-react';
 
 interface LoginViewProps {
   loginStep: 'password' | 'otp';
@@ -141,6 +142,16 @@ export const LoginView: React.FC<LoginViewProps> = ({
           <p className="mt-6 text-center text-[11px] text-slate-500">
             OTP will be sent to the admin email for verification
           </p>
+
+          <div className="mt-4 border-t border-slate-200 pt-4">
+            <Link
+              href="/employee/login"
+              className="flex w-full items-center justify-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-blue-200 hover:bg-blue-50 hover:text-blue-800"
+            >
+              <UserCircle className="h-4 w-4 shrink-0" aria-hidden />
+              Login as employee
+            </Link>
+          </div>
         </div>
       </div>
     </div>
