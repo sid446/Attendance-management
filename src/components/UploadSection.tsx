@@ -1,5 +1,6 @@
 import React, { ChangeEvent, useState, useEffect } from 'react';
 import { Upload, AlertCircle, ChevronDown, ChevronUp, FileSpreadsheet, ChevronRight, Download, History, Clock, Users } from 'lucide-react';
+import { confirmMajorAction } from '@/lib/confirmMajorAction';
 
 interface MachineFormat {
   machineId: string;
@@ -141,6 +142,18 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   const assignPendingMatch = async (pendingId: string) => {
     const userId = selectedCandidateByPending[pendingId];
     if (!userId) return;
+    const row = pendingReviewRows.find((r) => r._id === pendingId);
+    const candidate = row?.candidates.find((c) => c.userId === userId);
+    if (
+      !confirmMajorAction('Apply pending attendance name match', [
+        row ? `Name from file: ${row.uploadName}` : '',
+        row ? `Month: ${row.monthYear} (${row.dayCount} day(s))` : '',
+        candidate ? `Match to: ${candidate.name}` : '',
+        'Uploaded attendance rows will be assigned to the selected employee.',
+      ].filter(Boolean))
+    ) {
+      return;
+    }
     setAssigningPendingId(pendingId);
     try {
       const response = await fetch('/api/pending-attendance/assign', {
@@ -263,6 +276,61 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showMachineDropdown, showAddForm]);
 
+  const runProcessMachineFiles = () => {
+    if (selectedFiles.length === 0) return;
+    const fileLabel =
+      selectedFiles.length === 1 ? selectedFiles[0].name : `${selectedFiles.length} files`;
+    if (
+      !confirmMajorAction(
+        `Process machine attendance export${selectedFiles.length > 1 ? 's' : ''}`,
+        [
+          `File(s): ${fileLabel}`,
+          `Machine format: ${currentFormat?.name || machineFormat}`,
+          'This will import punch data and create or update attendance records for matched employees.',
+        ]
+      )
+    ) {
+      return;
+    }
+    if (selectedFiles.length > 1) {
+      if (onProcessMultiple) {
+        onProcessMultiple(selectedFiles);
+      } else if (onProcessFile) {
+        onProcessFile();
+      }
+    } else {
+      onProcessFile?.();
+    }
+  };
+
+  const runProcessFixedFiles = () => {
+    if (selectedFixedFiles.length === 0) return;
+    const fileLabel =
+      selectedFixedFiles.length === 1
+        ? selectedFixedFiles[0].name
+        : `${selectedFixedFiles.length} files`;
+    if (
+      !confirmMajorAction(
+        `Process fixed attendance sheet${selectedFixedFiles.length > 1 ? 's' : ''}`,
+        [
+          `File(s): ${fileLabel}`,
+          'This will import present/absent, in-time, and out-time rows from the fixed sheet format.',
+        ]
+      )
+    ) {
+      return;
+    }
+    if (selectedFixedFiles.length > 1) {
+      if (onProcessMultipleFixed) {
+        onProcessMultipleFixed(selectedFixedFiles);
+      } else if (onProcessFixedFile) {
+        onProcessFixedFile();
+      }
+    } else {
+      onProcessFixedFile?.();
+    }
+  };
+
   // Get current machine format details
   const currentFormat = machineFormats.find(f => f.machineId === machineFormat);
 
@@ -284,14 +352,26 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   const handleAddMachine = async (e: React.FormEvent) => {
     e.preventDefault();
     setAddError(null);
+
+    const headersArray = newMachine.headers.split(',').map(h => h.trim()).filter(h => h.length > 0);
+    if (headersArray.length === 0) {
+      setAddError('At least one header is required');
+      return;
+    }
+
+    if (
+      !confirmMajorAction('Add a new machine attendance format', [
+        `Machine ID: ${newMachine.machineId}`,
+        `Name: ${newMachine.name}`,
+        `Headers: ${headersArray.join(', ')}`,
+      ])
+    ) {
+      return;
+    }
+
     setAddingMachine(true);
 
     try {
-      const headersArray = newMachine.headers.split(',').map(h => h.trim()).filter(h => h.length > 0);
-
-      if (headersArray.length === 0) {
-        throw new Error('At least one header is required');
-      }
 
       const response = await fetch('/api/machine-formats', {
         method: 'POST',
@@ -536,17 +616,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
           </label>
           <button
             type="button"
-            onClick={() => {
-              if (selectedFiles.length > 1) {
-                if (onProcessMultiple) {
-                  onProcessMultiple(selectedFiles);
-                } else if (onProcessFile) {
-                  onProcessFile();
-                }
-              } else {
-                onProcessFile?.();
-              }
-            }}
+            onClick={runProcessMachineFiles}
             disabled={selectedFiles.length === 0 || processing}
             className="inline-flex shrink-0 items-center justify-center rounded-md bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-[10rem]"
           >
@@ -584,17 +654,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
           </label>
           <button
             type="button"
-            onClick={() => {
-              if (selectedFixedFiles.length > 1) {
-                if (onProcessMultipleFixed) {
-                  onProcessMultipleFixed(selectedFixedFiles);
-                } else if (onProcessFixedFile) {
-                  onProcessFixedFile();
-                }
-              } else {
-                onProcessFixedFile?.();
-              }
-            }}
+            onClick={runProcessFixedFiles}
             disabled={selectedFixedFiles.length === 0 || processing}
             className="inline-flex shrink-0 items-center justify-center rounded-md border border-blue-200/65 bg-panel px-4 py-2.5 text-xs font-semibold text-slate-800 transition-colors hover:border-blue-200 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-[10rem]"
           >

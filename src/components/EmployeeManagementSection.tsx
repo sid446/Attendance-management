@@ -5,6 +5,7 @@ import { User as UserBase, ScheduleTime, DailySchedule } from '@/types/ui';
 import { fullEditDefaults, type EmployeeManagementTabId, type HrAccessLevel } from '@/lib/hrConsolePermissionUtils';
 import { pickEditableUserPutBody, type EmployeeTabAccess } from '@/lib/hrEmployeeSaveFilter';
 import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
+import { confirmMajorAction } from '@/lib/confirmMajorAction';
 import { createDefaultDailySchedule, cloneDailySchedule } from '@/lib/defaultDailySchedule';
 import { ScheduleTemplateToolbar } from '@/components/ScheduleTemplateToolbar';
 import { ScheduleTemplateModal, type ScheduleTemplateRecord } from '@/components/ScheduleTemplateModal';
@@ -449,7 +450,11 @@ export const EmployeeManagementSection: React.FC<{
       alert('You do not have permission to deactivate employees.');
       return;
     }
-    if (!window.confirm(`Are you sure you want to delete employee "${user.name}"? This will deactivate their account.`)) {
+    if (
+      !confirmMajorAction(`Deactivate employee "${user.name}"`, [
+        'This will deactivate their account.',
+      ])
+    ) {
       return;
     }
 
@@ -634,6 +639,14 @@ export const EmployeeManagementSection: React.FC<{
       return;
     }
 
+    if (
+      !confirmMajorAction(`Add extra field "${label}" to all employees`, [
+        'A new blank column will appear on every employee profile.',
+      ])
+    ) {
+      return;
+    }
+
     setIsSavingExtraLabel(true);
     try {
       const res = await fetch('/api/users/extra-info', hrCredentialsInit({
@@ -693,6 +706,14 @@ export const EmployeeManagementSection: React.FC<{
       return;
     }
 
+    if (
+      !confirmMajorAction(`Add "${trimmedValue}" to ${type} options`, [
+        'This value will be available in employee dropdowns.',
+      ])
+    ) {
+      return;
+    }
+
     setIsSavingPredefinedValue(true);
     try {
       const res = await fetch('/api/users/predefined-values', hrCredentialsInit({
@@ -716,7 +737,13 @@ export const EmployeeManagementSection: React.FC<{
   };
 
   const handleRemovePredefinedValue = async (type: keyof typeof predefinedValues, value: string) => {
-    if (!window.confirm(`Remove "${value}" from ${type}?`)) return;
+    if (
+      !confirmMajorAction(`Remove "${value}" from ${type} options`, [
+        'This value will no longer appear in employee dropdowns.',
+      ])
+    ) {
+      return;
+    }
     
     try {
       const res = await fetch('/api/users/predefined-values', hrCredentialsInit({
@@ -942,9 +969,17 @@ export const EmployeeManagementSection: React.FC<{
     name: string;
     daily: DailySchedule;
   }) => {
+    const isEdit = Boolean(payload._id);
+    if (
+      !confirmMajorAction(
+        isEdit ? `Update schedule template "${payload.name}"` : `Create schedule template "${payload.name}"`,
+        ['Predefined schedule templates can be applied to employee profiles.']
+      )
+    ) {
+      return;
+    }
     setIsSavingScheduleTemplate(true);
     try {
-      const isEdit = Boolean(payload._id);
       const res = await fetch('/api/schedule-templates', hrCredentialsInit({
         method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -964,7 +999,13 @@ export const EmployeeManagementSection: React.FC<{
   };
 
   const handleDeleteScheduleTemplate = async (id: string) => {
-    if (!window.confirm('Delete this predefined schedule? This cannot be undone.')) return;
+    if (
+      !confirmMajorAction('Delete this predefined schedule template', [
+        'This cannot be undone.',
+      ])
+    ) {
+      return;
+    }
     setIsSavingScheduleTemplate(true);
     try {
       const res = await fetch('/api/schedule-templates', hrCredentialsInit({
@@ -1081,6 +1122,15 @@ export const EmployeeManagementSection: React.FC<{
       }
     }
 
+    if (
+      !confirmMajorAction(`Save changes for ${editingUser.name}`, [
+        'Employee profile, schedule, and history fields you edited will be updated in the database.',
+        changeReason ? `Reason: ${changeReason}` : '',
+      ].filter(Boolean))
+    ) {
+      return;
+    }
+
     setSaveLoading(true);
     setError(null);
 
@@ -1147,6 +1197,16 @@ export const EmployeeManagementSection: React.FC<{
 
     if (!employeesCanEdit || tabAccess.basic !== 'edit') {
       setError('You do not have permission to create employees.');
+      return;
+    }
+
+    if (
+      !confirmMajorAction(`Create new employee ${formData.name}`, [
+        `Email: ${formData.email}`,
+        `OD ID: ${formData.odId}`,
+        'A new employee record will be added to the system.',
+      ])
+    ) {
       return;
     }
 
@@ -1463,6 +1523,16 @@ export const EmployeeManagementSection: React.FC<{
         };
       }).filter(Boolean);
 
+      if (
+        !confirmMajorAction('Bulk update employees from Excel', [
+          `File: ${file.name}`,
+          `${employees.length} employee row(s) found`,
+          'Matched employees will be created or updated from the spreadsheet.',
+        ])
+      ) {
+        return;
+      }
+
       const response = await fetch('/api/users/bulk-update', hrCredentialsInit({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1557,6 +1627,16 @@ export const EmployeeManagementSection: React.FC<{
           });
       }
 
+      if (
+        !confirmMajorAction('Bulk update employee schedules from Excel', [
+          `File: ${file.name}`,
+          `${schedules.length} schedule row(s) found`,
+          'Matched employees will have their daily schedule times updated.',
+        ])
+      ) {
+        return;
+      }
+
       const response = await fetch('/api/users/bulk-schedule-update', hrCredentialsInit({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1582,20 +1662,6 @@ export const EmployeeManagementSection: React.FC<{
   const handleLeaveBalanceUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    // Show confirmation dialog
-    const confirmed = window.confirm(
-      'This will update leave balances ONLY for employees present in the Excel file.\n\n' +
-      '• Only employees listed in the Excel will be affected\n' +
-      '• No other employees will be modified\n' +
-      '• Existing leave balances will be replaced with Excel data\n\n' +
-      'Do you want to proceed?'
-    );
-
-    if (!confirmed) {
-      e.target.value = ''; // Reset file input
-      return;
-    }
 
     setIsUploading(true);
     setUploadStats(null);
@@ -1657,6 +1723,17 @@ export const EmployeeManagementSection: React.FC<{
 
       if (leaveData.length === 0) {
         throw new Error('No leave data found in the file');
+      }
+
+      if (
+        !confirmMajorAction('Update leave balances from Excel', [
+          `File: ${file.name}`,
+          `${leaveData.length} employee row(s) found`,
+          'Only employees listed in the file will be updated.',
+          'Existing leave balances will be replaced with Excel data.',
+        ])
+      ) {
+        return;
       }
 
       const response = await fetch('/api/users/bulk-leave-update', hrCredentialsInit({
@@ -5368,7 +5445,13 @@ export const EmployeeManagementSection: React.FC<{
                               className="rounded p-0.5 text-slate-500 opacity-100 transition-opacity hover:bg-rose-50 hover:text-rose-700 sm:opacity-0 sm:group-hover:opacity-100"
                               aria-label={`Remove custom field ${label}`}
                               onClick={async () => {
-                                if (!window.confirm(`Remove field "${label}" from all employees?`)) return;
+                                if (
+                                  !confirmMajorAction(`Remove extra field "${label}" from all employees`, [
+                                    'This column will be deleted from every employee profile.',
+                                  ])
+                                ) {
+                                  return;
+                                }
                                 try {
                                   const res = await fetch('/api/users/extra-info', hrCredentialsInit({
                                     method: 'DELETE',

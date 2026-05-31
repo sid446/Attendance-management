@@ -9,6 +9,8 @@ import {
   rowErrorsFromMessages,
   saveUploadErrorLog,
 } from '@/lib/uploadErrorLogUtils';
+import { confirmMajorAction } from '@/lib/confirmMajorAction';
+import { getActiveUsersMissingFromUpload } from '@/lib/basicMasterUploadPresence';
 
 interface EmployeeMasterUploadSectionProps {
   onRefreshUsers?: () => void;
@@ -421,6 +423,40 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
         throw new Error('No valid employee rows found in file.');
       }
 
+      const modeLabel = mode === 'update' ? 'Update existing employees from master Excel' : 'Add new employees from master Excel';
+      const confirmDetails = [
+        `File: ${file.name}`,
+        `${employees.length} employee row(s) found`,
+        `Effective from: ${effectiveFrom}`,
+      ];
+      if (mode === 'update' && deactivateMissing) {
+        confirmDetails.push('Employees not listed in the file will be marked inactive.');
+
+        try {
+          const usersRes = await fetch('/api/users?listOnly=1', hrCredentialsInit());
+          const usersJson = await usersRes.json();
+          if (usersJson.success && Array.isArray(usersJson.data)) {
+            const { count, names } = getActiveUsersMissingFromUpload(employees, usersJson.data);
+            confirmDetails.push('');
+            if (count > 0) {
+              confirmDetails.push(`${count} active employee(s) will be marked inactive:`);
+              confirmDetails.push(...names.map((name) => `• ${name}`));
+              if (count > names.length) {
+                confirmDetails.push(`…and ${count - names.length} more`);
+              }
+            } else {
+              confirmDetails.push('No active employees will be marked inactive.');
+            }
+          }
+        } catch {
+          confirmDetails.push('');
+          confirmDetails.push('Could not load employee list to preview who will be marked inactive.');
+        }
+      }
+      if (!confirmMajorAction(modeLabel, confirmDetails)) {
+        return;
+      }
+
       const response = await fetch('/api/users/basic-master-upload', hrCredentialsInit({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -526,6 +562,17 @@ export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionPr
 
       if (!schedules.length) {
         throw new Error('No valid schedule rows found in file.');
+      }
+
+      if (
+        !confirmMajorAction('Bulk update employee schedules from Excel', [
+          `File: ${file.name}`,
+          `${schedules.length} schedule row(s) found`,
+          `Effective from: ${scheduleEffectiveFrom}`,
+          'Weekly schedule times will be updated for matched employees.',
+        ])
+      ) {
+        return;
       }
 
       const response = await fetch('/api/users/basic-schedule-upload', hrCredentialsInit({

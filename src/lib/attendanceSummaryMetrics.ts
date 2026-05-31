@@ -380,16 +380,223 @@ export function getWorkingDaysInRecordsCount(
   holidayDates: Set<string>
 ): number {
   const records = item.recordDetails || {};
-  return Object.entries(records).filter(([dateStr, rec]: [string, any]) => {
-    const d = new Date(dateStr);
-    if (d.getDay() === 0) return false;
-    if (holidayDates.has(dateStr)) return false;
-    if (typeof rec.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff')) {
-      return false;
-    }
-    return true;
-  }).length;
+  return Object.entries(records).filter(([dateStr, rec]: [string, any]) =>
+    isWorkingDayInRecords(dateStr, rec, holidayDates)
+  ).length;
 }
+
+function isWorkingDayInRecords(
+  dateStr: string,
+  rec: { typeOfPresence?: string },
+  holidayDates: Set<string>
+): boolean {
+  const d = new Date(dateStr);
+  if (d.getDay() === 0) return false;
+  if (holidayDates.has(dateStr)) return false;
+  if (typeof rec.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff')) {
+    return false;
+  }
+  return true;
+}
+
+function isHolidayInRecords(dateStr: string, holidayDates: Set<string>): boolean {
+  const d = new Date(dateStr);
+  if (d.getDay() === 0) return true;
+  return holidayDates.has(dateStr);
+}
+
+function isAbsentDayInRecords(
+  dateStr: string,
+  recAny: unknown,
+  holidayDates: Set<string>
+): boolean {
+  const rec: any = recAny || {};
+  const d = new Date(dateStr);
+  if (d.getDay() === 0) return false;
+  if (holidayDates.has(dateStr)) return false;
+  if (typeof rec.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff')) {
+    return false;
+  }
+  if (rec.typeOfPresence === 'Absent') return true;
+  if (rec.typeOfPresence === 'Leave' || rec.typeOfPresence === 'On leave') return true;
+
+  const typeLower = String(rec.typeOfPresence || '').toLowerCase();
+  const isPresenceType =
+    typeLower.includes('wfh') ||
+    typeLower.includes('outstation') ||
+    typeLower.includes('clientplace') ||
+    typeLower.includes('half day') ||
+    rec.halfDay;
+  if (isPresenceType) return false;
+
+  const effectiveCheckin = rec.editedCheckin || rec.checkin;
+  const effectiveCheckout = rec.editedCheckout || rec.checkout;
+  return (
+    (!effectiveCheckin || effectiveCheckin === '00:00') &&
+    (!effectiveCheckout || effectiveCheckout === '00:00')
+  );
+}
+
+function isPresentDayInRecords(recAny: unknown): boolean {
+  const rec: any = recAny || {};
+  const type = String(rec?.typeOfPresence || '');
+  const typeLower = type.toLowerCase();
+  const checkin = String(rec?.editedCheckin || rec?.checkin || '').trim();
+  const checkout = String(rec?.editedCheckout || rec?.checkout || '').trim();
+  const totalHour = Number(rec?.totalHour || 0);
+  const isHolidayLike =
+    type === 'Holiday' ||
+    type === 'Sunday' ||
+    type === 'Weekoff' ||
+    type === 'Weekoff - special allowance';
+
+  if (type === 'Leave' || type === 'On leave' || type === 'Absent' || isHolidayLike) {
+    return false;
+  }
+
+  const hasValidIn = checkin && checkin !== '00:00';
+  const hasValidOut = checkout && checkout !== '00:00';
+  const isPresenceType =
+    typeLower.includes('wfh') ||
+    typeLower.includes('outstation') ||
+    typeLower.includes('clientplace') ||
+    typeLower.includes('half day') ||
+    rec?.halfDay;
+
+  return !!(isPresenceType || hasValidIn || hasValidOut || totalHour > 0);
+}
+
+function isHalfDayInRecords(dateStr: string, recAny: unknown, user: User | undefined): boolean {
+  const r = recAny as any;
+  const effectiveCheckin = r?.editedCheckin || r?.checkin;
+  const effectiveCheckout = r?.editedCheckout || r?.checkout;
+  const isBothZero =
+    !(effectiveCheckin && effectiveCheckin !== '00:00') &&
+    !(effectiveCheckout && effectiveCheckout !== '00:00');
+  const d = new Date(dateStr);
+  const empTypeHalfDay = getEmploymentTypeForDate(user, d);
+  if (isHalftimeEmploymentType(empTypeHalfDay)) return false;
+  return !!(r?.halfDay && r?.typeOfPresence !== 'Holiday' && !isBothZero);
+}
+
+function isFullLeaveDayInRecords(recAny: unknown): boolean {
+  const record = recAny as any;
+  return (
+    (record?.typeOfPresence === 'On leave' || record?.typeOfPresence === 'Leave') &&
+    record?.value === 1
+  );
+}
+
+export type SummaryMetricDayKind =
+  | 'total-days'
+  | 'holidays'
+  | 'working-days'
+  | 'present'
+  | 'half-days'
+  | 'absent'
+  | 'late'
+  | 'leave';
+
+export interface SummaryMetricDayRow {
+  date: string;
+  dateLabel: string;
+  detail?: string;
+}
+
+function formatSummaryDayLabel(dateStr: string): string {
+  const d = new Date(`${dateStr}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString('en-IN', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
+}
+
+export function getSummaryMetricDays(
+  kind: SummaryMetricDayKind,
+  item: AttendanceSummaryView,
+  user: User | undefined,
+  holidays: { date: string }[]
+): SummaryMetricDayRow[] {
+  const holidayDates = new Set(holidays.map((h) => h.date));
+  const records = item.recordDetails || {};
+  const rows: SummaryMetricDayRow[] = [];
+
+  for (const [dateStr, recAny] of Object.entries(records)) {
+    const rec = recAny as any;
+    let include = false;
+    let detail: string | undefined;
+
+    switch (kind) {
+      case 'total-days':
+        include = true;
+        break;
+      case 'holidays':
+        include = isHolidayInRecords(dateStr, holidayDates);
+        if (include) {
+          detail =
+            new Date(`${dateStr}T12:00:00`).getDay() === 0
+              ? 'Sunday'
+              : 'Company holiday';
+        }
+        break;
+      case 'working-days':
+        include = isWorkingDayInRecords(dateStr, rec, holidayDates);
+        break;
+      case 'present':
+        include = isPresentDayInRecords(rec);
+        if (include) {
+          detail = String(rec.typeOfPresence || 'Present').trim() || undefined;
+        }
+        break;
+      case 'half-days':
+        include = isHalfDayInRecords(dateStr, rec, user);
+        break;
+      case 'absent':
+        include = isAbsentDayInRecords(dateStr, rec, holidayDates);
+        if (include) {
+          detail = String(rec.typeOfPresence || 'Absent').trim() || 'Absent';
+        }
+        break;
+      case 'late':
+        include = isLateArrivalLikeSummary(dateStr, rec, user);
+        if (include) {
+          const checkin = rec.editedCheckin || rec.checkin || rec.inTime || '—';
+          const scheduled = user ? getScheduledTimes(user, new Date(`${dateStr}T12:00:00`)).inTime : '';
+          detail = scheduled ? `In ${checkin} (sched. ${scheduled})` : `In ${checkin}`;
+        }
+        break;
+      case 'leave':
+        include = isFullLeaveDayInRecords(rec);
+        if (include) detail = 'Full leave day';
+        break;
+      default:
+        include = false;
+    }
+
+    if (include) {
+      rows.push({
+        date: dateStr,
+        dateLabel: formatSummaryDayLabel(dateStr),
+        detail,
+      });
+    }
+  }
+
+  return rows.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export const SUMMARY_METRIC_DAY_LABELS: Record<SummaryMetricDayKind, string> = {
+  'total-days': 'Total days',
+  holidays: 'Holidays',
+  'working-days': 'Working days',
+  present: 'Present days',
+  'half-days': 'Half days',
+  absent: 'Absent days',
+  late: 'Late arrivals',
+  leave: 'Leave days',
+};
 
 export function getScheduledHoursNoLunchForMonth(
   item: AttendanceSummaryView,

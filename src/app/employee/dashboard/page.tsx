@@ -117,6 +117,7 @@ import {
   PartnerTeamOverview,
   type PartnerTeamRow,
 } from '@/components/PartnerTeamOverview';
+import { ManageAttendanceApproverSection } from '@/components/ManageAttendanceApproverSection';
 import { SummarySection } from '@/components/SummarySection';
 import {
   computeSummaryAlignedMetrics,
@@ -136,6 +137,7 @@ import {
   MapPin,
   Users as UsersIcon,
   ClipboardList,
+  UserCog,
 } from 'lucide-react';
 
 function sessionToUser(raw: Record<string, unknown>): User {
@@ -343,7 +345,7 @@ function getCorrectionTimeDraft(dayRecord?: AttendanceRecord | null) {
 
 export default function EmployeeDashboard() {
   const [activeTab, setActiveTab] = useState<
-    'dashboard' | 'attendance' | 'clientPunch' | 'employees'
+    'dashboard' | 'attendance' | 'clientPunch' | 'employees' | 'manageApprovers'
   >('dashboard');
   // Mobile drawer open
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -357,6 +359,8 @@ export default function EmployeeDashboard() {
 
   // State for subordinates (if any)
   const [subordinates, setSubordinates] = useState<User[]>([]);
+  /** Employees whose Work Partner is this user (direct team for approver management). */
+  const [ownTeamCount, setOwnTeamCount] = useState(0);
   const [showTeamExportModal, setShowTeamExportModal] = useState(false);
   const [subordinateAttendance, setSubordinateAttendance] = useState<Record<string, SubordinateAttendancePack>>({});
   const [subLoading, setSubLoading] = useState(false);
@@ -426,6 +430,29 @@ export default function EmployeeDashboard() {
   useEffect(() => {
     fetchPartnerPendingReviewCount();
   }, [fetchPartnerPendingReviewCount]);
+
+  useEffect(() => {
+    if (!user?._id) {
+      setOwnTeamCount(0);
+      return;
+    }
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/employee/team-attendance-approver?viewerUserId=${encodeURIComponent(user._id)}`,
+          { cache: 'no-store' }
+        );
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data?.members)) {
+          setOwnTeamCount(json.data.members.length);
+        } else {
+          setOwnTeamCount(0);
+        }
+      } catch {
+        setOwnTeamCount(0);
+      }
+    })();
+  }, [user?._id]);
 
   useEffect(() => {
     const onVis = () => {
@@ -1492,7 +1519,9 @@ export default function EmployeeDashboard() {
                     ? 'Attendance'
                     : activeTab === 'clientPunch'
                       ? 'Client location punch'
-                      : 'Team'}
+                      : activeTab === 'manageApprovers'
+                        ? 'Manage approvers'
+                        : 'Team'}
               </h1>
               <p className="truncate text-[11px] text-muted-foreground sm:text-xs">
                 <span className="hidden sm:inline">Asija and Associates LLP · </span>
@@ -1657,6 +1686,21 @@ export default function EmployeeDashboard() {
             </button>
           )}
 
+          {ownTeamCount > 0 && (
+            <button
+              type="button"
+              className={navItemClass(activeTab === 'manageApprovers')}
+              onClick={() => {
+                setActiveTab('manageApprovers');
+                setSidebarOpen(false);
+              }}
+              title="Manage attendance approver"
+            >
+              <UserCog className="h-5 w-5 shrink-0 opacity-90" aria-hidden />
+              <span className={desktopSidebarCollapsed ? 'md:sr-only' : ''}>Manage approvers</span>
+            </button>
+          )}
+
           <button
             type="button"
             className={`${navItemClass(false)} mt-1`}
@@ -1687,6 +1731,8 @@ export default function EmployeeDashboard() {
                 monthYear={monthYear}
                 onMonthYearChange={handleMonthChange}
                 alignedMetrics={alignedMetrics}
+                summary={summary}
+                holidays={holidays}
                 chartDailySeries={chartDailySeries}
                 requestsPending={pendingRequestCount}
                 isLoadingMetrics={fetchLoading}
@@ -1876,6 +1922,10 @@ export default function EmployeeDashboard() {
                   </div>
                 )}
               </>
+            )}
+
+            {activeTab === 'manageApprovers' && user && (
+              <ManageAttendanceApproverSection viewerUserId={user._id} />
             )}
           </div>
         </main>

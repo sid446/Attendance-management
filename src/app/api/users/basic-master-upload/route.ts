@@ -18,6 +18,11 @@ import {
   effectiveFromDoc,
 } from '@/lib/hrConsolePermissionUtils';
 import { formatRowIdentifier } from '@/lib/uploadErrorLogUtils';
+import {
+  buildUploadPresence,
+  isUserPresentInUpload,
+  normalizeUploadText,
+} from '@/lib/basicMasterUploadPresence';
 
 type UploadMode = 'update' | 'add';
 
@@ -34,38 +39,6 @@ function parseDate(value: unknown): Date | undefined {
 }
 
 const DEFAULT_BASELINE_EFFECTIVE_FROM = LEGACY_BASELINE_EFFECTIVE_FROM;
-
-function nameLookupKeys(name: string): string[] {
-  const key = normalizeText(name).toLowerCase();
-  if (!key) return [];
-  return [key, key.replace(/\s+/g, '.'), key.replace(/\./g, ' ')];
-}
-
-function buildUploadPresence(employees: unknown[]) {
-  const codes = new Set<string>();
-  const names = new Set<string>();
-  for (const emp of employees) {
-    if (!emp || typeof emp !== 'object') continue;
-    const row = emp as Record<string, unknown>;
-    const code = normalizeText(row.employeeCode).toLowerCase();
-    if (code) codes.add(code);
-    const rowName = normalizeText(row.name);
-    for (const k of nameLookupKeys(rowName)) names.add(k);
-  }
-  return { codes, names };
-}
-
-function isUserPresentInUpload(
-  user: IUser,
-  presence: { codes: Set<string>; names: Set<string> }
-): boolean {
-  const code = normalizeText((user as any).employeeCode).toLowerCase();
-  if (code && presence.codes.has(code)) return true;
-  for (const k of nameLookupKeys(normalizeText((user as any).name))) {
-    if (presence.names.has(k)) return true;
-  }
-  return false;
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -340,9 +313,9 @@ export async function POST(request: NextRequest) {
         stats.deactivated++;
         if (stats.deactivatedNames.length < 50) {
           const label =
-            normalizeText((user as any).name) ||
-            normalizeText((user as any).employeeCode) ||
-            normalizeText((user as any).email);
+            normalizeUploadText(user.name) ||
+            normalizeUploadText((user as any).employeeCode) ||
+            normalizeUploadText(user.email);
           if (label) stats.deactivatedNames.push(label);
         }
       }
