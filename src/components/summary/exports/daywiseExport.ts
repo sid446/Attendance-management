@@ -31,9 +31,16 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
 
     if (filteredSummaries.length === 0) return;
 
+    const summariesToExport =
+      selectedEmployeeIds.size > 0
+        ? filteredSummaries.filter((item) => selectedEmployeeIds.has(item.userId))
+        : filteredSummaries;
+
+    if (summariesToExport.length === 0) return;
+
     // 1. Fetch holidays for the relevant year(s)
     let years = new Set<number>();
-    filteredSummaries.forEach((summary) => {
+    summariesToExport.forEach((summary) => {
       if (summary && summary.recordDetails) {
         Object.keys(summary.recordDetails).forEach(dateStr => {
           years.add(Number(dateStr.substring(0, 4)));
@@ -355,7 +362,7 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
     };
 
     // Loop through each summary and each day
-    for (const item of filteredSummaries) {
+    for (const item of summariesToExport) {
     const daywiseUser = allUsers?.find((u) => u._id === item.userId || u.odId === item.userId);
     // These must be declared inside the forEach to be scoped per summary
     const dailyExcessShortSeconds: number[] = [];
