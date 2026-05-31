@@ -205,6 +205,7 @@ export const USER_PUT_KEY_TO_EMPLOYEE_TABS: Record<string, EmployeeManagementTab
   gratuity: ['salary'],
   managedEffectiveFrom: ['salary'],
   managedEffectiveFromByField: ['basic', 'extended', 'salary'],
+  fieldHistories: ['basic', 'extended', 'salary'],
   articleCreditsAsOnJan26: ['salary'],
   leaveBalance: ['salary'],
 };

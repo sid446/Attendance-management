@@ -289,6 +289,47 @@ export function applyManagedEffectiveHistories(
   }
 }
 
+export function getActiveFieldHistoryEntry(
+  history: FieldHistoryEntry[] | undefined | null
+): FieldHistoryEntry | null {
+  if (!Array.isArray(history) || history.length === 0) return null;
+
+  const openEnded = history.filter(
+    (entry) =>
+      entry &&
+      entry.value !== undefined &&
+      (entry.effectiveTo === null || entry.effectiveTo === undefined || entry.effectiveTo === '')
+  );
+  if (openEnded.length > 0) {
+    openEnded.sort(
+      (a, b) =>
+        new Date(b.effectiveFrom as string | Date).getTime() -
+        new Date(a.effectiveFrom as string | Date).getTime()
+    );
+    return openEnded[0];
+  }
+
+  const sorted = [...history].sort(
+    (a, b) =>
+      new Date(b.effectiveFrom as string | Date).getTime() -
+      new Date(a.effectiveFrom as string | Date).getTime()
+  );
+  return sorted[0] || null;
+}
+
+/** Set each managed field's current value from its open-ended (or latest) history segment. */
+export function syncUserFieldsFromFieldHistories(
+  user: UserWithFieldHistories,
+  fields: readonly ManagedEffectiveField[] = MANAGED_EFFECTIVE_FIELDS
+): void {
+  for (const field of fields) {
+    const active = getActiveFieldHistoryEntry(user.fieldHistories?.[field]);
+    if (active?.value !== undefined) {
+      user[field] = active.value;
+    }
+  }
+}
+
 export function seedManagedEffectiveHistories(
   user: any,
   options?: { effectiveFrom?: Date; source?: SourceType }

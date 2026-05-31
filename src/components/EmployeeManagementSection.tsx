@@ -3,9 +3,10 @@ import { Edit2, Save, X, Plus, Upload, FileUp, Filter, Trash2, Search, Download,
 import * as XLSX from 'xlsx';
 import { User as UserBase, ScheduleTime, DailySchedule } from '@/types/ui';
 import { fullEditDefaults, type EmployeeManagementTabId, type HrAccessLevel } from '@/lib/hrConsolePermissionUtils';
-import { pickEditableUserPutBody, type EmployeeTabAccess } from '@/lib/hrEmployeeSaveFilter';
+import { pickEditableUserPutBody, pickEditableFieldHistories, type EmployeeTabAccess } from '@/lib/hrEmployeeSaveFilter';
 import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
 import { confirmMajorAction } from '@/lib/confirmMajorAction';
+import { getActiveFieldHistoryEntry } from '@/lib/userFieldHistory';
 import { createDefaultDailySchedule, cloneDailySchedule } from '@/lib/defaultDailySchedule';
 import { ScheduleTemplateToolbar } from '@/components/ScheduleTemplateToolbar';
 import { ScheduleTemplateModal, type ScheduleTemplateRecord } from '@/components/ScheduleTemplateModal';
@@ -308,6 +309,14 @@ export const EmployeeManagementSection: React.FC<{
   } | null>(null);
   /** Per field: expanded history panel (effective from + end date for every segment). */
   const [fieldHistoryExpanded, setFieldHistoryExpanded] = useState<Partial<Record<FieldHistoryKey, boolean>>>({});
+  const [fieldHistoryEdit, setFieldHistoryEdit] = useState<{
+    field: FieldHistoryKey;
+    originalEffectiveFrom: string;
+    originalValue: string;
+    value: string;
+    effectiveFrom: string;
+    effectiveTo: string;
+  } | null>(null);
   const openedForSelectionRef = useRef<string | null>(null);
   /** Bumped on unmount and before each users-list fetch so stale responses cannot overwrite newer state (e.g. after delete). */
   const usersListFetchGenerationRef = useRef(0);
@@ -525,6 +534,9 @@ export const EmployeeManagementSection: React.FC<{
   // Employment type history state for UI
   const [newEmploymentType, setNewEmploymentType] = useState<string>('');
   const [newEmploymentTypeDate, setNewEmploymentTypeDate] = useState<string>('');
+  const [employmentTypeEditIdx, setEmploymentTypeEditIdx] = useState<number | null>(null);
+  const [employmentTypeEditValue, setEmploymentTypeEditValue] = useState<string>('');
+  const [employmentTypeEditDate, setEmploymentTypeEditDate] = useState<string>('');
 
   const handleInputChange = (field: keyof User, value: any) => {
     if (denyEdits) return;
@@ -563,8 +575,15 @@ export const EmployeeManagementSection: React.FC<{
 
   // Add new employment type history entry
   const handleDeleteEmploymentTypeHistory = (index: number) => {
+    if (
+      !confirmMajorAction('Delete this employment type history entry', [
+        'The entry will be removed when you save the employee.',
+      ])
+    ) {
+      return;
+    }
     setFormData(prev => {
-      const history = Array.isArray(prev.employmentType) ? [...prev.employmentType] : [];
+      const history = Array.isArray(prev.employmentTypeHistory) ? [...prev.employmentTypeHistory] : [];
       history.splice(index, 1);
       return {
         ...prev,
@@ -572,12 +591,44 @@ export const EmployeeManagementSection: React.FC<{
         employmentType: history.length > 0 ? history[history.length - 1].employmentType : '',
       };
     });
+    if (employmentTypeEditIdx === index) {
+      setEmploymentTypeEditIdx(null);
+    }
+  };
+
+  const handleStartEditEmploymentTypeHistory = (index: number) => {
+    const entry = formData.employmentTypeHistory?.[index];
+    if (!entry) return;
+    setEmploymentTypeEditIdx(index);
+    setEmploymentTypeEditValue(entry.employmentType || '');
+    setEmploymentTypeEditDate(toDateInputValue(entry.effectiveFrom));
+  };
+
+  const handleSaveEmploymentTypeHistoryEdit = () => {
+    if (employmentTypeEditIdx == null || !employmentTypeEditValue || !employmentTypeEditDate) return;
+    setFormData(prev => {
+      const history = Array.isArray(prev.employmentTypeHistory) ? [...prev.employmentTypeHistory] : [];
+      if (!history[employmentTypeEditIdx]) return prev;
+      history[employmentTypeEditIdx] = {
+        employmentType: employmentTypeEditValue,
+        effectiveFrom: employmentTypeEditDate,
+      };
+      history.sort((a, b) => new Date(a.effectiveFrom).getTime() - new Date(b.effectiveFrom).getTime());
+      return {
+        ...prev,
+        employmentTypeHistory: history,
+        employmentType: history[history.length - 1]?.employmentType || '',
+      };
+    });
+    setEmploymentTypeEditIdx(null);
+    setEmploymentTypeEditValue('');
+    setEmploymentTypeEditDate('');
   };
 
   const handleAddEmploymentTypeHistory = () => {
     if (!newEmploymentType || !newEmploymentTypeDate) return;
     setFormData(prev => {
-      const history = Array.isArray(prev.employmentType) ? [...prev.employmentType] : [];
+      const history = Array.isArray(prev.employmentTypeHistory) ? [...prev.employmentTypeHistory] : [];
       history.push({ employmentType: newEmploymentType, effectiveFrom: new Date(newEmploymentTypeDate) });
       // Sort by date ascending
       history.sort((a, b) => new Date(a.effectiveFrom).getTime() - new Date(b.effectiveFrom).getTime());
@@ -1099,6 +1150,21 @@ export const EmployeeManagementSection: React.FC<{
         effectiveFrom: new Date(entry.effectiveFrom)
       }));
     }
+    if (prepared.fieldHistories && typeof prepared.fieldHistories === 'object') {
+      const normalized: Record<string, unknown[]> = {};
+      for (const [field, entries] of Object.entries(prepared.fieldHistories)) {
+        if (!Array.isArray(entries)) continue;
+        normalized[field] = entries.map((entry: any) => ({
+          ...entry,
+          effectiveFrom: entry.effectiveFrom ? new Date(entry.effectiveFrom) : entry.effectiveFrom,
+          effectiveTo:
+            entry.effectiveTo == null || entry.effectiveTo === ''
+              ? null
+              : new Date(entry.effectiveTo),
+        }));
+      }
+      prepared.fieldHistories = normalized;
+    }
     return prepared;
   };
 
@@ -1147,6 +1213,11 @@ export const EmployeeManagementSection: React.FC<{
         return;
       }
 
+      const fieldHistoriesPayload = pickEditableFieldHistories(prepared.fieldHistories, tabAccess);
+      if (fieldHistoriesPayload) {
+        payload.fieldHistories = fieldHistoriesPayload;
+      }
+
       const response = await fetch(`/api/users/${editingUser._id}`, hrCredentialsInit({
         method: 'PUT',
         headers: {
@@ -1170,6 +1241,8 @@ export const EmployeeManagementSection: React.FC<{
       setManagedFieldsEffectiveFromByField(getDefaultManagedEffectiveDates());
       setFieldRevisionPanel(null);
       setFieldHistoryExpanded({});
+      setFieldHistoryEdit(null);
+      setEmploymentTypeEditIdx(null);
 
       // Refresh user data to ensure schedule changes are reflected
       if (onRefreshUsers) {
@@ -2033,6 +2106,122 @@ export const EmployeeManagementSection: React.FC<{
     window.URL.revokeObjectURL(url);
   };
 
+  const findFieldHistoryEntryIndex = (
+    history: Array<{ value?: string; effectiveFrom?: unknown }>,
+    effectiveFrom: string,
+    value: string
+  ) =>
+    history.findIndex(
+      (entry) =>
+        toDateInputValue(entry.effectiveFrom) === effectiveFrom && String(entry.value ?? '') === value
+    );
+
+
+  const handleStartEditFieldHistory = (
+    field: FieldHistoryKey,
+    row: { value?: string; effectiveFrom?: unknown; effectiveTo?: unknown }
+  ) => {
+    setFieldHistoryEdit({
+      field,
+      originalEffectiveFrom: toDateInputValue(row.effectiveFrom),
+      originalValue: String(row.value ?? ''),
+      value: String(row.value ?? ''),
+      effectiveFrom: toDateInputValue(row.effectiveFrom),
+      effectiveTo:
+        row.effectiveTo == null || row.effectiveTo === '' ? '' : toDateInputValue(row.effectiveTo),
+    });
+  };
+
+  const handleSaveFieldHistoryEdit = () => {
+    if (!fieldHistoryEdit) return;
+    const { field, originalEffectiveFrom, originalValue, value, effectiveFrom, effectiveTo } = fieldHistoryEdit;
+    if (!effectiveFrom.trim()) {
+      alert('Effective from date is required.');
+      return;
+    }
+
+    setFormData((prev) => {
+      const histories = { ...((prev as any).fieldHistories || {}) };
+      const arr = [...(histories[field] || [])];
+      const idx = findFieldHistoryEntryIndex(arr, originalEffectiveFrom, originalValue);
+      if (idx < 0) return prev;
+
+      arr[idx] = {
+        ...arr[idx],
+        value,
+        effectiveFrom,
+        effectiveTo: effectiveTo.trim() ? effectiveTo : null,
+      };
+      histories[field] = arr;
+
+      const active = getActiveFieldHistoryEntry(arr);
+      if (active && field in getDefaultManagedEffectiveDates()) {
+        setManagedFieldsEffectiveFromByField((p) => ({
+          ...p,
+          [field as ManagedFieldKey]: toDateInputValue(active.effectiveFrom),
+        }));
+      }
+
+      return {
+        ...prev,
+        fieldHistories: histories,
+        [field]: active?.value ?? '',
+      } as Partial<User>;
+    });
+
+    setFieldHistoryEdit(null);
+  };
+
+  const handleDeleteFieldHistoryEntry = (
+    field: FieldHistoryKey,
+    row: { value?: string; effectiveFrom?: unknown }
+  ) => {
+    if (
+      !confirmMajorAction(`Delete this ${field} history entry`, [
+        `Value: ${row.value ?? '—'}`,
+        'The entry will be removed when you save the employee.',
+      ])
+    ) {
+      return;
+    }
+
+    setFormData((prev) => {
+      const histories = { ...((prev as any).fieldHistories || {}) };
+      const arr = [...(histories[field] || [])];
+      const idx = findFieldHistoryEntryIndex(
+        arr,
+        toDateInputValue(row.effectiveFrom),
+        String(row.value ?? '')
+      );
+      if (idx >= 0) arr.splice(idx, 1);
+      histories[field] = arr;
+
+      const active = getActiveFieldHistoryEntry(arr);
+      const next = {
+        ...prev,
+        fieldHistories: histories,
+        [field]: active?.value ?? '',
+      } as Partial<User>;
+
+      if (active && field in getDefaultManagedEffectiveDates()) {
+        setManagedFieldsEffectiveFromByField((p) => ({
+          ...p,
+          [field as ManagedFieldKey]: toDateInputValue(active.effectiveFrom),
+        }));
+      }
+
+      return next;
+    });
+
+    if (
+      fieldHistoryEdit?.field === field &&
+      fieldHistoryEdit.originalEffectiveFrom === toDateInputValue(row.effectiveFrom) &&
+      fieldHistoryEdit.originalValue === String(row.value ?? '')
+    ) {
+      setFieldHistoryEdit(null);
+    }
+  };
+
   const applyFieldRevisionValue = (field: FieldHistoryKey, value: string) => {
     if (field === 'workingUnderPartner') {
       handleInputChange('workingUnderPartner', value);
@@ -2137,18 +2326,122 @@ export const EmployeeManagementSection: React.FC<{
                 {histAll.map((row, idx) => {
                   const isOpenEnded = row.effectiveTo == null || row.effectiveTo === '';
                   const currentCls = 'font-medium text-blue-800';
+                  const rowKey = `${toDateInputValue(row.effectiveFrom)}-${String(row.value ?? '')}-${idx}`;
+                  const isEditing =
+                    fieldHistoryEdit?.field === field &&
+                    fieldHistoryEdit.originalEffectiveFrom === toDateInputValue(row.effectiveFrom) &&
+                    fieldHistoryEdit.originalValue === String(row.value ?? '');
+
+                  if (isEditing && fieldHistoryEdit) {
+                    return (
+                      <li key={rowKey} className="space-y-2 py-2 first:pt-0">
+                        {inputType === 'select' ? (
+                          <select
+                            value={fieldHistoryEdit.value}
+                            onChange={(e) =>
+                              setFieldHistoryEdit((p) => (p ? { ...p, value: e.target.value } : p))
+                            }
+                            className={inputCls}
+                          >
+                            <option value="">{selectEmptyLabel}</option>
+                            {selectOptions.map((opt) => (
+                              <option key={opt} value={opt}>
+                                {opt}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            value={fieldHistoryEdit.value}
+                            onChange={(e) =>
+                              setFieldHistoryEdit((p) => (p ? { ...p, value: e.target.value } : p))
+                            }
+                            className={inputCls}
+                          />
+                        )}
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <div>
+                            <label className="mb-1 block text-[10px] text-slate-500">Effective from</label>
+                            <input
+                              type="date"
+                              value={fieldHistoryEdit.effectiveFrom}
+                              onChange={(e) =>
+                                setFieldHistoryEdit((p) => (p ? { ...p, effectiveFrom: e.target.value } : p))
+                              }
+                              className={dateCls}
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-[10px] text-slate-500">End date (blank = current)</label>
+                            <input
+                              type="date"
+                              value={fieldHistoryEdit.effectiveTo}
+                              onChange={(e) =>
+                                setFieldHistoryEdit((p) => (p ? { ...p, effectiveTo: e.target.value } : p))
+                              }
+                              className={dateCls}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" onClick={handleSaveFieldHistoryEdit} className={panelBtn}>
+                            Save entry
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setFieldHistoryEdit(null)}
+                            className="rounded-md border border-blue-200/65 bg-panel px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  }
+
                   return (
-                    <li key={`${String(row.effectiveFrom)}-${idx}`} className="flex flex-col gap-0.5 py-2 first:pt-0">
-                      <div className="font-medium text-slate-900">{row.value ?? '—'}</div>
-                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-slate-600">
-                        <span>
-                          <span className="text-slate-500">From </span>
-                          {formatSalaryHistoryRowDate(row.effectiveFrom)}
-                        </span>
-                        <span>
-                          <span className="text-slate-500">End </span>
-                          {isOpenEnded ? <span className={currentCls}>Current (no end date)</span> : formatSalaryHistoryRowDate(row.effectiveTo)}
-                        </span>
+                    <li key={rowKey} className="flex flex-col gap-1 py-2 first:pt-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-medium text-slate-900">{row.value ?? '—'}</div>
+                          <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-slate-600">
+                            <span>
+                              <span className="text-slate-500">From </span>
+                              {formatSalaryHistoryRowDate(row.effectiveFrom)}
+                            </span>
+                            <span>
+                              <span className="text-slate-500">End </span>
+                              {isOpenEnded ? (
+                                <span className={currentCls}>Current (no end date)</span>
+                              ) : (
+                                formatSalaryHistoryRowDate(row.effectiveTo)
+                              )}
+                            </span>
+                          </div>
+                        </div>
+                        {!denyEdits && (
+                          <div className="flex shrink-0 gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditFieldHistory(field, row)}
+                              className="rounded p-1 text-slate-500 hover:bg-blue-50 hover:text-blue-700"
+                              title="Edit entry"
+                              aria-label="Edit history entry"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteFieldHistoryEntry(field, row)}
+                              className="rounded p-1 text-slate-500 hover:bg-rose-50 hover:text-rose-700"
+                              title="Delete entry"
+                              aria-label="Delete history entry"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </li>
                   );
@@ -2521,11 +2814,57 @@ export const EmployeeManagementSection: React.FC<{
                   <div className="space-y-2 mb-2">
                       {Array.isArray(formData.employmentTypeHistory)
                         ? formData.employmentTypeHistory.map((entry: { employmentType: string; effectiveFrom: string | number | Date }, idx: number) => (
-                            <div key={String(idx)} className="flex items-center gap-2 text-xs">
+                            <div key={String(idx)} className="flex flex-wrap items-center gap-2 text-xs">
+                            {employmentTypeEditIdx === idx ? (
+                              <>
+                                <select
+                                  value={employmentTypeEditValue}
+                                  onChange={(e) => setEmploymentTypeEditValue(e.target.value)}
+                                  className="rounded-md border border-blue-200/65 bg-panel px-2 py-1 text-sm text-slate-900 shadow-sm"
+                                >
+                                  <option value="">Select Type</option>
+                                  <option value="fulltime">Full Time</option>
+                                  <option value="halftime">Half Time</option>
+                                  <option value="article">Article</option>
+                                </select>
+                                <input
+                                  type="date"
+                                  value={employmentTypeEditDate}
+                                  onChange={(e) => setEmploymentTypeEditDate(e.target.value)}
+                                  className="min-h-9 rounded border border-slate-300 bg-panel px-2 py-1 text-sm text-slate-900 [color-scheme:light]"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleSaveEmploymentTypeHistoryEdit}
+                                  className="rounded-md bg-blue-600 px-2 py-1 text-white"
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEmploymentTypeEditIdx(null)}
+                                  className="rounded-md border border-slate-300 bg-panel px-2 py-1 text-slate-700"
+                                >
+                                  Cancel
+                                </button>
+                              </>
+                            ) : (
+                              <>
                             <span className="rounded-md bg-slate-200 px-2 py-1 font-medium text-slate-800">{entry.employmentType}</span>
                             <span className="rounded-md bg-slate-100 px-2 py-1 text-slate-600">
                               From: {new Date(entry.effectiveFrom).toLocaleDateString('en-GB')}
                             </span>
+                            {!denyEdits && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-panel px-2 py-1 text-slate-700 hover:bg-slate-50"
+                                  title="Edit this entry"
+                                  onClick={() => handleStartEditEmploymentTypeHistory(idx)}
+                                >
+                                  <Edit2 className="h-3 w-3" />
+                                  Edit
+                                </button>
                             <button
                               type="button"
                               className="px-2 py-1 bg-red-600 text-white rounded"
@@ -2534,6 +2873,10 @@ export const EmployeeManagementSection: React.FC<{
                             >
                               Delete
                             </button>
+                              </>
+                            )}
+                              </>
+                            )}
                           </div>
                         ))
                       : null}

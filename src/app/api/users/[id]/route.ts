@@ -17,6 +17,7 @@ import {
   LEGACY_BASELINE_EFFECTIVE_FROM,
   MANAGED_EFFECTIVE_FIELDS,
   normalizeManagedFieldValue,
+  syncUserFieldsFromFieldHistories,
 } from '@/lib/userFieldHistory';
 
 interface RouteParams {
@@ -151,6 +152,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       changeReason, // Reason for the change
       managedEffectiveFrom,
       managedEffectiveFromByField,
+      fieldHistories,
     } = body;
   const managedChangeAt = parseAnyDate(managedEffectiveFrom) || new Date();
   const managedFieldDates: Partial<Record<ManagedEffectiveField, Date>> = {};
@@ -341,6 +343,36 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
 
     Object.assign(currentUser, updateObj);
+
+    const fieldsWithExplicitHistory = new Set<ManagedEffectiveField>();
+    if (fieldHistories && typeof fieldHistories === 'object') {
+      if (!currentUser.fieldHistories) {
+        currentUser.fieldHistories = {};
+      }
+      for (const field of MANAGED_EFFECTIVE_FIELDS) {
+        if (!Object.prototype.hasOwnProperty.call(fieldHistories, field)) continue;
+        const incomingHistory = (fieldHistories as Record<string, unknown>)[field];
+        if (!Array.isArray(incomingHistory)) continue;
+
+        (currentUser.fieldHistories as any)[field] = incomingHistory.map((entry: any) => ({
+          value: entry?.value != null ? String(entry.value) : '',
+          effectiveFrom: parseAnyDate(entry?.effectiveFrom) || entry?.effectiveFrom,
+          effectiveTo:
+            entry?.effectiveTo === null || entry?.effectiveTo === undefined || entry?.effectiveTo === ''
+              ? null
+              : parseAnyDate(entry?.effectiveTo) || entry?.effectiveTo,
+          source: entry?.source || 'manual-update',
+        }));
+        fieldsWithExplicitHistory.add(field);
+      }
+      if (fieldsWithExplicitHistory.size > 0) {
+        syncUserFieldsFromFieldHistories(currentUser as any, [...fieldsWithExplicitHistory]);
+        currentUser.markModified('fieldHistories');
+        for (const field of fieldsWithExplicitHistory) {
+          delete managedEffectiveIncoming[field];
+        }
+      }
+    }
 
     applyManagedEffectiveHistories(currentUser as any, managedEffectiveIncoming, {
       changedAt: managedChangeAt,
