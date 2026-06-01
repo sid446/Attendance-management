@@ -10,6 +10,11 @@ import {
   assertCanReadEmployees,
   effectiveFromDoc,
 } from '@/lib/hrConsolePermissionUtils';
+import {
+  calculateTotalHours as calculateHours,
+  isSinglePunch,
+  isValidPunchTime,
+} from '@/lib/attendanceHours';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import {
   applyManagedEffectiveHistories,
@@ -558,16 +563,6 @@ function findScheduleRecalcStartDate(currentSchedules: any, newSchedules: any, c
   return changedDates[0];
 }
 
-function calculateHours(checkin: string, checkout: string): number {
-  if (!checkin || !checkout || checkin === '00:00' || checkout === '00:00') return 0;
-  const [inH, inM] = checkin.split(':').map(Number);
-  const [outH, outM] = checkout.split(':').map(Number);
-  const startMinutes = inH * 60 + inM;
-  const endMinutes = outH * 60 + outM;
-  if (endMinutes <= startMinutes) return 0;
-  return Number(((endMinutes - startMinutes) / 60).toFixed(2));
-}
-
 function shouldExcludeFromHoursSummary(typeOfPresence: string, dateStr: string): boolean {
   const day = new Date(dateStr).getDay();
   if (day === 0) return true;
@@ -624,11 +619,14 @@ async function recalculateAttendanceFromDate(userId: string, fromDate: Date) {
     attendance.records.forEach((record: any, dateStr: string) => {
       const inTime = String(record.editedCheckin || record.checkin || '').trim();
       const outTime = String(record.editedCheckout || record.checkout || '').trim();
-      record.totalHour = calculateHours(inTime, outTime);
 
       const schedule = getScheduledTimes(user as any, dateStr);
       const scheduledIn = schedule.inTime;
       const scheduledOut = schedule.outTime;
+      record.totalHour = calculateHours(inTime, outTime, {
+        scheduledIn,
+        scheduledOut,
+      });
 
       let dayScheduledHours = 0;
       if (scheduledIn && scheduledOut && scheduledIn !== '00:00' && scheduledOut !== '00:00') {
@@ -639,7 +637,9 @@ async function recalculateAttendanceFromDate(userId: string, fromDate: Date) {
       let dayExcess = 0;
       if (record.typeOfPresence === 'Holiday') {
         dayExcess = 0;
-      } else if (inTime === '00:00' || outTime === '00:00' || !inTime || !outTime) {
+      } else if (!isValidPunchTime(inTime) && !isValidPunchTime(outTime)) {
+        dayExcess = dayScheduledHours > 0 ? -dayScheduledHours : 0;
+      } else if (isSinglePunch(inTime, outTime)) {
         dayExcess = dayScheduledHours > 0 ? -dayScheduledHours : 0;
       } else {
         dayExcess = Number((record.totalHour - dayScheduledHours).toFixed(2));
@@ -663,7 +663,7 @@ async function recalculateAttendanceFromDate(userId: string, fromDate: Date) {
         const isAfter1PM = inTime ? inTime >= '13:00' : false;
         if ((inTime === '00:00' && outTime === '00:00') || (!inTime && !outTime)) {
           record.halfDay = false;
-        } else if (inTime === '00:00' && outTime !== '00:00' && record.totalHour > 0) {
+        } else if (isSinglePunch(inTime, outTime)) {
           record.halfDay = true;
         } else if (employmentType === 'fulltime' && !isArticle) {
           record.halfDay = record.totalHour < 6;

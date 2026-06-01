@@ -7,6 +7,11 @@ import User, { IUser } from '@/models/User';
 import Holiday from '@/models/Holiday';
 import { normalizeForMatch } from '@/lib/attendanceNameMatch';
 import { calculateLeaveUsageForMultipleDays, updateLeaveBalanceOnApproval, reconcilePartialLeaveFromAttendance } from '@/lib/leaveManagement';
+import {
+  calculateTotalHours,
+  isSinglePunch,
+  isValidPunchTime,
+} from '@/lib/attendanceHours';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 
 // GET - Fetch attendance records
@@ -267,10 +272,18 @@ export async function POST(request: NextRequest) {
           const editedCheckin = checkin;
           const editedCheckout = checkout;
 
-          // Use edited times for calculations
+          // Use edited times for calculations (partial punches use schedule as missing boundary)
           const calculationCheckin = editedCheckin;
           const calculationCheckout = editedCheckout;
-          const totalHour = calculateTotalHours(calculationCheckin, calculationCheckout);
+          const daySchedule = user ? getScheduledTimes(user as IUser, isoDate) : null;
+          const scheduleHourOpts = daySchedule
+            ? { scheduledIn: daySchedule.inTime, scheduledOut: daySchedule.outTime }
+            : undefined;
+          const totalHour = calculateTotalHours(
+            calculationCheckin,
+            calculationCheckout,
+            scheduleHourOpts
+          );
 
           // Check for Approved Requests (Future/Correction) that override Excel data
           const approvedRequest = await AttendanceRequest.findOne({
@@ -293,7 +306,7 @@ export async function POST(request: NextRequest) {
           if (isFixedDataUpload) {
             const mappedType = rec.typeOfPresence ? String(rec.typeOfPresence).trim() : mapFixedPresenceCodeToType(fixedPresenceCode);
             typeOfPresence = mappedType || 'Absent';
-            finalTotalHour = calculateTotalHours(finalCheckin, finalCheckout);
+            finalTotalHour = calculateTotalHours(finalCheckin, finalCheckout, scheduleHourOpts);
             const uploadedValueRaw = rec.value;
             const uploadedValue = typeof uploadedValueRaw === 'number' ? uploadedValueRaw : Number(uploadedValueRaw);
             const hasUploadedValue = Number.isFinite(uploadedValue);
@@ -355,7 +368,7 @@ export async function POST(request: NextRequest) {
                     finalEditedCheckout = sch.outTime;
                     
                     // Recalculate total hours based on scheduled times
-                    let calculatedHours = calculateTotalHours(finalCheckin, finalCheckout);
+                    let calculatedHours = calculateTotalHours(finalCheckin, finalCheckout, scheduleHourOpts);
                     
                     // If it's a Half Day type, set total hours to 50% of scheduled
                     if (finalHalfDay || typeOfPresence.includes('Half Day')) {
@@ -368,11 +381,17 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          // Special case: if checkin is 00:00 but checkout is valid, mark as half day
-          if (finalCheckin === '00:00' && finalCheckout !== '00:00' && finalCheckout !== '' && finalTotalHour > 0) {
+          // Single punch (only in or only out): no worked hours; half-day presence
+          if (!isFixedDataUpload && isSinglePunch(finalCheckin, finalCheckout)) {
+            finalTotalHour = 0;
             finalHalfDay = true;
             finalValue = 0.5;
-            remarksStr += (remarksStr ? ' | ' : '') + (exitOnlyPunchDetected ? 'Exit-only punch detected' : 'No check-in time');
+            const hasIn = isValidPunchTime(finalCheckin);
+            if (!hasIn) {
+              remarksStr += (remarksStr ? ' | ' : '') + (exitOnlyPunchDetected ? 'Exit-only punch detected' : 'No check-in time');
+            } else {
+              remarksStr += (remarksStr ? ' | ' : '') + 'No check-out time';
+            }
           }
 
           // Check if date is a Sunday or Holiday
@@ -1196,8 +1215,14 @@ function calculateSummary(
     } else {
       dayExcess = 0;
     }
-    // Update record's totalHour
-    record.totalHour = calculateTotalHours(inTime, outTime);
+    // Update record's totalHour (single punch = half of scheduled shift)
+    record.totalHour = calculateTotalHours(inTime, outTime, {
+      scheduledIn: scheduledInTime,
+      scheduledOut: scheduledOutTime,
+    });
+    if (isSinglePunch(inTime, outTime) && dayScheduledHours > 0) {
+      dayExcess = Number((record.totalHour - dayScheduledHours).toFixed(2));
+    }
     // Update record's excessHour
     record.excessHour = Number(dayExcess.toFixed(2));
     const includeInHoursSummary = !shouldExcludeFromSummaryHours(record.typeOfPresence, dateStr);
@@ -1224,8 +1249,7 @@ function calculateSummary(
     if (isHalftime) {
       calculatedHalfDay = false;
     } else if (!record.halfDay && !isNonWorkingDayRecord) { // Only recalculate if not already set
-      // Special case: if inTime is 00:00 but outTime is valid, mark as half day
-      if (inTime === '00:00' && outTime !== '00:00' && outTime !== '' && record.totalHour > 0) {
+      if (isSinglePunch(inTime, outTime)) {
         calculatedHalfDay = true;
       } else if ((inTime === '00:00' && outTime === '00:00') ||
           (record.editedCheckin === '' && record.editedCheckout === '')) {
@@ -1323,18 +1347,3 @@ function normalizeTimeToHHmm(rawTime: string | null | undefined): string {
   return `${hours}:${minutes}`;
 }
 
-// Calculate total hours between two times in "HH:mm" format
-function calculateTotalHours(checkin: string, checkout: string): number {
-  if (!checkin || !checkout) return 0;
-
-  const [inH, inM] = checkin.split(':').map(Number);
-  const [outH, outM] = checkout.split(':').map(Number);
-
-  const startMinutes = inH * 60 + inM;
-  const endMinutes = outH * 60 + outM;
-  if (endMinutes <= startMinutes) return 0;
-
-  const diffMinutes = endMinutes - startMinutes;
-  const hours = diffMinutes / 60;
-  return Number(hours.toFixed(2));
-}

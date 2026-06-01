@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
-import AttendanceRequest from '@/models/AttendanceRequest';
+import Attendance from '@/models/Attendance';
+import AttendanceRequest, { TYPE_OF_PRESENCE_ENUM } from '@/models/AttendanceRequest';
 import User from '@/models/User';
 import { transporter, mailOptions } from '@/lib/mailer';
 import { createPartnerReviewAllLink } from '@/lib/partnerReviewToken';
@@ -177,6 +178,14 @@ export async function POST(request: NextRequest) {
             }
         }
         
+        let originalStatus = 'Absent';
+        const attendanceDoc = await Attendance.findOne({ userId: user._id, monthYear });
+        const dayRecord = attendanceDoc?.records?.get?.(dateStr) ?? (attendanceDoc?.records as any)?.[dateStr];
+        const recordType = dayRecord?.typeOfPresence ? String(dayRecord.typeOfPresence) : '';
+        if (recordType && (TYPE_OF_PRESENCE_ENUM as readonly string[]).includes(recordType)) {
+          originalStatus = recordType;
+        }
+
         const newRequest = new AttendanceRequest({
             userId: user._id,
             userName: user.name,
@@ -184,7 +193,7 @@ export async function POST(request: NextRequest) {
             date: dateStr,
             monthYear: monthYear,
             requestedStatus: requestType,
-            originalStatus: 'Future Request', // Placeholder
+            originalStatus,
             reason: reason,
             status: 'Pending',
             startTime: finalStartTime || undefined,

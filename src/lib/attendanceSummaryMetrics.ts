@@ -3,7 +3,13 @@
  * so the employee portal can show the same numbers for a single month.
  */
 import type { AttendanceSummaryView, DailySchedule, ScheduleEntry, ScheduleTime, User } from '@/types/ui';
+import { isSinglePunch } from './attendanceHours';
 import { getScheduledTimes } from './scheduleUtils';
+
+export interface SummaryMetricsOptions {
+  /** Team leaderboard: only in or only out counts as absent (not present / half day). */
+  treatSinglePunchAsAbsent?: boolean;
+}
 
 type EmploymentTypeHistory = { employmentType: string; effectiveFrom: string | Date };
 
@@ -80,6 +86,63 @@ function hasValidInOutForExcess(rec: any): boolean {
   const inTime = rec?.editedCheckin || rec?.checkin;
   const outTime = rec?.editedCheckout || rec?.checkout;
   return !!(inTime && inTime !== '00:00' && outTime && outTime !== '00:00');
+}
+
+function getEffectivePunches(rec: any): { checkin: string; checkout: string } {
+  return {
+    checkin: String(rec?.editedCheckin || rec?.checkin || '').trim(),
+    checkout: String(rec?.editedCheckout || rec?.checkout || '').trim(),
+  };
+}
+
+function isSinglePunchRecord(rec: any): boolean {
+  const { checkin, checkout } = getEffectivePunches(rec);
+  return isSinglePunch(checkin, checkout);
+}
+
+/** WFH / outstation etc. may not require paired machine punches. */
+function isExemptFromSinglePunchAbsentRule(rec: any): boolean {
+  const type = String(rec?.typeOfPresence || '');
+  const typeLower = type.toLowerCase();
+  return (
+    type === 'Holiday' ||
+    type === 'Sunday' ||
+    type === 'Weekoff' ||
+    type === 'Weekoff - special allowance' ||
+    type === 'Leave' ||
+    type === 'On leave' ||
+    type === 'Absent' ||
+    typeLower.includes('weekoff') ||
+    typeLower.includes('wfh') ||
+    typeLower.includes('outstation') ||
+    typeLower.includes('clientplace')
+  );
+}
+
+function isWorkingDayForMetrics(
+  dateStr: string,
+  rec: any,
+  holidayDates: Set<string>
+): boolean {
+  const d = new Date(dateStr);
+  if (d.getDay() === 0) return false;
+  if (holidayDates.has(dateStr)) return false;
+  if (typeof rec?.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff')) {
+    return false;
+  }
+  return true;
+}
+
+function isSinglePunchAbsentDay(
+  dateStr: string,
+  rec: any,
+  holidayDates: Set<string>,
+  options?: SummaryMetricsOptions
+): boolean {
+  if (!options?.treatSinglePunchAsAbsent) return false;
+  if (!isWorkingDayForMetrics(dateStr, rec, holidayDates)) return false;
+  if (isExemptFromSinglePunchAbsentRule(rec)) return false;
+  return isSinglePunchRecord(rec);
 }
 
 /** Days that count toward Sched. / excess (worked vs scheduled). */
@@ -190,9 +253,15 @@ export function getLateCountLikeSummary(item: AttendanceSummaryView, user: User 
   return count;
 }
 
-export function getHalfDayCountLikeSummary(item: AttendanceSummaryView, user: User | undefined): number {
+export function getHalfDayCountLikeSummary(
+  item: AttendanceSummaryView,
+  user: User | undefined,
+  options?: SummaryMetricsOptions,
+  holidayDates?: Set<string>
+): number {
   const records = item.recordDetails || {};
   let n = 0;
+  const holidays = holidayDates ?? new Set<string>();
 
   Object.entries(records).forEach(([date, rec]) => {
     const r = rec as any;
@@ -204,6 +273,7 @@ export function getHalfDayCountLikeSummary(item: AttendanceSummaryView, user: Us
     const d = new Date(date);
     const empTypeHalfDay = getEmploymentTypeForDate(user, d);
     if (isHalftimeEmploymentType(empTypeHalfDay)) return;
+    if (isSinglePunchAbsentDay(date, r, holidays, options)) return;
     if (r.halfDay && r.typeOfPresence !== 'Holiday' && !isBothZero) {
       n += 1;
     }
@@ -214,7 +284,8 @@ export function getHalfDayCountLikeSummary(item: AttendanceSummaryView, user: Us
 
 export function getAbsentCountLikeSummary(
   item: AttendanceSummaryView,
-  holidayDates: Set<string>
+  holidayDates: Set<string>,
+  options?: SummaryMetricsOptions
 ): number {
   let calcAbsent = 0;
   Object.entries(item.recordDetails || {}).forEach(([dateStr, recAny]) => {
@@ -230,6 +301,11 @@ export function getAbsentCountLikeSummary(
       return;
     }
     if (rec.typeOfPresence === 'Leave' || rec.typeOfPresence === 'On leave') {
+      calcAbsent += 1;
+      return;
+    }
+
+    if (isSinglePunchAbsentDay(dateStr, rec, holidayDates, options)) {
       calcAbsent += 1;
       return;
     }
@@ -273,9 +349,14 @@ export function getLeaveConsumedFullDays(item: AttendanceSummaryView): number {
  * Present count as recalculated in admin `page.tsx` fetchSummaries from recordDetails
  * (not raw API summary.totalPresent).
  */
-export function getTotalPresentLikeAdminSummary(item: AttendanceSummaryView): number {
+export function getTotalPresentLikeAdminSummary(
+  item: AttendanceSummaryView,
+  options?: SummaryMetricsOptions,
+  holidayDates?: Set<string>
+): number {
+  const holidays = holidayDates ?? new Set<string>();
   let totalPresent = 0;
-  for (const rec of Object.values(item.recordDetails || {}) as any[]) {
+  for (const [dateStr, rec] of Object.entries(item.recordDetails || {}) as [string, any][]) {
     const type = String(rec?.typeOfPresence || '');
     const typeLower = type.toLowerCase();
     const checkin = String(rec?.editedCheckin || rec?.checkin || '').trim();
@@ -296,6 +377,10 @@ export function getTotalPresentLikeAdminSummary(item: AttendanceSummaryView): nu
     }
 
     if (isHolidayLike) {
+      continue;
+    }
+
+    if (isSinglePunchAbsentDay(dateStr, rec, holidays, options)) {
       continue;
     }
 
@@ -657,7 +742,8 @@ export function computeSummaryAlignedMetrics(
   item: AttendanceSummaryView | null,
   user: User | undefined,
   holidays: { date: string }[],
-  monthYear: string
+  monthYear: string,
+  options?: SummaryMetricsOptions
 ): SummaryAlignedMetrics | null {
   if (!item || !user) return null;
 
@@ -669,9 +755,9 @@ export function computeSummaryAlignedMetrics(
     totalDaysInRecords: getTotalDaysInRecords(item),
     holidaysInRecords: getHolidaysInRecordsCount(item, holidayDates),
     workingDaysInRecords: getWorkingDaysInRecordsCount(item, holidayDates),
-    totalPresent: getTotalPresentLikeAdminSummary(item),
-    totalHalfDay: getHalfDayCountLikeSummary(item, user),
-    totalAbsent: getAbsentCountLikeSummary(item, holidayDates),
+    totalPresent: getTotalPresentLikeAdminSummary(item, options, holidayDates),
+    totalHalfDay: getHalfDayCountLikeSummary(item, user, options, holidayDates),
+    totalAbsent: getAbsentCountLikeSummary(item, holidayDates, options),
     calcLate: getLateCountLikeSummary(item, user),
     leaveFullDaysConsumed: getLeaveConsumedFullDays(item),
     calcScheduledHours: getScheduledHoursNoLunchForMonth(item, user, dateList),

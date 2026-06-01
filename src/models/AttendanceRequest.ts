@@ -1,33 +1,38 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 
-export type TypeOfPresence =
-  | 'ThumbMachine'
-  | 'Manual'
-  | 'Remote'
-  | 'On leave'
-  | 'Holiday'
-  | 'Absent'
-  | 'Present - in office'
-  | 'Present - in office - weekdays'
-  | 'Present - in office - weekoff'
-  | 'Present - client place'
-  | 'Present - outstation'
-  | 'Present - weekoff'
-  | 'Half Day - weekdays'
-  | 'Half Day - weekoff'
-  | 'WFH - weekdays'
-  | 'WFH - weekoff'
-  | 'Weekoff - special allowance'
-  | 'Weekly Off - Present (WO-Present)'
-  | 'Half Day (HD)'
-  | 'Work From Home (WFH)'
-  | 'Weekly Off - Work From Home (WO-WFH)'
-  | 'Onsite Presence (OS-P)'
-  | 'Thumb machine - not working'
-  | 'Present - Outstation (Weekoff)'
-  | 'Present - ClientPlace (Weekoff)'
-  | 'Present - Outstation (Weekdays)'
-  | 'Present - ClientPlace (Weekdays)';
+/** Shared enum values for requestedStatus / originalStatus (keep in sync). */
+export const TYPE_OF_PRESENCE_ENUM = [
+  'ThumbMachine',
+  'Manual',
+  'Remote',
+  'On leave',
+  'Holiday',
+  'Absent',
+  'Future Request',
+  'Present - in office',
+  'Present - in office - weekdays',
+  'Present - in office - weekoff',
+  'Present - client place',
+  'Present - outstation',
+  'Present - weekoff',
+  'Half Day - weekdays',
+  'Half Day - weekoff',
+  'WFH - weekdays',
+  'WFH - weekoff',
+  'Weekoff - special allowance',
+  'Weekly Off - Present (WO-Present)',
+  'Half Day (HD)',
+  'Work From Home (WFH)',
+  'Weekly Off - Work From Home (WO-WFH)',
+  'Onsite Presence (OS-P)',
+  'Thumb machine - not working',
+  'Present - Outstation (Weekoff)',
+  'Present - ClientPlace (Weekoff)',
+  'Present - Outstation (Weekdays)',
+  'Present - ClientPlace (Weekdays)',
+] as const;
+
+export type TypeOfPresence = (typeof TYPE_OF_PRESENCE_ENUM)[number];
 
 export interface IAttendanceRequest extends Document {
   userId: mongoose.Types.ObjectId;
@@ -68,68 +73,12 @@ const AttendanceRequestSchema: Schema = new Schema(
     requestedStatus: {
       type: String,
       required: true,
-      enum: [
-        'ThumbMachine',
-        'Manual',
-        'Remote',
-        'On leave',
-        'Holiday',
-        'Absent',
-        'Present - in office',
-        'Present - in office - weekdays',
-        'Present - in office - weekoff',
-        'Present - client place',
-        'Present - outstation',
-        'Present - weekoff',
-        'Half Day - weekdays',
-        'Half Day - weekoff',
-        'WFH - weekdays',
-        'WFH - weekoff',
-        'Weekoff - special allowance',
-        'Weekly Off - Present (WO-Present)',
-        'Half Day (HD)',
-        'Work From Home (WFH)',
-        'Weekly Off - Work From Home (WO-WFH)',
-        'Onsite Presence (OS-P)',
-        'Thumb machine - not working',
-        'Present - Outstation (Weekoff)',
-        'Present - ClientPlace (Weekoff)',
-        'Present - Outstation (Weekdays)',
-        'Present - ClientPlace (Weekdays)'
-      ],
+      enum: TYPE_OF_PRESENCE_ENUM,
     },
     originalStatus: {
       type: String,
       required: true,
-      enum: [
-        'ThumbMachine',
-        'Manual',
-        'Remote',
-        'On leave',
-        'Holiday',
-        'Absent',
-        'Present - in office',
-        'Present - in office - weekdays',
-        'Present - in office - weekoff',
-        'Present - client place',
-        'Present - outstation',
-        'Present - weekoff',
-        'Half Day - weekdays',
-        'Half Day - weekoff',
-        'WFH - weekdays',
-        'WFH - weekoff',
-        'Weekoff - special allowance',
-        'Weekly Off - Present (WO-Present)',
-        'Half Day (HD)',
-        'Work From Home (WFH)',
-        'Weekly Off - Work From Home (WO-WFH)',
-        'Onsite Presence (OS-P)',
-        'Thumb machine - not working',
-        'Present - Outstation (Weekoff)',
-        'Present - ClientPlace (Weekoff)',
-        'Present - Outstation (Weekdays)',
-        'Present - ClientPlace (Weekdays)'
-      ],
+      enum: TYPE_OF_PRESENCE_ENUM,
     },
     reason: { type: String },
     status: { 
@@ -156,7 +105,14 @@ const AttendanceRequestSchema: Schema = new Schema(
   }
 );
 
-const AttendanceRequest: Model<IAttendanceRequest> =
-  mongoose.models.AttendanceRequest || mongoose.model<IAttendanceRequest>('AttendanceRequest', AttendanceRequestSchema);
+// Re-register when schema changes (Next.js dev can cache an older model).
+if (mongoose.models.AttendanceRequest) {
+  delete mongoose.models.AttendanceRequest;
+}
+
+const AttendanceRequest: Model<IAttendanceRequest> = mongoose.model<IAttendanceRequest>(
+  'AttendanceRequest',
+  AttendanceRequestSchema
+);
 
 export default AttendanceRequest;

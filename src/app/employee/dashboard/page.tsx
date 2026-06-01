@@ -4,6 +4,7 @@ import { isHolidayDate } from '@/lib/holidaysClient';
 import { useRouter } from 'next/navigation';
 import { EmployeeMonthView } from '@/components/EmployeeMonthView';
 import { AttendanceRecord, AttendanceSummaryView, User } from '@/types/ui';
+import type { EmployeeAttendanceRequest } from '@/types/employeeAttendanceRequest';
 
 function normalizeUserId(value: unknown): string {
   if (value == null) return '';
@@ -73,17 +74,6 @@ async function fetchAttendanceForUser(userId: string, monthYear: string) {
   return null;
 }
 
-type EmployeeAttendanceRequest = {
-  _id: string;
-  date: string;
-  requestedStatus: string;
-  status: 'Pending' | 'PendingHr' | 'Approved' | 'Rejected';
-  approvedBy?: string;
-  approvedByEmail?: string;
-  approvedAt?: string;
-  updatedAt?: string;
-};
-
 async function fetchEmployeeRequestsForMonth(
   userId: string,
   monthYear: string
@@ -112,6 +102,7 @@ import { LocationAttendanceSection } from '@/components/LocationAttendanceSectio
 import { EmployeeDashboardOverview } from '@/components/EmployeeDashboardOverview';
 import { EmployeeSummaryMonthPicker } from '@/components/EmployeeSummaryMonthPicker';
 import { TeamAttendanceSkeleton } from '@/components/TeamAttendanceSkeleton';
+import { TeamFineSection } from '@/components/TeamFineSection';
 
 import {
   PartnerTeamOverview,
@@ -138,6 +129,7 @@ import {
   Users as UsersIcon,
   ClipboardList,
   UserCog,
+  IndianRupee,
 } from 'lucide-react';
 
 function sessionToUser(raw: Record<string, unknown>): User {
@@ -366,6 +358,7 @@ export default function EmployeeDashboard() {
   const [subLoading, setSubLoading] = useState(false);
   /** Team overview + calendars refetching for a new month (after initial subordinate list exists). */
   const [teamAttendanceLoading, setTeamAttendanceLoading] = useState(false);
+  const [teamPanelView, setTeamPanelView] = useState<'attendance' | 'fines'>('attendance');
   /** Team tab: scroll here after picking someone from the leaderboard (or overview). */
   const teamSubordinateCalendarRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -1339,7 +1332,8 @@ export default function EmployeeDashboard() {
         summaryForMetrics,
         metricsUser,
         holidays,
-        monthYear
+        monthYear,
+        { treatSinglePunchAsAbsent: true }
       );
       if (!m) continue;
       out.push({
@@ -1407,9 +1401,10 @@ export default function EmployeeDashboard() {
     })
     .sort((a, b) => Number(new Date(a.date).getTime()) - Number(new Date(b.date).getTime()));
 
-  const pendingRequestCount = employeeRequests.filter(
+  const pendingRequests = employeeRequests.filter(
     (r) => r.status === 'Pending' || r.status === 'PendingHr'
-  ).length;
+  );
+  const pendingRequestCount = pendingRequests.length;
 
   // Correction request dropdown options (simplified)
   const statusOptions = [
@@ -1735,6 +1730,9 @@ export default function EmployeeDashboard() {
                 holidays={holidays}
                 chartDailySeries={chartDailySeries}
                 requestsPending={pendingRequestCount}
+                pendingRequests={pendingRequests}
+                teamMembers={subordinates}
+                teamMembersLoading={subLoading}
                 isLoadingMetrics={fetchLoading}
               />
             )}
@@ -1790,11 +1788,49 @@ export default function EmployeeDashboard() {
             {activeTab === 'employees' && (
               <>
                 <div className="space-y-4">
-                  <div>
-                    <h2 className="text-lg font-semibold text-foreground">Team attendance</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      View monthly calendars for people reporting to you.
-                    </p>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <h2 className="text-lg font-semibold text-foreground">Team attendance</h2>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {teamPanelView === 'attendance'
+                          ? 'View monthly calendars for people reporting to you.'
+                          : 'Late-arrival fines and warnings for your team.'}
+                      </p>
+                    </div>
+                    <div
+                      className="inline-flex shrink-0 rounded-lg border border-border bg-background p-0.5"
+                      role="tablist"
+                      aria-label="Team view"
+                    >
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={teamPanelView === 'attendance'}
+                        onClick={() => setTeamPanelView('attendance')}
+                        className={`inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                          teamPanelView === 'attendance'
+                            ? 'bg-surface text-foreground shadow-sm'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        <UsersIcon className="h-4 w-4" aria-hidden />
+                        Attendance
+                      </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={teamPanelView === 'fines'}
+                        onClick={() => setTeamPanelView('fines')}
+                        className={`inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                          teamPanelView === 'fines'
+                            ? 'bg-surface text-foreground shadow-sm'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        <IndianRupee className="h-4 w-4" aria-hidden />
+                        Fines
+                      </button>
+                    </div>
                   </div>
                   <EmployeeSummaryMonthPicker
                     monthYear={monthYear}
@@ -1802,8 +1838,13 @@ export default function EmployeeDashboard() {
                     disabled={fetchLoading || subLoading || teamAttendanceLoading}
                   />
                 </div>
-                {(subLoading || teamAttendanceLoading) && <TeamAttendanceSkeleton />}
-                {!subLoading && !teamAttendanceLoading && subordinates.length > 0 && (
+                {teamPanelView === 'fines' && !subLoading && subordinates.length > 0 && (
+                  <TeamFineSection monthYear={monthYear} teamMembers={subordinates} />
+                )}
+                {teamPanelView === 'attendance' && (subLoading || teamAttendanceLoading) && (
+                  <TeamAttendanceSkeleton />
+                )}
+                {teamPanelView === 'attendance' && !subLoading && !teamAttendanceLoading && subordinates.length > 0 && (
                   <section className="space-y-6">
                     <div className="rounded-xl border border-border bg-surface p-4 sm:p-5">
                       <PartnerTeamOverview

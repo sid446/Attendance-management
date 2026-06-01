@@ -19,6 +19,25 @@ import {
 } from "@/lib/attendanceSummaryMetrics";
 import { EmployeeDashboardCharts } from "@/components/EmployeeDashboardCharts";
 import { EmployeeSummaryMonthPicker } from "@/components/EmployeeSummaryMonthPicker";
+import type { EmployeeAttendanceRequest } from "@/types/employeeAttendanceRequest";
+
+function formatRequestDate(dateStr: string): string {
+  const iso = dateStr.split("T")[0];
+  const d = new Date(iso + "T12:00:00");
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-IN", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function pendingStatusLabel(status: EmployeeAttendanceRequest["status"]): string {
+  if (status === "PendingHr") return "Waiting for HR";
+  if (status === "Pending") return "Waiting for partner";
+  return status;
+}
 
 function formatMonthLabel(monthYear: string): string {
   const [ys, ms] = monthYear.split("-");
@@ -47,6 +66,10 @@ export interface EmployeeDashboardOverviewProps {
   holidays?: { date: string }[];
   chartDailySeries?: { date: string; hours: number }[];
   requestsPending: number;
+  pendingRequests?: EmployeeAttendanceRequest[];
+  /** Direct reports (partners only); shown below profile on desktop. */
+  teamMembers?: User[];
+  teamMembersLoading?: boolean;
   isLoadingMetrics: boolean;
 }
 
@@ -59,10 +82,14 @@ export function EmployeeDashboardOverview({
   holidays = [],
   chartDailySeries = [],
   requestsPending,
+  pendingRequests = [],
+  teamMembers = [],
+  teamMembersLoading = false,
   isLoadingMetrics,
 }: EmployeeDashboardOverviewProps) {
   const periodLabel = formatMonthLabel(monthYear);
   const [activeMetric, setActiveMetric] = useState<SummaryMetricDayKind | null>(null);
+  const [showPendingRequests, setShowPendingRequests] = useState(false);
 
   const joiningLabel = user.joiningDate
     ? new Date(user.joiningDate).toLocaleDateString("en-IN", {
@@ -73,6 +100,12 @@ export function EmployeeDashboardOverview({
     : null;
 
   const m = alignedMetrics;
+
+  const sortedTeamMembers = useMemo(() => {
+    return [...teamMembers].sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+    );
+  }, [teamMembers]);
 
   const metricDays = useMemo(() => {
     if (!activeMetric || !summary) return [];
@@ -153,9 +186,15 @@ export function EmployeeDashboardOverview({
         disabled={isLoadingMetrics}
       />
 
-      <div className="grid gap-4 lg:grid-cols-12 lg:gap-6">
-      <div className="lg:col-span-4">
-        <div className="h-full rounded-xl border border-border bg-surface p-5 shadow-[inset_0_0_0_1px_rgba(147,197,253,0.18)]">
+      <div className="grid gap-4 lg:grid-cols-12 lg:items-stretch lg:gap-6">
+      <div className="flex min-h-0 lg:col-span-4">
+        <div
+          className={`h-full min-h-0 w-full rounded-xl border border-border bg-surface p-5 shadow-[inset_0_0_0_1px_rgba(147,197,253,0.18)] ${
+            sortedTeamMembers.length > 0
+              ? "flex flex-col lg:grid lg:grid-rows-[auto_auto_minmax(min-content,1fr)]"
+              : "flex flex-col"
+          }`}
+        >
           <div className="flex items-start gap-4">
             <div
               className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-background text-lg font-semibold tracking-tight text-foreground ring-1 ring-border"
@@ -212,6 +251,58 @@ export function EmployeeDashboardOverview({
             )}
           </dl>
 
+          {sortedTeamMembers.length > 0 ? (
+            <div className="mt-5 hidden min-h-0 flex-col overflow-hidden border-t border-border pt-4 lg:flex lg:min-h-0">
+              <p className="mb-2 flex shrink-0 items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <Users className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                Team
+                <span className="font-normal normal-case text-muted-foreground">
+                  ({sortedTeamMembers.length})
+                </span>
+              </p>
+              {teamMembersLoading ? (
+                <div className="flex items-center gap-2 py-3 text-xs text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  Loading team…
+                </div>
+              ) : (
+                <div className="mt-2 min-h-0 flex-1 overflow-y-auto rounded-lg border border-border">
+                  <table className="w-full min-w-0 text-left text-[11px]">
+                    <thead className="sticky top-0 z-[1] bg-surface text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      <tr className="border-b border-border">
+                        <th className="px-2 py-1.5 font-medium">ID</th>
+                        <th className="px-2 py-1.5 font-medium">Name</th>
+                        <th className="px-2 py-1.5 font-medium">Email</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/80">
+                      {sortedTeamMembers.map((member) => {
+                        const employeeId =
+                          member.employeeCode?.trim() || member.odId?.trim() || "—";
+                        return (
+                          <tr key={member._id} className="bg-background/50 hover:bg-background">
+                            <td className="whitespace-nowrap px-2 py-1.5 font-mono text-muted-foreground">
+                              {employeeId}
+                            </td>
+                            <td className="max-w-[7rem] truncate px-2 py-1.5 font-medium text-foreground" title={member.name}>
+                              {member.name}
+                            </td>
+                            <td
+                              className="max-w-[8rem] truncate px-2 py-1.5 text-muted-foreground"
+                              title={member.email}
+                            >
+                              {member.email || "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ) : null}
+
         </div>
       </div>
 
@@ -261,15 +352,33 @@ export function EmployeeDashboardOverview({
               `${m.calcExcessDeficit > 0 ? "+" : m.calcExcessDeficit < 0 ? "-" : ""}${formatHoursMinutes(Math.abs(m.calcExcessDeficit))}`,
               "Worked - scheduled"
             )}
-            <div className="col-span-2 rounded-lg border border-border bg-background px-3 py-2.5 sm:col-span-3 lg:col-span-4">
-              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                Requests pending
-              </p>
-              <p className="mt-0.5 flex items-center gap-2 font-mono text-sm font-semibold text-foreground">
-                <Inbox className="h-4 w-4 text-muted-foreground" aria-hidden />
-                {String(requestsPending)}
-              </p>
-            </div>
+            {requestsPending > 0 ? (
+              <button
+                type="button"
+                onClick={() => setShowPendingRequests(true)}
+                className="col-span-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-left transition hover:border-amber-300/60 hover:bg-amber-50/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40 sm:col-span-3 lg:col-span-4"
+                aria-label={`${requestsPending} requests pending. Show details.`}
+              >
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Requests pending
+                </p>
+                <p className="mt-0.5 flex items-center gap-2 font-mono text-sm font-semibold text-foreground">
+                  <Inbox className="h-4 w-4 text-amber-600" aria-hidden />
+                  {String(requestsPending)}
+                </p>
+                <p className="mt-1 text-[10px] font-medium text-amber-800">Tap for details</p>
+              </button>
+            ) : (
+              <div className="col-span-2 rounded-lg border border-border bg-background px-3 py-2.5 sm:col-span-3 lg:col-span-4">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Requests pending
+                </p>
+                <p className="mt-0.5 flex items-center gap-2 font-mono text-sm font-semibold text-foreground">
+                  <Inbox className="h-4 w-4 text-muted-foreground" aria-hidden />
+                  0
+                </p>
+              </div>
+            )}
             <div className="col-span-2 sm:col-span-3 lg:col-span-4">
               <EmployeeDashboardCharts metrics={m} dailySeries={chartDailySeries} />
             </div>
@@ -277,6 +386,93 @@ export function EmployeeDashboardOverview({
         )}
       </div>
     </div>
+
+      {showPendingRequests && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-3 sm:items-center sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="pending-requests-title"
+          onClick={() => setShowPendingRequests(false)}
+        >
+          <div
+            className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
+              <div>
+                <h4 id="pending-requests-title" className="text-base font-semibold text-foreground">
+                  Pending requests
+                </h4>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {periodLabel} · {pendingRequests.length} request
+                  {pendingRequests.length === 1 ? "" : "s"} awaiting approval
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPendingRequests(false)}
+                className="rounded-full p-1.5 text-muted-foreground hover:bg-background hover:text-foreground"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto px-2 py-2">
+              <ul className="space-y-2">
+                {[...pendingRequests]
+                  .sort((a, b) => a.date.localeCompare(b.date))
+                  .map((req) => (
+                    <li
+                      key={req._id}
+                      className="rounded-lg border border-border bg-background px-3 py-3"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">
+                            {formatRequestDate(req.date)}
+                          </p>
+                          <p className="font-mono text-[10px] text-muted-foreground">
+                            {req.date.split("T")[0]}
+                          </p>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900">
+                          {pendingStatusLabel(req.status)}
+                        </span>
+                      </div>
+                      <dl className="mt-2 space-y-1 text-xs">
+                        <div className="flex gap-2">
+                          <dt className="shrink-0 text-muted-foreground">Requested</dt>
+                          <dd className="font-medium text-foreground">{req.requestedStatus}</dd>
+                        </div>
+                        {req.originalStatus ? (
+                          <div className="flex gap-2">
+                            <dt className="shrink-0 text-muted-foreground">Current</dt>
+                            <dd className="text-foreground">{req.originalStatus}</dd>
+                          </div>
+                        ) : null}
+                        {req.startTime && req.endTime ? (
+                          <div className="flex gap-2">
+                            <dt className="shrink-0 text-muted-foreground">Time</dt>
+                            <dd className="font-mono text-foreground">
+                              {req.startTime} – {req.endTime}
+                            </dd>
+                          </div>
+                        ) : null}
+                        {req.reason?.trim() ? (
+                          <div>
+                            <dt className="text-muted-foreground">Reason</dt>
+                            <dd className="mt-0.5 text-foreground">{req.reason.trim()}</dd>
+                          </div>
+                        ) : null}
+                      </dl>
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       {activeMetric && (
         <div
