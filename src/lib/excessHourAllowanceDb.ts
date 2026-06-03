@@ -17,14 +17,53 @@ export interface ExcessAllowancePair {
   monthYear: string;
 }
 
+type AttendanceLeanForSummary = {
+  _id?: unknown;
+  userId?: unknown;
+  monthYear: string;
+  records?: Record<string, unknown> | Map<string, unknown>;
+  summary?: {
+    totalHour?: number;
+    totalLateArrival?: number;
+    excessHour?: number;
+    totalHalfDay?: number;
+    totalPresent?: number;
+    totalAbsent?: number;
+    totalLeave?: number;
+  };
+};
+
+function populatedUserFromDoc(userId: unknown, fallback: UiUser) {
+  if (userId && typeof userId === 'object' && '_id' in userId) {
+    const u = userId as {
+      _id?: unknown;
+      name?: string;
+      odId?: string;
+      employeeCode?: string;
+      team?: string;
+      designation?: string;
+    };
+    return {
+      _id: u._id ?? fallback._id,
+      name: u.name ?? fallback.name,
+      odId: u.odId ?? fallback.odId,
+      employeeCode: u.employeeCode ?? fallback.employeeCode,
+      team: u.team ?? fallback.team,
+      designation: u.designation ?? fallback.designation,
+    };
+  }
+  return {
+    _id: userId ?? fallback._id,
+    name: fallback.name,
+    odId: fallback.odId,
+    employeeCode: fallback.employeeCode,
+    team: fallback.team,
+    designation: fallback.designation,
+  };
+}
+
 function attendanceDocToSummaryView(
-  doc: {
-    _id?: unknown;
-    userId: { _id?: unknown; name?: string; odId?: string; employeeCode?: string; team?: string; designation?: string };
-    monthYear: string;
-    records?: Record<string, unknown> | Map<string, unknown>;
-    summary?: Record<string, unknown>;
-  },
+  doc: AttendanceLeanForSummary,
   user: UiUser
 ): AttendanceSummaryView {
   const recordsObj =
@@ -32,49 +71,60 @@ function attendanceDocToSummaryView(
       ? Object.fromEntries(doc.records.entries())
       : doc.records || {};
 
+  const populated = populatedUserFromDoc(doc.userId, user);
+  const summary = doc.summary ?? {};
+
   return {
     id: String(doc._id || ''),
-    userId: String(doc.userId?._id || ''),
-    userName: String(doc.userId?.name || user.name || ''),
-    odId: String(doc.userId?.odId || user.odId || ''),
-    employeeCode: String(doc.userId?.employeeCode || user.employeeCode || ''),
-    team: String(doc.userId?.team || user.team || ''),
-    designation: String(doc.userId?.designation || user.designation || ''),
+    userId: String(populated._id || ''),
+    userName: String(populated.name || user.name || ''),
+    odId: String(populated.odId || user.odId || ''),
+    employeeCode: String(populated.employeeCode || user.employeeCode || ''),
+    team: String(populated.team || user.team || ''),
+    designation: String(populated.designation || user.designation || ''),
     monthYear: doc.monthYear,
     summary: {
       scheduledHours: '',
       shortHours: '',
       excessHours: '',
-      totalHour: Number((doc.summary as { totalHour?: number })?.totalHour ?? 0),
-      totalLateArrival: Number((doc.summary as { totalLateArrival?: number })?.totalLateArrival ?? 0),
-      excessHour: Number((doc.summary as { excessHour?: number })?.excessHour ?? 0),
-      totalHalfDay: Number((doc.summary as { totalHalfDay?: number })?.totalHalfDay ?? 0),
-      totalPresent: Number((doc.summary as { totalPresent?: number })?.totalPresent ?? 0),
-      totalAbsent: Number((doc.summary as { totalAbsent?: number })?.totalAbsent ?? 0),
-      totalLeave: Number((doc.summary as { totalLeave?: number })?.totalLeave ?? 0),
+      totalHour: Number(summary.totalHour ?? 0),
+      totalLateArrival: Number(summary.totalLateArrival ?? 0),
+      excessHour: Number(summary.excessHour ?? 0),
+      totalHalfDay: Number(summary.totalHalfDay ?? 0),
+      totalPresent: Number(summary.totalPresent ?? 0),
+      totalAbsent: Number(summary.totalAbsent ?? 0),
+      totalLeave: Number(summary.totalLeave ?? 0),
     },
     recordDetails: recordsObj as AttendanceSummaryView['recordDetails'],
   };
+}
+
+function leanUserToUiUser(raw: Record<string, unknown>): UiUser {
+  return {
+    ...raw,
+    _id: String(raw._id ?? ''),
+    name: String(raw.name ?? ''),
+    email: String(raw.email ?? ''),
+    odId: String(raw.odId ?? ''),
+  } as UiUser;
 }
 
 export async function computeRawExcessForUserMonth(
   userId: string,
   monthYear: string
 ): Promise<number> {
-  const [user, attendance] = await Promise.all([
+  const [userDoc, attendance] = await Promise.all([
     User.findById(userId).lean(),
     Attendance.findOne({ userId, monthYear }).lean(),
   ]);
 
-  if (!user || !attendance) return 0;
+  if (!userDoc || !attendance) return 0;
 
-  const item = attendanceDocToSummaryView(
-    attendance as Parameters<typeof attendanceDocToSummaryView>[0],
-    user as UiUser
-  );
+  const user = leanUserToUiUser(userDoc as unknown as Record<string, unknown>);
+  const item = attendanceDocToSummaryView(attendance, user);
   const dateList = monthDateStrings(monthYear);
   const totalHour = getTotalHourLikeAdminSummary(item);
-  return getExcessDeficitLikeSummary(item, user as UiUser, dateList, totalHour);
+  return getExcessDeficitLikeSummary(item, user, dateList, totalHour);
 }
 
 export async function fetchExcessAllowanceLookup(
