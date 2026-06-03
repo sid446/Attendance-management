@@ -16,6 +16,8 @@ export type EnrichedSummary = AttendanceSummaryView & {
   calcScheduled?: number;
   calcDefinedSchedule?: number;
   calcExcessDeficit?: number;
+  rawExcessDeficit?: number;
+  allowedExcessCap?: number | null;
   calcLate?: number;
   rank?: number;
 };

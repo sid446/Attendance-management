@@ -441,11 +441,16 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
         }
       }
 
-      // Only one of excess or short for the month should be nonzero
-      // Fetch monthly excess directly from attendance summary
+      // Monthly excess: prefer partner-capped calcExcessDeficit from summary enrichment
+      const enrichedExcess =
+        typeof (item as { calcExcessDeficit?: number }).calcExcessDeficit === 'number'
+          ? (item as { calcExcessDeficit: number }).calcExcessDeficit
+          : typeof item.summary?.excessHour === 'number'
+            ? item.summary.excessHour
+            : null;
       let excessShortHrsMonth = '';
-      if (item.summary && typeof item.summary.excessHour === 'number') {
-        const val = item.summary.excessHour;
+      if (enrichedExcess !== null) {
+        const val = enrichedExcess;
         const sign = val < 0 ? '-' : '';
         const abs = Math.abs(val);
         const h = Math.floor(abs);
@@ -681,10 +686,13 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
         });
         rowIndexes.push(worksheet.rowCount);
       });
-      // After all rows for this user/month, sum daily seconds and update monthly column
-      if (dailyExcessShortSeconds.length > 0) {
-        const totalMonthSeconds = dailyExcessShortSeconds.reduce((a: number, b: number) => a + b, 0);
-        const excessShortHrsMonthFormatted = decimalHoursToExcelDuration(totalMonthSeconds / 3600);
+      // After all rows for this user/month, set monthly excess column (partner-capped when available)
+      if (rowIndexes.length > 0) {
+        const monthExcessHours =
+          typeof (item as { calcExcessDeficit?: number }).calcExcessDeficit === 'number'
+            ? (item as { calcExcessDeficit: number }).calcExcessDeficit
+            : dailyExcessShortSeconds.reduce((a, b) => a + b, 0) / 3600;
+        const excessShortHrsMonthFormatted = decimalHoursToExcelDuration(monthExcessHours);
         for (const rowIdx of rowIndexes) {
           worksheet.getRow(rowIdx).getCell('excessShortHrsMonth').value = excessShortHrsMonthFormatted;
         }

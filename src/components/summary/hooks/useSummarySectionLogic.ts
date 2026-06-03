@@ -24,6 +24,11 @@ import {
 } from '../exports';
 import type { SummaryExportContext } from '../exports/exportTypes';
 import type { EnrichedSummary, SummarySectionProps } from '../types';
+import {
+  applyExcessHourAllowance,
+  lookupExcessAllowance,
+  type ExcessAllowanceLookup,
+} from '@/lib/excessHourAllowance';
 
 export function useSummarySectionLogic(props: SummarySectionProps) {
   const {
@@ -148,6 +153,39 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
 
   const [isBulkManagerOpen, setIsBulkManagerOpen] = useState(false);
   const [summaryTableFullscreen, setSummaryTableFullscreen] = useState(false);
+  const [excessAllowanceMap, setExcessAllowanceMap] = useState<ExcessAllowanceLookup>({});
+
+  useEffect(() => {
+    if (!summaries.length) {
+      setExcessAllowanceMap({});
+      return;
+    }
+    const seen = new Set<string>();
+    const pairs: string[] = [];
+    for (const s of summaries) {
+      if (!s.userId || !s.monthYear) continue;
+      const key = `${s.userId}:${s.monthYear}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      pairs.push(key);
+    }
+    if (pairs.length === 0) return;
+
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/excess-hour-allowance?pairs=${encodeURIComponent(pairs.join(','))}`,
+          { cache: 'no-store' }
+        );
+        const json = await res.json();
+        if (json.success && json.data && typeof json.data === 'object') {
+          setExcessAllowanceMap(json.data as ExcessAllowanceLookup);
+        }
+      } catch {
+        setExcessAllowanceMap({});
+      }
+    })();
+  }, [summaries]);
 
   const summaryPeriodBase = useMemo(
     () => ({
@@ -1186,7 +1224,10 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
           });
         }
         // Excess / Sched. use isExcessEligibleRecord (Present, ThumbMachine, in-office, half-day, etc.)
-        const calcExcessDeficit = getExcessResultForItem(item).total;
+        const rawExcessDeficit = getExcessResultForItem(item).total;
+        const cap = lookupExcessAllowance(excessAllowanceMap, item.userId, item.monthYear);
+        const appliedExcess = applyExcessHourAllowance(rawExcessDeficit, cap);
+        const calcExcessDeficit = appliedExcess.displayExcess;
         // Calculate Late on frontend based on toggle
         const lateDetails = getLateDetails(item);
         const calcLate = lateDetails.length;
@@ -1267,6 +1308,8 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
           calcScheduled: sched,
           calcDefinedSchedule,
           calcExcessDeficit,
+          rawExcessDeficit: appliedExcess.rawExcess,
+          allowedExcessCap: appliedExcess.allowedExcessCap,
           calcLate: calcLate // Override summary late
         };
       });
@@ -1367,7 +1410,7 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
       ...item,
       rank: index + 1
     }));
-  }, [summaries, searchTerm, selectedYear, selectedMonth, teamFilter, designationFilter, lateFilter, presentFilter, absentFilter, leaveFilter, halfDayFilter, workHoursFilter, excessFilter, sortField, sortDirection, holidays, allUsers, filterType, currentWeekStart, rangeStart, rangeEnd, resolveWorkPartnerForItem, resolveDesignationForItem]);
+  }, [summaries, searchTerm, selectedYear, selectedMonth, teamFilter, designationFilter, lateFilter, presentFilter, absentFilter, leaveFilter, halfDayFilter, workHoursFilter, excessFilter, sortField, sortDirection, holidays, allUsers, filterType, currentWeekStart, rangeStart, rangeEnd, resolveWorkPartnerForItem, resolveDesignationForItem, excessAllowanceMap]);
 
   /** Render the table in chunks; stats and exports still use full `filteredSummaries`. */
   const [tableVisibleCount, setTableVisibleCount] = useState(SUMMARY_TABLE_CHUNK);

@@ -109,6 +109,7 @@ import {
   type PartnerTeamRow,
 } from '@/components/PartnerTeamOverview';
 import { ManageAttendanceApproverSection } from '@/components/ManageAttendanceApproverSection';
+import { ManageExcessHourAllowanceSection } from '@/components/ManageExcessHourAllowanceSection';
 import { SummarySection } from '@/components/SummarySection';
 import {
   computeSummaryAlignedMetrics,
@@ -120,6 +121,7 @@ import {
   requestWindowRejectionMessage,
   type RequestWindowConfig,
 } from '@/lib/attendanceRequestWindow';
+import type { ExcessAllowanceLookup } from '@/lib/excessHourAllowance';
 import {
   LogOut,
   X,
@@ -134,6 +136,7 @@ import {
   ClipboardList,
   UserCog,
   IndianRupee,
+  Clock,
 } from 'lucide-react';
 
 function sessionToUser(raw: Record<string, unknown>): User {
@@ -341,7 +344,7 @@ function getCorrectionTimeDraft(dayRecord?: AttendanceRecord | null) {
 
 export default function EmployeeDashboard() {
   const [activeTab, setActiveTab] = useState<
-    'dashboard' | 'attendance' | 'clientPunch' | 'employees' | 'manageApprovers'
+    'dashboard' | 'attendance' | 'clientPunch' | 'employees' | 'manageApprovers' | 'manageExcessHours'
   >('dashboard');
   // Mobile drawer open
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -503,6 +506,9 @@ export default function EmployeeDashboard() {
     config: RequestWindowConfig;
   } | null>(null);
 
+  /** Partner excess-hour caps for dashboard metrics (userId:monthYear → hours). */
+  const [excessAllowanceMap, setExcessAllowanceMap] = useState<ExcessAllowanceLookup>({});
+
   const [holidays, setHolidays] = useState<{ date: string; name: string }[]>([]);
   /** Populated user from attendance API (schedules, employment type, etc.) for summary-aligned math */
   const [attendanceUser, setAttendanceUser] = useState<User | null>(null);
@@ -552,6 +558,26 @@ export default function EmployeeDashboard() {
     },
     [requestWindow]
   );
+
+  const fetchExcessAllowancesForMonth = useCallback(async (userIds: string[], my: string) => {
+    const ids = userIds.filter(Boolean);
+    if (ids.length === 0 || !my) {
+      setExcessAllowanceMap({});
+      return;
+    }
+    try {
+      const res = await fetch(
+        `/api/excess-hour-allowance?userIds=${encodeURIComponent(ids.join(','))}&monthYear=${encodeURIComponent(my)}`,
+        { cache: 'no-store' }
+      );
+      const json = await res.json();
+      if (json.success && json.data && typeof json.data === 'object') {
+        setExcessAllowanceMap(json.data as ExcessAllowanceLookup);
+      }
+    } catch {
+      setExcessAllowanceMap({});
+    }
+  }, []);
 
   const getRequestWindowBlockMessage = useCallback(
     (date: string) => {
@@ -1359,9 +1385,10 @@ export default function EmployeeDashboard() {
         summary,
         (attendanceUser ?? user) ?? undefined,
         holidays,
-        monthYear
+        monthYear,
+        { excessAllowanceMap }
       ),
-    [summary, attendanceUser, user, holidays, monthYear]
+    [summary, attendanceUser, user, holidays, monthYear, excessAllowanceMap]
   );
 
   const chartDailySeries = useMemo(
@@ -1383,7 +1410,7 @@ export default function EmployeeDashboard() {
         metricsUser,
         holidays,
         monthYear,
-        { treatSinglePunchAsAbsent: true }
+        { treatSinglePunchAsAbsent: true, excessAllowanceMap }
       );
       if (!m) continue;
       out.push({
@@ -1394,7 +1421,16 @@ export default function EmployeeDashboard() {
       });
     }
     return out;
-  }, [subordinates, subordinateAttendance, holidays, monthYear]);
+  }, [subordinates, subordinateAttendance, holidays, monthYear, excessAllowanceMap]);
+
+  useEffect(() => {
+    if (!user?._id) return;
+    const ids = [
+      user._id,
+      ...subordinates.map((s) => normalizeUserId(s._id)).filter(Boolean),
+    ];
+    void fetchExcessAllowancesForMonth(Array.from(new Set(ids)), monthYear);
+  }, [user?._id, subordinates, monthYear, fetchExcessAllowancesForMonth]);
 
   if (loading || !user) {
     return (
@@ -1566,6 +1602,8 @@ export default function EmployeeDashboard() {
                       ? 'Client location punch'
                       : activeTab === 'manageApprovers'
                         ? 'Manage approvers'
+                        : activeTab === 'manageExcessHours'
+                          ? 'Allowed excess hours'
                         : 'Team'}
               </h1>
               <p className="truncate text-[11px] text-muted-foreground sm:text-xs">
@@ -1728,6 +1766,21 @@ export default function EmployeeDashboard() {
             >
               <UsersIcon className="h-5 w-5 shrink-0 opacity-90" aria-hidden />
               <span className={desktopSidebarCollapsed ? 'md:sr-only' : ''}>Team attendance</span>
+            </button>
+          )}
+
+          {ownTeamCount > 0 && (
+            <button
+              type="button"
+              className={navItemClass(activeTab === 'manageExcessHours')}
+              onClick={() => {
+                setActiveTab('manageExcessHours');
+                setSidebarOpen(false);
+              }}
+              title="Set allowed excess hours for your team"
+            >
+              <Clock className="h-5 w-5 shrink-0 opacity-90" aria-hidden />
+              <span className={desktopSidebarCollapsed ? 'md:sr-only' : ''}>Excess hours</span>
             </button>
           )}
 
@@ -2034,6 +2087,10 @@ export default function EmployeeDashboard() {
 
             {activeTab === 'manageApprovers' && user && (
               <ManageAttendanceApproverSection viewerUserId={user._id} />
+            )}
+
+            {activeTab === 'manageExcessHours' && user && (
+              <ManageExcessHourAllowanceSection viewerUserId={user._id} />
             )}
           </div>
         </main>

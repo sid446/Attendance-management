@@ -6,9 +6,15 @@ import type { AttendanceSummaryView, DailySchedule, ScheduleEntry, ScheduleTime,
 import { isSinglePunch } from './attendanceHours';
 import { getScheduledTimes } from './scheduleUtils';
 
+import { applyExcessHourAllowance, lookupExcessAllowance, type ExcessAllowanceLookup } from './excessHourAllowance';
+
 export interface SummaryMetricsOptions {
   /** Team leaderboard: only in or only out counts as absent (not present / half day). */
   treatSinglePunchAsAbsent?: boolean;
+  /** Partner-approved cap for positive excess (single value). */
+  allowedExcessCap?: number | null;
+  /** Batch lookup map keyed by userId:monthYear. */
+  excessAllowanceMap?: ExcessAllowanceLookup | null;
 }
 
 type EmploymentTypeHistory = { employmentType: string; effectiveFrom: string | Date };
@@ -751,6 +757,14 @@ export function computeSummaryAlignedMetrics(
   const dateList = monthDateStrings(monthYear);
   const totalHour = getTotalHourLikeAdminSummary(item);
 
+  const rawExcess = getExcessDeficitLikeSummary(item, user, dateList, totalHour);
+  const capFromMap =
+    options?.excessAllowanceMap && item.userId && monthYear
+      ? lookupExcessAllowance(options.excessAllowanceMap, item.userId, monthYear)
+      : null;
+  const cap = options?.allowedExcessCap !== undefined ? options.allowedExcessCap : capFromMap;
+  const applied = applyExcessHourAllowance(rawExcess, cap);
+
   return {
     totalDaysInRecords: getTotalDaysInRecords(item),
     holidaysInRecords: getHolidaysInRecordsCount(item, holidayDates),
@@ -762,6 +776,6 @@ export function computeSummaryAlignedMetrics(
     leaveFullDaysConsumed: getLeaveConsumedFullDays(item),
     calcScheduledHours: getScheduledHoursNoLunchForMonth(item, user, dateList),
     totalHour,
-    calcExcessDeficit: getExcessDeficitLikeSummary(item, user, dateList, totalHour),
+    calcExcessDeficit: applied.displayExcess,
   };
 }

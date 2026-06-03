@@ -2,6 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { Search, Download, Loader2, X, Newspaper, CreditCard, Award } from 'lucide-react';
 import { User } from '@/types/ui';
 import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
+import {
+  applyExcessHourAllowance,
+  lookupExcessAllowance,
+  type ExcessAllowanceLookup,
+} from '@/lib/excessHourAllowance';
 
 const ARTICLE_CREDITS_WORKFLOW_STEPS = ['Set attendance period', 'Search or sort table', 'Export or view breakdown'] as const;
 
@@ -29,7 +34,11 @@ const fetchAttendance = async (userId: string): Promise<any[]> => {
   return json.success ? json.data : [];
 };
 
-const calculateArticleCredit = (user: User, attendanceRecords: any[]): ArticleCreditRow => {
+const calculateArticleCredit = (
+  user: User,
+  attendanceRecords: any[],
+  allowanceMap?: ExcessAllowanceLookup
+): ArticleCreditRow => {
   const creditAsOnJan26 = user.articleCreditsAsOnJan26 || 0;
   const leaveTakenBeforeJan26 = user.leaveBalance?.used || 0; // Leaves taken before 1st Jan 2026
   const leaveTakenAfterJan26 = user.leaveBalance?.usedAfterJan26 || 0; // Leaves taken on or after 1st Jan 2026
@@ -43,9 +52,11 @@ const calculateArticleCredit = (user: User, attendanceRecords: any[]): ArticleCr
     // String comparison: "2026-01" >= "2026-01" is true
     const isOnOrAfterJan2026 = monthYear >= jan2026Str;
 
-    // Add excess hours from summary if month is on or after Jan 2026
+    // Add excess hours from summary if month is on or after Jan 2026 (partner cap applied)
     if (isOnOrAfterJan2026 && typeof month.summary?.excessHour === 'number') {
-      totalExcessHours += month.summary.excessHour;
+      const raw = month.summary.excessHour;
+      const cap = lookupExcessAllowance(allowanceMap ?? null, String(user._id), monthYear);
+      totalExcessHours += applyExcessHourAllowance(raw, cap).displayExcess;
     }
   });
 
@@ -98,15 +109,42 @@ export const ArticleCreditsManager: React.FC = () => {
       setLoading(true);
       const users = await fetchUsers();
       const articleUsers = users.filter(u => u.category === 'Article');
-      const allRows: ArticleCreditRow[] = [];
+
+      const pairs: string[] = [];
+      const attendanceByUser = new Map<string, any[]>();
       for (const user of articleUsers) {
         const attendance = await fetchAttendance(user._id);
-        // Filter records for 2 years if needed (by range)
+        attendanceByUser.set(user._id, attendance);
+        for (const rec of attendance) {
+          const my = rec.monthYear || '';
+          if (my) pairs.push(`${user._id}:${my}`);
+        }
+      }
+
+      let allowanceMap: ExcessAllowanceLookup = {};
+      if (pairs.length > 0) {
+        try {
+          const res = await fetch(
+            `/api/excess-hour-allowance?pairs=${encodeURIComponent(pairs.join(','))}`,
+            hrCredentialsInit()
+          );
+          const json = await res.json();
+          if (json.success && json.data) {
+            allowanceMap = json.data as ExcessAllowanceLookup;
+          }
+        } catch {
+          allowanceMap = {};
+        }
+      }
+
+      const allRows: ArticleCreditRow[] = [];
+      for (const user of articleUsers) {
+        const attendance = attendanceByUser.get(user._id) || [];
         const filtered = attendance.filter((rec: any) => {
           if (!range.start || !range.end) return true;
           return rec.monthYear >= range.start && rec.monthYear <= range.end;
         });
-        allRows.push(calculateArticleCredit(user, filtered));
+        allRows.push(calculateArticleCredit(user, filtered, allowanceMap));
       }
       setRows(allRows);
       setLoading(false);

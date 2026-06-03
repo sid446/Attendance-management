@@ -62,7 +62,9 @@ export interface AttendanceSummaryView {
       [x: string]: any;
     }>;
   calcScheduled?: number; // Total scheduled hours for the period
-  calcExcessDeficit?: number; // Calculated excess/deficit hours
+  calcExcessDeficit?: number; // Calculated excess/deficit hours (may be partner-capped)
+  rawExcessDeficit?: number;
+  allowedExcessCap?: number | null;
 }
 
 export interface ScheduleTime {
