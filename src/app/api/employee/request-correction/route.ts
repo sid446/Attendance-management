@@ -10,6 +10,11 @@ import {
   buildCorrectionTableRows,
   escapeHtml,
 } from '@/lib/attendanceRequestEmail';
+import {
+  isDateWithinRequestWindow,
+  requestWindowRejectionMessage,
+} from '@/lib/attendanceRequestWindow';
+import { getEffectiveRequestWindowBoundsForUser } from '@/lib/attendanceRequestWindowDb';
 
 const TIME_REQUIRED_PREFIXES = [
   'Present - in office',
@@ -83,6 +88,17 @@ export async function POST(request: NextRequest) {
     // Validate date format (YYYY-MM-DD)
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return NextResponse.json({ success: false, error: 'Invalid date format. Expected YYYY-MM-DD' }, { status: 400 });
+    }
+
+    const requestWindowBounds = await getEffectiveRequestWindowBoundsForUser(userId);
+    if (!isDateWithinRequestWindow(date, requestWindowBounds.config)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: requestWindowRejectionMessage(date, requestWindowBounds),
+        },
+        { status: 400 }
+      );
     }
 
     const user = await User.findById(userId);

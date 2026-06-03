@@ -12,6 +12,11 @@ import {
   escapeHtml,
   groupPendingRequestsForEmail,
 } from '@/lib/attendanceRequestEmail';
+import {
+  isDateWithinRequestWindow,
+  requestWindowRejectionMessage,
+} from '@/lib/attendanceRequestWindow';
+import { getEffectiveRequestWindowBoundsForUser } from '@/lib/attendanceRequestWindowDb';
 
 const TIME_REQUIRED_PREFIXES = [
   'Present - in office',
@@ -126,6 +131,28 @@ export async function POST(request: NextRequest) {
     
     if (end < start) {
         return NextResponse.json({ success: false, error: 'End date must be after start date' }, { status: 400 });
+    }
+
+    const requestWindowBounds = await getEffectiveRequestWindowBoundsForUser(userId);
+    const startStr = startDate.split('T')[0];
+    const endStr = endDate.split('T')[0];
+    if (!isDateWithinRequestWindow(startStr, requestWindowBounds.config)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: requestWindowRejectionMessage(startStr, requestWindowBounds),
+        },
+        { status: 400 }
+      );
+    }
+    if (!isDateWithinRequestWindow(endStr, requestWindowBounds.config)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: requestWindowRejectionMessage(endStr, requestWindowBounds),
+        },
+        { status: 400 }
+      );
     }
 
     const datesToProcess = [];

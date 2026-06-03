@@ -117,6 +117,10 @@ import {
   isHalftimeEmploymentType,
 } from '@/lib/attendanceSummaryMetrics';
 import {
+  requestWindowRejectionMessage,
+  type RequestWindowConfig,
+} from '@/lib/attendanceRequestWindow';
+import {
   LogOut,
   X,
   Loader2,
@@ -492,6 +496,13 @@ export default function EmployeeDashboard() {
   // Employee requests state
   const [employeeRequests, setEmployeeRequests] = useState<EmployeeAttendanceRequest[]>([]);
 
+  /** HR-configured allowed date range for attendance requests (IST). */
+  const [requestWindow, setRequestWindow] = useState<{
+    earliestDate: string;
+    latestDate: string;
+    config: RequestWindowConfig;
+  } | null>(null);
+
   const [holidays, setHolidays] = useState<{ date: string; name: string }[]>([]);
   /** Populated user from attendance API (schedules, employment type, etc.) for summary-aligned math */
   const [attendanceUser, setAttendanceUser] = useState<User | null>(null);
@@ -519,6 +530,39 @@ export default function EmployeeDashboard() {
     })();
   }, []);
 
+  const fetchRequestWindow = useCallback(async (userId: string) => {
+    try {
+      const res = await fetch(
+        `/api/employee/request-window?userId=${encodeURIComponent(userId)}`,
+        { cache: 'no-store' }
+      );
+      const json = await res.json();
+      if (json.success && json.data) {
+        setRequestWindow(json.data);
+      }
+    } catch {
+      setRequestWindow(null);
+    }
+  }, []);
+
+  const isDateInRequestWindow = useCallback(
+    (date: string) => {
+      if (!requestWindow) return true;
+      return date >= requestWindow.earliestDate && date <= requestWindow.latestDate;
+    },
+    [requestWindow]
+  );
+
+  const getRequestWindowBlockMessage = useCallback(
+    (date: string) => {
+      if (!requestWindow) {
+        return 'Request window is loading. Please try again in a moment.';
+      }
+      return requestWindowRejectionMessage(date, requestWindow);
+    },
+    [requestWindow]
+  );
+
   useEffect(() => {
     const stored = localStorage.getItem('employeeUser');
     if (!stored) {
@@ -537,6 +581,7 @@ export default function EmployeeDashboard() {
       const u = sessionToUser(userData);
       setUser(u);
       setAttendanceUser(u);
+      void fetchRequestWindow(u._id);
 
       // Own attendance loads in parallel; do not reveal the shell until we know if this user has a team (sidebar).
       fetchAttendance(u._id, monthYear, u);
@@ -963,6 +1008,11 @@ export default function EmployeeDashboard() {
   };
 
   const handleDayClick = (date: string) => {
+    if (!isDateInRequestWindow(date)) {
+      alert(getRequestWindowBlockMessage(date));
+      return;
+    }
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const clickedDate = new Date(date);
@@ -1739,6 +1789,23 @@ export default function EmployeeDashboard() {
 
             {activeTab === 'attendance' && (
               <section aria-label="Monthly calendar and attendance requests">
+                {requestWindow && (
+                  <div className="mb-4 rounded-lg border border-blue-200/80 bg-blue-50/60 px-4 py-3 text-sm text-blue-950">
+                    <p className="font-medium">Request window (IST)</p>
+                    <p className="mt-1 text-blue-900/90">
+                      You can raise requests for dates from{' '}
+                      <strong>{requestWindow.earliestDate}</strong> through{' '}
+                      <strong>{requestWindow.latestDate}</strong>.
+                      {requestWindow.config.previousMonthCutoffDay != null && (
+                        <>
+                          {' '}
+                          Previous month closes after day {requestWindow.config.previousMonthCutoffDay};
+                          current-month look-back is {requestWindow.config.currentMonthPastDays} days.
+                        </>
+                      )}
+                    </p>
+                  </div>
+                )}
                 <EmployeeMonthView
                   summaries={summary ? [summary] : []}
                   users={[attendanceUser ?? user]}
@@ -1757,7 +1824,7 @@ export default function EmployeeDashboard() {
                   approvedRequests={employeeRequests}
                   showSummaryStrip={false}
                   sectionTitle="Monthly calendar"
-                  subtitle="Past days: request a correction. Future days: select a range, then apply for leave or other status."
+                  subtitle="Past days: request a correction (within the allowed window). Future days: select a range, then apply for leave or other status."
                   sectionClassName="!border-blue-100 !bg-blue-50/50"
                 />
               </section>
