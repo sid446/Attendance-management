@@ -5,6 +5,10 @@ import React, { useState, ChangeEvent, useEffect, useCallback, useRef } from "re
 import * as XLSX from 'xlsx';
 import { X } from 'lucide-react';
 import { AttendanceRecord, AttendanceSummaryView, User, DailySchedule } from '@/types/ui';
+import {
+  buildSummaryPeriodDateList,
+  getWorkedHoursMatchingScheduledDays,
+} from '@/lib/attendanceSummaryMetrics';
 import { LoginView } from '@/components/LoginView';
 import { Sidebar } from '@/components/Sidebar';
 import { ArticleCreditsManager } from '@/components/ArticleCreditsManager';
@@ -1230,6 +1234,8 @@ export default function AttendanceUpload() {
 
       // Recalculate summary from merged records for all filter types.
       // This avoids double counting in month mode and keeps month/range behavior consistent.
+      const periodDateList = buildSummaryPeriodDateList(filter, startDate, endDate);
+
       for (const user of userMap.values()) {
         const filteredRecords: any = {};
         for (const [date, rec] of Object.entries(user.recordDetails)) {
@@ -1264,10 +1270,6 @@ export default function AttendanceUpload() {
             type === 'Weekoff' ||
             type === 'Weekoff - special allowance';
 
-          if (!isHolidayLike) {
-            summary.totalHour += totalHour;
-          }
-
           if (type === 'Leave' || type === 'On leave') {
             summary.totalLeave += 1;
             // Informational policy: paid leave is still an absence from work.
@@ -1295,6 +1297,38 @@ export default function AttendanceUpload() {
           } else {
             summary.totalAbsent += 1;
           }
+        }
+
+        const userId = String(user.userId?._id ?? '');
+        const uiUser = userScheduleMap.get(userId);
+        if (uiUser && periodDateList.length > 0) {
+          const itemForWorked: AttendanceSummaryView = {
+            id: String(user._id ?? ''),
+            userId,
+            userName: String(user.userId?.name ?? ''),
+            monthYear:
+              typeof filter === 'string'
+                ? filter
+                : monthYears[monthYears.length - 1] ?? '',
+            summary: {
+              scheduledHours: '',
+              shortHours: '',
+              excessHours: '',
+              totalHour: 0,
+              totalLateArrival: 0,
+              excessHour: 0,
+              totalHalfDay: 0,
+              totalPresent: 0,
+              totalAbsent: 0,
+              totalLeave: 0,
+            },
+            recordDetails: filteredRecords,
+          };
+          summary.totalHour = getWorkedHoursMatchingScheduledDays(
+            itemForWorked,
+            uiUser,
+            periodDateList
+          );
         }
 
         user.summary = summary;
@@ -1570,6 +1604,7 @@ export default function AttendanceUpload() {
                 onLoadAttendance={fetchEmployeeMonthly}
                 showEmployeeSelector={true}
                 approvedRequests={employeeApprovedRequests}
+                holidays={holidays}
               />
             )}
             {/* Article Credits Manager Section */}
@@ -1818,6 +1853,7 @@ export default function AttendanceUpload() {
                       onLoadAttendance={fetchEmployeeMonthly}
                       showEmployeeSelector={false}
                       approvedRequests={employeeApprovedRequests}
+                      holidays={holidays}
                     />
                   </div>
                 </div>

@@ -1392,8 +1392,15 @@ export default function EmployeeDashboard() {
   );
 
   const chartDailySeries = useMemo(
-    () => (summary ? getDailyWorkedHoursSeries(summary) : []),
-    [summary]
+    () =>
+      summary
+        ? getDailyWorkedHoursSeries(
+            summary,
+            (attendanceUser ?? user) ?? undefined,
+            monthYear
+          )
+        : [],
+    [summary, attendanceUser, user, monthYear]
   );
 
   const partnerTeamRows: PartnerTeamRow[] = useMemo(() => {
@@ -2064,6 +2071,11 @@ export default function EmployeeDashboard() {
                               subordinateAttendance[selectedSubordinateId]?.requests ?? []
                             }
                             showSummaryStrip={true}
+                            holidays={holidays}
+                            summaryMetricsOptions={{
+                              treatSinglePunchAsAbsent: true,
+                              excessAllowanceMap,
+                            }}
                             sectionTitle="Calendar"
                             subtitle={null}
                             sectionClassName="!border-blue-100 !bg-white"

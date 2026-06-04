@@ -406,10 +406,96 @@ export function getTotalPresentLikeAdminSummary(
 }
 
 /**
- * Sum of per-day `totalHour` excluding holiday-like rows — matches admin
- * `page.tsx` fetchSummaries recalculation (not raw API `summary.totalHour`).
+ * Same day gate as Sched. column: excess-eligible + valid employee schedule in/out.
  */
-export function getTotalHourLikeAdminSummary(item: AttendanceSummaryView): number {
+export function isDayIncludedInScheduledCalc(
+  user: User,
+  dateStr: string,
+  recAny: unknown
+): boolean {
+  if (!recAny || !isExcessEligibleRecord(dateStr, recAny)) return false;
+  const dateObj = new Date(dateStr);
+  const schedule = getScheduledTimes(user, dateObj);
+  if (
+    schedule.isHoliday ||
+    !schedule.inTime ||
+    !schedule.outTime ||
+    schedule.inTime === '00:00' ||
+    schedule.outTime === '00:00'
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** Worked hours summed only on days that count toward Sched. (same dates). */
+export function getWorkedHoursMatchingScheduledDays(
+  item: AttendanceSummaryView,
+  user: User | undefined,
+  dateList: string[]
+): number {
+  if (!user) return 0;
+  let total = 0;
+  dateList.forEach((dateStr) => {
+    const rec = item.recordDetails?.[dateStr];
+    if (!isDayIncludedInScheduledCalc(user, dateStr, rec)) return;
+    total += Number(rec?.totalHour || 0);
+  });
+  return Number(total.toFixed(2));
+}
+
+export function buildSummaryPeriodDateList(
+  filter: string | { start: string; end: string } | { startDate: string; endDate: string },
+  startDate: Date | null,
+  endDate: Date | null
+): string[] {
+  if (startDate && endDate) {
+    const dates: string[] = [];
+    const d = new Date(startDate);
+    const end = new Date(endDate);
+    while (d <= end) {
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      dates.push(`${yyyy}-${mm}-${dd}`);
+      d.setDate(d.getDate() + 1);
+    }
+    return dates;
+  }
+  if (typeof filter === 'string') {
+    return monthDateStrings(filter);
+  }
+  if ('start' in filter && 'end' in filter) {
+    const dates: string[] = [];
+    const [startY, startM] = filter.start.split('-').map(Number);
+    const [endY, endM] = filter.end.split('-').map(Number);
+    let y = startY;
+    let m = startM;
+    while (y < endY || (y === endY && m <= endM)) {
+      dates.push(...monthDateStrings(`${y}-${String(m).padStart(2, '0')}`));
+      m += 1;
+      if (m > 12) {
+        m = 1;
+        y += 1;
+      }
+    }
+    return dates;
+  }
+  return [];
+}
+
+/**
+ * Sum of per-day `totalHour` on scheduled days when user + dateList are provided;
+ * otherwise legacy sum excluding holiday-like rows only.
+ */
+export function getTotalHourLikeAdminSummary(
+  item: AttendanceSummaryView,
+  user?: User,
+  dateList?: string[]
+): number {
+  if (user && dateList && dateList.length > 0) {
+    return getWorkedHoursMatchingScheduledDays(item, user, dateList);
+  }
   let sum = 0;
   for (const rec of Object.values(item.recordDetails || {}) as any[]) {
     const type = String(rec?.typeOfPresence || '');
@@ -425,11 +511,26 @@ export function getTotalHourLikeAdminSummary(item: AttendanceSummaryView): numbe
   return Number(sum.toFixed(2));
 }
 
-/** Per-day worked hours on non–holiday-like rows, chronological (for dashboard charts). */
+/** Per-day worked hours on scheduled days (or non–holiday-like fallback), chronological. */
 export function getDailyWorkedHoursSeries(
-  item: AttendanceSummaryView
+  item: AttendanceSummaryView,
+  user?: User,
+  monthYear?: string
 ): { date: string; hours: number }[] {
+  const dateList = user && monthYear ? monthDateStrings(monthYear) : null;
   const rows: { date: string; hours: number }[] = [];
+
+  if (dateList && user) {
+    for (const dateStr of dateList) {
+      const rec = item.recordDetails?.[dateStr];
+      if (!isDayIncludedInScheduledCalc(user, dateStr, rec)) continue;
+      const hours = Number(rec?.totalHour || 0);
+      if (hours <= 0) continue;
+      rows.push({ date: dateStr, hours });
+    }
+    return rows;
+  }
+
   const entries = Object.entries(item.recordDetails || {}).sort(([a], [b]) =>
     a.localeCompare(b)
   );
@@ -699,15 +800,13 @@ export function getScheduledHoursNoLunchForMonth(
 
   dateList.forEach((dateStr) => {
     const rec = item.recordDetails?.[dateStr];
-    if (!rec || !isExcessEligibleRecord(dateStr, rec)) return;
+    if (!isDayIncludedInScheduledCalc(user, dateStr, rec)) return;
 
     const dateObj = new Date(dateStr);
     const schedule = getScheduledTimes(user, dateObj);
 
-    if (schedule.isHoliday || !schedule.inTime || !schedule.outTime || schedule.inTime === '00:00' || schedule.outTime === '00:00') return;
-
-    const [inH, inM] = schedule.inTime.split(':').map(Number);
-    const [outH, outM] = schedule.outTime.split(':').map(Number);
+    const [inH, inM] = schedule.inTime!.split(':').map(Number);
+    const [outH, outM] = schedule.outTime!.split(':').map(Number);
     let diff = outH * 60 + outM - (inH * 60 + inM);
     if (diff < 0) diff += 24 * 60;
 
@@ -723,7 +822,7 @@ export function getExcessDeficitLikeSummary(
   dateList: string[],
   workedHours?: number
 ): number {
-  const w = workedHours !== undefined ? workedHours : getTotalHourLikeAdminSummary(item);
+  const w = workedHours !== undefined ? workedHours : getTotalHourLikeAdminSummary(item, user, dateList);
   const scheduledHours = Number(getScheduledHoursNoLunchForMonth(item, user, dateList) || 0);
   return Number((w - scheduledHours).toFixed(2));
 }
@@ -755,7 +854,7 @@ export function computeSummaryAlignedMetrics(
 
   const holidayDates = new Set(holidays.map((h) => h.date));
   const dateList = monthDateStrings(monthYear);
-  const totalHour = getTotalHourLikeAdminSummary(item);
+  const totalHour = getTotalHourLikeAdminSummary(item, user, dateList);
 
   const rawExcess = getExcessDeficitLikeSummary(item, user, dateList, totalHour);
   const capFromMap =

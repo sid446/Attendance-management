@@ -123,7 +123,7 @@ export async function computeRawExcessForUserMonth(
   const user = leanUserToUiUser(userDoc as unknown as Record<string, unknown>);
   const item = attendanceDocToSummaryView(attendance, user);
   const dateList = monthDateStrings(monthYear);
-  const totalHour = getTotalHourLikeAdminSummary(item);
+  const totalHour = getTotalHourLikeAdminSummary(item, user, dateList);
   return getExcessDeficitLikeSummary(item, user, dateList, totalHour);
 }
 

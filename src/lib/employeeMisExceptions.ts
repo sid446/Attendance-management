@@ -3,12 +3,14 @@ import { toYmd, isDateOnOrAfterInactive } from '@/lib/attendanceInactiveFilter';
 import { getManagedFieldValueForDate } from '@/lib/userFieldHistory';
 
 export type MisExceptionType =
+  | 'missing-attendance'
   | 'missing-biometric'
   | 'no-schedule'
   | 'no-pl-partner'
   | 'approver-same-as-employee';
 
 export const MIS_EXCEPTION_LABELS: Record<MisExceptionType, string> = {
+  'missing-attendance': 'Active — attendance not uploaded for month',
   'missing-biometric': 'Biometric not uploaded (past dates)',
   'no-schedule': 'Attendance timing schedule not defined',
   'no-pl-partner': 'PL partner not defined (registered or working under partner missing)',
@@ -27,6 +29,43 @@ export type MisExceptionRow = {
   exceptions: MisExceptionType[];
   missingBiometricDates?: string[];
 };
+
+export type MisBiometricDayEmployee = Pick<
+  MisExceptionRow,
+  'userId' | 'odId' | 'name' | 'designation' | 'workingUnderPartner'
+>;
+
+export type MisBiometricDayRow = {
+  date: string;
+  employees: MisBiometricDayEmployee[];
+};
+
+/** Group missing-biometric employees by calendar date (chronological). */
+export function buildBiometricMissingByDay(rows: MisExceptionRow[]): MisBiometricDayRow[] {
+  const byDate = new Map<string, MisBiometricDayEmployee[]>();
+
+  for (const row of rows) {
+    if (!row.exceptions.includes('missing-biometric')) continue;
+    for (const date of row.missingBiometricDates ?? []) {
+      const list = byDate.get(date) ?? [];
+      list.push({
+        userId: row.userId,
+        odId: row.odId,
+        name: row.name,
+        designation: row.designation,
+        workingUnderPartner: row.workingUnderPartner,
+      });
+      byDate.set(date, list);
+    }
+  }
+
+  return Array.from(byDate.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, employees]) => ({
+      date,
+      employees: employees.sort((a, b) => a.name.localeCompare(b.name)),
+    }));
+}
 
 function normalizeStr(v: unknown): string {
   return String(v ?? '').trim();
@@ -203,6 +242,15 @@ export function findMissingBiometricDates(
   return missing;
 }
 
+/** True when no attendance month document exists, or it has zero day records. */
+export function isAttendanceMissingForMonth(
+  hasAttendanceDoc: boolean,
+  records: Record<string, any>
+): boolean {
+  if (!hasAttendanceDoc) return true;
+  return Object.keys(records || {}).length === 0;
+}
+
 export function computeMisExceptionsForUser(
   user: any,
   opts: {
@@ -210,6 +258,7 @@ export function computeMisExceptionsForUser(
     todayYmd: string;
     holidayDateSet: Set<string>;
     records: Record<string, any>;
+    hasAttendanceDoc: boolean;
     partnerAsOf: Date;
   }
 ): MisExceptionType[] {
@@ -224,7 +273,16 @@ export function computeMisExceptionsForUser(
     opts.monthYear,
     opts.todayYmd
   );
-  if (missingBio.length > 0) types.push('missing-biometric');
+
+  const attendanceMissing =
+    isAttendanceMissingForMonth(opts.hasAttendanceDoc, opts.records) &&
+    missingBio.length > 0;
+
+  if (attendanceMissing) {
+    types.push('missing-attendance');
+  } else if (missingBio.length > 0) {
+    types.push('missing-biometric');
+  }
 
   if (!hasAttendanceScheduleDefined(user, opts.partnerAsOf)) types.push('no-schedule');
   if (!hasPlPartnerDefined(user, opts.partnerAsOf)) types.push('no-pl-partner');

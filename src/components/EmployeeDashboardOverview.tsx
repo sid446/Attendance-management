@@ -345,7 +345,7 @@ export function EmployeeDashboardOverview({
             {cell("late", "Late", String(m.calcLate))}
             {cell("leave", "Leave", String(m.leaveFullDaysConsumed), "Full leave days (value = 1)")}
             {cell(null, "Scheduled", formatHoursMinutes(m.calcScheduledHours), "Expected hours (eligible days)")}
-            {cell(null, "Work hours", formatHoursMinutes(m.totalHour), "Sum of daily hours (excl. Sun / holiday / week-off rows)")}
+            {cell(null, "Work hours", formatHoursMinutes(m.totalHour), "Sum on scheduled days only (same as admin Summary)")}
             {cell(
               null,
               "Excess / short",

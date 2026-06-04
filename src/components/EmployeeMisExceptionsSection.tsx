@@ -11,6 +11,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import type { MisExceptionType } from '@/lib/employeeMisExceptions';
+import { buildBiometricMissingByDay } from '@/lib/employeeMisExceptions';
 
 type MisRow = {
   userId: string;
@@ -38,6 +39,7 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
   const [counts, setCounts] = useState<MisCounts | null>(null);
   const [labels, setLabels] = useState<MisLabels | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedDate, setExpandedDate] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<FilterValue>(FILTER_ALL);
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
@@ -88,10 +90,25 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
     return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   };
 
+  const formatDateLabel = (dateKey: string) => {
+    const [y, m, d] = dateKey.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    return date.toLocaleDateString('en-IN', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  };
+
+  const isBiometricDayView = typeFilter === 'missing-biometric';
+
   const labelFor = (type: MisExceptionType) => labels?.[type] ?? type;
 
   const monthAffectsList =
-    typeFilter === FILTER_ALL || typeFilter === 'missing-biometric';
+    typeFilter === FILTER_ALL ||
+    typeFilter === 'missing-biometric' ||
+    typeFilter === 'missing-attendance';
 
   const filteredRows = useMemo(() => {
     if (!searchTerm) return rows;
@@ -106,15 +123,30 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
     );
   }, [rows, searchTerm]);
 
+  const biometricDayRows = useMemo(
+    () => buildBiometricMissingByDay(filteredRows),
+    [filteredRows]
+  );
+
   const emptyMessage = useMemo(() => {
+    if (typeFilter === 'missing-biometric') {
+      return `No days with missing biometric uploads for ${formatMonthYear(selectedMonth)}.`;
+    }
     if (typeFilter === FILTER_ALL) {
       return `No active employees with MIS exceptions for ${formatMonthYear(selectedMonth)}.`;
     }
     return `No active employees with “${labelFor(typeFilter)}”.`;
   }, [typeFilter, selectedMonth, labels]);
 
+  useEffect(() => {
+    setExpandedId(null);
+    setExpandedDate(null);
+  }, [typeFilter, selectedMonth]);
+
   const exceptionBadgeClass = (type: MisExceptionType) => {
     switch (type) {
+      case 'missing-attendance':
+        return 'border-red-200 bg-red-50 text-red-950';
       case 'missing-biometric':
         return 'border-rose-200 bg-rose-50 text-rose-900';
       case 'no-schedule':
@@ -185,7 +217,7 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
         </div>
 
         {counts && labels && (
-          <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {(Object.keys(counts) as MisExceptionType[]).map((type) => (
               <button
                 key={type}
@@ -216,7 +248,11 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
             <input
               id="mis-search"
               type="search"
-              placeholder="Search name, ID, designation, partner…"
+              placeholder={
+                isBiometricDayView
+                  ? 'Search employee name, ID, designation, partner…'
+                  : 'Search name, ID, designation, partner…'
+              }
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className={inputCls}
@@ -251,6 +287,68 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
             <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
             Loading exceptions…
           </div>
+        ) : isBiometricDayView ? (
+          biometricDayRows.length === 0 ? (
+            <p className="py-12 text-center text-sm text-slate-600">{emptyMessage}</p>
+          ) : (
+            <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200">
+              {biometricDayRows.map((day) => {
+                const expanded = expandedDate === day.date;
+                return (
+                  <li key={day.date}>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedDate(expanded ? null : day.date)}
+                      className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-slate-50"
+                      aria-expanded={expanded}
+                    >
+                      {expanded ? (
+                        <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+                      ) : (
+                        <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-baseline gap-2">
+                          <span className="font-medium text-slate-900">
+                            {formatDateLabel(day.date)}
+                          </span>
+                          <span className="font-mono text-xs text-slate-500">{day.date}</span>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-600">
+                          {day.employees.length} employee
+                          {day.employees.length === 1 ? '' : 's'} missing biometric
+                        </p>
+                      </div>
+                    </button>
+                    {expanded && (
+                      <div className="border-t border-slate-100 bg-slate-50/80 px-4 py-3 pl-11">
+                        <ul className="divide-y divide-slate-200 rounded-md border border-slate-200 bg-white">
+                          {day.employees.map((emp) => (
+                            <li
+                              key={emp.userId}
+                              className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-3 py-2 text-sm"
+                            >
+                              <span className="font-medium text-slate-900">{emp.name}</span>
+                              <span className="font-mono text-xs text-slate-500">
+                                {emp.odId || '—'}
+                              </span>
+                              {(emp.designation || emp.workingUnderPartner) && (
+                                <span className="w-full text-xs text-slate-600 sm:w-auto">
+                                  {[emp.designation, emp.workingUnderPartner]
+                                    .filter(Boolean)
+                                    .join(' · ')}
+                                </span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )
         ) : filteredRows.length === 0 ? (
           <p className="py-12 text-center text-sm text-slate-600">{emptyMessage}</p>
         ) : (
@@ -311,6 +409,13 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
                           <dd>{row.workingUnderPartner || '—'}</dd>
                         </div>
                       </dl>
+                      {row.exceptions.includes('missing-attendance') && (
+                        <p className="mt-3 text-xs text-red-900">
+                          This active employee has no attendance uploaded for{' '}
+                          {formatMonthYear(selectedMonth)} (no month record or empty file). Upload
+                          machine/biometric data for the month.
+                        </p>
+                      )}
                       {row.exceptions.includes('no-schedule') && (
                         <p className="mt-3 text-xs text-amber-900">
                           No attendance timing schedule is defined on this employee record (no uploaded
@@ -335,8 +440,12 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
                       {row.missingBiometricDates && row.missingBiometricDates.length > 0 && (
                         <div className="mt-3">
                           <p className="text-xs font-medium text-slate-500">
-                            Missing biometric ({row.missingBiometricDates.length} day
-                            {row.missingBiometricDates.length === 1 ? '' : 's'} in {formatMonthYear(selectedMonth)})
+                            {row.exceptions.includes('missing-attendance')
+                              ? 'Days missing attendance'
+                              : 'Missing biometric'}{' '}
+                            ({row.missingBiometricDates.length} day
+                            {row.missingBiometricDates.length === 1 ? '' : 's'} in{' '}
+                            {formatMonthYear(selectedMonth)})
                           </p>
                           <p className="mt-1 font-mono text-xs leading-relaxed text-slate-800">
                             {row.missingBiometricDates.join(', ')}

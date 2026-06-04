@@ -7,6 +7,8 @@ import {
   formatHoursMinutes,
   getEmploymentTypeForDate,
   isExcessEligibleRecord,
+  getWorkedHoursMatchingScheduledDays,
+  isDayIncludedInScheduledCalc,
 } from '@/lib/attendanceSummaryMetrics';
 import {
   getDesignationForDate,
@@ -366,12 +368,14 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
   const getWorkHoursDetails = (item: AttendanceSummaryView) => {
       if (!item) return [];
       const records = item.recordDetails || {};
+      const user = allUsers?.find(u => u._id === item.userId || u.odId === item.userId);
+      const dateList = getExcessDateListForCurrentPeriod();
       const dates: { date: string; info: string; subInfo?: string }[] = [];
-      Object.entries(records).forEach(([date, rec]) => {
-          // Use edited times for display if available, otherwise use original times
-          const effectiveCheckin = rec.editedCheckin || rec.checkin;
-          
-          if (rec.totalHour > 0 && rec.typeOfPresence !== 'Holiday') {
+      dateList.forEach((date) => {
+          const rec = records[date];
+          if (!user || !isDayIncludedInScheduledCalc(user, date, rec)) return;
+          const effectiveCheckin = rec?.editedCheckin || rec?.checkin;
+          if (rec && Number(rec.totalHour || 0) > 0) {
                dates.push({ date, info: `${formatHoursMinutes(rec.totalHour)}`, subInfo: effectiveCheckin ? `In: ${effectiveCheckin}` : undefined });
           }
       });
@@ -1058,15 +1062,13 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
 
     dateList.forEach((dateStr) => {
       const rec = item.recordDetails?.[dateStr];
-      if (!rec || !isExcessEligibleRecord(dateStr, rec)) return;
+      if (!user || !isDayIncludedInScheduledCalc(user, dateStr, rec)) return;
 
       const dateObj = new Date(dateStr);
       const schedule = getCachedScheduledTimes(user, dateObj);
 
-      if (schedule.isHoliday || !schedule.inTime || !schedule.outTime || schedule.inTime === '00:00' || schedule.outTime === '00:00') return;
-
-      const [inH, inM] = schedule.inTime.split(':').map(Number);
-      const [outH, outM] = schedule.outTime.split(':').map(Number);
+      const [inH, inM] = schedule.inTime!.split(':').map(Number);
+      const [outH, outM] = schedule.outTime!.split(':').map(Number);
       let diff = (outH * 60 + outM) - (inH * 60 + inM);
       if (diff < 0) diff += 24 * 60;
 
@@ -1132,7 +1134,11 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
   };
 
   const getExcessResultForItem = (item: AttendanceSummaryView) => {
-    const workedHours = Number(item.summary?.totalHour || 0);
+    const user = allUsers?.find(u => u._id === item.userId || u.odId === item.userId);
+    const dateList = getExcessDateListForCurrentPeriod();
+    const workedHours = user
+      ? getWorkedHoursMatchingScheduledDays(item, user, dateList)
+      : Number(item.summary?.totalHour || 0);
     const scheduledHours = Number(calculateScheduledHoursNoLunch(item) || 0);
     const total = Number((workedHours - scheduledHours).toFixed(2));
 
@@ -1201,11 +1207,15 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
     // Enrich with calculations
     const startTime = performance.now();
     const enriched = list.map(item => {
+        const user = allUsers?.find(u => u._id === item.userId || u.odId === item.userId);
+        const periodDateList = getExcessDateListForCurrentPeriod();
+        const workedTotal = user
+          ? getWorkedHoursMatchingScheduledDays(item, user, periodDateList)
+          : item.summary.totalHour;
+
         // Use calculateScheduledHoursNoLunch for scheduled (no lunch deduction)
         const sched = calculateScheduledHoursNoLunch(item);
-        const actual = item.summary.totalHour;
-        // Attach scheduledInTime and scheduledOutTime to each record for correct excess/short calculation
-        const user = allUsers?.find(u => u._id === item.userId || u.odId === item.userId);
+        const actual = workedTotal;
         const recordDetailsWithSchedule = { ...item.recordDetails };
         if (user && recordDetailsWithSchedule) {
           Object.entries(recordDetailsWithSchedule).forEach(([date, record]: [string, any]) => {
@@ -1223,8 +1233,8 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
             };
           });
         }
-        // Excess / Sched. use isExcessEligibleRecord (Present, ThumbMachine, in-office, half-day, etc.)
-        const rawExcessDeficit = getExcessResultForItem(item).total;
+        // Excess / Sched. use same scheduled-day set for worked and sched.
+        const rawExcessDeficit = Number((workedTotal - sched).toFixed(2));
         const cap = lookupExcessAllowance(excessAllowanceMap, item.userId, item.monthYear);
         const appliedExcess = applyExcessHourAllowance(rawExcessDeficit, cap);
         const calcExcessDeficit = appliedExcess.displayExcess;
@@ -1300,6 +1310,7 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
           designation: designationAtPeriod || item.designation || '',
           summary: {
             ...item.summary,
+            totalHour: workedTotal,
             totalHalfDay: calcHalfDay,
             totalLate: calcLate,
             totalAbsent: calcAbsent,

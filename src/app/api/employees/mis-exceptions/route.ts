@@ -17,6 +17,7 @@ import {
 } from '@/lib/userFieldHistory';
 
 const ALL_EXCEPTION_TYPES: MisExceptionType[] = [
+  'missing-attendance',
   'missing-biometric',
   'no-schedule',
   'no-pl-partner',
@@ -61,16 +62,21 @@ export async function GET(request: NextRequest) {
       )
       .lean();
 
-    const needsBiometric = !exceptionFilter || exceptionFilter === 'missing-biometric';
+    const needsMonthAttendance =
+      !exceptionFilter ||
+      exceptionFilter === 'missing-biometric' ||
+      exceptionFilter === 'missing-attendance';
     const recordsByUserId = new Map<string, Record<string, unknown>>();
+    const hasAttendanceDocByUserId = new Set<string>();
 
-    if (needsBiometric) {
+    if (needsMonthAttendance) {
       const attendanceDocs = await Attendance.find({ monthYear })
         .select('userId records')
         .lean();
 
       for (const doc of attendanceDocs) {
         const uid = String(doc.userId);
+        hasAttendanceDocByUserId.add(uid);
         let records: Record<string, unknown> = {};
         if (doc.records instanceof Map) {
           for (const [k, v] of doc.records.entries()) records[k] = v;
@@ -84,6 +90,7 @@ export async function GET(request: NextRequest) {
     const partnerAsOf = lastDayOfMonthYear(monthYear);
     const fullRows: MisExceptionRow[] = [];
     const counts: Record<MisExceptionType, number> = {
+      'missing-attendance': 0,
       'missing-biometric': 0,
       'no-schedule': 0,
       'no-pl-partner': 0,
@@ -93,12 +100,14 @@ export async function GET(request: NextRequest) {
     for (const user of activeUsers) {
       const userId = String(user._id);
       const records = recordsByUserId.get(userId) || {};
+      const hasAttendanceDoc = hasAttendanceDocByUserId.has(userId);
 
       const exceptions = computeMisExceptionsForUser(user, {
         monthYear,
         todayYmd,
         holidayDateSet,
         records,
+        hasAttendanceDoc,
         partnerAsOf,
       });
 
@@ -108,9 +117,11 @@ export async function GET(request: NextRequest) {
         counts[ex] += 1;
       }
 
-      const missingBiometricDates = exceptions.includes('missing-biometric')
-        ? findMissingBiometricDates(user, records, holidayDateSet, monthYear, todayYmd)
-        : undefined;
+      const missingBiometricDates =
+        exceptions.includes('missing-biometric') ||
+        exceptions.includes('missing-attendance')
+          ? findMissingBiometricDates(user, records, holidayDateSet, monthYear, todayYmd)
+          : undefined;
 
       fullRows.push({
         userId,
@@ -138,7 +149,10 @@ export async function GET(request: NextRequest) {
           ...row,
           exceptions: [exceptionFilter],
           missingBiometricDates:
-            exceptionFilter === 'missing-biometric' ? row.missingBiometricDates : undefined,
+            exceptionFilter === 'missing-biometric' ||
+            exceptionFilter === 'missing-attendance'
+              ? row.missingBiometricDates
+              : undefined,
         }));
     }
 

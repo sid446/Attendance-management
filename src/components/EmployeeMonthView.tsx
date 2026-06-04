@@ -27,6 +27,12 @@ import {
   isLateArrivalLikeSummary,
 } from '@/lib/attendanceSummaryMetrics';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
+import {
+  computeSummaryAlignedMetrics,
+  type SummaryMetricsOptions,
+  type SummaryAlignedMetrics,
+} from '@/lib/attendanceSummaryMetrics';
+import { SummaryAlignedMetricsStrip } from '@/components/SummaryAlignedMetricsStrip';
 interface ApprovedRequest {
   _id: string;
   date: string;
@@ -277,6 +283,12 @@ interface EmployeeMonthViewProps {
   approvedRequests?: ApprovedRequest[]; // For admin view: show indicators for approved/edited days
   /** When false, hides the top summary strip (e.g. when shown in a dashboard overview). Default true. */
   showSummaryStrip?: boolean;
+  /** Company holidays — required for summary counts aligned with Attendance Summary. */
+  holidays?: { date: string }[];
+  /** Options passed to computeSummaryAlignedMetrics (e.g. team single-punch rule, excess caps). */
+  summaryMetricsOptions?: SummaryMetricsOptions;
+  /** Precomputed metrics; when set, skips internal calculation. */
+  alignedMetrics?: SummaryAlignedMetrics | null;
   sectionTitle?: string;
   /** undefined = default admin subtitle; null = hide; string = custom */
   subtitle?: string | null;
@@ -301,6 +313,9 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
   showEmployeeSelector = false,
   approvedRequests = [],
   showSummaryStrip = true,
+  holidays = [],
+  summaryMetricsOptions,
+  alignedMetrics: alignedMetricsProp,
   sectionTitle = 'Employee Month View',
   subtitle: subtitleProp,
   sectionClassName = ''
@@ -411,6 +426,25 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
   /** User with schedules/employment history — required for correct late vs summary. */
   const scheduleUser: User | null = userFromList ?? null;
 
+  const alignedMetrics = React.useMemo(() => {
+    if (alignedMetricsProp !== undefined) return alignedMetricsProp;
+    if (!summaryFromList || !scheduleUser || !selectedMonthYear) return null;
+    return computeSummaryAlignedMetrics(
+      summaryFromList,
+      scheduleUser,
+      holidays,
+      selectedMonthYear,
+      summaryMetricsOptions
+    );
+  }, [
+    alignedMetricsProp,
+    summaryFromList,
+    scheduleUser,
+    holidays,
+    selectedMonthYear,
+    summaryMetricsOptions,
+  ]);
+
   // Helper: get scheduled times (inTime/outTime) for a specific date string YYYY-MM-DD
   const getScheduledTimesForDate = (dateStr: string) => {
     if (!scheduleUser) return { inTime: '', outTime: '' };
@@ -511,67 +545,9 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
     <section
       className={`space-y-4 rounded-xl border border-blue-200/65 bg-panel p-4 text-slate-900 shadow-sm sm:space-y-5 sm:p-6 ${sectionClassName}`.trim()}
     >
-      {/* Monthly summary row */}
-      {showSummaryStrip && summaryFromList && summaryFromList.summary && (
-        (() => {
-          // Compute absent days locally: not Sunday, not DB-holiday, not weekoff, not leave,
-          // and both in and out are missing or '00:00'
-          let calcAbsentLocal = 0;
-          for (const rec of employeeDays) {
-            if (!rec || !rec.date) continue;
-            const d = new Date(rec.date);
-            if (d.getFullYear() !== selectedYear || d.getMonth() + 1 !== selectedMonth) continue;
-            // Skip Sundays
-            if (d.getDay() === 0) continue;
-            const t = rec.typeOfPresence || '';
-            // Skip DB-holiday
-            if (t === 'Holiday') continue;
-            // Skip weekoff types
-            if (typeof t === 'string' && t.toLowerCase().includes('weekoff')) continue;
-            // Skip leaves
-            if (t === 'Leave' || t === 'On leave') continue;
-            const effectiveCheckin = rec.editedCheckin || rec.checkin;
-            const effectiveCheckout = rec.editedCheckout || rec.checkout;
-            if ((!effectiveCheckin || effectiveCheckin === '00:00') && (!effectiveCheckout || effectiveCheckout === '00:00')) {
-              calcAbsentLocal += 1;
-            }
-          }
-          return (
-            <div className="mb-2 flex flex-wrap items-center gap-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800">
-              <div>
-                <span className="font-semibold text-slate-900">Total Hours:</span>{' '}
-                {summaryFromList.summary.totalHour?.toFixed(2)}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-900">Late Arrivals:</span>{' '}
-                {summaryFromList.summary.totalLateArrival}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-900">Half Days:</span> {summaryFromList.summary.totalHalfDay}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-900">Presents:</span> {summaryFromList.summary.totalPresent}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-900">Absents:</span> {calcAbsentLocal}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-900">Leaves:</span> {summaryFromList.summary.totalLeave}
-              </div>
-              <div>
-                <span className="font-semibold text-slate-900">Excess/Short Hours:</span>{' '}
-                {(() => {
-                  const val = summaryFromList.summary.excessHour;
-                  const sign = val < 0 ? '-' : '';
-                  const abs = Math.abs(val);
-                  const h = Math.floor(abs);
-                  const m = Math.round((abs % 1) * 60);
-                  return `${sign}${h}:${m.toString().padStart(2, '0')}`;
-                })()}
-              </div>
-            </div>
-          );
-        })()
+      {/* Monthly summary row — same rules as admin Attendance Summary */}
+      {showSummaryStrip && alignedMetrics && (
+        <SummaryAlignedMetricsStrip metrics={alignedMetrics} />
       )}
       <div className="flex flex-col items-start justify-between gap-2 sm:flex-row sm:items-center sm:gap-4">
         <div>
