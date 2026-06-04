@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import dbConnect from '@/lib/mongodb';
 import TeamAttendanceAccess from '@/models/TeamAttendanceAccess';
 import User from '@/models/User';
+import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAuth';
 
 function normalizeName(value: unknown): string {
   return String(value || '').replace(/[.\s]/g, '').toLowerCase();
@@ -22,10 +23,16 @@ interface VisibleUser {
 
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requireEmployeeSession(request);
+    if (auth instanceof NextResponse) return auth;
+
     await dbConnect();
 
     const { searchParams } = new URL(request.url);
     const viewerUserId = String(searchParams.get('viewerUserId') || '').trim();
+
+    const forbidden = forbidUnlessSelf(auth.userId, viewerUserId);
+    if (forbidden) return forbidden;
 
     if (!mongoose.Types.ObjectId.isValid(viewerUserId)) {
       return NextResponse.json({ success: false, error: 'Valid viewerUserId is required' }, { status: 400 });

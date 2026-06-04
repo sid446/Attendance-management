@@ -8,9 +8,13 @@ import { transporter, mailOptions } from '@/lib/mailer';
 import LeaveTransaction from '@/models/LeaveTransaction';
 import { isAttendanceDatePartnerOnlyIst } from '@/lib/attendanceRequestApprovalWindow';
 import { sendPartnerRequestDecisionEmail } from '@/lib/attendanceRequestNotifications';
+import { requireEmployeeSession } from '@/lib/employeeRouteAuth';
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireEmployeeSession(request);
+    if (auth instanceof NextResponse) return auth;
+
     await dbConnect();
 
     const { requestId, action, remarks, value, approvedBy, approvedByEmail } = await request.json();

@@ -15,6 +15,7 @@ import {
   requestWindowRejectionMessage,
 } from '@/lib/attendanceRequestWindow';
 import { getEffectiveRequestWindowBoundsForUser } from '@/lib/attendanceRequestWindowDb';
+import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAuth';
 
 const TIME_REQUIRED_PREFIXES = [
   'Present - in office',
@@ -39,10 +40,17 @@ function requiresTimePair(status: string): boolean {
 
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requireEmployeeSession(request);
+    if (auth instanceof NextResponse) return auth;
+
     await dbConnect();
 
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
+    if (userId) {
+      const forbidden = forbidUnlessSelf(auth.userId, userId);
+      if (forbidden) return forbidden;
+    }
     const partnerName = searchParams.get('partnerName');
     const status = searchParams.get('status');
 
@@ -77,6 +85,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireEmployeeSession(request);
+    if (auth instanceof NextResponse) return auth;
+
     await dbConnect();
 
     const { userId, date, requestedStatus, reason, startTime, endTime } = await request.json();
@@ -84,6 +95,9 @@ export async function POST(request: NextRequest) {
     if (!userId || !date || !requestedStatus) {
       return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
     }
+
+    const forbidden = forbidUnlessSelf(auth.userId, userId);
+    if (forbidden) return forbidden;
 
     // Validate date format (YYYY-MM-DD)
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {

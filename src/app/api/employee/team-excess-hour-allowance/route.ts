@@ -9,6 +9,7 @@ import {
   upsertExcessAllowance,
 } from '@/lib/excessHourAllowanceDb';
 import { applyExcessHourAllowance } from '@/lib/excessHourAllowance';
+import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAuth';
 
 function normalizeName(value: unknown): string {
   return String(value || '').replace(/[.\s]/g, '').toLowerCase();
@@ -78,9 +79,14 @@ async function assertPartnerCanManageEmployee(
 
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requireEmployeeSession(request);
+    if (auth instanceof NextResponse) return auth;
+
     await dbConnect();
 
     const viewerUserId = String(request.nextUrl.searchParams.get('viewerUserId') || '').trim();
+    const forbidden = forbidUnlessSelf(auth.userId, viewerUserId);
+    if (forbidden) return forbidden;
     const monthYear = String(request.nextUrl.searchParams.get('monthYear') || '').trim();
 
     if (!mongoose.Types.ObjectId.isValid(viewerUserId)) {
@@ -139,10 +145,15 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const session = await requireEmployeeSession(request);
+    if (session instanceof NextResponse) return session;
+
     await dbConnect();
 
     const body = await request.json();
     const viewerUserId = String(body?.viewerUserId || '').trim();
+    const forbidden = forbidUnlessSelf(session.userId, viewerUserId);
+    if (forbidden) return forbidden;
     const employeeId = String(body?.employeeId || '').trim();
     const monthYear = String(body?.monthYear || '').trim();
     const clear = body?.clear === true;

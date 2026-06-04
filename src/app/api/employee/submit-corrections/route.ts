@@ -5,6 +5,7 @@ import Attendance from '@/models/Attendance';
 import User from '@/models/User';
 import { transporter, mailOptions } from '@/lib/mailer';
 import { createPartnerReviewAllLink } from '@/lib/partnerReviewToken';
+import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAuth';
 
 interface CorrectionData {
   date: string;
@@ -17,6 +18,9 @@ interface CorrectionData {
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireEmployeeSession(request);
+    if (auth instanceof NextResponse) return auth;
+
     await dbConnect();
 
     const { userId, monthYear, corrections } = await request.json();
@@ -27,6 +31,9 @@ export async function POST(request: NextRequest) {
         error: 'userId, monthYear, and corrections array are required'
       }, { status: 400 });
     }
+
+    const forbidden = forbidUnlessSelf(auth.userId, userId);
+    if (forbidden) return forbidden;
 
     // Get user
     const user = await User.findById(userId);

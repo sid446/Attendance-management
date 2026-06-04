@@ -17,6 +17,7 @@ import {
   requestWindowRejectionMessage,
 } from '@/lib/attendanceRequestWindow';
 import { getEffectiveRequestWindowBoundsForUser } from '@/lib/attendanceRequestWindowDb';
+import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAuth';
 
 const TIME_REQUIRED_PREFIXES = [
   'Present - in office',
@@ -48,6 +49,9 @@ function isZeroTimeRequest(requestType: string): boolean {
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireEmployeeSession(request);
+    if (auth instanceof NextResponse) return auth;
+
     await dbConnect();
 
     const { userId, startDate, endDate, requestType, reason, startTime, endTime } = await request.json();
@@ -55,6 +59,9 @@ export async function POST(request: NextRequest) {
     if (!userId || !startDate || !endDate || !requestType) {
       return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
     }
+
+    const forbidden = forbidUnlessSelf(auth.userId, userId);
+    if (forbidden) return forbidden;
 
     const user = await User.findById(userId);
     if (!user) {

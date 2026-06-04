@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
+import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAuth';
 
 function normalizeName(value: unknown): string {
   return String(value || '').replace(/[.\s]/g, '').toLowerCase();
@@ -127,10 +128,16 @@ async function buildLoginEmailLookup(): Promise<Map<string, LeanUser>> {
 
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requireEmployeeSession(request);
+    if (auth instanceof NextResponse) return auth;
+
     await dbConnect();
 
     const { searchParams } = new URL(request.url);
     const viewerUserId = String(searchParams.get('viewerUserId') || '').trim();
+
+    const forbidden = forbidUnlessSelf(auth.userId, viewerUserId);
+    if (forbidden) return forbidden;
 
     if (!mongoose.Types.ObjectId.isValid(viewerUserId)) {
       return NextResponse.json({ success: false, error: 'Valid viewerUserId is required' }, { status: 400 });
@@ -226,10 +233,15 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const auth = await requireEmployeeSession(request);
+    if (auth instanceof NextResponse) return auth;
+
     await dbConnect();
 
     const body = await request.json();
     const viewerUserId = String(body?.viewerUserId || '').trim();
+    const forbidden = forbidUnlessSelf(auth.userId, viewerUserId);
+    if (forbidden) return forbidden;
     const employeeId = String(body?.employeeId || '').trim();
     const attendanceEmail = String(body?.attendanceEmail || '').trim();
 

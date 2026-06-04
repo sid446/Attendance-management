@@ -3,6 +3,7 @@ import connectDB from '@/lib/mongodb';
 import LocationAttendance from '@/models/LocationAttendance';
 import ClientPlace from '@/models/ClientPlace';
 import Attendance from '@/models/Attendance';
+import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAuth';
 
 // Haversine formula to calculate distance between two coordinates in meters
 function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -34,6 +35,9 @@ function calculateTotalHours(inTime: string, outTime: string): number {
 // GET - Get location attendance records for an employee
 export async function GET(req: NextRequest) {
   try {
+    const auth = await requireEmployeeSession(req);
+    if (auth instanceof NextResponse) return auth;
+
     await connectDB();
     
     const { searchParams } = new URL(req.url);
@@ -48,6 +52,9 @@ export async function GET(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    const forbidden = forbidUnlessSelf(auth.userId, userId);
+    if (forbidden) return forbidden;
     
     const query: any = { userId };
     
@@ -76,10 +83,16 @@ export async function GET(req: NextRequest) {
 // POST - Mark in or out punch with location verification
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireEmployeeSession(req);
+    if (auth instanceof NextResponse) return auth;
+
     await connectDB();
     
     const body = await req.json();
     const { userId, clientPlaceId, punchType, coordinates } = body;
+
+    const forbidden = forbidUnlessSelf(auth.userId, userId);
+    if (forbidden) return forbidden;
     
     // Validate required fields
     if (!userId || !clientPlaceId || !punchType || !coordinates?.lat || !coordinates?.lng) {

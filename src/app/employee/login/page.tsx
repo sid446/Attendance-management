@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Mail, ArrowRight, Loader2, ShieldCheck } from 'lucide-react';
 import { formatOtpCountdown, HR_OTP_TTL_MINUTES, HR_OTP_TTL_MS } from '@/lib/hrOtpConstants';
+import { employeeCredentialsInit } from '@/lib/employeeCredentialsInit';
 
 export default function EmployeeLoginPage() {
   const [email, setEmail] = useState('');
@@ -16,6 +17,23 @@ export default function EmployeeLoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch('/api/auth/employee-session', employeeCredentialsInit());
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.data) {
+            localStorage.setItem('employeeUser', JSON.stringify(json.data));
+            router.replace('/employee/dashboard');
+          }
+        }
+      } catch {
+        // ignore
+      }
+    })();
+  }, [router]);
 
   const otpExpired = step === 'otp' && otpSecondsLeft !== null && otpSecondsLeft <= 0;
 
@@ -90,11 +108,14 @@ export default function EmployeeLoginPage() {
     setMessage(null);
 
     try {
-      const res = await fetch('/api/auth/verify-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, otp: otp.trim(), role: 'employee' }),
-      });
+      const res = await fetch(
+        '/api/auth/verify-otp',
+        employeeCredentialsInit({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId, otp: otp.trim(), role: 'employee' }),
+        })
+      );
 
       const json = await res.json();
 

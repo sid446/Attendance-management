@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Attendance from '@/models/Attendance';
 import User from '@/models/User';
+import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAuth';
 
 interface InvalidRecord {
   date: string;
@@ -12,11 +13,17 @@ interface InvalidRecord {
 
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requireEmployeeSession(request);
+    if (auth instanceof NextResponse) return auth;
+
     await dbConnect();
 
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
     const monthYear = searchParams.get('monthYear');
+
+    const forbidden = forbidUnlessSelf(auth.userId, userId);
+    if (forbidden) return forbidden;
 
     if (!userId || !monthYear) {
       return NextResponse.json({

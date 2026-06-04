@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { EmployeeMonthView } from '@/components/EmployeeMonthView';
 import { AttendanceRecord, AttendanceSummaryView, User } from '@/types/ui';
 import type { EmployeeAttendanceRequest } from '@/types/employeeAttendanceRequest';
+import { employeeCredentialsInit } from '@/lib/employeeCredentialsInit';
 
 function normalizeUserId(value: unknown): string {
   if (value == null) return '';
@@ -57,7 +58,7 @@ async function fetchSubordinates(viewerUserId: string) {
   if (!viewerUserId) return [];
   const res = await fetch(
     `/api/employee/team-attendance-access?viewerUserId=${encodeURIComponent(viewerUserId)}`,
-    { cache: 'no-store' }
+    employeeCredentialsInit({ cache: 'no-store' })
   );
   const json = await res.json();
   if (!json.success || !Array.isArray(json.data)) return [];
@@ -80,7 +81,8 @@ async function fetchEmployeeRequestsForMonth(
 ): Promise<EmployeeAttendanceRequest[]> {
   try {
     const res = await fetch(
-      `/api/employee/request-correction?userId=${encodeURIComponent(userId)}`
+      `/api/employee/request-correction?userId=${encodeURIComponent(userId)}`,
+      employeeCredentialsInit()
     );
     const json = await res.json();
     if (!json.success || !Array.isArray(json.data)) return [];
@@ -440,7 +442,7 @@ export default function EmployeeDashboard() {
       try {
         const res = await fetch(
           `/api/employee/team-attendance-approver?viewerUserId=${encodeURIComponent(user._id)}`,
-          { cache: 'no-store' }
+          employeeCredentialsInit({ cache: 'no-store' })
         );
         const json = await res.json();
         if (json.success && Array.isArray(json.data?.members)) {
@@ -540,7 +542,7 @@ export default function EmployeeDashboard() {
     try {
       const res = await fetch(
         `/api/employee/request-window?userId=${encodeURIComponent(userId)}`,
-        { cache: 'no-store' }
+        employeeCredentialsInit({ cache: 'no-store' })
       );
       const json = await res.json();
       if (json.success && json.data) {
@@ -590,20 +592,27 @@ export default function EmployeeDashboard() {
   );
 
   useEffect(() => {
-    const stored = localStorage.getItem('employeeUser');
-    if (!stored) {
-      router.push('/employee/login');
-      return;
-    }
-    let userData: Record<string, unknown>;
-    try {
-      userData = JSON.parse(stored) as Record<string, unknown>;
-    } catch {
-      router.push('/employee/login');
-      return;
-    }
+    void (async () => {
+      let userData: Record<string, unknown> | null = null;
+      try {
+        const res = await fetch('/api/auth/employee-session', employeeCredentialsInit());
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.data) {
+            userData = json.data as Record<string, unknown>;
+            localStorage.setItem('employeeUser', JSON.stringify(json.data));
+          }
+        }
+      } catch {
+        // fall through to localStorage
+      }
 
-    (async () => {
+      if (!userData) {
+        localStorage.removeItem('employeeUser');
+        router.push('/employee/login');
+        return;
+      }
+
       const u = sessionToUser(userData);
       setUser(u);
       setAttendanceUser(u);
@@ -616,7 +625,7 @@ export default function EmployeeDashboard() {
       try {
         let subs: User[] = [];
         try {
-          subs = await fetchSubordinates(String(userData._id ?? ''));
+          subs = await fetchSubordinates(String(userData!._id ?? ''));
         } catch {
           subs = [];
         }
@@ -1219,7 +1228,7 @@ export default function EmployeeDashboard() {
     }
     setSendingRequest(true);
     try {
-      const res = await fetch('/api/employee/request-correction', {
+      const res = await fetch('/api/employee/request-correction', employeeCredentialsInit({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1230,7 +1239,7 @@ export default function EmployeeDashboard() {
           startTime: finalStartTime || undefined,
           endTime: finalEndTime || undefined
         })
-      });
+      }));
       const json = await res.json();
       if (!res.ok) {
         if (res.status === 400 && typeof json.error === 'string' && json.error.includes('already have a correction request for this date')) {
@@ -1335,7 +1344,7 @@ export default function EmployeeDashboard() {
     }
     setSendingFutureRequest(true);
     try {
-      const res = await fetch('/api/employee/request-future-leave', {
+      const res = await fetch('/api/employee/request-future-leave', employeeCredentialsInit({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1347,7 +1356,7 @@ export default function EmployeeDashboard() {
           startTime: reqStartTime,
           endTime: reqEndTime
         })
-      });
+      }));
       const json = await res.json();
       if (!res.ok) {
         alert(json.error || 'Failed to send request');
@@ -1375,8 +1384,15 @@ export default function EmployeeDashboard() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('employeeUser');
-    router.push('/employee/login');
+    void (async () => {
+      try {
+        await fetch('/api/auth/employee-logout', employeeCredentialsInit({ method: 'POST' }));
+      } catch {
+        // ignore
+      }
+      localStorage.removeItem('employeeUser');
+      router.push('/employee/login');
+    })();
   };
 
   const alignedMetrics = useMemo(
