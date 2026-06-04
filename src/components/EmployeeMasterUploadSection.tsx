@@ -32,7 +32,7 @@ const BASIC_MASTER_WORKFLOW_STEPS = ['Mode & effective date', 'Choose Excel', 'R
 const SCHEDULE_UPLOAD_WORKFLOW_STEPS = ['Schedule effective date', 'Choose Excel', 'Review result'] as const;
 
 export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionProps> = ({ onRefreshUsers }) => {
-  const [mode, setMode] = useState<UploadMode>('update');
+  const [mode, setMode] = useState<UploadMode>('add');
   const [deactivateMissing, setDeactivateMissing] = useState(false);
   const [effectiveFrom, setEffectiveFrom] = useState<string>(new Date().toISOString().split('T')[0]);
   const [scheduleEffectiveFrom, setScheduleEffectiveFrom] = useState<string>(new Date().toISOString().split('T')[0]);
