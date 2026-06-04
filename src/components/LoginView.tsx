@@ -1,13 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { FileSpreadsheet, Lock, Mail, UserCircle } from 'lucide-react';
-import { HR_OTP_TTL_MINUTES } from '@/lib/hrOtpConstants';
-
-function formatOtpCountdown(secondsLeft: number): string {
-  const m = Math.floor(secondsLeft / 60);
-  const s = secondsLeft % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
+import { formatOtpCountdown, HR_OTP_TTL_MINUTES } from '@/lib/hrOtpConstants';
 
 interface LoginViewProps {
   loginStep: 'password' | 'otp';

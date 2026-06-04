@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
 import { sendOTPEmail } from '@/lib/mailer';
+import { hrOtpExpiresAtMs } from '@/lib/hrOtpConstants';
 
 const EMAIL_DOMAIN = '@asija.in';
 
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest) {
 
     const otp = generateOTP();
     const sessionId = generateSessionId();
-    const expiresAt = Date.now() + 5 * 60 * 1000;
+    const expiresAt = hrOtpExpiresAtMs();
 
     employeeOtpStore.set(sessionId, {
       otp,
@@ -84,8 +85,9 @@ export async function POST(request: NextRequest) {
       success: true,
       data: {
         sessionId,
+        expiresAt: new Date(expiresAt).toISOString(),
         message: 'OTP sent to your email',
-      }
+      },
     });
 
   } catch (error) {

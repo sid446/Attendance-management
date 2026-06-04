@@ -1,20 +1,38 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Mail, ArrowRight, Loader2, ShieldCheck } from 'lucide-react';
+import { formatOtpCountdown, HR_OTP_TTL_MINUTES, HR_OTP_TTL_MS } from '@/lib/hrOtpConstants';
 
 export default function EmployeeLoginPage() {
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
+  const [otpSecondsLeft, setOtpSecondsLeft] = useState<number | null>(null);
   const [step, setStep] = useState<'email' | 'otp'>('email');
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
+  const otpExpired = step === 'otp' && otpSecondsLeft !== null && otpSecondsLeft <= 0;
+
   const isAsijaEmail = (value: string) => value.trim().toLowerCase().endsWith('@asija.in');
+
+  useEffect(() => {
+    if (step !== 'otp' || otpExpiresAt == null) {
+      setOtpSecondsLeft(null);
+      return;
+    }
+    const tick = () => {
+      setOtpSecondsLeft(Math.max(0, Math.ceil((otpExpiresAt - Date.now()) / 1000)));
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [step, otpExpiresAt]);
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,6 +59,10 @@ export default function EmployeeLoginPage() {
 
       if (json.success) {
         setSessionId(json.data.sessionId);
+        const expiresMs = json.data.expiresAt
+          ? new Date(json.data.expiresAt).getTime()
+          : Date.now() + HR_OTP_TTL_MS;
+        setOtpExpiresAt(expiresMs);
         setStep('otp');
         setOtp('');
         setMessage('OTP sent to your email. Please check your inbox.');
@@ -57,6 +79,11 @@ export default function EmployeeLoginPage() {
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!sessionId || otp.trim().length !== 6) return;
+
+    if (otpExpiresAt != null && otpExpiresAt <= Date.now()) {
+      setError('OTP has expired. Change email and request a new code.');
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -87,6 +114,7 @@ export default function EmployeeLoginPage() {
   const handleChangeEmail = () => {
     setStep('email');
     setSessionId(null);
+    setOtpExpiresAt(null);
     setOtp('');
     setError(null);
     setMessage(null);
@@ -124,7 +152,9 @@ export default function EmployeeLoginPage() {
                     autoComplete="email"
                   />
                 </div>
-                <p className="text-xs text-zinc-500">Use your @asija.in email to receive OTP.</p>
+                <p className="text-xs text-zinc-500">
+                  Use your @asija.in email to receive a {HR_OTP_TTL_MINUTES}-minute OTP.
+                </p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -144,6 +174,22 @@ export default function EmployeeLoginPage() {
                   autoComplete="one-time-code"
                 />
                 <p className="text-xs text-zinc-500">OTP was sent to {email.trim().toLowerCase()}.</p>
+                {otpSecondsLeft !== null && (
+                  <p className="text-xs font-medium text-zinc-400">
+                    {otpExpired ? (
+                      <span className="text-rose-400">
+                        OTP expired — use Change email below to request a new code.
+                      </span>
+                    ) : (
+                      <>
+                        Valid for {HR_OTP_TTL_MINUTES} minutes · expires in{' '}
+                        <span className="tabular-nums text-emerald-400">
+                          {formatOtpCountdown(otpSecondsLeft)}
+                        </span>
+                      </>
+                    )}
+                  </p>
+                )}
               </div>
             )}
 
@@ -161,7 +207,7 @@ export default function EmployeeLoginPage() {
 
             <button
               type="submit"
-              disabled={loading || (step === 'otp' && otp.trim().length !== 6)}
+              disabled={loading || (step === 'otp' && (otp.trim().length !== 6 || otpExpired))}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 py-3 font-medium text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading ? (
@@ -171,7 +217,7 @@ export default function EmployeeLoginPage() {
                 </>
               ) : (
                 <>
-                  {step === 'email' ? 'Send OTP' : 'Verify OTP'}
+                  {step === 'email' ? 'Send OTP' : otpExpired ? 'OTP expired' : 'Verify OTP'}
                   <ArrowRight className="h-5 w-5" aria-hidden />
                 </>
               )}

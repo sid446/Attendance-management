@@ -5,7 +5,7 @@ import { sendOTPEmail } from '@/lib/mailer';
 import { isAllowedHrAdminEmail } from '@/lib/hrAdminAllowlistServer';
 import { verifyHrConsolePassword } from '@/lib/hrConsolePassword';
 import HrOtpPending from '@/models/HrOtpPending';
-import { hrOtpExpiresAt } from '@/lib/hrOtpConstants';
+import { hrOtpExpiresAt, hrOtpExpiresAtMs } from '@/lib/hrOtpConstants';
 
 const EMAIL_DOMAIN = '@asija.in';
 
@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
 
         const otp = generateOTP();
         const sessionId = generateSessionId();
-        const expiresAt = Date.now() + 5 * 60 * 1000;
+        const expiresAt = hrOtpExpiresAtMs();
 
         employeeOtpStore.set(sessionId, {
           otp,
@@ -188,6 +188,7 @@ export async function POST(request: NextRequest) {
           success: true,
           data: {
             sessionId,
+            expiresAt: new Date(expiresAt).toISOString(),
             message: 'OTP sent to your email',
           },
         });
