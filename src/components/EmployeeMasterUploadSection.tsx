@@ -33,7 +33,7 @@ const SCHEDULE_UPLOAD_WORKFLOW_STEPS = ['Schedule effective date', 'Choose Excel
 
 export const EmployeeMasterUploadSection: React.FC<EmployeeMasterUploadSectionProps> = ({ onRefreshUsers }) => {
   const [mode, setMode] = useState<UploadMode>('update');
-  const [deactivateMissing, setDeactivateMissing] = useState(true);
+  const [deactivateMissing, setDeactivateMissing] = useState(false);
   const [effectiveFrom, setEffectiveFrom] = useState<string>(new Date().toISOString().split('T')[0]);
   const [scheduleEffectiveFrom, setScheduleEffectiveFrom] = useState<string>(new Date().toISOString().split('T')[0]);
   const [isUploading, setIsUploading] = useState(false);
