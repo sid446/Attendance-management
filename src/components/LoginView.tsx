@@ -1,6 +1,13 @@
 import React from 'react';
 import Link from 'next/link';
 import { FileSpreadsheet, Lock, Mail, UserCircle } from 'lucide-react';
+import { HR_OTP_TTL_MINUTES } from '@/lib/hrOtpConstants';
+
+function formatOtpCountdown(secondsLeft: number): string {
+  const m = Math.floor(secondsLeft / 60);
+  const s = secondsLeft % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
 
 interface LoginViewProps {
   loginStep: 'password' | 'otp';
@@ -13,6 +20,7 @@ interface LoginViewProps {
   onOtpChange: (val: string) => void;
   onOtpSubmit: () => void;
   onBackToPassword: () => void;
+  otpSecondsLeft: number | null;
   isLoading: boolean;
   error: string | null;
 }
@@ -28,9 +36,11 @@ export const LoginView: React.FC<LoginViewProps> = ({
   onOtpChange,
   onOtpSubmit,
   onBackToPassword,
+  otpSecondsLeft,
   isLoading,
   error
 }) => {
+  const otpExpired = otpSecondsLeft !== null && otpSecondsLeft <= 0;
   return (
     <div className="min-h-screen bg-gradient-to-b from-sky-400/50 via-blue-200/85 to-[var(--surface)] text-slate-900 flex items-center justify-center p-6">
       <div className="w-full max-w-md">
@@ -102,6 +112,18 @@ export const LoginView: React.FC<LoginViewProps> = ({
               <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-900">
                 <Mail className="w-3 h-3 inline mr-1" />
                 OTP sent to <span className="font-medium">{email || 'your admin email'}</span>. Please check your inbox.
+                {otpSecondsLeft !== null && (
+                  <p className="mt-2 font-medium">
+                    {otpExpired ? (
+                      <span className="text-red-700">OTP expired — go back and sign in again to get a new code.</span>
+                    ) : (
+                      <>
+                        Valid for {HR_OTP_TTL_MINUTES} minutes · expires in{' '}
+                        <span className="tabular-nums text-blue-800">{formatOtpCountdown(otpSecondsLeft)}</span>
+                      </>
+                    )}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -127,10 +149,10 @@ export const LoginView: React.FC<LoginViewProps> = ({
 
               <button
                 onClick={onOtpSubmit}
-                disabled={isLoading || otp.length !== 6}
+                disabled={isLoading || otp.length !== 6 || otpExpired}
                 className="w-full rounded-md bg-blue-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
               >
-                {isLoading ? 'Verifying...' : 'Verify OTP'}
+                {isLoading ? 'Verifying...' : otpExpired ? 'OTP expired' : 'Verify OTP'}
               </button>
 
               <button
@@ -143,7 +165,7 @@ export const LoginView: React.FC<LoginViewProps> = ({
           )}
 
           <p className="mt-6 text-center text-[11px] text-slate-500">
-            Sign-in OTP is sent to your admin email after password verification
+            Sign-in OTP is sent to your admin email after password verification ({HR_OTP_TTL_MINUTES}-minute validity)
           </p>
 
           <div className="mt-4 border-t border-slate-200 pt-4">

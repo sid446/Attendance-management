@@ -5,6 +5,7 @@ import { sendOTPEmail } from '@/lib/mailer';
 import { isAllowedHrAdminEmail } from '@/lib/hrAdminAllowlistServer';
 import { verifyHrConsolePassword } from '@/lib/hrConsolePassword';
 import HrOtpPending from '@/models/HrOtpPending';
+import { hrOtpExpiresAt } from '@/lib/hrOtpConstants';
 
 const EMAIL_DOMAIN = '@asija.in';
 
@@ -80,6 +81,7 @@ export async function POST(request: NextRequest) {
 
       const otp = generateOTP();
       const sessionId = generateSessionId();
+      const expiresAt = hrOtpExpiresAt();
 
       await dbConnect();
       await HrOtpPending.findOneAndUpdate(
@@ -88,7 +90,7 @@ export async function POST(request: NextRequest) {
           $set: {
             otp,
             email: rawEmail,
-            expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+            expiresAt,
           },
         },
         { upsert: true }
@@ -109,6 +111,7 @@ export async function POST(request: NextRequest) {
         data: {
           sessionId,
           email: rawEmail,
+          expiresAt: expiresAt.toISOString(),
           message: `OTP sent to ${rawEmail}`,
         },
       });

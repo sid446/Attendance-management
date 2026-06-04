@@ -29,6 +29,7 @@ import { ClientPlaceManagement } from '@/components/ClientPlaceManagement';
 import { HrConsoleAccessSection } from '@/components/HrConsoleAccessSection';
 import { HrConsoleSettingsSection } from '@/components/HrConsoleSettingsSection';
 import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
+import { HR_OTP_TTL_MS } from '@/lib/hrOtpConstants';
 import {
   getDesignationForDate,
   getWorkingUnderPartnerForDate,
@@ -48,6 +49,8 @@ export default function AttendanceUpload() {
   const [password, setPassword] = useState<string>('');
   const [otp, setOtp] = useState<string>('');
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
+  const [otpSecondsLeft, setOtpSecondsLeft] = useState<number | null>(null);
   const [loginLoading, setLoginLoading] = useState<boolean>(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string>('');
@@ -161,6 +164,10 @@ export default function AttendanceUpload() {
       }
 
       setSessionId(result.data.sessionId);
+      const expiresMs = result.data.expiresAt
+        ? new Date(result.data.expiresAt).getTime()
+        : Date.now() + HR_OTP_TTL_MS;
+      setOtpExpiresAt(expiresMs);
       setLoginStep('otp');
       setPassword('');
     } catch (err) {
@@ -216,10 +223,27 @@ export default function AttendanceUpload() {
     setProcessing(false);
   };
 
+  useEffect(() => {
+    if (loginStep !== 'otp' || otpExpiresAt == null) {
+      setOtpSecondsLeft(null);
+      return;
+    }
+    const tick = () => {
+      setOtpSecondsLeft(Math.max(0, Math.ceil((otpExpiresAt - Date.now()) / 1000)));
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [loginStep, otpExpiresAt]);
+
   // Handle OTP verification
   const handleOTPSubmit = async () => {
     if (!otp || !sessionId) {
       setLoginError('Please enter OTP');
+      return;
+    }
+    if (otpExpiresAt != null && otpExpiresAt <= Date.now()) {
+      setLoginError('OTP has expired. Go back and sign in again to receive a new code.');
       return;
     }
 
@@ -255,6 +279,7 @@ export default function AttendanceUpload() {
       setOtp('');
       setLoginEmail('');
       setSessionId(null);
+      setOtpExpiresAt(null);
     } catch (err) {
       setLoginError(err instanceof Error ? err.message : 'Verification failed');
     } finally {
@@ -281,6 +306,7 @@ export default function AttendanceUpload() {
     setLoginEmail('');
     setOtp('');
     setSessionId(null);
+    setOtpExpiresAt(null);
     setLoginError(null);
   }, []);
 
@@ -1549,8 +1575,10 @@ export default function AttendanceUpload() {
           setLoginStep('password');
           setOtp('');
           setSessionId(null);
+          setOtpExpiresAt(null);
           setLoginError(null);
         }}
+        otpSecondsLeft={loginStep === 'otp' ? otpSecondsLeft : null}
         isLoading={loginLoading}
         error={loginError}
       />
