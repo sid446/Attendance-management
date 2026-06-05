@@ -49,7 +49,7 @@ type CellStyleResult = {
   bgClass: string;
   badgeClass: string;
   Icon: React.ElementType;
-  /** When set, replaces `status` for display (e.g. paid vs unpaid leave). */
+  /** When set, replaces `status` for display (e.g. on leave vs unpaid leave). */
   statusLabel?: string;
 };
 
@@ -84,7 +84,7 @@ function resolveAttendanceCellStyle(input: {
     let badgeClass = 'border-sky-300 bg-sky-100 text-sky-900';
     let statusLabel: string;
     if (rec.value !== undefined && rec.value > 0) {
-      statusLabel = 'Paid Leave';
+      statusLabel = 'On leave';
     } else {
       statusLabel = 'Unpaid Leave';
       borderClass = 'border-rose-200';
@@ -1270,7 +1270,6 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                             if (status === 'Absent') return 'Absent';
                             if (status === 'Missed Entry') return 'Missed';
                             if (status === 'Leave' || status === 'On leave') return 'Leave';
-                            if (status === 'Paid Leave') return 'Paid Lv';
                             if (status === 'Unpaid Leave') return 'Unpaid';
                             if (status === 'Holiday' || status === 'Week Off') return 'Hol';
                             if (
@@ -1290,7 +1289,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                     {rec && (
                       <div className="mt-auto space-y-0 text-[11px] text-slate-600">
                         {status !== 'Leave' &&
-                          status !== 'Paid Leave' &&
+                          status !== 'On leave' &&
                           status !== 'Unpaid Leave' &&
                           status !== 'Holiday' &&
                           status !== 'Week Off' && (
@@ -1301,7 +1300,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                           </div>
                         )}
                         {/* Show type if different from status */}
-                        {type && type !== status && status !== 'Leave' && status !== 'Holiday' && (
+                        {type && type !== status && status !== 'Leave' && status !== 'On leave' && status !== 'Unpaid Leave' && status !== 'Holiday' && (
                           <div className="truncate text-[10px] text-slate-500" title={type}>
                             {type}
                           </div>
@@ -1369,7 +1368,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
           </div>
           <div className="flex items-center gap-2">
             <div className="h-4 w-4 rounded border border-sky-300 bg-sky-100" />
-            <span className="text-slate-700">Paid leave</span>
+            <span className="text-slate-700">On leave</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="h-4 w-4 rounded border border-rose-300 bg-rose-100" />
