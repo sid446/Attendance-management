@@ -6,6 +6,46 @@ import { EmployeeMonthView } from '@/components/EmployeeMonthView';
 import { AttendanceRecord, AttendanceSummaryView, User } from '@/types/ui';
 import type { EmployeeAttendanceRequest } from '@/types/employeeAttendanceRequest';
 import { employeeCredentialsInit } from '@/lib/employeeCredentialsInit';
+import { TeamMemberProfileCard } from '@/components/TeamMemberProfileCard';
+import { LocationAttendanceSection } from '@/components/LocationAttendanceSection';
+import { EmployeeDashboardOverview } from '@/components/EmployeeDashboardOverview';
+import { EmployeeSummaryMonthPicker } from '@/components/EmployeeSummaryMonthPicker';
+import { TeamAttendanceSkeleton } from '@/components/TeamAttendanceSkeleton';
+import { TeamFineSection } from '@/components/TeamFineSection';
+import {
+  PartnerTeamOverview,
+  type PartnerTeamRow,
+} from '@/components/PartnerTeamOverview';
+import { ManageAttendanceApproverSection } from '@/components/ManageAttendanceApproverSection';
+import { ManageExcessHourAllowanceSection } from '@/components/ManageExcessHourAllowanceSection';
+import { SummarySection } from '@/components/SummarySection';
+import {
+  computeSummaryAlignedMetrics,
+  getDailyWorkedHoursSeries,
+  getEmploymentTypeForDate,
+  isHalftimeEmploymentType,
+} from '@/lib/attendanceSummaryMetrics';
+import {
+  requestWindowRejectionMessage,
+  type RequestWindowConfig,
+} from '@/lib/attendanceRequestWindow';
+import type { ExcessAllowanceLookup } from '@/lib/excessHourAllowance';
+import {
+  LogOut,
+  X,
+  Loader2,
+  Send,
+  PanelLeft,
+  PanelLeftClose,
+  LayoutDashboard,
+  CalendarDays,
+  MapPin,
+  Users as UsersIcon,
+  ClipboardList,
+  UserCog,
+  IndianRupee,
+  Clock,
+} from 'lucide-react';
 
 function normalizeUserId(value: unknown): string {
   if (value == null) return '';
@@ -99,48 +139,11 @@ type SubordinateAttendancePack = {
   employeeDays: AttendanceRecord[];
   userForMetrics?: User;
   requests: EmployeeAttendanceRequest[];
+  /** Set after correction requests are fetched for the member calendar. */
+  requestsLoaded?: boolean;
 };
-import { TeamMemberProfileCard } from '@/components/TeamMemberProfileCard';
-import { LocationAttendanceSection } from '@/components/LocationAttendanceSection';
-import { EmployeeDashboardOverview } from '@/components/EmployeeDashboardOverview';
-import { EmployeeSummaryMonthPicker } from '@/components/EmployeeSummaryMonthPicker';
-import { TeamAttendanceSkeleton } from '@/components/TeamAttendanceSkeleton';
-import { TeamFineSection } from '@/components/TeamFineSection';
 
-import {
-  PartnerTeamOverview,
-  type PartnerTeamRow,
-} from '@/components/PartnerTeamOverview';
-import { ManageAttendanceApproverSection } from '@/components/ManageAttendanceApproverSection';
-import { ManageExcessHourAllowanceSection } from '@/components/ManageExcessHourAllowanceSection';
-import { SummarySection } from '@/components/SummarySection';
-import {
-  computeSummaryAlignedMetrics,
-  getDailyWorkedHoursSeries,
-  getEmploymentTypeForDate,
-  isHalftimeEmploymentType,
-} from '@/lib/attendanceSummaryMetrics';
-import {
-  requestWindowRejectionMessage,
-  type RequestWindowConfig,
-} from '@/lib/attendanceRequestWindow';
-import type { ExcessAllowanceLookup } from '@/lib/excessHourAllowance';
-import {
-  LogOut,
-  X,
-  Loader2,
-  Send,
-  PanelLeft,
-  PanelLeftClose,
-  LayoutDashboard,
-  CalendarDays,
-  MapPin,
-  Users as UsersIcon,
-  ClipboardList,
-  UserCog,
-  IndianRupee,
-  Clock,
-} from 'lucide-react';
+const PARTNER_PENDING_COUNT_TTL_MS = 60_000;
 
 function sessionToUser(raw: Record<string, unknown>): User {
   return {
@@ -297,6 +300,132 @@ function calculateScheduledHoursForSummary(attData: any): number {
   return Number(totalScheduled.toFixed(2));
 }
 
+function buildSubordinateAttendancePack(
+  sub: User,
+  attData: {
+    _id?: string;
+    userId: User & Record<string, unknown>;
+    monthYear?: string;
+    records?: Record<string, unknown>;
+    summary?: AttendanceSummaryView['summary'];
+  } | null,
+  requests: EmployeeAttendanceRequest[] = [],
+  requestsLoaded = false
+): SubordinateAttendancePack {
+  if (!attData) {
+    return {
+      summary: null,
+      employeeDays: [],
+      userForMetrics: sub,
+      requests,
+      requestsLoaded,
+    };
+  }
+
+  const recordsObj = attData.records || {};
+  const days: AttendanceRecord[] = Object.entries(recordsObj).map(([dateKey, value]: [string, any]) => {
+    const userForDay = attData.userId;
+    const dateObj = new Date(dateKey);
+    const dayOfWeek = dateObj.getDay();
+    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const dayName = dayNames[dayOfWeek];
+    let schedule = undefined;
+    if (userForDay.schedules && Array.isArray(userForDay.schedules) && userForDay.schedules.length > 0) {
+      const effSchedules = userForDay.schedules
+        .filter((s: any) => new Date(s.effectiveFrom) <= dateObj)
+        .sort(
+          (a: any, b: any) =>
+            Number(new Date(b.effectiveFrom).getTime()) - Number(new Date(a.effectiveFrom).getTime())
+        );
+      if (effSchedules.length > 0) {
+        const eff = effSchedules[0];
+        if (eff.daily && eff.daily[dayName]) {
+          schedule = { ...eff.daily[dayName] };
+        }
+      }
+    }
+    if (!schedule) {
+      if (dayName === 'saturday' && userForDay.scheduleInOutTimeSat) {
+        schedule = { ...userForDay.scheduleInOutTimeSat, isHoliday: false, isHalfDay: true };
+      } else if (userForDay.scheduleInOutTime) {
+        schedule = { ...userForDay.scheduleInOutTime, isHoliday: false, isHalfDay: false };
+      } else if (dayName === 'sunday') {
+        schedule = { inTime: '09:00', outTime: '18:00', isHoliday: true, isHalfDay: false };
+      }
+    }
+    const effectiveCheckin = value.editedCheckin || value.checkin;
+    const effectiveCheckout = value.editedCheckout || value.checkout;
+    const status = mapEmployeeDayStatus(value, userForDay as User, dateObj);
+    return {
+      id: userForDay._id,
+      name: userForDay.name,
+      date: dateKey,
+      inTime: effectiveCheckin ?? '',
+      outTime: effectiveCheckout ?? '',
+      status,
+      typeOfPresence: value.typeOfPresence,
+      value: value.value,
+      schedule,
+      remarks: value.remarks ?? '',
+      checkin: value.checkin ?? '',
+      checkout: value.checkout ?? '',
+      editedCheckin: value.editedCheckin ?? '',
+      editedCheckout: value.editedCheckout ?? '',
+    };
+  });
+
+  const daily: Record<string, any> = {};
+  const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  weekdays.forEach((day) => {
+    if (day === 'saturday' && attData.userId.scheduleInOutTimeSat) {
+      daily[day] = { ...attData.userId.scheduleInOutTimeSat, isHoliday: false, isHalfDay: true };
+    } else if (day === 'sunday') {
+      daily[day] = { inTime: '09:00', outTime: '18:00', isHoliday: true, isHalfDay: false };
+    } else if (attData.userId.scheduleInOutTime) {
+      daily[day] = { ...attData.userId.scheduleInOutTime, isHoliday: false, isHalfDay: false };
+    } else {
+      daily[day] = undefined;
+    }
+  });
+
+  const recordDetailsPlain: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(recordsObj)) {
+    recordDetailsPlain[k] = v && typeof v === 'object' ? { ...(v as object) } : v;
+  }
+
+  const calcScheduled = calculateScheduledHoursForSummary(attData);
+  const calcExcessDeficit = attData.summary?.excessHour ?? 0;
+  const mappedSum = {
+    id: attData._id ?? '',
+    userId: String(attData.userId._id ?? attData.userId),
+    userName: attData.userId.name,
+    monthYear: attData.monthYear ?? '',
+    odId: attData.userId.odId,
+    employeeCode: attData.userId.employeeCode,
+    team: attData.userId.team,
+    designation: attData.userId.designation,
+    schedules: {
+      effectiveFrom: new Date().toISOString(),
+      daily,
+    },
+    summary: {
+      ...attData.summary,
+      excessHours: formatExcessHourForSummary(attData.summary?.excessHour ?? 0),
+    },
+    recordDetails: recordDetailsPlain as AttendanceSummaryView['recordDetails'],
+    calcScheduled,
+    calcExcessDeficit,
+  } as AttendanceSummaryView;
+
+  return {
+    summary: mappedSum,
+    employeeDays: days,
+    userForMetrics: mergeAttendanceProfile(sub, attData.userId) as User,
+    requests,
+    requestsLoaded,
+  };
+}
+
 
 const TIMED_CATEGORIES = [
   'Present - in office',
@@ -365,9 +494,15 @@ export default function EmployeeDashboard() {
   const [ownTeamCount, setOwnTeamCount] = useState(0);
   const [showTeamExportModal, setShowTeamExportModal] = useState(false);
   const [subordinateAttendance, setSubordinateAttendance] = useState<Record<string, SubordinateAttendancePack>>({});
-  const [subLoading, setSubLoading] = useState(false);
+  const [subordinatesListLoading, setSubordinatesListLoading] = useState(false);
   /** Team overview + calendars refetching for a new month (after initial subordinate list exists). */
   const [teamAttendanceLoading, setTeamAttendanceLoading] = useState(false);
+  const teamAttendanceLoadedMonthRef = useRef<string | null>(null);
+  const [teamAttendanceLoadedMonth, setTeamAttendanceLoadedMonth] = useState<string | null>(null);
+  const teamAttendanceLoadInFlightRef = useRef(false);
+  const partnerReviewTokenRef = useRef<string | null>(null);
+  const partnerPendingCountFetchedAtRef = useRef(0);
+  const subordinateRequestsLoadedRef = useRef(new Set<string>());
   const [teamPanelView, setTeamPanelView] = useState<'attendance' | 'fines'>('attendance');
   /** Team tab: scroll here after picking someone from the leaderboard (or overview). */
   const teamSubordinateCalendarRef = useRef<HTMLDivElement>(null);
@@ -377,7 +512,6 @@ export default function EmployeeDashboard() {
 
   /** Pending attendance requests for this user as partner (review queue). */
   const [partnerPendingReviewCount, setPartnerPendingReviewCount] = useState(0);
-  const [partnerReviewAccessToken, setPartnerReviewAccessToken] = useState<string | null>(null);
 
   const getPartnerReviewIdentity = useCallback(() => {
     if (!user?.name || !user?.email) return null;
@@ -388,7 +522,7 @@ export default function EmployeeDashboard() {
   }, [user?.email, user?.name]);
 
   const fetchPartnerReviewAccessToken = useCallback(async () => {
-    if (partnerReviewAccessToken) return partnerReviewAccessToken;
+    if (partnerReviewTokenRef.current) return partnerReviewTokenRef.current;
 
     const identity = getPartnerReviewIdentity();
     if (!identity) return null;
@@ -402,14 +536,21 @@ export default function EmployeeDashboard() {
       const json = await res.json();
       if (!res.ok || !json.success || !json.data?.token) return null;
 
-      setPartnerReviewAccessToken(json.data.token);
-      return json.data.token as string;
+      partnerReviewTokenRef.current = json.data.token as string;
+      return partnerReviewTokenRef.current;
     } catch {
       return null;
     }
-  }, [getPartnerReviewIdentity, partnerReviewAccessToken]);
+  }, [getPartnerReviewIdentity]);
 
-  const fetchPartnerPendingReviewCount = useCallback(async () => {
+  const fetchPartnerPendingReviewCount = useCallback(async (force = false) => {
+    if (
+      !force &&
+      Date.now() - partnerPendingCountFetchedAtRef.current < PARTNER_PENDING_COUNT_TTL_MS
+    ) {
+      return;
+    }
+
     const token = await fetchPartnerReviewAccessToken();
     if (!token) {
       setPartnerPendingReviewCount(0);
@@ -420,6 +561,7 @@ export default function EmployeeDashboard() {
         `/api/partner/pending-requests?token=${encodeURIComponent(token)}`
       );
       const json = await res.json();
+      partnerPendingCountFetchedAtRef.current = Date.now();
       if (json.success && Array.isArray(json.data)) {
         setPartnerPendingReviewCount(json.data.length);
       } else {
@@ -431,8 +573,9 @@ export default function EmployeeDashboard() {
   }, [fetchPartnerReviewAccessToken]);
 
   useEffect(() => {
-    fetchPartnerPendingReviewCount();
-  }, [fetchPartnerPendingReviewCount]);
+    if (!user?.name || !user?.email) return;
+    void fetchPartnerPendingReviewCount(true);
+  }, [user?.name, user?.email, fetchPartnerPendingReviewCount]);
 
   useEffect(() => {
     if (!user?._id) {
@@ -459,7 +602,9 @@ export default function EmployeeDashboard() {
 
   useEffect(() => {
     const onVis = () => {
-      if (document.visibilityState === 'visible') fetchPartnerPendingReviewCount();
+      if (document.visibilityState === 'visible') {
+        void fetchPartnerPendingReviewCount(false);
+      }
     };
     document.addEventListener('visibilitychange', onVis);
     return () => document.removeEventListener('visibilitychange', onVis);
@@ -619,140 +764,94 @@ export default function EmployeeDashboard() {
       setAttendanceUser(u);
       void fetchRequestWindow(u._id);
 
-      // Own attendance loads in parallel; do not reveal the shell until we know if this user has a team (sidebar).
+      // Own attendance loads in parallel; reveal shell once team list (if any) is known.
       fetchAttendance(u._id, monthYear, u);
 
-      setSubLoading(true);
+      setSubordinatesListLoading(true);
       try {
-        let subs: User[] = [];
-        try {
-          subs = await fetchSubordinates(String(userData!._id ?? ''));
-        } catch {
-          subs = [];
-        }
+        const subs = await fetchSubordinates(String(userData!._id ?? ''));
         setSubordinates(subs);
-        setLoading(false);
-
-        const att: Record<string, SubordinateAttendancePack> = {};
-      for (const sub of subs) {
-        const [attData, requests] = await Promise.all([
-          fetchAttendanceForUser(sub._id, monthYear),
-          fetchEmployeeRequestsForMonth(sub._id, monthYear),
-        ]);
-        if (attData) {
-          // Build summary and employeeDays as in main fetchAttendance
-          const recordsObj = attData.records || {};
-          const days: AttendanceRecord[] = Object.entries(recordsObj).map(([dateKey, value]: [string, any]) => {
-            const userForDay = attData.userId;
-            const dateObj = new Date(dateKey);
-            const dayOfWeek = dateObj.getDay();
-            const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-            const dayName = dayNames[dayOfWeek];
-            let schedule = undefined;
-            if (userForDay.schedules && Array.isArray(userForDay.schedules) && userForDay.schedules.length > 0) {
-              const effSchedules = userForDay.schedules
-                .filter((s: any) => new Date(s.effectiveFrom) <= dateObj)
-                .sort((a: any, b: any) => Number(new Date(b.effectiveFrom).getTime()) - Number(new Date(a.effectiveFrom).getTime()));
-              if (effSchedules.length > 0) {
-                const eff = effSchedules[0];
-                if (eff.daily && eff.daily[dayName]) {
-                  schedule = { ...eff.daily[dayName] };
-                }
-              }
-            }
-            if (!schedule) {
-              if (dayName === 'saturday' && userForDay.scheduleInOutTimeSat) {
-                schedule = { ...userForDay.scheduleInOutTimeSat, isHoliday: false, isHalfDay: true };
-              } else if (userForDay.scheduleInOutTime) {
-                schedule = { ...userForDay.scheduleInOutTime, isHoliday: false, isHalfDay: false };
-              } else if (dayName === 'sunday') {
-                schedule = { inTime: '09:00', outTime: '18:00', isHoliday: true, isHalfDay: false };
-              }
-            }
-            const effectiveCheckin = value.editedCheckin || value.checkin;
-            const effectiveCheckout = value.editedCheckout || value.checkout;
-            const status = mapEmployeeDayStatus(value, userForDay as User, dateObj);
-            return {
-              id: userForDay._id,
-              name: userForDay.name,
-              date: dateKey,
-              inTime: effectiveCheckin ?? '',
-              outTime: effectiveCheckout ?? '',
-              status: status,
-              typeOfPresence: value.typeOfPresence,
-              value: value.value,
-              schedule: schedule,
-              remarks: value.remarks ?? '',
-              checkin: value.checkin ?? '',
-              checkout: value.checkout ?? '',
-              editedCheckin: value.editedCheckin ?? '',
-              editedCheckout: value.editedCheckout ?? '',
-            };
-          });
-          const daily: any = {};
-          const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-          weekdays.forEach((day) => {
-            if (day === 'saturday' && attData.userId.scheduleInOutTimeSat) {
-              daily[day] = { ...attData.userId.scheduleInOutTimeSat, isHoliday: false, isHalfDay: true };
-            } else if (day === 'sunday') {
-              daily[day] = { inTime: '09:00', outTime: '18:00', isHoliday: true, isHalfDay: false };
-            } else if (attData.userId.scheduleInOutTime) {
-              daily[day] = { ...attData.userId.scheduleInOutTime, isHoliday: false, isHalfDay: false };
-            } else {
-              daily[day] = undefined;
-            }
-          });
-          const recordDetailsPlain: Record<string, unknown> = {};
-          for (const [k, v] of Object.entries(recordsObj)) {
-            recordDetailsPlain[k] =
-              v && typeof v === 'object' ? { ...(v as object) } : v;
-          }
-          const calcScheduled = calculateScheduledHoursForSummary(attData);
-          const calcExcessDeficit = attData.summary?.excessHour ?? 0;
-          const mappedSum: AttendanceSummaryView = {
-            id: attData._id,
-            userId: String(attData.userId._id ?? attData.userId),
-            userName: attData.userId.name,
-            monthYear: attData.monthYear,
-            odId: attData.userId.odId,
-            employeeCode: attData.userId.employeeCode,
-            team: attData.userId.team,
-            designation: attData.userId.designation,
-            schedules: {
-              effectiveFrom: new Date().toISOString(),
-              daily
-            },
-            summary: {
-              ...attData.summary,
-              excessHours: formatExcessHourForSummary(
-                attData.summary?.excessHour ?? 0
-              ),
-            },
-            recordDetails: recordDetailsPlain as AttendanceSummaryView['recordDetails'],
-            calcScheduled,
-            calcExcessDeficit,
-          };
-          att[normalizeUserId(sub._id)] = {
-            summary: mappedSum,
-            employeeDays: days,
-            userForMetrics: mergeAttendanceProfile(sub, attData.userId) as User,
-            requests,
-          };
-        } else {
-          att[normalizeUserId(sub._id)] = {
-            summary: null,
-            employeeDays: [],
-            userForMetrics: sub,
-            requests,
-          };
-        }
-      }
-        setSubordinateAttendance(att);
+      } catch {
+        setSubordinates([]);
       } finally {
-        setSubLoading(false);
+        setSubordinatesListLoading(false);
+        setLoading(false);
       }
     })();
   }, []);
+
+  const loadTeamAttendanceSummaries = useCallback(async (my: string, subs: User[]) => {
+    if (subs.length === 0) {
+      setSubordinateAttendance({});
+      teamAttendanceLoadedMonthRef.current = my;
+      setTeamAttendanceLoadedMonth(my);
+      return;
+    }
+    if (teamAttendanceLoadInFlightRef.current) return;
+
+    teamAttendanceLoadInFlightRef.current = true;
+    setTeamAttendanceLoading(true);
+    try {
+      const viewerId = user?._id ? normalizeUserId(user._id) : '';
+      const results = await Promise.all(
+        subs.map(async (sub) => {
+          const subId = normalizeUserId(sub._id);
+          if (!subId) return null;
+          if (viewerId && subId === viewerId) return null;
+          const attData = await fetchAttendanceForUser(sub._id, my);
+          return {
+            subId,
+            pack: buildSubordinateAttendancePack(sub, attData, [], false),
+          };
+        })
+      );
+
+      const att: Record<string, SubordinateAttendancePack> = {};
+      for (const row of results) {
+        if (row) att[row.subId] = row.pack;
+      }
+      setSubordinateAttendance(att);
+      teamAttendanceLoadedMonthRef.current = my;
+      setTeamAttendanceLoadedMonth(my);
+    } finally {
+      setTeamAttendanceLoading(false);
+      teamAttendanceLoadInFlightRef.current = false;
+    }
+  }, [user?._id]);
+
+  useEffect(() => {
+    if (activeTab !== 'employees' || !user || subordinates.length === 0) return;
+    if (teamAttendanceLoadedMonthRef.current === monthYear) return;
+    void loadTeamAttendanceSummaries(monthYear, subordinates);
+  }, [activeTab, user, subordinates, monthYear, loadTeamAttendanceSummaries]);
+
+  useEffect(() => {
+    if (!selectedSubordinateId || activeTab !== 'employees') return;
+    const subId = normalizeUserId(selectedSubordinateId);
+    if (!subId) return;
+
+    const loadKey = `${subId}:${monthYear}`;
+    if (subordinateRequestsLoadedRef.current.has(loadKey)) return;
+
+    let cancelled = false;
+    void (async () => {
+      const requests = await fetchEmployeeRequestsForMonth(subId, monthYear);
+      if (cancelled) return;
+      subordinateRequestsLoadedRef.current.add(loadKey);
+      setSubordinateAttendance((prev) => {
+        const current = prev[subId];
+        if (!current) return prev;
+        return {
+          ...prev,
+          [subId]: { ...current, requests, requestsLoaded: true },
+        };
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedSubordinateId, monthYear, activeTab]);
 
   const fetchAttendance = async (userId: string, my: string, sessionUser?: User | null) => {
     const baseSession = sessionUser ?? user;
@@ -909,138 +1008,14 @@ export default function EmployeeDashboard() {
     setFutureStartTime('');
     setFutureEndTime('');
     setFutureCustomType('');
-    // Also reload subordinate attendance for new month
-    (async () => {
-      if (!user) return;
-      let subs: User[] = subordinates;
-      if (!subs.length) {
-        subs = await fetchSubordinates(user._id);
-        setSubordinates(subs);
-      }
-      if (subs.length === 0) {
-        setSubordinateAttendance({});
-        return;
-      }
-      setTeamAttendanceLoading(true);
-      const att: Record<string, SubordinateAttendancePack> = {};
-      try {
-      for (const sub of subs) {
-        const [attData, requests] = await Promise.all([
-          fetchAttendanceForUser(sub._id, val),
-          fetchEmployeeRequestsForMonth(sub._id, val),
-        ]);
-        if (attData) {
-          const recordsObj = attData.records || {};
-          const days: AttendanceRecord[] = Object.entries(recordsObj).map(([dateKey, value]: [string, any]) => {
-            const userForDay = attData.userId;
-            const dateObj = new Date(dateKey);
-            const dayOfWeek = dateObj.getDay();
-            const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-            const dayName = dayNames[dayOfWeek];
-            let schedule = undefined;
-            if (userForDay.schedules && Array.isArray(userForDay.schedules) && userForDay.schedules.length > 0) {
-              const effSchedules = userForDay.schedules
-                .filter((s: any) => new Date(s.effectiveFrom) <= dateObj)
-                .sort((a: any, b: any) => Number(new Date(b.effectiveFrom).getTime()) - Number(new Date(a.effectiveFrom).getTime()));
-              if (effSchedules.length > 0) {
-                const eff = effSchedules[0];
-                if (eff.daily && eff.daily[dayName]) {
-                  schedule = { ...eff.daily[dayName] };
-                }
-              }
-            }
-            if (!schedule) {
-              if (dayName === 'saturday' && userForDay.scheduleInOutTimeSat) {
-                schedule = { ...userForDay.scheduleInOutTimeSat, isHoliday: false, isHalfDay: true };
-              } else if (userForDay.scheduleInOutTime) {
-                schedule = { ...userForDay.scheduleInOutTime, isHoliday: false, isHalfDay: false };
-              } else if (dayName === 'sunday') {
-                schedule = { inTime: '09:00', outTime: '18:00', isHoliday: true, isHalfDay: false };
-              }
-            }
-            const effectiveCheckin = value.editedCheckin || value.checkin;
-            const effectiveCheckout = value.editedCheckout || value.checkout;
-            const status = mapEmployeeDayStatus(value, userForDay as User, dateObj);
-            return {
-              id: userForDay._id,
-              name: userForDay.name,
-              date: dateKey,
-              inTime: effectiveCheckin ?? '',
-              outTime: effectiveCheckout ?? '',
-              status: status,
-              typeOfPresence: value.typeOfPresence,
-              value: value.value,
-              schedule: schedule,
-              remarks: value.remarks ?? '',
-              checkin: value.checkin ?? '',
-              checkout: value.checkout ?? '',
-              editedCheckin: value.editedCheckin ?? '',
-              editedCheckout: value.editedCheckout ?? '',
-            };
-          });
-          const daily: any = {};
-          const weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-          weekdays.forEach((day) => {
-            if (day === 'saturday' && attData.userId.scheduleInOutTimeSat) {
-              daily[day] = { ...attData.userId.scheduleInOutTimeSat, isHoliday: false, isHalfDay: true };
-            } else if (day === 'sunday') {
-              daily[day] = { inTime: '09:00', outTime: '18:00', isHoliday: true, isHalfDay: false };
-            } else if (attData.userId.scheduleInOutTime) {
-              daily[day] = { ...attData.userId.scheduleInOutTime, isHoliday: false, isHalfDay: false };
-            } else {
-              daily[day] = undefined;
-            }
-          });
-          const recordDetailsPlain: Record<string, unknown> = {};
-          for (const [k, v] of Object.entries(recordsObj)) {
-            recordDetailsPlain[k] =
-              v && typeof v === 'object' ? { ...(v as object) } : v;
-          }
-          const calcScheduled = calculateScheduledHoursForSummary(attData);
-          const calcExcessDeficit = attData.summary?.excessHour ?? 0;
-          const mappedSum: AttendanceSummaryView = {
-            id: attData._id,
-            userId: String(attData.userId._id ?? attData.userId),
-            userName: attData.userId.name,
-            monthYear: attData.monthYear,
-            odId: attData.userId.odId,
-            employeeCode: attData.userId.employeeCode,
-            team: attData.userId.team,
-            designation: attData.userId.designation,
-            schedules: {
-              effectiveFrom: new Date().toISOString(),
-              daily
-            },
-            summary: {
-              ...attData.summary,
-              excessHours: formatExcessHourForSummary(
-                attData.summary?.excessHour ?? 0
-              ),
-            },
-            recordDetails: recordDetailsPlain as AttendanceSummaryView['recordDetails'],
-            calcScheduled,
-            calcExcessDeficit,
-          };
-          att[normalizeUserId(sub._id)] = {
-            summary: mappedSum,
-            employeeDays: days,
-            userForMetrics: mergeAttendanceProfile(sub, attData.userId) as User,
-            requests,
-          };
-        } else {
-          att[normalizeUserId(sub._id)] = {
-            summary: null,
-            employeeDays: [],
-            userForMetrics: sub,
-            requests,
-          };
-        }
-      }
-      setSubordinateAttendance(att);
-      } finally {
-        setTeamAttendanceLoading(false);
-      }
-    })();
+    teamAttendanceLoadedMonthRef.current = null;
+    setTeamAttendanceLoadedMonth(null);
+    subordinateRequestsLoadedRef.current.clear();
+    if (activeTab === 'employees' && subordinates.length > 0) {
+      void loadTeamAttendanceSummaries(val, subordinates);
+    } else {
+      setSubordinateAttendance({});
+    }
   };
 
   const handleDayClick = (date: string) => {
@@ -1449,12 +1424,23 @@ export default function EmployeeDashboard() {
 
   useEffect(() => {
     if (!user?._id) return;
-    const ids = [
-      user._id,
-      ...subordinates.map((s) => normalizeUserId(s._id)).filter(Boolean),
-    ];
+    const ids = [user._id];
+    if (
+      activeTab === 'employees' &&
+      teamAttendanceLoadedMonth === monthYear &&
+      subordinates.length > 0
+    ) {
+      ids.push(...subordinates.map((s) => normalizeUserId(s._id)).filter(Boolean));
+    }
     void fetchExcessAllowancesForMonth(Array.from(new Set(ids)), monthYear);
-  }, [user?._id, subordinates, monthYear, fetchExcessAllowancesForMonth]);
+  }, [
+    user?._id,
+    activeTab,
+    teamAttendanceLoadedMonth,
+    subordinates,
+    monthYear,
+    fetchExcessAllowancesForMonth,
+  ]);
 
   const handleSelectTeamMember = useCallback((userId: string) => {
     if (!userId) return;
@@ -1889,7 +1875,7 @@ export default function EmployeeDashboard() {
                 requestsPending={pendingRequestCount}
                 pendingRequests={pendingRequests}
                 teamMembers={subordinates}
-                teamMembersLoading={subLoading}
+                teamMembersLoading={subordinatesListLoading}
                 isLoadingMetrics={fetchLoading}
                 onSelectTeamMember={handleSelectTeamMember}
               />
@@ -2010,16 +1996,16 @@ export default function EmployeeDashboard() {
                   <EmployeeSummaryMonthPicker
                     monthYear={monthYear}
                     onMonthYearChange={handleMonthChange}
-                    disabled={fetchLoading || subLoading || teamAttendanceLoading}
+                    disabled={fetchLoading || subordinatesListLoading || teamAttendanceLoading}
                   />
                 </div>
-                {teamPanelView === 'fines' && !subLoading && subordinates.length > 0 && (
+                {teamPanelView === 'fines' && !subordinatesListLoading && subordinates.length > 0 && (
                   <TeamFineSection monthYear={monthYear} teamMembers={subordinates} />
                 )}
-                {teamPanelView === 'attendance' && (subLoading || teamAttendanceLoading) && (
+                {teamPanelView === 'attendance' && (subordinatesListLoading || teamAttendanceLoading) && (
                   <TeamAttendanceSkeleton />
                 )}
-                {teamPanelView === 'attendance' && !subLoading && !teamAttendanceLoading && subordinates.length > 0 && (
+                {teamPanelView === 'attendance' && !subordinatesListLoading && !teamAttendanceLoading && subordinates.length > 0 && (
                   <section className="space-y-6">
                     <div className="rounded-xl border border-border bg-surface p-4 sm:p-5">
                       <PartnerTeamOverview
@@ -2121,7 +2107,7 @@ export default function EmployeeDashboard() {
                     </div>
                   </section>
                 )}
-                {!subLoading && !teamAttendanceLoading && subordinates.length === 0 && (
+                {!subordinatesListLoading && !teamAttendanceLoading && subordinates.length === 0 && (
                   <div className="rounded-xl border border-border bg-surface py-12 text-center text-sm text-muted-foreground">
                     No team members are linked to your profile.
                   </div>
@@ -2159,7 +2145,7 @@ export default function EmployeeDashboard() {
                 summaries={Object.values(subordinateAttendance).map(p => p.summary).filter(Boolean) as AttendanceSummaryView[]}
                 allUsers={subordinates}
                 holidays={holidays}
-                isLoading={subLoading || teamAttendanceLoading}
+                isLoading={subordinatesListLoading || teamAttendanceLoading}
                 onFilterChange={(filter) => { if (typeof filter === 'string') handleMonthChange(filter); }}
                 onEmployeeClick={(id, my) => { setSelectedSubordinateId(id); setMonthYear(my); setShowTeamExportModal(false); }}
                 initialMonthYear={monthYear}

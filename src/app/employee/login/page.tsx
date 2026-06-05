@@ -6,7 +6,7 @@ import { Mail, ArrowRight, Loader2, ShieldCheck } from 'lucide-react';
 import { formatOtpCountdown, HR_OTP_TTL_MINUTES, HR_OTP_TTL_MS } from '@/lib/hrOtpConstants';
 import { employeeCredentialsInit } from '@/lib/employeeCredentialsInit';
 
-const RESEND_COOLDOWN_SECONDS = 60;
+const RESEND_COOLDOWN_SECONDS = 180;
 
 export default function EmployeeLoginPage() {
   const [email, setEmail] = useState('');
@@ -310,7 +310,7 @@ export default function EmployeeLoginPage() {
 
           <div className="mt-6 border-t border-zinc-800 pt-6">
             <Link
-              href="/"
+              href="/admin"
               className="flex w-full items-center justify-center gap-2 rounded-lg border border-zinc-700 bg-zinc-950/80 px-4 py-2.5 text-sm font-medium text-zinc-300 transition-colors hover:border-emerald-600/50 hover:bg-zinc-900 hover:text-emerald-400"
             >
               <ShieldCheck className="h-4 w-4 shrink-0" aria-hidden />
