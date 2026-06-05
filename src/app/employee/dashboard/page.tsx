@@ -100,6 +100,7 @@ type SubordinateAttendancePack = {
   userForMetrics?: User;
   requests: EmployeeAttendanceRequest[];
 };
+import { TeamMemberProfileCard } from '@/components/TeamMemberProfileCard';
 import { LocationAttendanceSection } from '@/components/LocationAttendanceSection';
 import { EmployeeDashboardOverview } from '@/components/EmployeeDashboardOverview';
 import { EmployeeSummaryMonthPicker } from '@/components/EmployeeSummaryMonthPicker';
@@ -1455,6 +1456,30 @@ export default function EmployeeDashboard() {
     void fetchExcessAllowancesForMonth(Array.from(new Set(ids)), monthYear);
   }, [user?._id, subordinates, monthYear, fetchExcessAllowancesForMonth]);
 
+  const handleSelectTeamMember = useCallback((userId: string) => {
+    if (!userId) return;
+    setSelectedSubordinateId(userId);
+    setSearchTerm('');
+    setActiveTab('employees');
+    setTeamPanelView('attendance');
+    setSidebarOpen(false);
+    window.setTimeout(() => {
+      teamSubordinateCalendarRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    }, 120);
+  }, []);
+
+  const selectedSubordinate = useMemo(
+    () => subordinates.find((s) => normalizeUserId(s._id) === selectedSubordinateId) ?? null,
+    [subordinates, selectedSubordinateId]
+  );
+
+  const selectedSubordinatePack = selectedSubordinateId
+    ? subordinateAttendance[selectedSubordinateId]
+    : undefined;
+
   if (loading || !user) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-background px-6 text-foreground">
@@ -1860,6 +1885,7 @@ export default function EmployeeDashboard() {
                 teamMembers={subordinates}
                 teamMembersLoading={subLoading}
                 isLoadingMetrics={fetchLoading}
+                onSelectTeamMember={handleSelectTeamMember}
               />
             )}
 
@@ -1993,16 +2019,7 @@ export default function EmployeeDashboard() {
                       <PartnerTeamOverview
                         monthYear={monthYear}
                         rows={partnerTeamRows}
-                        onSelectMember={(id) => {
-                          setSelectedSubordinateId(id);
-                          setSearchTerm('');
-                          window.setTimeout(() => {
-                            teamSubordinateCalendarRef.current?.scrollIntoView({
-                              behavior: 'smooth',
-                              block: 'start',
-                            });
-                          }, 80);
-                        }}
+                        onSelectMember={handleSelectTeamMember}
                       />
                     </div>
 
@@ -2027,16 +2044,17 @@ export default function EmployeeDashboard() {
                         className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground"
                         placeholder="Name or OD ID…"
                         value={searchTerm}
-                        onChange={(e) => {
-                          setSearchTerm(e.target.value);
-                          setSelectedSubordinateId(null);
-                        }}
+                        onChange={(e) => setSearchTerm(e.target.value)}
                       />
                       <select
                         id="subordinate-select"
                         className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
                         value={selectedSubordinateId ?? ''}
-                        onChange={(e) => setSelectedSubordinateId(e.target.value || null)}
+                        onChange={(e) => {
+                          const id = e.target.value;
+                          if (id) handleSelectTeamMember(id);
+                          else setSelectedSubordinateId(null);
+                        }}
                       >
                         <option value="">Select…</option>
                         {subordinates
@@ -2057,43 +2075,35 @@ export default function EmployeeDashboard() {
                       className="scroll-mt-6"
                       id="team-subordinate-calendar"
                     >
-                      {selectedSubordinateId && subordinateAttendance[selectedSubordinateId] ? (
-                        <div className="rounded-xl border border-border bg-surface p-4">
-                          <h3 className="mb-4 flex flex-wrap items-center gap-2 text-base font-semibold text-foreground">
-                            <span className="rounded-md bg-background px-2 py-0.5 font-mono text-xs text-muted-foreground border border-border">
-                              {subordinates.find((s) => s._id === selectedSubordinateId)?.odId}
-                            </span>
-                            {subordinates.find((s) => s._id === selectedSubordinateId)?.name}
-                          </h3>
+                      {selectedSubordinate ? (
+                        <div className="rounded-xl border border-border bg-surface p-4 sm:p-5">
+                          <TeamMemberProfileCard member={selectedSubordinate} className="mb-5 border-b border-border pb-5" />
                           <EmployeeMonthView
                             summaries={
-                              subordinateAttendance[selectedSubordinateId]?.summary
-                                ? [subordinateAttendance[selectedSubordinateId].summary!]
-                                : []
+                              selectedSubordinatePack?.summary
+                                ? [selectedSubordinatePack.summary]
+                                : selectedSubordinateId
+                                  ? [emptyAttendanceSummary(selectedSubordinateId, selectedSubordinate, monthYear)]
+                                  : []
                             }
-                            users={[
-                              subordinateAttendance[selectedSubordinateId]?.userForMetrics ??
-                                subordinates.find((s) => s._id === selectedSubordinateId)!,
-                            ]}
-                            selectedEmployeeId={selectedSubordinateId}
+                            users={[selectedSubordinatePack?.userForMetrics ?? selectedSubordinate]}
+                            selectedEmployeeId={selectedSubordinateId!}
                             setSelectedEmployeeId={() => {}}
                             selectedMonthYear={monthYear}
                             onMonthYearChange={handleMonthChange}
-                            employeeDays={subordinateAttendance[selectedSubordinateId]?.employeeDays || []}
-                            isLoading={false}
+                            employeeDays={selectedSubordinatePack?.employeeDays ?? []}
+                            isLoading={teamAttendanceLoading}
                             error={null}
                             onLoadAttendance={() => {}}
-                            approvedRequests={
-                              subordinateAttendance[selectedSubordinateId]?.requests ?? []
-                            }
+                            approvedRequests={selectedSubordinatePack?.requests ?? []}
                             showSummaryStrip={true}
                             holidays={holidays}
                             summaryMetricsOptions={{
                               treatSinglePunchAsAbsent: true,
                               excessAllowanceMap,
                             }}
-                            sectionTitle="Calendar"
-                            subtitle={null}
+                            sectionTitle="Monthly calendar"
+                            subtitle={`Attendance for ${monthYear}`}
                             sectionClassName="!border-blue-100 !bg-white"
                           />
                         </div>

@@ -1,10 +1,12 @@
 "use client";
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Mail, ArrowRight, Loader2, ShieldCheck } from 'lucide-react';
 import { formatOtpCountdown, HR_OTP_TTL_MINUTES, HR_OTP_TTL_MS } from '@/lib/hrOtpConstants';
 import { employeeCredentialsInit } from '@/lib/employeeCredentialsInit';
+
+const RESEND_COOLDOWN_SECONDS = 60;
 
 export default function EmployeeLoginPage() {
   const [email, setEmail] = useState('');
@@ -12,9 +14,11 @@ export default function EmployeeLoginPage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
   const [otpSecondsLeft, setOtpSecondsLeft] = useState<number | null>(null);
+  const [resendSecondsLeft, setResendSecondsLeft] = useState(0);
   const [step, setStep] = useState<'email' | 'otp'>('email');
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
@@ -52,6 +56,39 @@ export default function EmployeeLoginPage() {
     return () => window.clearInterval(id);
   }, [step, otpExpiresAt]);
 
+  useEffect(() => {
+    if (resendSecondsLeft <= 0) return;
+    const id = window.setInterval(() => {
+      setResendSecondsLeft((s) => Math.max(0, s - 1));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [resendSecondsLeft]);
+
+  const applyOtpSent = useCallback((data: { sessionId: string; expiresAt?: string }) => {
+    setSessionId(data.sessionId);
+    const expiresMs = data.expiresAt
+      ? new Date(data.expiresAt).getTime()
+      : Date.now() + HR_OTP_TTL_MS;
+    setOtpExpiresAt(expiresMs);
+    setStep('otp');
+    setOtp('');
+    setResendSecondsLeft(RESEND_COOLDOWN_SECONDS);
+    setMessage('OTP sent to your email. It may take a minute to arrive — check spam if needed.');
+  }, []);
+
+  const requestOtp = useCallback(async (normalizedEmail: string) => {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: normalizedEmail, role: 'employee' }),
+    });
+    const json = await res.json();
+    if (!json.success) {
+      throw new Error(json.error || 'Failed to send OTP');
+    }
+    applyOtpSent(json.data);
+  }, [applyOtpSent]);
+
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     const normalizedEmail = email.trim().toLowerCase();
@@ -67,30 +104,28 @@ export default function EmployeeLoginPage() {
     setMessage(null);
 
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: normalizedEmail, role: 'employee' }),
-      });
-
-      const json = await res.json();
-
-      if (json.success) {
-        setSessionId(json.data.sessionId);
-        const expiresMs = json.data.expiresAt
-          ? new Date(json.data.expiresAt).getTime()
-          : Date.now() + HR_OTP_TTL_MS;
-        setOtpExpiresAt(expiresMs);
-        setStep('otp');
-        setOtp('');
-        setMessage('OTP sent to your email. Please check your inbox.');
-      } else {
-        setError(json.error || 'Login failed');
-      }
+      await requestOtp(normalizedEmail);
     } catch (err) {
-      setError('Something went wrong. Please try again.');
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || resendSecondsLeft > 0 || resending) return;
+
+    setResending(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      await requestOtp(normalizedEmail);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to resend OTP. Please try again.');
+    } finally {
+      setResending(false);
     }
   };
 
@@ -99,7 +134,7 @@ export default function EmployeeLoginPage() {
     if (!sessionId || otp.trim().length !== 6) return;
 
     if (otpExpiresAt != null && otpExpiresAt <= Date.now()) {
-      setError('OTP has expired. Change email and request a new code.');
+      setError('OTP has expired. Resend a new code below.');
       return;
     }
 
@@ -125,7 +160,7 @@ export default function EmployeeLoginPage() {
       } else {
         setError(json.error || 'OTP verification failed');
       }
-    } catch (err) {
+    } catch {
       setError('Something went wrong. Please try again.');
     } finally {
       setLoading(false);
@@ -136,6 +171,7 @@ export default function EmployeeLoginPage() {
     setStep('email');
     setSessionId(null);
     setOtpExpiresAt(null);
+    setResendSecondsLeft(0);
     setOtp('');
     setError(null);
     setMessage(null);
@@ -198,9 +234,7 @@ export default function EmployeeLoginPage() {
                 {otpSecondsLeft !== null && (
                   <p className="text-xs font-medium text-zinc-400">
                     {otpExpired ? (
-                      <span className="text-rose-400">
-                        OTP expired — use Change email below to request a new code.
-                      </span>
+                      <span className="text-rose-400">OTP expired — tap Resend OTP below.</span>
                     ) : (
                       <>
                         Valid for {HR_OTP_TTL_MINUTES} minutes · expires in{' '}
@@ -228,7 +262,7 @@ export default function EmployeeLoginPage() {
 
             <button
               type="submit"
-              disabled={loading || (step === 'otp' && (otp.trim().length !== 6 || otpExpired))}
+              disabled={loading || resending || (step === 'otp' && (otp.trim().length !== 6 || otpExpired))}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 py-3 font-medium text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {loading ? (
@@ -245,13 +279,32 @@ export default function EmployeeLoginPage() {
             </button>
 
             {step === 'otp' && (
-              <button
-                type="button"
-                onClick={handleChangeEmail}
-                className="w-full text-sm text-zinc-400 transition-colors hover:text-emerald-400"
-              >
-                Change email
-              </button>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => void handleResendOtp()}
+                  disabled={resending || loading || resendSecondsLeft > 0}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-zinc-700 bg-zinc-950/80 py-2.5 text-sm font-medium text-zinc-200 transition-colors hover:border-emerald-600/50 hover:text-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {resending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                      Resending…
+                    </>
+                  ) : resendSecondsLeft > 0 ? (
+                    `Resend OTP in ${resendSecondsLeft}s`
+                  ) : (
+                    'Resend OTP'
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleChangeEmail}
+                  className="w-full text-sm text-zinc-400 transition-colors hover:text-emerald-400"
+                >
+                  Change email
+                </button>
+              </div>
             )}
           </form>
 

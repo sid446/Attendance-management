@@ -8,6 +8,9 @@ export const transporter = nodemailer.createTransport({
   host: "smtp.mail.yahoo.com",
   port: 465,
   secure: true,
+  pool: true,
+  maxConnections: 3,
+  maxMessages: 100,
   auth: {
     user: email,
     pass: pass?.replace(/\s+/g, ''),

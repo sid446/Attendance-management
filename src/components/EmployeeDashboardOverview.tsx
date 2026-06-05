@@ -71,6 +71,8 @@ export interface EmployeeDashboardOverviewProps {
   teamMembers?: User[];
   teamMembersLoading?: boolean;
   isLoadingMetrics: boolean;
+  /** Open team member profile + month calendar (Team attendance tab). */
+  onSelectTeamMember?: (userId: string) => void;
 }
 
 export function EmployeeDashboardOverview({
@@ -86,6 +88,7 @@ export function EmployeeDashboardOverview({
   teamMembers = [],
   teamMembersLoading = false,
   isLoadingMetrics,
+  onSelectTeamMember,
 }: EmployeeDashboardOverviewProps) {
   const periodLabel = formatMonthLabel(monthYear);
   const [activeMetric, setActiveMetric] = useState<SummaryMetricDayKind | null>(null);
@@ -252,7 +255,7 @@ export function EmployeeDashboardOverview({
           </dl>
 
           {sortedTeamMembers.length > 0 ? (
-            <div className="mt-5 hidden min-h-0 flex-col overflow-hidden border-t border-border pt-4 lg:flex lg:min-h-0">
+            <div className="mt-5 flex min-h-0 flex-col overflow-hidden border-t border-border pt-4 lg:min-h-0">
               <p className="mb-2 flex shrink-0 items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                 <Users className="h-3.5 w-3.5 shrink-0" aria-hidden />
                 Team
@@ -260,45 +263,83 @@ export function EmployeeDashboardOverview({
                   ({sortedTeamMembers.length})
                 </span>
               </p>
+              {onSelectTeamMember && (
+                <p className="mb-2 text-[10px] text-muted-foreground">Tap a member to view their calendar.</p>
+              )}
               {teamMembersLoading ? (
                 <div className="flex items-center gap-2 py-3 text-xs text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                   Loading team…
                 </div>
               ) : (
-                <div className="mt-2 min-h-0 flex-1 overflow-y-auto rounded-lg border border-border">
-                  <table className="w-full min-w-0 text-left text-[11px]">
-                    <thead className="sticky top-0 z-[1] bg-surface text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      <tr className="border-b border-border">
-                        <th className="px-2 py-1.5 font-medium">ID</th>
-                        <th className="px-2 py-1.5 font-medium">Name</th>
-                        <th className="px-2 py-1.5 font-medium">Email</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/80">
-                      {sortedTeamMembers.map((member) => {
-                        const employeeId =
-                          member.employeeCode?.trim() || member.odId?.trim() || "—";
-                        return (
-                          <tr key={member._id} className="bg-background/50 hover:bg-background">
-                            <td className="whitespace-nowrap px-2 py-1.5 font-mono text-muted-foreground">
-                              {employeeId}
-                            </td>
-                            <td className="max-w-[7rem] truncate px-2 py-1.5 font-medium text-foreground" title={member.name}>
+                <>
+                  <ul className="mt-2 space-y-1.5 lg:hidden">
+                    {sortedTeamMembers.map((member) => {
+                      const employeeId =
+                        member.employeeCode?.trim() || member.odId?.trim() || "—";
+                      return (
+                        <li key={member._id}>
+                          <button
+                            type="button"
+                            onClick={() => onSelectTeamMember?.(member._id)}
+                            className="flex w-full items-center gap-3 rounded-lg border border-border bg-background px-3 py-2.5 text-left transition hover:bg-surface/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/40"
+                          >
+                            <span className="font-mono text-[10px] text-muted-foreground">{employeeId}</span>
+                            <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
                               {member.name}
-                            </td>
-                            <td
-                              className="max-w-[8rem] truncate px-2 py-1.5 text-muted-foreground"
-                              title={member.email}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <div className="mt-2 hidden min-h-0 flex-1 overflow-y-auto rounded-lg border border-border lg:block">
+                    <table className="w-full min-w-0 text-left text-[11px]">
+                      <thead className="sticky top-0 z-[1] bg-surface text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        <tr className="border-b border-border">
+                          <th className="px-2 py-1.5 font-medium">ID</th>
+                          <th className="px-2 py-1.5 font-medium">Name</th>
+                          <th className="px-2 py-1.5 font-medium">Email</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/80">
+                        {sortedTeamMembers.map((member) => {
+                          const employeeId =
+                            member.employeeCode?.trim() || member.odId?.trim() || "—";
+                          return (
+                            <tr
+                              key={member._id}
+                              className={`bg-background/50 ${onSelectTeamMember ? "cursor-pointer hover:bg-background focus-within:bg-background" : "hover:bg-background"}`}
+                              onClick={() => onSelectTeamMember?.(member._id)}
+                              onKeyDown={(e) => {
+                                if (!onSelectTeamMember) return;
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  onSelectTeamMember(member._id);
+                                }
+                              }}
+                              tabIndex={onSelectTeamMember ? 0 : undefined}
+                              role={onSelectTeamMember ? "button" : undefined}
                             >
-                              {member.email || "—"}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                              <td className="whitespace-nowrap px-2 py-1.5 font-mono text-muted-foreground">
+                                {employeeId}
+                              </td>
+                              <td className="max-w-[7rem] truncate px-2 py-1.5 font-medium text-foreground" title={member.name}>
+                                {member.name}
+                              </td>
+                              <td
+                                className="max-w-[8rem] truncate px-2 py-1.5 text-muted-foreground"
+                                title={member.email}
+                              >
+                                {member.email || "—"}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               )}
             </div>
           ) : null}

@@ -5,20 +5,10 @@ import { sendOTPEmail } from '@/lib/mailer';
 import { isAllowedHrAdminEmail } from '@/lib/hrAdminAllowlistServer';
 import { verifyHrConsolePassword } from '@/lib/hrConsolePassword';
 import HrOtpPending from '@/models/HrOtpPending';
-import { hrOtpExpiresAt, hrOtpExpiresAtMs } from '@/lib/hrOtpConstants';
+import { hrOtpExpiresAt } from '@/lib/hrOtpConstants';
+import { issueEmployeeLoginOtp } from '@/lib/employeeLoginOtp';
 
 const EMAIL_DOMAIN = '@asija.in';
-
-// In-memory OTP store for employee/partner flow via this route only (HR OTP uses Mongo: HrOtpPending).
-const employeeOtpStore = new Map<
-  string,
-  {
-    otp: string;
-    expiresAt: number;
-    email: string;
-    userId: string;
-  }
->();
 
 // Generate 6-digit OTP
 function generateOTP(): string {
@@ -135,60 +125,18 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      await dbConnect();
-
       // For employee role, check User collection
       if (role === 'employee') {
-        const user = await User.findOne({ email: { $regex: new RegExp(`^${rawEmail}$`, 'i') } });
-
-        if (!user) {
-          return NextResponse.json(
-            { success: false, error: 'User not found with this email' },
-            { status: 404 }
-          );
-        }
-
-        if (!user.isActive) {
-          return NextResponse.json(
-            { success: false, error: 'User account is inactive' },
-            { status: 403 }
-          );
-        }
-
-        const otp = generateOTP();
-        const sessionId = generateSessionId();
-        const expiresAt = hrOtpExpiresAtMs();
-
-        employeeOtpStore.set(sessionId, {
-          otp,
-          expiresAt,
-          email: String(user.email || rawEmail).trim().toLowerCase(),
-          userId: String(user._id),
-        });
-
-        // Clean up expired OTPs
-        for (const [key, value] of employeeOtpStore.entries()) {
-          if (value.expiresAt < Date.now()) {
-            employeeOtpStore.delete(key);
-          }
-        }
-
-        try {
-          await sendOTPEmail(otp, String(user.email || rawEmail).trim());
-        } catch (emailError) {
-          employeeOtpStore.delete(sessionId);
-          console.error('Employee OTP email send error:', emailError);
-          return NextResponse.json(
-            { success: false, error: 'Failed to send OTP email. Please try again.' },
-            { status: 500 }
-          );
+        const result = await issueEmployeeLoginOtp(rawEmail);
+        if (!result.ok) {
+          return NextResponse.json({ success: false, error: result.error }, { status: result.status });
         }
 
         return NextResponse.json({
           success: true,
           data: {
-            sessionId,
-            expiresAt: new Date(expiresAt).toISOString(),
+            sessionId: result.sessionId,
+            expiresAt: result.expiresAt.toISOString(),
             message: 'OTP sent to your email',
           },
         });
@@ -213,7 +161,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
-// Export for use by verify-otp route (employee/partner branch only)
-export { employeeOtpStore };
 

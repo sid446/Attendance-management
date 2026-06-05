@@ -52,6 +52,56 @@ function formatInactiveSinceDate(value: unknown): string {
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+function normalizeEmployeeSearchText(value: unknown): string {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+/** Searchable text for an employee row (name, codes, all mail fields, team, etc.). */
+function buildEmployeeSearchHaystack(user: User): string {
+  return [
+    user.name,
+    user.email,
+    user.attendanceEmail,
+    user.alternateEmail,
+    user.odId,
+    user.employeeCode,
+    user.registrationNo,
+    user.designation,
+    user.team,
+    user.workingUnderPartner,
+    user.registeredUnderPartner,
+    user.tallyName,
+    user.mobileNumber,
+    user.alternateMobileNumber,
+  ]
+    .map(normalizeEmployeeSearchText)
+    .filter(Boolean)
+    .join(' ');
+}
+
+function employeeMatchesSearchTerm(user: User, rawTerm: string): boolean {
+  const term = normalizeEmployeeSearchText(rawTerm);
+  if (!term) return true;
+
+  const haystack = buildEmployeeSearchHaystack(user);
+  const tokens = term.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+
+  const emails = [user.email, user.attendanceEmail, user.alternateEmail]
+    .map(normalizeEmployeeSearchText)
+    .filter(Boolean);
+
+  return tokens.every((token) => {
+    if (haystack.includes(token)) return true;
+    // Match email local-part only (e.g. "rahul" → rahul@asija.in)
+    if (emails.some((email) => email.split('@')[0]?.includes(token))) return true;
+    // Match without dots in names (e.g. "a kumar" vs stored "A.Kumar")
+    const compactHaystack = haystack.replace(/\./g, '');
+    const compactToken = token.replace(/\./g, '');
+    return compactHaystack.includes(compactToken);
+  });
+}
+
 function normalizeMongoId(raw: unknown): string {
   if (raw == null) return '';
   if (typeof raw === 'string') {
@@ -1850,14 +1900,9 @@ export const EmployeeManagementSection: React.FC<{
     if (filterUsers.length > 0 && !filterUsers.includes(user.name || '')) {
       return false;
     }
-    // Search term filter
-    if (searchTerm) {
-      const lowerTerm = searchTerm.toLowerCase();
-      const matchName = user.name?.toLowerCase().includes(lowerTerm);
-      const matchEmail = user.email?.toLowerCase().includes(lowerTerm);
-      const matchOdId = user.odId?.toLowerCase().includes(lowerTerm);
-      const matchEmpCode = user.employeeCode?.toLowerCase().includes(lowerTerm);
-      return matchName || matchEmail || matchOdId || matchEmpCode;
+    // Search term filter (name, login email, attendance email, codes, team, …)
+    if (searchTerm && !employeeMatchesSearchTerm(user, searchTerm)) {
+      return false;
     }
     return true;
   });
@@ -5408,12 +5453,14 @@ export const EmployeeManagementSection: React.FC<{
             <div className="flex min-w-0 flex-1 flex-col flex-wrap gap-3 sm:flex-row sm:items-center">
               <div className="relative max-w-md flex-1">
                 <label htmlFor="employee-list-search" className="sr-only">
-                  Search employees by name, email, or code
+                  Search employees by name, email, attendance email, or code
                 </label>
                 <input
                   id="employee-list-search"
-                  type="search"
-                  placeholder="Search by name, email, code…"
+                  type="text"
+                  role="searchbox"
+                  autoComplete="off"
+                  placeholder="Search name, @asija.in email, attendance email, code…"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full rounded-lg border border-blue-200/65 bg-panel py-2.5 pl-10 pr-10 text-sm text-slate-900 shadow-sm transition-colors placeholder:text-slate-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25"

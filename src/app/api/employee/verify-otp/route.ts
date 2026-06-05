@@ -4,7 +4,10 @@ import User from '@/models/User';
 import { attachEmployeeAuthCookie } from '@/lib/employeeAuthCookieServer';
 import { createEmployeeAuthSessionToken } from '@/lib/employeeAuthSessionCreate';
 import { employeeAuthUserPayload } from '@/lib/employeeAuthUserPayload';
-import { employeeOtpStore } from '../login/route';
+import {
+  deleteEmployeeOtpSession,
+  findValidEmployeeOtpSession,
+} from '@/lib/employeeLoginOtp';
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,39 +23,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const stored = employeeOtpStore.get(sessionId);
+    const pending = await findValidEmployeeOtpSession(sessionId);
 
-    if (!stored) {
+    if (!pending) {
       return NextResponse.json(
         { success: false, error: 'Invalid or expired session. Please login again.' },
         { status: 401 }
       );
     }
 
-    if (stored.expiresAt < Date.now()) {
-      employeeOtpStore.delete(sessionId);
-      return NextResponse.json(
-        { success: false, error: 'OTP has expired. Please login again.' },
-        { status: 401 }
-      );
-    }
-
-    if (stored.otp !== otp) {
+    if (pending.otp !== otp) {
       return NextResponse.json({ success: false, error: 'Invalid OTP' }, { status: 401 });
     }
 
-    const user = await User.findById(stored.userId).lean();
+    const user = await User.findById(pending.userId).lean();
     if (!user) {
-      employeeOtpStore.delete(sessionId);
+      await deleteEmployeeOtpSession(sessionId);
       return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
     }
 
     if (user.isActive === false) {
-      employeeOtpStore.delete(sessionId);
+      await deleteEmployeeOtpSession(sessionId);
       return NextResponse.json({ success: false, error: 'User account is inactive' }, { status: 403 });
     }
 
-    employeeOtpStore.delete(sessionId);
+    await deleteEmployeeOtpSession(sessionId);
 
     const userId = String(user._id);
     let authToken: string;
