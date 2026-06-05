@@ -52,6 +52,12 @@ export function TeamMemberProfileCard({ member, className = '' }: TeamMemberProf
             </dd>
           </div>
           <div className="flex items-center justify-between gap-2">
+            <dt className="text-muted-foreground">Attendance email</dt>
+            <dd className="truncate text-right text-foreground" title={member.attendanceEmail}>
+              {member.attendanceEmail || '—'}
+            </dd>
+          </div>
+          <div className="flex items-center justify-between gap-2">
             <dt className="flex items-center gap-2 text-muted-foreground">
               <Hash className="h-3.5 w-3.5" aria-hidden />
               Code

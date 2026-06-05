@@ -1604,8 +1604,8 @@ export default function EmployeeDashboard() {
     })();
   };
 
-  const navItemClass = (active: boolean) =>
-    `flex w-full items-center gap-3 rounded-lg py-2.5 text-sm font-medium transition-colors touch-manipulation ${
+  const navItemClass = (active: boolean, multiline = false) =>
+    `flex w-full ${multiline ? 'items-start' : 'items-center'} gap-3 rounded-lg py-2.5 text-sm font-medium transition-colors touch-manipulation ${
       desktopSidebarCollapsed ? 'md:justify-center md:gap-0 md:px-0' : 'px-3'
     } ${
       active
@@ -1778,15 +1778,21 @@ export default function EmployeeDashboard() {
 
           <button
             type="button"
-            className={navItemClass(activeTab === 'attendance')}
+            className={navItemClass(activeTab === 'attendance', true)}
             onClick={() => {
               setActiveTab('attendance');
               setSidebarOpen(false);
             }}
-            title="Attendance — monthly calendar"
+            title="Your Attendance & Request — monthly calendar"
           >
-            <CalendarDays className="h-5 w-5 shrink-0 opacity-90" aria-hidden />
-            <span className={desktopSidebarCollapsed ? 'md:sr-only' : ''}>Attendance</span>
+            <CalendarDays className="mt-0.5 h-5 w-5 shrink-0 opacity-90" aria-hidden />
+            <span
+              className={`min-w-0 flex-1 text-left leading-snug ${desktopSidebarCollapsed ? 'md:sr-only' : ''}`}
+            >
+              Your Attendance
+              <br />
+              & Request
+            </span>
           </button>
 
           <button
