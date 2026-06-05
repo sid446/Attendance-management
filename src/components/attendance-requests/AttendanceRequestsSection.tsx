@@ -70,8 +70,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
       ) : (
         <RequestsListView
           viewMode={filters.viewMode}
-          rangeGroups={filters.filteredRangeGroups}
-          individualRequests={filters.filteredIndividualRequests}
+          sortedRequestRows={filters.sortedRequestRows}
           isAdminView={isAdminView}
           hrAdminHighlight={hrAdminHighlight}
           processingRequest={approval.processingRequest}

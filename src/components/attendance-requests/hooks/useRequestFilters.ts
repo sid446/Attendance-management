@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import type { AttendanceRequest, RequestStatusFilter } from '../types';
 import {
+  buildSortedRequestRows,
   filterIndividualRequests,
   filterRangeGroups,
   groupRequestsIntoRanges,
@@ -35,7 +36,12 @@ export function useRequestFilters(requests: AttendanceRequest[]) {
     [individualRequests, listFilters]
   );
 
-  const isEmpty = filteredRangeGroups.length === 0 && filteredIndividualRequests.length === 0;
+  const sortedRequestRows = useMemo(
+    () => buildSortedRequestRows(filteredRangeGroups, filteredIndividualRequests),
+    [filteredRangeGroups, filteredIndividualRequests]
+  );
+
+  const isEmpty = sortedRequestRows.length === 0;
   const hasActiveFilters = statusFilter !== 'all' || monthFilter !== 'all' || leaveTypeFilter !== 'all';
 
   return {
@@ -50,6 +56,7 @@ export function useRequestFilters(requests: AttendanceRequest[]) {
     listFilters,
     filteredRangeGroups,
     filteredIndividualRequests,
+    sortedRequestRows,
     isEmpty,
     hasActiveFilters,
   };

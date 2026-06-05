@@ -1470,7 +1470,7 @@ export default function AttendanceUpload() {
       // Fetch attendance and requests in parallel
       const [attendanceResponse, requestsResponse] = await Promise.all([
         fetch(`/api/attendance?userId=${encodeURIComponent(userId)}&monthYear=${encodeURIComponent(monthYear)}`),
-        fetch(`/api/employee/request-correction?userId=${encodeURIComponent(userId)}`)
+        fetch(`/api/employee/request-correction?userId=${encodeURIComponent(userId)}`, hrCredentialsInit())
       ]);
       
       const attendanceResult = await attendanceResponse.json();

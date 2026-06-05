@@ -1,4 +1,5 @@
 import type { AttendanceRequest, DateRangeGroup } from '../types';
+import { buildSortedRequestRows } from '../utils/requestSorting';
 import { getDefaultValueForType, isLeaveRequestType } from '../utils/requestValues';
 
 export interface ExportRequestsParams {
@@ -79,8 +80,9 @@ export async function exportRequestsToExcel({
     });
   };
 
-  rangeGroups.forEach(addRequestRow);
-  individualRequests.forEach(addRequestRow);
+  buildSortedRequestRows(rangeGroups, individualRequests).forEach((row) => {
+    addRequestRow(row.type === 'range' ? row.item : row.item);
+  });
 
   const titleText = `Attendance Requests Report - Generated on ${new Date().toLocaleDateString('en-GB')} ${new Date().toLocaleTimeString()}`;
   worksheet.spliceRows(1, 0, [titleText]);

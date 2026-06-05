@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { apiCredentialsInit } from '@/lib/apiCredentialsInit';
 import type { AttendanceRequest } from '../types';
 
 interface UseAttendanceRequestsOptions {
@@ -22,7 +23,10 @@ export function useAttendanceRequests({ userId, partnerName }: UseAttendanceRequ
       if (userId) params.append('userId', userId);
       if (partnerName) params.append('partnerName', partnerName);
 
-      const response = await fetch(`/api/employee/request-correction?${params}`);
+      const response = await fetch(
+        `/api/employee/request-correction?${params}`,
+        apiCredentialsInit()
+      );
       const result = await response.json();
 
       if (result.success) {

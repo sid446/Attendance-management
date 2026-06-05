@@ -1,21 +1,19 @@
 'use client';
 
 import React from 'react';
-import type { AttendanceRequest, DateRangeGroup, RequestsAdminActionsProps } from '../types';
+import type { RequestDisplayRow, RequestsAdminActionsProps } from '../types';
 import { DateRangeRequestBlock } from './cards/DateRangeRequestBlock';
 import { IndividualRequestCard } from './cards/IndividualRequestCard';
 import { AttendanceRequestsTable } from './table/AttendanceRequestsTable';
 
 export interface RequestsListViewProps extends RequestsAdminActionsProps {
   viewMode: 'cards' | 'table';
-  rangeGroups: DateRangeGroup[];
-  individualRequests: AttendanceRequest[];
+  sortedRequestRows: RequestDisplayRow[];
 }
 
 export const RequestsListView: React.FC<RequestsListViewProps> = ({
   viewMode,
-  rangeGroups,
-  individualRequests,
+  sortedRequestRows,
   isAdminView,
   hrAdminHighlight,
   processingRequest,
@@ -24,23 +22,22 @@ export const RequestsListView: React.FC<RequestsListViewProps> = ({
   const adminProps = { isAdminView, hrAdminHighlight, processingRequest, openApprovalModal };
 
   if (viewMode === 'table') {
-    return (
-      <AttendanceRequestsTable
-        rangeGroups={rangeGroups}
-        individualRequests={individualRequests}
-        {...adminProps}
-      />
-    );
+    return <AttendanceRequestsTable sortedRequestRows={sortedRequestRows} {...adminProps} />;
   }
 
   return (
     <div className="space-y-3">
-      {rangeGroups.map((rangeGroup) => (
-        <DateRangeRequestBlock key={`range-${rangeGroup.ids.join('-')}`} rangeGroup={rangeGroup} {...adminProps} />
-      ))}
-      {individualRequests.map((request) => (
-        <IndividualRequestCard key={request._id} request={request} {...adminProps} />
-      ))}
+      {sortedRequestRows.map((row) =>
+        row.type === 'range' ? (
+          <DateRangeRequestBlock
+            key={`range-${row.item.ids.join('-')}`}
+            rangeGroup={row.item}
+            {...adminProps}
+          />
+        ) : (
+          <IndividualRequestCard key={row.item._id} request={row.item} {...adminProps} />
+        )
+      )}
     </div>
   );
 };

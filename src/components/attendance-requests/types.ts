@@ -61,6 +61,10 @@ export interface DateRangeGroup {
 
 export type RequestStatusFilter = 'all' | 'Pending' | 'Approved' | 'Rejected';
 
+export type RequestDisplayRow =
+  | { type: 'range'; item: DateRangeGroup }
+  | { type: 'individual'; item: AttendanceRequest };
+
 export interface AttendanceRequestsSectionProps {
   userId?: string;
   partnerName?: string;

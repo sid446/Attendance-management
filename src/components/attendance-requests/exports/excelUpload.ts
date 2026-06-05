@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { apiCredentialsInit } from '@/lib/apiCredentialsInit';
 import type { AttendanceRequest } from '../types';
 import { resolveApproveValueNumber } from '../utils/requestValues';
 
@@ -161,7 +162,7 @@ export async function applyActionsFromExcel({
     try {
       let response: Response;
       if (ids.length > 1) {
-        response = await fetch('/api/partner/bulk-action', {
+        response = await fetch('/api/partner/bulk-action', apiCredentialsInit({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -172,9 +173,9 @@ export async function applyActionsFromExcel({
             approvedBy: 'HR',
             approvedByEmail: 'hr@asija.in',
           }),
-        });
+        }));
       } else {
-        response = await fetch('/api/employee/approve', {
+        response = await fetch('/api/employee/approve', apiCredentialsInit({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -186,7 +187,7 @@ export async function applyActionsFromExcel({
             approvedBy: 'HR',
             approvedByEmail: 'hr@asija.in',
           }),
-        });
+        }));
       }
 
       const json = await response.json().catch(() => ({}));

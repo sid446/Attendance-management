@@ -1,4 +1,5 @@
 import type { AttendanceRequest, DateRangeGroup } from '../types';
+import { sortIndividualRequestsByDate, sortRangeGroupsByDate } from './requestSorting';
 
 export const groupRequestsIntoRanges = (
   requests: AttendanceRequest[]
@@ -81,5 +82,8 @@ export const groupRequestsIntoRanges = (
     });
   });
 
-  return { rangeGroups, individualRequests };
+  return {
+    rangeGroups: sortRangeGroupsByDate(rangeGroups),
+    individualRequests: sortIndividualRequestsByDate(individualRequests),
+  };
 };

@@ -8,11 +8,11 @@ import { transporter, mailOptions } from '@/lib/mailer';
 import LeaveTransaction from '@/models/LeaveTransaction';
 import { isAttendanceDatePartnerOnlyIst } from '@/lib/attendanceRequestApprovalWindow';
 import { sendPartnerRequestDecisionEmail } from '@/lib/attendanceRequestNotifications';
-import { requireEmployeeSession } from '@/lib/employeeRouteAuth';
+import { requireEmployeeOrHrSession } from '@/lib/employeeRouteAuth';
 
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireEmployeeSession(request);
+    const auth = await requireEmployeeOrHrSession(request);
     if (auth instanceof NextResponse) return auth;
 
     await dbConnect();

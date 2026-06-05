@@ -15,7 +15,7 @@ import {
   requestWindowRejectionMessage,
 } from '@/lib/attendanceRequestWindow';
 import { getEffectiveRequestWindowBoundsForUser } from '@/lib/attendanceRequestWindowDb';
-import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAuth';
+import { forbidUnlessSelf, requireEmployeeOrHrSession, requireEmployeeSession } from '@/lib/employeeRouteAuth';
 
 const TIME_REQUIRED_PREFIXES = [
   'Present - in office',
@@ -40,19 +40,24 @@ function requiresTimePair(status: string): boolean {
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = await requireEmployeeSession(request);
+    const auth = await requireEmployeeOrHrSession(request);
     if (auth instanceof NextResponse) return auth;
 
     await dbConnect();
 
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
-    if (userId) {
-      const forbidden = forbidUnlessSelf(auth.userId, userId);
-      if (forbidden) return forbidden;
-    }
+    let userId = searchParams.get('userId');
     const partnerName = searchParams.get('partnerName');
     const status = searchParams.get('status');
+
+    if (auth.type === 'employee') {
+      if (userId) {
+        const forbidden = forbidUnlessSelf(auth.userId, userId);
+        if (forbidden) return forbidden;
+      } else {
+        userId = auth.userId;
+      }
+    }
 
     let query: any = {};
 

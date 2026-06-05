@@ -18,3 +18,9 @@ export {
   isLeaveRequestType,
   resolveApproveValueNumber,
 } from './requestValues';
+export {
+  buildSortedRequestRows,
+  compareRequestsByDateDesc,
+  sortIndividualRequestsByDate,
+  sortRangeGroupsByDate,
+} from './requestSorting';

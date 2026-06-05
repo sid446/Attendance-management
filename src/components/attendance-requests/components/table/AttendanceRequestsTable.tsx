@@ -1,17 +1,15 @@
 'use client';
 
 import React from 'react';
-import type { AttendanceRequest, DateRangeGroup, RequestsAdminActionsProps } from '../../types';
+import type { RequestDisplayRow, RequestsAdminActionsProps } from '../../types';
 import { formatStatusLabel, getStatusBadgeColor, getStatusIcon } from '../../utils/requestStatus';
 
 export interface AttendanceRequestsTableProps extends RequestsAdminActionsProps {
-  rangeGroups: DateRangeGroup[];
-  individualRequests: AttendanceRequest[];
+  sortedRequestRows: RequestDisplayRow[];
 }
 
 export const AttendanceRequestsTable: React.FC<AttendanceRequestsTableProps> = ({
-  rangeGroups,
-  individualRequests,
+  sortedRequestRows,
   isAdminView = false,
   hrAdminHighlight = false,
   processingRequest,
@@ -44,210 +42,234 @@ export const AttendanceRequestsTable: React.FC<AttendanceRequestsTableProps> = (
           </tr>
         </thead>
         <tbody className="bg-panel">
-          {rangeGroups.map((group) => (
-            <tr key={`range-${group.ids.join('-')}`} className={`transition-colors ${pendingHrRow(group.status)}`}>
-              <td className={tdCls}>
-                <div>
-                  <div className="font-medium text-slate-900">{group.userName}</div>
-                  <div className="text-xs text-slate-500">{group.designation || 'Employee'}</div>
-                </div>
-              </td>
-              <td className={tdCls}>
-                <div className="text-slate-800">
-                  {new Date(group.startDate).toLocaleDateString('en-GB')} –{' '}
-                  {new Date(group.endDate).toLocaleDateString('en-GB')}
-                </div>
-              </td>
-              <td className={tdCls}>
-                <span className="font-medium text-slate-900">{group.requestedStatus}</span>
-              </td>
-              <td className={tdCls}>
-                <span className="text-slate-600">
-                  {group.startTime && group.endTime ? `${group.startTime} - ${group.endTime}` : '—'}
-                </span>
-              </td>
-              <td className={tdCls}>
-                <span className="block max-w-xs truncate text-slate-600" title={group.reason}>
-                  {group.reason || '—'}
-                </span>
-              </td>
-              <td className={tdCls}>
-                <div
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${getStatusBadgeColor(group.status)}`}
-                >
-                  {getStatusIcon(group.status)}
-                  {formatStatusLabel(group.status)}
-                </div>
-                {group.status === 'PendingHr' && (
-                  <div className="mt-1 max-w-xs text-xs leading-snug text-rose-800">
-                    Partner approved — HR required (date outside current/previous month, IST).
+          {sortedRequestRows.map((row) =>
+            row.type === 'range' ? (
+              <tr
+                key={`range-${row.item.ids.join('-')}`}
+                className={`transition-colors ${pendingHrRow(row.item.status)}`}
+              >
+                <td className={tdCls}>
+                  <div>
+                    <div className="font-medium text-slate-900">{row.item.userName}</div>
+                    <div className="text-xs text-slate-500">{row.item.designation || 'Employee'}</div>
                   </div>
-                )}
-              </td>
-              <td className={tdCls}>
-                <span className="text-slate-600">{group.approvedBy || group.rejectedBy || '—'}</span>
-              </td>
-              <td className={tdCls}>
-                {group.approvedAt || group.rejectedAt ? (
+                </td>
+                <td className={tdCls}>
+                  <div className="text-slate-800">
+                    {new Date(row.item.startDate).toLocaleDateString('en-GB')} –{' '}
+                    {new Date(row.item.endDate).toLocaleDateString('en-GB')}
+                  </div>
+                </td>
+                <td className={tdCls}>
+                  <span className="font-medium text-slate-900">{row.item.requestedStatus}</span>
+                </td>
+                <td className={tdCls}>
+                  <span className="text-slate-600">
+                    {row.item.startTime && row.item.endTime
+                      ? `${row.item.startTime} - ${row.item.endTime}`
+                      : '—'}
+                  </span>
+                </td>
+                <td className={tdCls}>
+                  <span className="block max-w-xs truncate text-slate-600" title={row.item.reason}>
+                    {row.item.reason || '—'}
+                  </span>
+                </td>
+                <td className={tdCls}>
+                  <div
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${getStatusBadgeColor(row.item.status)}`}
+                  >
+                    {getStatusIcon(row.item.status)}
+                    {formatStatusLabel(row.item.status)}
+                  </div>
+                  {row.item.status === 'PendingHr' && (
+                    <div className="mt-1 max-w-xs text-xs leading-snug text-rose-800">
+                      Partner approved — HR required (date outside current/previous month, IST).
+                    </div>
+                  )}
+                </td>
+                <td className={tdCls}>
+                  <span className="text-slate-600">{row.item.approvedBy || row.item.rejectedBy || '—'}</span>
+                </td>
+                <td className={tdCls}>
+                  {row.item.approvedAt || row.item.rejectedAt ? (
+                    <div className="text-slate-600">
+                      <div>{new Date(row.item.approvedAt || row.item.rejectedAt!).toLocaleDateString('en-GB')}</div>
+                      <div className="text-xs text-slate-500">
+                        {new Date(row.item.approvedAt || row.item.rejectedAt!).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <span className="text-slate-400">—</span>
+                  )}
+                </td>
+                <td className={tdCls}>
+                  <span className="text-slate-600">
+                    {row.item.approvedByEmail || row.item.rejectedByEmail || '—'}
+                  </span>
+                </td>
+                <td className={tdCls}>
+                  <span className="text-slate-600">
+                    {row.item.hrValue ||
+                      (row.item.status === 'PendingHr' ? row.item.partnerProposedValue : '') ||
+                      '—'}
+                  </span>
+                </td>
+                <td className={tdCls}>
+                  <span className="text-slate-600">{row.item.partnerName}</span>
+                </td>
+                <td className={tdCls}>
                   <div className="text-slate-600">
-                    <div>{new Date(group.approvedAt || group.rejectedAt!).toLocaleDateString('en-GB')}</div>
+                    <div>{new Date(row.item.createdAt).toLocaleDateString('en-GB')}</div>
                     <div className="text-xs text-slate-500">
-                      {new Date(group.approvedAt || group.rejectedAt!).toLocaleTimeString([], {
+                      {new Date(row.item.createdAt).toLocaleTimeString([], {
                         hour: '2-digit',
                         minute: '2-digit',
                       })}
                     </div>
                   </div>
-                ) : (
-                  <span className="text-slate-400">—</span>
-                )}
-              </td>
-              <td className={tdCls}>
-                <span className="text-slate-600">{group.approvedByEmail || group.rejectedByEmail || '—'}</span>
-              </td>
-              <td className={tdCls}>
-                <span className="text-slate-600">
-                  {group.hrValue || (group.status === 'PendingHr' ? group.partnerProposedValue : '') || '—'}
-                </span>
-              </td>
-              <td className={tdCls}>
-                <span className="text-slate-600">{group.partnerName}</span>
-              </td>
-              <td className={tdCls}>
-                <div className="text-slate-600">
-                  <div>{new Date(group.createdAt).toLocaleDateString('en-GB')}</div>
-                  <div className="text-xs text-slate-500">
-                    {new Date(group.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </div>
-                </div>
-              </td>
-              {isAdminView && (
-                <td className={tdCls}>
-                  {group.status === 'Pending' || group.status === 'PendingHr' ? (
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => openApprovalModal?.(group.ids, 'approve')}
-                        disabled={processingRequest === group.ids[0]}
-                        className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-50"
-                      >
-                        {processingRequest === group.ids[0] ? '…' : 'Approve'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openApprovalModal?.(group.ids, 'reject')}
-                        disabled={processingRequest === group.ids[0]}
-                        className="rounded-md bg-rose-600 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500/40 disabled:opacity-50"
-                      >
-                        {processingRequest === group.ids[0] ? '…' : 'Reject'}
-                      </button>
-                    </div>
-                  ) : null}
                 </td>
-              )}
-            </tr>
-          ))}
-
-          {individualRequests.map((request) => (
-            <tr key={request._id} className={`transition-colors ${pendingHrRow(request.status)}`}>
-              <td className={tdCls}>
-                <div>
-                  <div className="font-medium text-slate-900">{request.userName}</div>
-                  <div className="text-xs text-slate-500">{request.userId?.designation || 'Employee'}</div>
-                </div>
-              </td>
-              <td className={tdCls}>
-                <div className="text-slate-800">{new Date(request.date).toLocaleDateString('en-GB')}</div>
-              </td>
-              <td className={tdCls}>
-                <span className="font-medium text-slate-900">{request.requestedStatus}</span>
-              </td>
-              <td className={tdCls}>
-                <span className="text-slate-600">
-                  {request.startTime && request.endTime ? `${request.startTime} - ${request.endTime}` : '—'}
-                </span>
-              </td>
-              <td className={tdCls}>
-                <span className="block max-w-xs truncate text-slate-600" title={request.reason}>
-                  {request.reason || '—'}
-                </span>
-              </td>
-              <td className={tdCls}>
-                <div
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${getStatusBadgeColor(request.status)}`}
-                >
-                  {getStatusIcon(request.status)}
-                  {formatStatusLabel(request.status)}
-                </div>
-                {request.status === 'PendingHr' && (
-                  <div className="mt-1 max-w-xs text-xs leading-snug text-rose-800">
-                    Partner approved — HR required (date outside current/previous month, IST).
-                  </div>
+                {isAdminView && (
+                  <td className={tdCls}>
+                    {row.item.status === 'Pending' || row.item.status === 'PendingHr' ? (
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openApprovalModal?.(row.item.ids, 'approve')}
+                          disabled={processingRequest === row.item.ids[0]}
+                          className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-50"
+                        >
+                          {processingRequest === row.item.ids[0] ? '…' : 'Approve'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openApprovalModal?.(row.item.ids, 'reject')}
+                          disabled={processingRequest === row.item.ids[0]}
+                          className="rounded-md bg-rose-600 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500/40 disabled:opacity-50"
+                        >
+                          {processingRequest === row.item.ids[0] ? '…' : 'Reject'}
+                        </button>
+                      </div>
+                    ) : null}
+                  </td>
                 )}
-              </td>
-              <td className={tdCls}>
-                <span className="text-slate-600">{request.approvedBy || request.rejectedBy || '—'}</span>
-              </td>
-              <td className={tdCls}>
-                {request.approvedAt || request.rejectedAt ? (
+              </tr>
+            ) : (
+              <tr
+                key={row.item._id}
+                className={`transition-colors ${pendingHrRow(row.item.status)}`}
+              >
+                <td className={tdCls}>
+                  <div>
+                    <div className="font-medium text-slate-900">{row.item.userName}</div>
+                    <div className="text-xs text-slate-500">{row.item.userId?.designation || 'Employee'}</div>
+                  </div>
+                </td>
+                <td className={tdCls}>
+                  <div className="text-slate-800">{new Date(row.item.date).toLocaleDateString('en-GB')}</div>
+                </td>
+                <td className={tdCls}>
+                  <span className="font-medium text-slate-900">{row.item.requestedStatus}</span>
+                </td>
+                <td className={tdCls}>
+                  <span className="text-slate-600">
+                    {row.item.startTime && row.item.endTime
+                      ? `${row.item.startTime} - ${row.item.endTime}`
+                      : '—'}
+                  </span>
+                </td>
+                <td className={tdCls}>
+                  <span className="block max-w-xs truncate text-slate-600" title={row.item.reason}>
+                    {row.item.reason || '—'}
+                  </span>
+                </td>
+                <td className={tdCls}>
+                  <div
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${getStatusBadgeColor(row.item.status)}`}
+                  >
+                    {getStatusIcon(row.item.status)}
+                    {formatStatusLabel(row.item.status)}
+                  </div>
+                  {row.item.status === 'PendingHr' && (
+                    <div className="mt-1 max-w-xs text-xs leading-snug text-rose-800">
+                      Partner approved — HR required (date outside current/previous month, IST).
+                    </div>
+                  )}
+                </td>
+                <td className={tdCls}>
+                  <span className="text-slate-600">{row.item.approvedBy || row.item.rejectedBy || '—'}</span>
+                </td>
+                <td className={tdCls}>
+                  {row.item.approvedAt || row.item.rejectedAt ? (
+                    <div className="text-slate-600">
+                      <div>{new Date(row.item.approvedAt || row.item.rejectedAt!).toLocaleDateString('en-GB')}</div>
+                      <div className="text-xs text-slate-500">
+                        {new Date(row.item.approvedAt || row.item.rejectedAt!).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <span className="text-slate-400">—</span>
+                  )}
+                </td>
+                <td className={tdCls}>
+                  <span className="text-slate-600">
+                    {row.item.approvedByEmail || row.item.rejectedByEmail || '—'}
+                  </span>
+                </td>
+                <td className={tdCls}>
+                  <span className="text-slate-600">
+                    {row.item.hrValue ||
+                      (row.item.status === 'PendingHr' ? row.item.partnerProposedValue : '') ||
+                      '—'}
+                  </span>
+                </td>
+                <td className={tdCls}>
+                  <span className="text-slate-600">{row.item.partnerName}</span>
+                </td>
+                <td className={tdCls}>
                   <div className="text-slate-600">
-                    <div>{new Date(request.approvedAt || request.rejectedAt!).toLocaleDateString('en-GB')}</div>
+                    <div>{new Date(row.item.createdAt).toLocaleDateString('en-GB')}</div>
                     <div className="text-xs text-slate-500">
-                      {new Date(request.approvedAt || request.rejectedAt!).toLocaleTimeString([], {
+                      {new Date(row.item.createdAt).toLocaleTimeString([], {
                         hour: '2-digit',
                         minute: '2-digit',
                       })}
                     </div>
                   </div>
-                ) : (
-                  <span className="text-slate-400">—</span>
-                )}
-              </td>
-              <td className={tdCls}>
-                <span className="text-slate-600">{request.approvedByEmail || request.rejectedByEmail || '—'}</span>
-              </td>
-              <td className={tdCls}>
-                <span className="text-slate-600">
-                  {request.hrValue || (request.status === 'PendingHr' ? request.partnerProposedValue : '') || '—'}
-                </span>
-              </td>
-              <td className={tdCls}>
-                <span className="text-slate-600">{request.partnerName}</span>
-              </td>
-              <td className={tdCls}>
-                <div className="text-slate-600">
-                  <div>{new Date(request.createdAt).toLocaleDateString('en-GB')}</div>
-                  <div className="text-xs text-slate-500">
-                    {new Date(request.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </div>
-                </div>
-              </td>
-              {isAdminView && (
-                <td className={tdCls}>
-                  {request.status === 'Pending' || request.status === 'PendingHr' ? (
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => openApprovalModal?.(request._id, 'approve')}
-                        disabled={processingRequest === request._id}
-                        className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-50"
-                      >
-                        {processingRequest === request._id ? '…' : 'Approve'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openApprovalModal?.(request._id, 'reject')}
-                        disabled={processingRequest === request._id}
-                        className="rounded-md bg-rose-600 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500/40 disabled:opacity-50"
-                      >
-                        {processingRequest === request._id ? '…' : 'Reject'}
-                      </button>
-                    </div>
-                  ) : null}
                 </td>
-              )}
-            </tr>
-          ))}
+                {isAdminView && (
+                  <td className={tdCls}>
+                    {row.item.status === 'Pending' || row.item.status === 'PendingHr' ? (
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openApprovalModal?.(row.item._id, 'approve')}
+                          disabled={processingRequest === row.item._id}
+                          className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-50"
+                        >
+                          {processingRequest === row.item._id ? '…' : 'Approve'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openApprovalModal?.(row.item._id, 'reject')}
+                          disabled={processingRequest === row.item._id}
+                          className="rounded-md bg-rose-600 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500/40 disabled:opacity-50"
+                        >
+                          {processingRequest === row.item._id ? '…' : 'Reject'}
+                        </button>
+                      </div>
+                    ) : null}
+                  </td>
+                )}
+              </tr>
+            )
+          )}
         </tbody>
       </table>
     </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { apiCredentialsInit } from '@/lib/apiCredentialsInit';
 import type { AttendanceRequest } from '../types';
 import {
   getDefaultValueForType,
@@ -44,7 +45,7 @@ export function useRequestApproval({
     try {
       const response =
         requestIds.length > 1
-          ? await fetch('/api/partner/bulk-action', {
+          ? await fetch('/api/partner/bulk-action', apiCredentialsInit({
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -55,8 +56,8 @@ export function useRequestApproval({
                 approvedBy: 'HR',
                 approvedByEmail: 'hr@asija.in',
               }),
-            })
-          : await fetch('/api/employee/approve', {
+            }))
+          : await fetch('/api/employee/approve', apiCredentialsInit({
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -67,7 +68,7 @@ export function useRequestApproval({
                 approvedBy: 'HR',
                 approvedByEmail: 'hr@asija.in',
               }),
-            });
+            }));
 
       const result = await response.json();
 
