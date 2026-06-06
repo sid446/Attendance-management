@@ -3,7 +3,11 @@ import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Mail, ArrowRight, Loader2, ShieldCheck } from 'lucide-react';
-import { formatOtpCountdown, HR_OTP_TTL_MINUTES, HR_OTP_TTL_MS } from '@/lib/hrOtpConstants';
+import {
+  formatOtpCountdown,
+  EMPLOYEE_OTP_TTL_MINUTES,
+  EMPLOYEE_OTP_TTL_MS,
+} from '@/lib/hrOtpConstants';
 import { employeeCredentialsInit } from '@/lib/employeeCredentialsInit';
 
 const RESEND_COOLDOWN_SECONDS = 180;
@@ -21,6 +25,10 @@ export default function EmployeeLoginPage() {
   const [resending, setResending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+
+  useEffect(() => {
+    void fetch('/api/auth/warm-smtp').catch(() => {});
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -68,12 +76,14 @@ export default function EmployeeLoginPage() {
     setSessionId(data.sessionId);
     const expiresMs = data.expiresAt
       ? new Date(data.expiresAt).getTime()
-      : Date.now() + HR_OTP_TTL_MS;
+      : Date.now() + EMPLOYEE_OTP_TTL_MS;
     setOtpExpiresAt(expiresMs);
     setStep('otp');
     setOtp('');
     setResendSecondsLeft(RESEND_COOLDOWN_SECONDS);
-    setMessage('OTP sent to your email. It may take a minute to arrive — check spam if needed.');
+    setMessage(
+      'OTP sent. Email delivery may take 1–2 minutes — please wait and check your spam/junk folder.'
+    );
   }, []);
 
   const requestOtp = useCallback(async (normalizedEmail: string) => {
@@ -210,7 +220,7 @@ export default function EmployeeLoginPage() {
                   />
                 </div>
                 <p className="text-xs text-zinc-500">
-                  Use your @asija.in email to receive a {HR_OTP_TTL_MINUTES}-minute OTP.
+                  Use your @asija.in email to receive a {EMPLOYEE_OTP_TTL_MINUTES}-minute OTP.
                 </p>
               </div>
             ) : (
@@ -237,7 +247,7 @@ export default function EmployeeLoginPage() {
                       <span className="text-rose-400">OTP expired — tap Resend OTP below.</span>
                     ) : (
                       <>
-                        Valid for {HR_OTP_TTL_MINUTES} minutes · expires in{' '}
+                        Valid for {EMPLOYEE_OTP_TTL_MINUTES} minutes · expires in{' '}
                         <span className="tabular-nums text-emerald-400">
                           {formatOtpCountdown(otpSecondsLeft)}
                         </span>

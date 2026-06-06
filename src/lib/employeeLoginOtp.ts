@@ -1,8 +1,9 @@
+import { after } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
 import EmployeeOtpPending from '@/models/EmployeeOtpPending';
 import { sendOTPEmail } from '@/lib/mailer';
-import { hrOtpExpiresAt } from '@/lib/hrOtpConstants';
+import { employeeOtpExpiresAt, EMPLOYEE_OTP_TTL_MINUTES } from '@/lib/hrOtpConstants';
 
 const EMAIL_DOMAIN = '@asija.in';
 
@@ -18,7 +19,7 @@ export type IssueEmployeeOtpResult =
   | { ok: true; sessionId: string; expiresAt: Date; email: string }
   | { ok: false; status: number; error: string };
 
-/** Create a fresh employee login OTP and queue email delivery (API returns before SMTP finishes). */
+/** Create a fresh employee login OTP; email is sent asynchronously after the API responds. */
 export async function issueEmployeeLoginOtp(rawEmailInput: string): Promise<IssueEmployeeOtpResult> {
   const rawEmail = String(rawEmailInput || '').trim().toLowerCase();
 
@@ -44,27 +45,37 @@ export async function issueEmployeeLoginOtp(rawEmailInput: string): Promise<Issu
 
   const otp = generateOTP();
   const sessionId = generateSessionId();
-  const expiresAt = hrOtpExpiresAt();
+  const expiresAt = employeeOtpExpiresAt();
   const deliverTo = String(user.email || rawEmail).trim();
 
-  await EmployeeOtpPending.deleteMany({ email: rawEmail });
-  await EmployeeOtpPending.create({
-    sessionId,
-    otp,
-    email: rawEmail,
-    userId: user._id,
-    expiresAt,
-  });
+  await EmployeeOtpPending.findOneAndUpdate(
+    { email: rawEmail },
+    {
+      $set: {
+        sessionId,
+        otp,
+        email: rawEmail,
+        userId: user._id,
+        expiresAt,
+      },
+    },
+    { upsert: true, new: true }
+  );
 
-  void sendOTPEmail(otp, deliverTo, {
-    subject: 'Employee Portal - Login OTP',
-    heading: 'Employee Portal',
-  }).catch(async (emailError) => {
-    console.error('Employee OTP email send error:', emailError);
+  after(async () => {
     try {
-      await EmployeeOtpPending.deleteOne({ sessionId });
-    } catch {
-      // ignore cleanup errors
+      await sendOTPEmail(otp, deliverTo, {
+        subject: 'Employee Portal - Login OTP',
+        heading: 'Employee Portal',
+        validMinutes: EMPLOYEE_OTP_TTL_MINUTES,
+      });
+    } catch (emailError) {
+      console.error('Employee OTP email send error:', emailError);
+      try {
+        await EmployeeOtpPending.deleteOne({ sessionId });
+      } catch {
+        // ignore cleanup errors
+      }
     }
   });
 
