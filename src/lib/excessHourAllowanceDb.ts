@@ -1,5 +1,6 @@
 import PartnerExcessHourAllowance from '@/models/PartnerExcessHourAllowance';
 import PartnerExcessDayApproval from '@/models/PartnerExcessDayApproval';
+import PartnerExcessDayChangeLog from '@/models/PartnerExcessDayChangeLog';
 import Attendance from '@/models/Attendance';
 import User from '@/models/User';
 import type { AttendanceSummaryView, User as UiUser } from '@/types/ui';
@@ -14,6 +15,7 @@ import {
   type ExcessAllowanceLookup,
   type ExcessDisplayLookup,
 } from '@/lib/excessHourAllowance';
+import { isMissedEntryRecord } from '@/lib/attendanceSummaryMetrics';
 
 export interface ExcessAllowancePair {
   userId: string;
@@ -206,12 +208,68 @@ export async function fetchAllowancesForTeamMonth(
 
 function recordsToMap(
   records: Record<string, unknown> | Map<string, unknown> | undefined
-): Record<string, { excessHour?: number }> {
+): Record<
+  string,
+  {
+    excessHour?: number;
+    typeOfPresence?: string;
+    checkin?: string;
+    checkout?: string;
+    editedCheckin?: string;
+    editedCheckout?: string;
+  }
+> {
   if (!records) return {};
   if (records instanceof Map) {
-    return Object.fromEntries(records.entries()) as Record<string, { excessHour?: number }>;
+    return Object.fromEntries(records.entries()) as Record<
+      string,
+      {
+        excessHour?: number;
+        typeOfPresence?: string;
+        checkin?: string;
+        checkout?: string;
+        editedCheckin?: string;
+        editedCheckout?: string;
+      }
+    >;
   }
-  return records as Record<string, { excessHour?: number }>;
+  return records as Record<
+    string,
+    {
+      excessHour?: number;
+      typeOfPresence?: string;
+      checkin?: string;
+      checkout?: string;
+      editedCheckin?: string;
+      editedCheckout?: string;
+    }
+  >;
+}
+
+function dayContextFromRecord(
+  rec: {
+    typeOfPresence?: string;
+    checkin?: string;
+    checkout?: string;
+    editedCheckin?: string;
+    editedCheckout?: string;
+  } | undefined
+): { typeOfPresence: string; missedEntry: boolean } {
+  if (!rec) return { typeOfPresence: '', missedEntry: false };
+  return {
+    typeOfPresence: String(rec.typeOfPresence || '').trim(),
+    missedEntry: isMissedEntryRecord(rec),
+  };
+}
+
+export async function getDayAttendanceContext(
+  userId: string,
+  monthYear: string,
+  date: string
+): Promise<{ typeOfPresence: string; missedEntry: boolean }> {
+  const attendance = await Attendance.findOne({ userId, monthYear }).lean();
+  const records = recordsToMap(attendance?.records as Record<string, unknown> | Map<string, unknown>);
+  return dayContextFromRecord(records[date]);
 }
 
 type LegacyDayApprovalDoc = {
@@ -263,10 +321,12 @@ export async function computeDailyExcessBreakdown(
 
   const days = monthDateStrings(monthYear)
     .map((date) => {
-      const rawExcessHour = Number(records[date]?.excessHour ?? 0);
+      const rec = records[date];
+      const rawExcessHour = Number(rec?.excessHour ?? 0);
       if (rawExcessHour === 0) return null;
       const approvalKey = `${userId}:${date}`;
       const hasDecision = Object.prototype.hasOwnProperty.call(approvals, approvalKey);
+      const { typeOfPresence, missedEntry } = dayContextFromRecord(rec);
       return {
         date,
         rawExcessHour,
@@ -276,14 +336,96 @@ export async function computeDailyExcessBreakdown(
               ? approvals[approvalKey]
               : null
             : null,
+        typeOfPresence: typeOfPresence || undefined,
+        missedEntry,
       };
     })
-    .filter(
-      (row): row is { date: string; rawExcessHour: number; allowedExcessHours: number | null } =>
-        row != null
-    );
+    .filter((row): row is NonNullable<typeof row> => row != null);
 
   return applyDayWiseExcessApprovals(days);
+}
+
+export interface ExcessDayChangeLogEntry {
+  date: string;
+  oldAllowedExcessHours: number | null;
+  newAllowedExcessHours: number | null;
+  changedByEmail: string;
+  changedAt: string;
+  typeOfPresence: string;
+  missedEntry: boolean;
+}
+
+export async function getCurrentDayAllowedExcess(
+  userId: string,
+  date: string
+): Promise<number | null> {
+  const doc = await PartnerExcessDayApproval.findOne({ userId, date })
+    .select('allowedExcessHours approved')
+    .lean();
+  if (!doc) return null;
+  const allowed = resolveDayAllowedHours(doc as LegacyDayApprovalDoc);
+  return allowed;
+}
+
+export async function logExcessDayChange(params: {
+  userId: string;
+  date: string;
+  oldAllowedExcessHours: number | null;
+  newAllowedExcessHours: number | null;
+  changedByUserId: string;
+  changedByEmail: string;
+  typeOfPresence?: string;
+  missedEntry?: boolean;
+}): Promise<void> {
+  const monthYear = params.date.slice(0, 7);
+  await PartnerExcessDayChangeLog.create({
+    userId: params.userId,
+    monthYear,
+    date: params.date,
+    oldAllowedExcessHours: params.oldAllowedExcessHours,
+    newAllowedExcessHours: params.newAllowedExcessHours,
+    changedByUserId: params.changedByUserId,
+    changedByEmail: params.changedByEmail.trim().toLowerCase(),
+    typeOfPresence: String(params.typeOfPresence || '').trim(),
+    missedEntry: params.missedEntry === true,
+    changedAt: new Date(),
+  });
+}
+
+export async function fetchExcessChangeLogsForUsersMonth(
+  userIds: string[],
+  monthYear: string
+): Promise<Record<string, ExcessDayChangeLogEntry[]>> {
+  if (userIds.length === 0) return {};
+
+  const docs = await PartnerExcessDayChangeLog.find({
+    userId: { $in: userIds },
+    monthYear,
+  })
+    .sort({ changedAt: -1 })
+    .lean();
+
+  const out: Record<string, ExcessDayChangeLogEntry[]> = {};
+  for (const doc of docs) {
+    const userId = String(doc.userId);
+    if (!out[userId]) out[userId] = [];
+    out[userId].push({
+      date: String(doc.date),
+      oldAllowedExcessHours:
+        doc.oldAllowedExcessHours != null && Number.isFinite(Number(doc.oldAllowedExcessHours))
+          ? Number(Number(doc.oldAllowedExcessHours).toFixed(2))
+          : null,
+      newAllowedExcessHours:
+        doc.newAllowedExcessHours != null && Number.isFinite(Number(doc.newAllowedExcessHours))
+          ? Number(Number(doc.newAllowedExcessHours).toFixed(2))
+          : null,
+      changedByEmail: String(doc.changedByEmail || ''),
+      changedAt: doc.changedAt instanceof Date ? doc.changedAt.toISOString() : String(doc.changedAt),
+      typeOfPresence: String(doc.typeOfPresence || '').trim(),
+      missedEntry: doc.missedEntry === true,
+    });
+  }
+  return out;
 }
 
 export async function upsertDayExcessApproval(

@@ -1,10 +1,20 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Clock, Loader2, RotateCcw } from "lucide-react";
+import { ChevronDown, ChevronRight, Clock, History, Loader2, RotateCcw } from "lucide-react";
 import { EmployeeSummaryMonthPicker } from "@/components/EmployeeSummaryMonthPicker";
 import { formatHoursMinutes, parseHoursMinutes } from "@/lib/attendanceSummaryMetrics";
 import type { DailyExcessApprovalRow } from "@/lib/excessHourAllowance";
+
+interface ExcessDayChangeLogEntry {
+  date: string;
+  oldAllowedExcessHours: number | null;
+  newAllowedExcessHours: number | null;
+  changedByEmail: string;
+  changedAt: string;
+  typeOfPresence: string;
+  missedEntry: boolean;
+}
 
 interface TeamMemberRow {
   _id: string;
@@ -16,6 +26,7 @@ interface TeamMemberRow {
   adjustedPositiveDays: number;
   partnerAdjusted: boolean;
   days: DailyExcessApprovalRow[];
+  changeLogs: ExcessDayChangeLogEntry[];
 }
 
 interface ManageExcessHourAllowanceSectionProps {
@@ -35,6 +46,59 @@ function formatDateLabel(date: string): string {
     day: "2-digit",
     month: "short",
   });
+}
+
+function formatAllowanceValue(val: number | null): string {
+  if (val == null) return "Default (full excess)";
+  return formatHoursMinutes(val);
+}
+
+function formatChangeTimestamp(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatChangeSummary(entry: ExcessDayChangeLogEntry): string {
+  return `${formatAllowanceValue(entry.oldAllowedExcessHours)} → ${formatAllowanceValue(entry.newAllowedExcessHours)}`;
+}
+
+function formatPresenceLabel(typeOfPresence?: string): string {
+  const label = String(typeOfPresence || "").trim();
+  return label || "—";
+}
+
+function PresenceInfo({
+  typeOfPresence,
+  missedEntry,
+  compact = false,
+}: {
+  typeOfPresence?: string;
+  missedEntry?: boolean;
+  compact?: boolean;
+}) {
+  const label = formatPresenceLabel(typeOfPresence);
+  return (
+    <div className={`flex flex-wrap items-center gap-1.5 ${compact ? "" : "min-w-[140px]"}`}>
+      <span
+        className={`inline-flex max-w-full rounded-full border border-border bg-background px-2 py-0.5 text-xs text-foreground ${compact ? "truncate" : ""}`}
+        title={label}
+      >
+        {label}
+      </span>
+      {missedEntry && (
+        <span className="inline-flex rounded-full border border-amber-500/40 bg-amber-950/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+          Missed entry
+        </span>
+      )}
+    </div>
+  );
 }
 
 function allowanceLabel(day: DailyExcessApprovalRow): string {
@@ -184,7 +248,7 @@ export function ManageExcessHourAllowanceSection({
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
               Each day&apos;s excess counts in full until you change it. Set how many hours to allow
               per day (0 to the day&apos;s excess). Reset restores the default. Deficit days always
-              count.
+              count. Every change is logged with your email, old value, and new value.
             </p>
           </div>
           <EmployeeSummaryMonthPicker
@@ -275,10 +339,11 @@ export function ManageExcessHourAllowanceSection({
                         </p>
                       ) : (
                         <div className="overflow-x-auto rounded-lg border border-border">
-                          <table className="w-full min-w-[720px] text-left text-sm">
+                          <table className="w-full min-w-[860px] text-left text-sm">
                             <thead className="border-b border-border bg-background/80 text-xs uppercase tracking-wide text-muted-foreground">
                               <tr>
                                 <th className="px-3 py-2.5">Date</th>
+                                <th className="px-3 py-2.5">Presence</th>
                                 <th className="px-3 py-2.5 text-right">Day excess</th>
                                 <th className="px-3 py-2.5">Allowance</th>
                                 <th className="px-3 py-2.5 text-right">Counts as</th>
@@ -301,6 +366,12 @@ export function ManageExcessHourAllowanceSection({
                                       <span className="ml-2 text-xs text-muted-foreground">
                                         {day.date}
                                       </span>
+                                    </td>
+                                    <td className="px-3 py-2.5">
+                                      <PresenceInfo
+                                        typeOfPresence={day.typeOfPresence}
+                                        missedEntry={day.missedEntry}
+                                      />
                                     </td>
                                     <td className="px-3 py-2.5 text-right font-mono tabular-nums">
                                       {formatSignedExcess(day.rawExcessHour)}
@@ -403,7 +474,7 @@ export function ManageExcessHourAllowanceSection({
                             </tbody>
                             <tfoot className="border-t border-border bg-background/60">
                               <tr>
-                                <td className="px-3 py-2.5 font-medium text-foreground" colSpan={2}>
+                                <td className="px-3 py-2.5 font-medium text-foreground" colSpan={3}>
                                   Month total
                                 </td>
                                 <td className="px-3 py-2.5" />
@@ -416,6 +487,45 @@ export function ManageExcessHourAllowanceSection({
                               </tr>
                             </tfoot>
                           </table>
+                        </div>
+                      )}
+
+                      {(member.changeLogs ?? []).length > 0 && (
+                        <div className="mt-4 rounded-lg border border-border bg-background/50">
+                          <div className="flex items-center gap-2 border-b border-border px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            <History className="h-3.5 w-3.5" aria-hidden />
+                            Change history ({monthYear})
+                          </div>
+                          <ul className="divide-y divide-border/70">
+                            {(member.changeLogs ?? []).map((entry, idx) => (
+                              <li
+                                key={`${entry.date}-${entry.changedAt}-${idx}`}
+                                className="px-3 py-2.5 text-sm"
+                              >
+                                <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
+                                  <div className="min-w-0 space-y-1">
+                                    <div>
+                                      <span className="font-medium text-foreground">
+                                        {formatDateLabel(entry.date)}
+                                      </span>
+                                      <span className="ml-2 font-mono text-xs tabular-nums text-muted-foreground">
+                                        {formatChangeSummary(entry)}
+                                      </span>
+                                    </div>
+                                    <PresenceInfo
+                                      typeOfPresence={entry.typeOfPresence}
+                                      missedEntry={entry.missedEntry}
+                                      compact
+                                    />
+                                  </div>
+                                  <div className="shrink-0 text-xs text-muted-foreground sm:text-right">
+                                    <div>{entry.changedByEmail}</div>
+                                    <div>{formatChangeTimestamp(entry.changedAt)}</div>
+                                  </div>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
                         </div>
                       )}
                     </div>

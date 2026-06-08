@@ -129,6 +129,35 @@ function isSinglePunchRecord(rec: any): boolean {
   return isSinglePunch(checkin, checkout);
 }
 
+/** Single-sided in/out punch on a working day (same rule as employee calendar "Missed Entry"). */
+export function isMissedEntryRecord(rec: {
+  typeOfPresence?: string;
+  checkin?: string;
+  checkout?: string;
+  editedCheckin?: string;
+  editedCheckout?: string;
+} | null | undefined): boolean {
+  if (!rec) return false;
+  const type = String(rec.typeOfPresence || '');
+  const typeLower = type.toLowerCase();
+  if (
+    type === 'Absent' ||
+    type === 'Holiday' ||
+    type === 'Leave' ||
+    type === 'On leave' ||
+    typeLower.includes('leave') ||
+    typeLower.includes('holiday') ||
+    typeLower.includes('weekoff') ||
+    typeLower.includes('week off')
+  ) {
+    return false;
+  }
+  const { checkin, checkout } = getEffectivePunches(rec);
+  const inMarked = !!checkin && checkin !== '00:00';
+  const outMarked = !!checkout && checkout !== '00:00';
+  return inMarked !== outMarked;
+}
+
 /** WFH / outstation etc. may not require paired machine punches. */
 function isExemptFromSinglePunchAbsentRule(rec: any): boolean {
   const type = String(rec?.typeOfPresence || '');

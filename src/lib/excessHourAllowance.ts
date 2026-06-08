@@ -31,6 +31,8 @@ export interface DailyExcessApprovalRow {
   /** null = partner has not set allowance (positive excess counts in full) */
   allowedExcessHours: number | null;
   countsAs: number;
+  typeOfPresence?: string;
+  missedEntry?: boolean;
 }
 
 /**
@@ -38,7 +40,13 @@ export interface DailyExcessApprovalRow {
  * Deficit (negative) always counts.
  */
 export function applyDayWiseExcessApprovals(
-  days: Array<{ date: string; rawExcessHour: number; allowedExcessHours: number | null }>
+  days: Array<{
+    date: string;
+    rawExcessHour: number;
+    allowedExcessHours: number | null;
+    typeOfPresence?: string;
+    missedEntry?: boolean;
+  }>
 ): { displayExcess: number; rawExcess: number; rows: DailyExcessApprovalRow[] } {
   let raw = 0;
   let display = 0;
@@ -60,6 +68,8 @@ export function applyDayWiseExcessApprovals(
       rawExcessHour: rawDay,
       allowedExcessHours: rawDay > 0 ? day.allowedExcessHours : null,
       countsAs,
+      typeOfPresence: day.typeOfPresence,
+      missedEntry: day.missedEntry,
     });
   }
 

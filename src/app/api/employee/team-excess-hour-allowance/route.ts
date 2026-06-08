@@ -7,13 +7,18 @@ import {
   computeRawExcessForUserMonth,
   deleteDayExcessApproval,
   fetchAllowancesForTeamMonth,
+  fetchExcessChangeLogsForUsersMonth,
+  getCurrentDayAllowedExcess,
+  getDayAttendanceContext,
+  logExcessDayChange,
   upsertDayExcessApproval,
 } from '@/lib/excessHourAllowanceDb';
+import {
+  assertViewerCanManageTeamMember,
+  getExcessHoursTeamForViewer,
+  visibleMemberToApiUser,
+} from '@/lib/excessHoursTeamAccess';
 import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAuth';
-
-function normalizeName(value: unknown): string {
-  return String(value || '').replace(/[.\s]/g, '').toLowerCase();
-}
 
 interface LeanUser {
   _id?: unknown;
@@ -22,7 +27,6 @@ interface LeanUser {
   odId?: unknown;
   employeeCode?: unknown;
   workingUnderPartner?: unknown;
-  isActive?: boolean;
 }
 
 function toMember(user: LeanUser) {
@@ -34,47 +38,6 @@ function toMember(user: LeanUser) {
     employeeCode: String(user.employeeCode || ''),
     workingUnderPartner: String(user.workingUnderPartner || ''),
   };
-}
-
-async function getOwnTeam(viewer: LeanUser): Promise<LeanUser[]> {
-  const normalizedViewerName = normalizeName(viewer.name);
-  if (!normalizedViewerName) return [];
-
-  const activeUsers = await User.find({ isActive: true })
-    .select('name email odId employeeCode workingUnderPartner')
-    .sort({ name: 1 })
-    .lean();
-
-  return (activeUsers as LeanUser[]).filter((user) => {
-    const workingUnder = normalizeName(user.workingUnderPartner);
-    return workingUnder && workingUnder === normalizedViewerName;
-  });
-}
-
-async function assertPartnerCanManageEmployee(
-  viewerUserId: string,
-  employeeId: string
-): Promise<{ viewer: LeanUser; employee: LeanUser } | NextResponse> {
-  const viewer = (await User.findById(viewerUserId).lean()) as LeanUser | null;
-  if (!viewer) {
-    return NextResponse.json({ success: false, error: 'Viewer not found' }, { status: 404 });
-  }
-
-  const employee = (await User.findById(employeeId).lean()) as LeanUser | null;
-  if (!employee || employee.isActive === false) {
-    return NextResponse.json({ success: false, error: 'Employee not found' }, { status: 404 });
-  }
-
-  const normalizedViewerName = normalizeName(viewer.name);
-  const employeePartner = normalizeName(employee.workingUnderPartner);
-  if (!normalizedViewerName || employeePartner !== normalizedViewerName) {
-    return NextResponse.json(
-      { success: false, error: 'You can only manage excess hours for your own team' },
-      { status: 403 }
-    );
-  }
-
-  return { viewer, employee };
 }
 
 export async function GET(request: NextRequest) {
@@ -96,17 +59,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Valid monthYear (YYYY-MM) is required' }, { status: 400 });
     }
 
-    const viewer = (await User.findById(viewerUserId).lean()) as LeanUser | null;
-    if (!viewer) {
-      return NextResponse.json({ success: false, error: 'Viewer not found' }, { status: 404 });
-    }
-
-    const team = await getOwnTeam(viewer);
-    const userIds = team.map((u) => String(u._id || ''));
+    const team = await getExcessHoursTeamForViewer(viewerUserId);
+    const userIds = team.map((u) => u._id);
     await fetchAllowancesForTeamMonth(userIds, monthYear);
+    const changeLogsByUser = await fetchExcessChangeLogsForUsersMonth(userIds, monthYear);
 
     const members = await Promise.all(
-      team.map(async (user) => {
+      team.map(async (visibleMember) => {
+        const user = visibleMemberToApiUser(visibleMember);
         const member = toMember(user);
         const breakdown = await computeDailyExcessBreakdown(member._id, monthYear);
         const monthlyRaw = await computeRawExcessForUserMonth(member._id, monthYear);
@@ -125,9 +85,12 @@ export async function GET(request: NextRequest) {
               d.allowedExcessHours !== d.rawExcessHour
           ).length,
           partnerAdjusted: breakdown.rows.some((d) => d.allowedExcessHours != null),
+          changeLogs: changeLogsByUser[member._id] ?? [],
         };
       })
     );
+
+    const viewer = (await User.findById(viewerUserId).lean()) as LeanUser | null;
 
     return NextResponse.json({
       success: true,
@@ -135,8 +98,8 @@ export async function GET(request: NextRequest) {
         monthYear,
         members,
         viewer: {
-          _id: String(viewer._id || ''),
-          name: String(viewer.name || ''),
+          _id: viewerUserId,
+          name: String(viewer?.name || ''),
         },
       },
     });
@@ -185,11 +148,50 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const auth = await assertPartnerCanManageEmployee(viewerUserId, employeeId);
-    if (auth instanceof NextResponse) return auth;
+    const auth = await assertViewerCanManageTeamMember(viewerUserId, employeeId);
+    if (!auth) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'You can only manage excess hours for employees on your team attendance list',
+        },
+        { status: 403 }
+      );
+    }
+
+    const changer = (await User.findById(viewerUserId).select('email attendanceEmail').lean()) as {
+      email?: unknown;
+      attendanceEmail?: unknown;
+    } | null;
+    const changedByEmail = String(changer?.email || changer?.attendanceEmail || '').trim();
+    if (!changedByEmail) {
+      return NextResponse.json(
+        { success: false, error: 'Could not resolve your email for change logging' },
+        { status: 400 }
+      );
+    }
+
+    const oldAllowed = await getCurrentDayAllowedExcess(employeeId, date);
+    const dayContext = await getDayAttendanceContext(employeeId, monthYear, date);
 
     if (clear) {
+      if (oldAllowed == null) {
+        return NextResponse.json(
+          { success: false, error: 'This day is already on the default allowance' },
+          { status: 400 }
+        );
+      }
       await deleteDayExcessApproval(employeeId, date);
+      await logExcessDayChange({
+        userId: employeeId,
+        date,
+        oldAllowedExcessHours: oldAllowed,
+        newAllowedExcessHours: null,
+        changedByUserId: viewerUserId,
+        changedByEmail,
+        typeOfPresence: dayContext.typeOfPresence,
+        missedEntry: dayContext.missedEntry,
+      });
     } else if (
       typeof allowedExcessHours !== 'number' ||
       !Number.isFinite(allowedExcessHours) ||
@@ -203,7 +205,24 @@ export async function PATCH(request: NextRequest) {
         { status: 400 }
       );
     } else {
-      await upsertDayExcessApproval(employeeId, date, allowedExcessHours, viewerUserId);
+      const newAllowed = Math.max(0, Number(Number(allowedExcessHours).toFixed(2)));
+      if (oldAllowed === newAllowed) {
+        return NextResponse.json(
+          { success: false, error: 'Allowed hours are already set to this value' },
+          { status: 400 }
+        );
+      }
+      await upsertDayExcessApproval(employeeId, date, newAllowed, viewerUserId);
+      await logExcessDayChange({
+        userId: employeeId,
+        date,
+        oldAllowedExcessHours: oldAllowed,
+        newAllowedExcessHours: newAllowed,
+        changedByUserId: viewerUserId,
+        changedByEmail,
+        typeOfPresence: dayContext.typeOfPresence,
+        missedEntry: dayContext.missedEntry,
+      });
     }
 
     const breakdown = await computeDailyExcessBreakdown(employeeId, monthYear);

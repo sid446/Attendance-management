@@ -1956,7 +1956,7 @@ export default function EmployeeDashboard() {
             </button>
           )}
 
-          {ownTeamCount > 0 && (
+          {subordinates.length > 0 && (
             <button
               type="button"
               className={navItemClass(activeTab === 'manageExcessHours')}
@@ -2267,7 +2267,7 @@ export default function EmployeeDashboard() {
               <ManageAttendanceApproverSection viewerUserId={user._id} />
             )}
 
-            {activeTab === 'manageExcessHours' && user && (
+            {activeTab === 'manageExcessHours' && user && subordinates.length > 0 && (
               <ManageExcessHourAllowanceSection viewerUserId={user._id} />
             )}
           </div>
