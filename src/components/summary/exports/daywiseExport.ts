@@ -1,4 +1,5 @@
 import type { User } from '@/types/ui';
+import { applyDayAllowanceToRawExcess } from '@/lib/excessHourAllowance';
 import { getEmploymentTypeForDate } from '@/lib/attendanceSummaryMetrics';
 import { getDesignationForDate } from '@/lib/userFieldHistory';
 import { formatIsoKeyAsDdMmYyyy, sortRecordDetailsEntries } from '../utils/summaryDateUtils';
@@ -633,6 +634,17 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
         } else {
           daySeconds = 0;
         }
+        const rawDayHours =
+          typeof record.excessHour === 'number' && Number.isFinite(record.excessHour)
+            ? record.excessHour
+            : daySeconds / 3600;
+        const adjustedDayHours = applyDayAllowanceToRawExcess(
+          rawDayHours,
+          String(item.userId || ''),
+          date,
+          ctx.excessDayAllowanceMap
+        );
+        daySeconds = adjustedDayHours * 3600;
         dailyExcessShortSeconds.push(daySeconds);
 
         let workingHrsExport: number | '' = '';

@@ -29,7 +29,10 @@ import type { EnrichedSummary, SummarySectionProps } from '../types';
 import {
   applyExcessHourAllowance,
   lookupExcessAllowance,
+  resolveDisplayExcess,
   type ExcessAllowanceLookup,
+  type ExcessDayAllowanceLookup,
+  type ExcessDisplayLookup,
 } from '@/lib/excessHourAllowance';
 
 export function useSummarySectionLogic(props: SummarySectionProps) {
@@ -156,10 +159,14 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
   const [isBulkManagerOpen, setIsBulkManagerOpen] = useState(false);
   const [summaryTableFullscreen, setSummaryTableFullscreen] = useState(false);
   const [excessAllowanceMap, setExcessAllowanceMap] = useState<ExcessAllowanceLookup>({});
+  const [excessDisplayMap, setExcessDisplayMap] = useState<ExcessDisplayLookup>({});
+  const [excessDayAllowanceMap, setExcessDayAllowanceMap] = useState<ExcessDayAllowanceLookup>({});
 
   useEffect(() => {
     if (!summaries.length) {
       setExcessAllowanceMap({});
+      setExcessDisplayMap({});
+      setExcessDayAllowanceMap({});
       return;
     }
     const seen = new Set<string>();
@@ -182,9 +189,23 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
         const json = await res.json();
         if (json.success && json.data && typeof json.data === 'object') {
           setExcessAllowanceMap(json.data as ExcessAllowanceLookup);
+        } else {
+          setExcessAllowanceMap({});
+        }
+        if (json.success && json.displayExcess && typeof json.displayExcess === 'object') {
+          setExcessDisplayMap(json.displayExcess as ExcessDisplayLookup);
+        } else {
+          setExcessDisplayMap({});
+        }
+        if (json.success && json.dayAllowances && typeof json.dayAllowances === 'object') {
+          setExcessDayAllowanceMap(json.dayAllowances as ExcessDayAllowanceLookup);
+        } else {
+          setExcessDayAllowanceMap({});
         }
       } catch {
         setExcessAllowanceMap({});
+        setExcessDisplayMap({});
+        setExcessDayAllowanceMap({});
       }
     })();
   }, [summaries]);
@@ -1235,9 +1256,15 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
         }
         // Excess / Sched. use same scheduled-day set for worked and sched.
         const rawExcessDeficit = Number((workedTotal - sched).toFixed(2));
+        const calcExcessDeficit = resolveDisplayExcess(
+          rawExcessDeficit,
+          item.userId,
+          item.monthYear,
+          excessAllowanceMap,
+          excessDisplayMap
+        );
         const cap = lookupExcessAllowance(excessAllowanceMap, item.userId, item.monthYear);
         const appliedExcess = applyExcessHourAllowance(rawExcessDeficit, cap);
-        const calcExcessDeficit = appliedExcess.displayExcess;
         // Calculate Late on frontend based on toggle
         const lateDetails = getLateDetails(item);
         const calcLate = lateDetails.length;
@@ -1421,7 +1448,7 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
       ...item,
       rank: index + 1
     }));
-  }, [summaries, searchTerm, selectedYear, selectedMonth, teamFilter, designationFilter, lateFilter, presentFilter, absentFilter, leaveFilter, halfDayFilter, workHoursFilter, excessFilter, sortField, sortDirection, holidays, allUsers, filterType, currentWeekStart, rangeStart, rangeEnd, resolveWorkPartnerForItem, resolveDesignationForItem, excessAllowanceMap]);
+  }, [summaries, searchTerm, selectedYear, selectedMonth, teamFilter, designationFilter, lateFilter, presentFilter, absentFilter, leaveFilter, halfDayFilter, workHoursFilter, excessFilter, sortField, sortDirection, holidays, allUsers, filterType, currentWeekStart, rangeStart, rangeEnd, resolveWorkPartnerForItem, resolveDesignationForItem, excessAllowanceMap, excessDisplayMap]);
 
   /** Render the table in chunks; stats and exports still use full `filteredSummaries`. */
   const [tableVisibleCount, setTableVisibleCount] = useState(SUMMARY_TABLE_CHUNK);
@@ -1516,11 +1543,13 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
       resolveWorkPartner: resolveWorkPartnerForItem,
       resolveDesignation: resolveDesignationForItem,
       countTotalSundaysInPeriod,
+      excessDayAllowanceMap,
     }),
     [
       filteredSummaries, allUsers, holidays, filterType, selectedYear, selectedMonth,
       currentWeekStart, rangeStart, rangeEnd, selectedEmployees, summaryPeriodBase,
       resolveWorkPartnerForItem, resolveDesignationForItem, countTotalSundaysInPeriod,
+      excessDayAllowanceMap,
     ]
   );
 

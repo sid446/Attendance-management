@@ -6,7 +6,7 @@ import type { AttendanceSummaryView, DailySchedule, ScheduleEntry, ScheduleTime,
 import { isSinglePunch } from './attendanceHours';
 import { getScheduledTimes } from './scheduleUtils';
 
-import { applyExcessHourAllowance, lookupExcessAllowance, type ExcessAllowanceLookup } from './excessHourAllowance';
+import { applyExcessHourAllowance, lookupExcessAllowance, lookupExcessDisplay, type ExcessAllowanceLookup, type ExcessDayAllowanceLookup, type ExcessDisplayLookup } from './excessHourAllowance';
 
 export interface SummaryMetricsOptions {
   /** Team leaderboard: only in or only out counts as absent (not present / half day). */
@@ -15,6 +15,10 @@ export interface SummaryMetricsOptions {
   allowedExcessCap?: number | null;
   /** Batch lookup map keyed by userId:monthYear. */
   excessAllowanceMap?: ExcessAllowanceLookup | null;
+  /** Day-wise partner-approved display excess keyed by userId:monthYear. */
+  excessDisplayMap?: ExcessDisplayLookup | null;
+  /** Partner-set allowed hours per day (userId:YYYY-MM-DD). */
+  excessDayAllowanceMap?: ExcessDayAllowanceLookup | null;
 }
 
 type EmploymentTypeHistory = { employmentType: string; effectiveFrom: string | Date };
@@ -27,6 +31,25 @@ export function formatHoursMinutes(hours: number): string {
   const m = totalMinutes % 60;
   const sign = hours < 0 ? '-' : '';
   return `${sign}${h}:${m.toString().padStart(2, '0')}`;
+}
+
+/** Parse H:MM (same as formatHoursMinutes) or plain decimal hours. Returns null if invalid. */
+export function parseHoursMinutes(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.includes(':')) {
+    const [hPart, mPart] = trimmed.split(':');
+    if (mPart == null || mPart.includes(':')) return null;
+    const h = parseInt(hPart, 10);
+    const m = parseInt(mPart, 10);
+    if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || m < 0 || m >= 60) return null;
+    return Number((h + m / 60).toFixed(2));
+  }
+
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return Number(parsed.toFixed(2));
 }
 
 export function monthDateStrings(monthYear: string): string[] {
@@ -857,12 +880,23 @@ export function computeSummaryAlignedMetrics(
   const totalHour = getTotalHourLikeAdminSummary(item, user, dateList);
 
   const rawExcess = getExcessDeficitLikeSummary(item, user, dateList, totalHour);
-  const capFromMap =
-    options?.excessAllowanceMap && item.userId && monthYear
-      ? lookupExcessAllowance(options.excessAllowanceMap, item.userId, monthYear)
-      : null;
-  const cap = options?.allowedExcessCap !== undefined ? options.allowedExcessCap : capFromMap;
-  const applied = applyExcessHourAllowance(rawExcess, cap);
+  const fromDays = lookupExcessDisplay(
+    options?.excessDisplayMap ?? null,
+    String(item.userId || ''),
+    monthYear
+  );
+  let calcExcessDeficit: number;
+  if (fromDays != null) {
+    calcExcessDeficit = fromDays;
+  } else {
+    const capFromMap = lookupExcessAllowance(
+      options?.excessAllowanceMap ?? null,
+      String(item.userId || ''),
+      monthYear
+    );
+    const cap = options?.allowedExcessCap !== undefined ? options.allowedExcessCap : capFromMap;
+    calcExcessDeficit = applyExcessHourAllowance(rawExcess, cap).displayExcess;
+  }
 
   return {
     totalDaysInRecords: getTotalDaysInRecords(item),
@@ -875,6 +909,6 @@ export function computeSummaryAlignedMetrics(
     leaveFullDaysConsumed: getLeaveConsumedFullDays(item),
     calcScheduledHours: getScheduledHoursNoLunchForMonth(item, user, dateList),
     totalHour,
-    calcExcessDeficit: applied.displayExcess,
+    calcExcessDeficit,
   };
 }

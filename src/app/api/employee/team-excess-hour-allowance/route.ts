@@ -3,12 +3,12 @@ import mongoose from 'mongoose';
 import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
 import {
+  computeDailyExcessBreakdown,
   computeRawExcessForUserMonth,
-  deleteExcessAllowance,
+  deleteDayExcessApproval,
   fetchAllowancesForTeamMonth,
-  upsertExcessAllowance,
+  upsertDayExcessApproval,
 } from '@/lib/excessHourAllowanceDb';
-import { applyExcessHourAllowance } from '@/lib/excessHourAllowance';
 import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAuth';
 
 function normalizeName(value: unknown): string {
@@ -103,22 +103,28 @@ export async function GET(request: NextRequest) {
 
     const team = await getOwnTeam(viewer);
     const userIds = team.map((u) => String(u._id || ''));
-    const allowanceMap = await fetchAllowancesForTeamMonth(userIds, monthYear);
+    await fetchAllowancesForTeamMonth(userIds, monthYear);
 
     const members = await Promise.all(
       team.map(async (user) => {
         const member = toMember(user);
-        const rawExcessHour = await computeRawExcessForUserMonth(member._id, monthYear);
-        const capKey = `${member._id}:${monthYear}`;
-        const allowedExcessHours = allowanceMap[capKey] ?? null;
-        const applied = applyExcessHourAllowance(rawExcessHour, allowedExcessHours);
+        const breakdown = await computeDailyExcessBreakdown(member._id, monthYear);
+        const monthlyRaw = await computeRawExcessForUserMonth(member._id, monthYear);
 
         return {
           ...member,
           monthYear,
-          rawExcessHour: applied.rawExcess,
-          allowedExcessHours,
-          displayExcessHour: applied.displayExcess,
+          rawExcessHour: breakdown.rawExcess,
+          displayExcessHour: breakdown.displayExcess,
+          monthlyRawExcessHour: monthlyRaw,
+          days: breakdown.rows,
+          adjustedPositiveDays: breakdown.rows.filter(
+            (d) =>
+              d.rawExcessHour > 0 &&
+              d.allowedExcessHours != null &&
+              d.allowedExcessHours !== d.rawExcessHour
+          ).length,
+          partnerAdjusted: breakdown.rows.some((d) => d.allowedExcessHours != null),
         };
       })
     );
@@ -156,7 +162,9 @@ export async function PATCH(request: NextRequest) {
     if (forbidden) return forbidden;
     const employeeId = String(body?.employeeId || '').trim();
     const monthYear = String(body?.monthYear || '').trim();
+    const date = String(body?.date || '').trim();
     const clear = body?.clear === true;
+    const allowedExcessHours = body?.allowedExcessHours;
 
     if (!mongoose.Types.ObjectId.isValid(viewerUserId)) {
       return NextResponse.json({ success: false, error: 'Valid viewerUserId is required' }, { status: 400 });
@@ -167,43 +175,54 @@ export async function PATCH(request: NextRequest) {
     if (!/^\d{4}-\d{2}$/.test(monthYear)) {
       return NextResponse.json({ success: false, error: 'Valid monthYear (YYYY-MM) is required' }, { status: 400 });
     }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return NextResponse.json({ success: false, error: 'Valid date (YYYY-MM-DD) is required' }, { status: 400 });
+    }
+    if (date.slice(0, 7) !== monthYear) {
+      return NextResponse.json(
+        { success: false, error: 'Date must fall within the selected month' },
+        { status: 400 }
+      );
+    }
 
     const auth = await assertPartnerCanManageEmployee(viewerUserId, employeeId);
     if (auth instanceof NextResponse) return auth;
 
     if (clear) {
-      await deleteExcessAllowance(employeeId, monthYear);
+      await deleteDayExcessApproval(employeeId, date);
+    } else if (
+      typeof allowedExcessHours !== 'number' ||
+      !Number.isFinite(allowedExcessHours) ||
+      allowedExcessHours < 0
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'allowedExcessHours must be a non-negative number, or pass clear: true',
+        },
+        { status: 400 }
+      );
     } else {
-      const allowedExcessHours = Number(body?.allowedExcessHours);
-      if (!Number.isFinite(allowedExcessHours) || allowedExcessHours < 0) {
-        return NextResponse.json(
-          { success: false, error: 'allowedExcessHours must be a non-negative number' },
-          { status: 400 }
-        );
-      }
-      await upsertExcessAllowance(employeeId, monthYear, allowedExcessHours, viewerUserId);
+      await upsertDayExcessApproval(employeeId, date, allowedExcessHours, viewerUserId);
     }
 
-    const rawExcessHour = await computeRawExcessForUserMonth(employeeId, monthYear);
-    const allowanceMap = await fetchAllowancesForTeamMonth([employeeId], monthYear);
-    const capKey = `${employeeId}:${monthYear}`;
-    const allowedExcessHours = allowanceMap[capKey] ?? null;
-    const applied = applyExcessHourAllowance(rawExcessHour, allowedExcessHours);
+    const breakdown = await computeDailyExcessBreakdown(employeeId, monthYear);
 
     return NextResponse.json({
       success: true,
       data: {
         employeeId,
         monthYear,
-        rawExcessHour: applied.rawExcess,
-        allowedExcessHours,
-        displayExcessHour: applied.displayExcess,
+        date,
+        rawExcessHour: breakdown.rawExcess,
+        displayExcessHour: breakdown.displayExcess,
+        days: breakdown.rows,
       },
     });
   } catch (error) {
     console.error('Team excess hour allowance PATCH error:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to update excess hour allowance' },
+      { success: false, error: 'Failed to update excess hour approval' },
       { status: 500 }
     );
   }

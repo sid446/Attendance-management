@@ -24,6 +24,8 @@ export interface SummaryExportContext {
   resolveWorkPartner: (user: User | undefined, monthYear?: string) => string;
   resolveDesignation: (user: User | undefined, monthYear?: string) => string;
   countTotalSundaysInPeriod: () => number;
+  /** Partner-set allowed hours per day (userId:YYYY-MM-DD). */
+  excessDayAllowanceMap?: Record<string, number>;
 }
 
 export type { AttendanceSummaryView };

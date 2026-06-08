@@ -32,6 +32,7 @@ import {
   type SummaryMetricsOptions,
   type SummaryAlignedMetrics,
 } from '@/lib/attendanceSummaryMetrics';
+import { useExcessAllowanceMaps } from '@/hooks/useExcessAllowanceMaps';
 import { SummaryAlignedMetricsStrip } from '@/components/SummaryAlignedMetricsStrip';
 interface ApprovedRequest {
   _id: string;
@@ -426,6 +427,44 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
   /** User with schedules/employment history — required for correct late vs summary. */
   const scheduleUser: User | null = userFromList ?? null;
 
+  const fetchedExcessMaps = useExcessAllowanceMaps({
+    userIds: selectedEmployeeId ? [selectedEmployeeId] : [],
+    monthYear: selectedMonthYear,
+    enabled: Boolean(selectedEmployeeId && selectedMonthYear),
+  });
+
+  const mergedSummaryMetricsOptions = React.useMemo((): SummaryMetricsOptions | undefined => {
+    const hasFetched =
+      Object.keys(fetchedExcessMaps.excessAllowanceMap).length > 0 ||
+      Object.keys(fetchedExcessMaps.excessDisplayMap).length > 0 ||
+      Object.keys(fetchedExcessMaps.excessDayAllowanceMap).length > 0;
+    const hasPassed =
+      summaryMetricsOptions &&
+      (summaryMetricsOptions.excessAllowanceMap ||
+        summaryMetricsOptions.excessDisplayMap ||
+        summaryMetricsOptions.excessDayAllowanceMap ||
+        summaryMetricsOptions.treatSinglePunchAsAbsent != null ||
+        summaryMetricsOptions.allowedExcessCap != null);
+
+    if (!hasFetched && !hasPassed) return summaryMetricsOptions;
+
+    return {
+      ...summaryMetricsOptions,
+      excessAllowanceMap: {
+        ...fetchedExcessMaps.excessAllowanceMap,
+        ...summaryMetricsOptions?.excessAllowanceMap,
+      },
+      excessDisplayMap: {
+        ...fetchedExcessMaps.excessDisplayMap,
+        ...summaryMetricsOptions?.excessDisplayMap,
+      },
+      excessDayAllowanceMap: {
+        ...fetchedExcessMaps.excessDayAllowanceMap,
+        ...summaryMetricsOptions?.excessDayAllowanceMap,
+      },
+    };
+  }, [fetchedExcessMaps, summaryMetricsOptions]);
+
   const alignedMetrics = React.useMemo(() => {
     if (alignedMetricsProp !== undefined) return alignedMetricsProp;
     if (!summaryFromList || !scheduleUser || !selectedMonthYear) return null;
@@ -434,7 +473,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
       scheduleUser,
       holidays,
       selectedMonthYear,
-      summaryMetricsOptions
+      mergedSummaryMetricsOptions
     );
   }, [
     alignedMetricsProp,
@@ -442,7 +481,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
     scheduleUser,
     holidays,
     selectedMonthYear,
-    summaryMetricsOptions,
+    mergedSummaryMetricsOptions,
   ]);
 
   // Helper: get scheduled times (inTime/outTime) for a specific date string YYYY-MM-DD

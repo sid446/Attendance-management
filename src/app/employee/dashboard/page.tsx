@@ -29,7 +29,7 @@ import {
   requestWindowRejectionMessage,
   type RequestWindowConfig,
 } from '@/lib/attendanceRequestWindow';
-import type { ExcessAllowanceLookup } from '@/lib/excessHourAllowance';
+import type { ExcessAllowanceLookup, ExcessDisplayLookup } from '@/lib/excessHourAllowance';
 import {
   LogOut,
   X,
@@ -668,6 +668,8 @@ export default function EmployeeDashboard() {
 
   /** Partner excess-hour caps for dashboard metrics (userId:monthYear → hours). */
   const [excessAllowanceMap, setExcessAllowanceMap] = useState<ExcessAllowanceLookup>({});
+  /** Day-wise approved display excess (userId:monthYear → hours). */
+  const [excessDisplayMap, setExcessDisplayMap] = useState<ExcessDisplayLookup>({});
 
   const [holidays, setHolidays] = useState<{ date: string; name: string }[]>([]);
   /** Populated user from attendance API (schedules, employment type, etc.) for summary-aligned math */
@@ -723,6 +725,7 @@ export default function EmployeeDashboard() {
     const ids = userIds.filter(Boolean);
     if (ids.length === 0 || !my) {
       setExcessAllowanceMap({});
+      setExcessDisplayMap({});
       return;
     }
     try {
@@ -733,9 +736,17 @@ export default function EmployeeDashboard() {
       const json = await res.json();
       if (json.success && json.data && typeof json.data === 'object') {
         setExcessAllowanceMap(json.data as ExcessAllowanceLookup);
+      } else {
+        setExcessAllowanceMap({});
+      }
+      if (json.success && json.displayExcess && typeof json.displayExcess === 'object') {
+        setExcessDisplayMap(json.displayExcess as ExcessDisplayLookup);
+      } else {
+        setExcessDisplayMap({});
       }
     } catch {
       setExcessAllowanceMap({});
+      setExcessDisplayMap({});
     }
   }, []);
 
@@ -1420,9 +1431,9 @@ export default function EmployeeDashboard() {
         (attendanceUser ?? user) ?? undefined,
         holidays,
         monthYear,
-        { excessAllowanceMap }
+        { excessAllowanceMap, excessDisplayMap }
       ),
-    [summary, attendanceUser, user, holidays, monthYear, excessAllowanceMap]
+    [summary, attendanceUser, user, holidays, monthYear, excessAllowanceMap, excessDisplayMap]
   );
 
   const chartDailySeries = useMemo(
@@ -1453,7 +1464,7 @@ export default function EmployeeDashboard() {
         metricsUser,
         holidays,
         monthYear,
-        { treatSinglePunchAsAbsent: true, excessAllowanceMap }
+        { treatSinglePunchAsAbsent: true, excessAllowanceMap, excessDisplayMap }
       );
       if (!m) continue;
       out.push({
@@ -1464,7 +1475,7 @@ export default function EmployeeDashboard() {
       });
     }
     return out;
-  }, [subordinates, subordinateAttendance, holidays, monthYear, excessAllowanceMap, user?._id, teamAccessIncludeViewerSelf]);
+  }, [subordinates, subordinateAttendance, holidays, monthYear, excessAllowanceMap, excessDisplayMap, user?._id, teamAccessIncludeViewerSelf]);
 
   const teamExportMembers = useMemo(() => {
     const viewerId = user?._id ? normalizeUserId(user._id) : '';
@@ -1486,17 +1497,12 @@ export default function EmployeeDashboard() {
   useEffect(() => {
     if (!user?._id) return;
     const ids = [user._id];
-    if (
-      activeTab === 'employees' &&
-      teamAttendanceLoadedMonth === monthYear &&
-      subordinates.length > 0
-    ) {
+    if (teamAttendanceLoadedMonth === monthYear && subordinates.length > 0) {
       ids.push(...subordinates.map((s) => normalizeUserId(s._id)).filter(Boolean));
     }
     void fetchExcessAllowancesForMonth(Array.from(new Set(ids)), monthYear);
   }, [
     user?._id,
-    activeTab,
     teamAttendanceLoadedMonth,
     subordinates,
     monthYear,
@@ -1698,7 +1704,7 @@ export default function EmployeeDashboard() {
                       : activeTab === 'manageApprovers'
                         ? 'Manage approvers'
                         : activeTab === 'manageExcessHours'
-                          ? 'Allowed excess hours'
+                          ? 'Excess hours by day'
                         : 'Team'}
               </h1>
               <p className="truncate text-[11px] text-muted-foreground sm:text-xs">
@@ -2154,6 +2160,7 @@ export default function EmployeeDashboard() {
                             summaryMetricsOptions={{
                               treatSinglePunchAsAbsent: true,
                               excessAllowanceMap,
+                              excessDisplayMap,
                             }}
                             sectionTitle="Monthly calendar"
                             subtitle={`Attendance for ${monthYear}`}

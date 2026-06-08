@@ -3,9 +3,9 @@ import { Search, Download, Loader2, X, Newspaper, CreditCard, Award } from 'luci
 import { User } from '@/types/ui';
 import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
 import {
-  applyExcessHourAllowance,
-  lookupExcessAllowance,
+  resolveDisplayExcess,
   type ExcessAllowanceLookup,
+  type ExcessDisplayLookup,
 } from '@/lib/excessHourAllowance';
 
 const ARTICLE_CREDITS_WORKFLOW_STEPS = ['Set attendance period', 'Search or sort table', 'Export or view breakdown'] as const;
@@ -37,7 +37,8 @@ const fetchAttendance = async (userId: string): Promise<any[]> => {
 const calculateArticleCredit = (
   user: User,
   attendanceRecords: any[],
-  allowanceMap?: ExcessAllowanceLookup
+  allowanceMap?: ExcessAllowanceLookup,
+  displayMap?: ExcessDisplayLookup
 ): ArticleCreditRow => {
   const creditAsOnJan26 = user.articleCreditsAsOnJan26 || 0;
   const leaveTakenBeforeJan26 = user.leaveBalance?.used || 0; // Leaves taken before 1st Jan 2026
@@ -55,8 +56,13 @@ const calculateArticleCredit = (
     // Add excess hours from summary if month is on or after Jan 2026 (partner cap applied)
     if (isOnOrAfterJan2026 && typeof month.summary?.excessHour === 'number') {
       const raw = month.summary.excessHour;
-      const cap = lookupExcessAllowance(allowanceMap ?? null, String(user._id), monthYear);
-      totalExcessHours += applyExcessHourAllowance(raw, cap).displayExcess;
+      totalExcessHours += resolveDisplayExcess(
+        raw,
+        String(user._id),
+        monthYear,
+        allowanceMap,
+        displayMap
+      );
     }
   });
 
@@ -122,6 +128,7 @@ export const ArticleCreditsManager: React.FC = () => {
       }
 
       let allowanceMap: ExcessAllowanceLookup = {};
+      let displayMap: ExcessDisplayLookup = {};
       if (pairs.length > 0) {
         try {
           const res = await fetch(
@@ -132,8 +139,12 @@ export const ArticleCreditsManager: React.FC = () => {
           if (json.success && json.data) {
             allowanceMap = json.data as ExcessAllowanceLookup;
           }
+          if (json.success && json.displayExcess) {
+            displayMap = json.displayExcess as ExcessDisplayLookup;
+          }
         } catch {
           allowanceMap = {};
+          displayMap = {};
         }
       }
 
@@ -144,7 +155,7 @@ export const ArticleCreditsManager: React.FC = () => {
           if (!range.start || !range.end) return true;
           return rec.monthYear >= range.start && rec.monthYear <= range.end;
         });
-        allRows.push(calculateArticleCredit(user, filtered, allowanceMap));
+        allRows.push(calculateArticleCredit(user, filtered, allowanceMap, displayMap));
       }
       setRows(allRows);
       setLoading(false);
