@@ -1254,9 +1254,14 @@ export default function EmployeeDashboard() {
         return;
       }
       if (json.success) {
-        alert(`Request sent successfully to ${json.sentTo}!`);
+        if (json.autoApproved) {
+          alert('Request auto-approved.');
+        } else {
+          alert(`Request sent successfully to ${json.sentTo}!`);
+        }
         setSelectedDate(null);
         fetchAttendance(user._id, monthYear, user);
+        void fetchPartnerPendingReviewCount(true);
       } else {
         alert(json.error || 'Failed to send request');
       }
@@ -1367,7 +1372,15 @@ export default function EmployeeDashboard() {
         return;
       }
       if (json.success) {
-        alert(`Future request sent successfully! Created ${json.count} requests.`);
+        if (json.autoApproved) {
+          alert(
+            json.autoApprovedCount != null && json.autoApprovedCount < json.count
+              ? `${json.autoApprovedCount} of ${json.count} day(s) auto-approved; others sent for partner/HR review.`
+              : `Future request auto-approved (${json.count} day${json.count === 1 ? '' : 's'}).`
+          );
+        } else {
+          alert(`Future request sent successfully! Created ${json.count} requests.`);
+        }
         setShowFutureModal(false);
         setFutureStartDate('');
         setFutureEndDate('');
@@ -1377,6 +1390,7 @@ export default function EmployeeDashboard() {
         setFutureCustomType('');
         setCalendarSelectionStart(null);
         fetchAttendance(user._id, monthYear, user);
+        void fetchPartnerPendingReviewCount(true);
       } else {
         alert(json.error || 'Failed to send request');
       }

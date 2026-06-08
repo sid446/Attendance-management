@@ -16,6 +16,7 @@ import {
 } from '@/lib/attendanceRequestWindow';
 import { getEffectiveRequestWindowBoundsForUser } from '@/lib/attendanceRequestWindowDb';
 import { forbidUnlessSelf, requireEmployeeOrHrSession, requireEmployeeSession } from '@/lib/employeeRouteAuth';
+import { autoApproveSelfRequests } from '@/lib/selfApproveAttendanceRequests';
 
 const TIME_REQUIRED_PREFIXES = [
   'Present - in office',
@@ -187,7 +188,7 @@ export async function POST(request: NextRequest) {
       await AttendanceRequest.deleteMany({ userId: user._id, date, status: 'Rejected' });
     }
 
-    await AttendanceRequest.create({
+    const newRequest = await AttendanceRequest.create({
       userId: user._id,
       userName: user.name,
       partnerName: partnerName,
@@ -202,6 +203,12 @@ export async function POST(request: NextRequest) {
     });
 
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || request.headers.get('origin') || 'http://localhost:3000';
+
+    const autoApprovedIds = await autoApproveSelfRequests(
+      [{ requestId: String(newRequest._id), date }],
+      user,
+      baseUrl
+    );
     const reviewAllLink = createPartnerReviewAllLink(baseUrl, partnerName, approverNotificationEmail);
 
     // Fetch all pending requests assigned to this partner (across all employees)
@@ -245,10 +252,14 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'Request sent to partner',
+      message:
+        autoApprovedIds.length > 0
+          ? 'Request auto-approved (self approver)'
+          : 'Request sent to partner',
       sentTo: approverNotificationEmail,
       emailSent,
       warning: emailWarning,
+      autoApproved: autoApprovedIds.length > 0,
     });
   } catch (error) {
     console.error('Request Error:', error);

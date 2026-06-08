@@ -4,7 +4,10 @@ import '@/models/User';
 import AttendanceRequest from '@/models/AttendanceRequest';
 import Attendance from '@/models/Attendance';
 import { verifyPartnerReviewToken } from '@/lib/partnerReviewToken';
-import { isAttendanceDatePartnerOnlyIst } from '@/lib/attendanceRequestApprovalWindow';
+import {
+  autoApproveSelfRequests,
+  filterSelfApprovablePendingRequestIds,
+} from '@/lib/selfApproveAttendanceRequests';
 
 function normalizePartnerName(name: string): string {
   return String(name || '').replace(/[.\s]/g, '').toLowerCase();
@@ -108,38 +111,20 @@ export async function GET(request: NextRequest) {
     // consistent by reusing the existing bulk-action logic.
     if (partnerEmail && token && Array.isArray(requests) && requests.length > 0) {
       const tokenEmail = String(partnerEmail).trim().toLowerCase();
-      const selfIds = requests
-        .filter((r: any) => {
-          const userDoc = r.userId;
-          const userEmail = String(userDoc?.email || '').trim().toLowerCase();
-          const attendanceEmail = String(userDoc?.attendanceEmail || '').trim().toLowerCase();
-          if (!userEmail || !attendanceEmail) return false;
-          if (!isAttendanceDatePartnerOnlyIst(String(r.date || ''))) return false;
-          return userEmail === tokenEmail && attendanceEmail === tokenEmail;
-        })
-        .map((r: any) => String(r._id))
-        .filter(Boolean);
+      const selfIds = filterSelfApprovablePendingRequestIds(requests, tokenEmail);
 
       if (selfIds.length > 0) {
-        try {
-          const origin = new URL(request.url).origin;
-          await fetch(`${origin}/api/partner/bulk-action`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'approve',
-              ids: selfIds,
-              remark: 'Auto-approved (self)',
-              accessToken: token,
-            }),
-          });
-        } catch (e) {
-          // Don't fail the list if auto-approve fails; the partner can still approve manually.
-          console.error('Auto-approve (self) failed:', e);
-        }
+        const origin = new URL(request.url).origin;
+        const approvedIds = await autoApproveSelfRequests(
+          selfIds.map((id) => {
+            const row = requests.find((r: { _id: unknown }) => String(r._id) === id);
+            return { requestId: id, date: String(row?.date || '') };
+          }),
+          { name: partnerName, email: tokenEmail, attendanceEmail: tokenEmail },
+          origin
+        );
 
-        // Remove any IDs we attempted to approve from the pending response list.
-        const selfIdSet = new Set(selfIds);
+        const selfIdSet = new Set(approvedIds);
         requests = requests.filter((r: any) => !selfIdSet.has(String(r._id)));
       }
     }

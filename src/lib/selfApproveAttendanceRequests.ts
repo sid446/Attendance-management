@@ -1,0 +1,114 @@
+import { isAttendanceDatePartnerOnlyIst } from '@/lib/attendanceRequestApprovalWindow';
+import { isAttendanceApproverSameAsEmployee } from '@/lib/employeeMisExceptions';
+import { createPartnerReviewToken } from '@/lib/partnerReviewToken';
+
+export type SelfApproveRequestInput = {
+  requestId: string;
+  date: string;
+};
+
+/** Same title-case name used for partner review tokens. */
+export function formatPartnerNameForReview(name: string): string {
+  let n = name.replace(/\./g, ' ');
+  n = n.replace(/\s+/g, ' ').trim();
+  return n
+    .split(' ')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
+/** Login email equals attendance email — employee is their own attendance approver. */
+export function isSelfApproverUser(user: {
+  email?: unknown;
+  attendanceEmail?: unknown;
+}): boolean {
+  return isAttendanceApproverSameAsEmployee(user);
+}
+
+function normalizeEmail(value: unknown): string {
+  return String(value || '').trim().toLowerCase();
+}
+
+/** Request IDs eligible for partner self auto-approve (current/previous IST month only). */
+export function filterSelfApprovableRequestIds(
+  items: SelfApproveRequestInput[],
+  user: { email?: unknown; attendanceEmail?: unknown }
+): string[] {
+  if (!isSelfApproverUser(user)) return [];
+
+  const loginEmail = normalizeEmail(user.email);
+  const attendanceEmail = normalizeEmail(user.attendanceEmail);
+  if (!loginEmail || !attendanceEmail || loginEmail !== attendanceEmail) return [];
+
+  return items
+    .filter((item) => isAttendanceDatePartnerOnlyIst(String(item.date || '')))
+    .map((item) => String(item.requestId))
+    .filter(Boolean);
+}
+
+/** Pending-queue rows where requester email === attendanceEmail === token inbox. */
+export function filterSelfApprovablePendingRequestIds(
+  requests: Array<{
+    _id: unknown;
+    date: unknown;
+    userId?: { email?: unknown; attendanceEmail?: unknown } | null;
+  }>,
+  tokenEmail: string
+): string[] {
+  const inbox = normalizeEmail(tokenEmail);
+  if (!inbox) return [];
+
+  return requests
+    .filter((row) => {
+      const userDoc = row.userId;
+      const userEmail = normalizeEmail(userDoc?.email);
+      const attendanceEmail = normalizeEmail(userDoc?.attendanceEmail);
+      if (!userEmail || !attendanceEmail) return false;
+      if (!isAttendanceDatePartnerOnlyIst(String(row.date || ''))) return false;
+      return userEmail === inbox && attendanceEmail === inbox;
+    })
+    .map((row) => String(row._id))
+    .filter(Boolean);
+}
+
+/**
+ * Auto-approve self requests via existing bulk-action (same path as review queue).
+ * Returns IDs that were submitted for approval.
+ */
+export async function autoApproveSelfRequests(
+  items: SelfApproveRequestInput[],
+  user: { name?: unknown; email?: unknown; attendanceEmail?: unknown },
+  origin: string
+): Promise<string[]> {
+  const ids = filterSelfApprovableRequestIds(items, user);
+  if (ids.length === 0) return [];
+
+  const partnerEmail = normalizeEmail(user.email);
+  const partnerName = formatPartnerNameForReview(String(user.name || ''));
+  const token = createPartnerReviewToken({ partnerName, partnerEmail });
+
+  const base = origin.replace(/\/$/, '');
+
+  try {
+    const res = await fetch(`${base}/api/partner/bulk-action`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'approve',
+        ids,
+        remark: 'Auto-approved (self)',
+        accessToken: token,
+      }),
+    });
+
+    if (!res.ok) {
+      console.error('Auto-approve (self) failed:', await res.text());
+      return [];
+    }
+
+    return ids;
+  } catch (error) {
+    console.error('Auto-approve (self) failed:', error);
+    return [];
+  }
+}

@@ -18,6 +18,7 @@ import {
 } from '@/lib/attendanceRequestWindow';
 import { getEffectiveRequestWindowBoundsForUser } from '@/lib/attendanceRequestWindowDb';
 import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAuth';
+import { autoApproveSelfRequests } from '@/lib/selfApproveAttendanceRequests';
 
 const TIME_REQUIRED_PREFIXES = [
   'Present - in office',
@@ -238,9 +239,18 @@ export async function POST(request: NextRequest) {
         createdRequests.push(newRequest);
     }
 
-    // Send Email Notification to Partner
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || request.headers.get('origin') || 'http://localhost:3000';
 
+    const autoApprovedIds = await autoApproveSelfRequests(
+      createdRequests.map((req) => ({
+        requestId: String(req._id),
+        date: String(req.date),
+      })),
+      user,
+      baseUrl
+    );
+
+    // Send Email Notification to Partner
     // Fetch all pending requests assigned to this partner (across all employees)
     const pendingRequests = await AttendanceRequest.find({ partnerName: partnerName, status: 'Pending' }).sort({ createdAt: 1 });
 
@@ -274,7 +284,13 @@ export async function POST(request: NextRequest) {
         // Let's keep it as warning.
     }
 
-    return NextResponse.json({ success: true, count: createdRequests.length, sentTo: approverNotificationEmail });
+    return NextResponse.json({
+      success: true,
+      count: createdRequests.length,
+      sentTo: approverNotificationEmail,
+      autoApprovedCount: autoApprovedIds.length,
+      autoApproved: autoApprovedIds.length > 0,
+    });
 
   } catch (error) {
     console.error('Future request error:', error);
