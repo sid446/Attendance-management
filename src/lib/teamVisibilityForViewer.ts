@@ -1,0 +1,140 @@
+import mongoose from 'mongoose';
+import TeamAttendanceAccess from '@/models/TeamAttendanceAccess';
+import User from '@/models/User';
+
+function normalizeName(value: unknown): string {
+  return String(value || '').replace(/[.\s]/g, '').toLowerCase();
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export interface VisibleTeamMember {
+  _id: string;
+  name: string;
+  email: string;
+  odId: string;
+  employeeCode: string;
+  workingUnderPartner: string;
+}
+
+interface VisibleUser {
+  _id?: unknown;
+  name?: unknown;
+  email?: unknown;
+  attendanceEmail?: unknown;
+  workingUnderPartner?: unknown;
+  odId?: unknown;
+  employeeCode?: unknown;
+}
+
+function toMember(user: VisibleUser): VisibleTeamMember {
+  return {
+    _id: String(user._id || ''),
+    name: String(user.name || ''),
+    email: String(user.email || ''),
+    odId: String(user.odId || ''),
+    employeeCode: String(user.employeeCode || ''),
+    workingUnderPartner: String(user.workingUnderPartner || ''),
+  };
+}
+
+/** Same visible team as Team Attendance Access (own team + approver inbox + admin extras). */
+export async function getVisibleTeamMembersForViewer(
+  viewerUserId: string
+): Promise<{ members: VisibleTeamMember[]; includeViewerSelf: boolean }> {
+  const viewer = await User.findById(viewerUserId).lean();
+  if (!viewer) return { members: [], includeViewerSelf: false };
+
+  const rule = await TeamAttendanceAccess.findOne({ viewerUserId }).lean();
+  if (rule && rule.isActive === false) {
+    return { members: [], includeViewerSelf: false };
+  }
+
+  const includeOwnTeam = rule ? rule.includeOwnTeam !== false : true;
+  const viewerData = viewer as VisibleUser;
+  const visible = new Map<string, VisibleUser>();
+
+  const addUsers = (users: VisibleUser[], opts?: { includeViewer?: boolean }) => {
+    users.forEach((user) => {
+      const id = String(user?._id || '');
+      if (!id) return;
+      if (!opts?.includeViewer && id === viewerUserId) return;
+      visible.set(id, user);
+    });
+  };
+
+  if (includeOwnTeam) {
+    const normalizedViewerName = normalizeName(viewerData.name);
+    const ownTeam = await User.find({ isActive: true }).sort({ name: 1 }).lean();
+    addUsers(
+      (ownTeam as VisibleUser[]).filter((user) => {
+        const workingUnder = normalizeName(user.workingUnderPartner);
+        return workingUnder && workingUnder === normalizedViewerName;
+      })
+    );
+  }
+
+  const viewerEmails = Array.from(
+    new Set(
+      [viewerData.email, viewerData.attendanceEmail]
+        .map((value) => String(value || '').trim().toLowerCase())
+        .filter(Boolean)
+    )
+  );
+  if (viewerEmails.length > 0) {
+    addUsers(
+      (await User.find({
+        isActive: true,
+        $or: viewerEmails.map((viewerEmail) => ({
+          attendanceEmail: new RegExp(`^${escapeRegex(viewerEmail)}$`, 'i'),
+        })),
+      })
+        .sort({ name: 1 })
+        .lean()) as VisibleUser[]
+    );
+  }
+
+  const extraUserIds = (rule?.extraUserIds || [])
+    .map((id: unknown) => String(id || '').trim())
+    .filter((id: string) => mongoose.Types.ObjectId.isValid(id));
+
+  const includeViewerSelf = extraUserIds.some((id) => id === viewerUserId);
+
+  if (extraUserIds.length > 0) {
+    addUsers(
+      (await User.find({ _id: { $in: extraUserIds }, isActive: true }).sort({ name: 1 }).lean()) as VisibleUser[],
+      { includeViewer: includeViewerSelf }
+    );
+  }
+
+  const extraPartnerNames = Array.isArray(rule?.extraPartnerNames) ? rule.extraPartnerNames : [];
+  if (extraPartnerNames.length > 0) {
+    const partnerPatterns = extraPartnerNames
+      .map((name: unknown) => String(name || '').trim())
+      .filter(Boolean)
+      .map((name: string) => new RegExp(`^${escapeRegex(name)}$`, 'i'));
+
+    if (partnerPatterns.length > 0) {
+      addUsers(
+        (await User.find({
+          isActive: true,
+          workingUnderPartner: { $in: partnerPatterns },
+        })
+          .sort({ name: 1 })
+          .lean()) as VisibleUser[]
+      );
+    }
+  }
+
+  if (!includeViewerSelf) {
+    visible.delete(viewerUserId);
+  }
+
+  const members = Array.from(visible.values())
+    .map(toMember)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return { members, includeViewerSelf };
+}

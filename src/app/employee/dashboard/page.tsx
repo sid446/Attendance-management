@@ -18,6 +18,7 @@ import {
 } from '@/components/PartnerTeamOverview';
 import { ManageAttendanceApproverSection } from '@/components/ManageAttendanceApproverSection';
 import { ManageExcessHourAllowanceSection } from '@/components/ManageExcessHourAllowanceSection';
+import { TeamDailyUpdatesSection } from '@/components/TeamDailyUpdatesSection';
 import { SummarySection } from '@/components/SummarySection';
 import {
   computeSummaryAlignedMetrics,
@@ -45,6 +46,7 @@ import {
   UserCog,
   IndianRupee,
   Clock,
+  Newspaper,
 } from 'lucide-react';
 
 function normalizeUserId(value: unknown): string {
@@ -486,7 +488,7 @@ function getCorrectionTimeDraft(dayRecord?: AttendanceRecord | null) {
 
 export default function EmployeeDashboard() {
   const [activeTab, setActiveTab] = useState<
-    'dashboard' | 'attendance' | 'clientPunch' | 'employees' | 'manageApprovers' | 'manageExcessHours'
+    'dashboard' | 'attendance' | 'clientPunch' | 'employees' | 'manageApprovers' | 'manageExcessHours' | 'dailyUpdates'
   >('dashboard');
   // Mobile drawer open
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -1864,6 +1866,21 @@ export default function EmployeeDashboard() {
           {subordinates.length > 0 && (
             <button
               type="button"
+              className={navItemClass(activeTab === 'dailyUpdates')}
+              onClick={() => {
+                setActiveTab('dailyUpdates');
+                setSidebarOpen(false);
+              }}
+              title="Team leave and requests for today"
+            >
+              <Newspaper className="h-5 w-5 shrink-0 opacity-90" aria-hidden />
+              <span className={desktopSidebarCollapsed ? 'md:sr-only' : ''}>Daily updates</span>
+            </button>
+          )}
+
+          {subordinates.length > 0 && (
+            <button
+              type="button"
               className={navItemClass(activeTab === 'employees')}
               onClick={() => {
                 setActiveTab('employees');
@@ -1931,20 +1948,35 @@ export default function EmployeeDashboard() {
         <main className={`min-h-0 min-w-0 flex-1 overflow-y-auto transition-[margin] duration-200 ${desktopSidebarCollapsed ? 'md:ml-18' : 'md:ml-56'}`}>
           <div className="mx-auto max-w-7xl space-y-6 px-3 py-5 sm:px-6 sm:py-8 lg:px-10">
             {activeTab === 'dashboard' && (
-              <EmployeeDashboardOverview
-                user={attendanceUser ?? user}
-                monthYear={monthYear}
-                onMonthYearChange={handleMonthChange}
-                alignedMetrics={alignedMetrics}
-                summary={summary}
-                holidays={holidays}
-                chartDailySeries={chartDailySeries}
-                requestsPending={pendingRequestCount}
-                pendingRequests={pendingRequests}
-                teamMembers={subordinates}
-                teamMembersLoading={subordinatesListLoading}
-                isLoadingMetrics={fetchLoading}
-                onSelectTeamMember={handleSelectTeamMember}
+              <>
+                <EmployeeDashboardOverview
+                  user={attendanceUser ?? user}
+                  monthYear={monthYear}
+                  onMonthYearChange={handleMonthChange}
+                  alignedMetrics={alignedMetrics}
+                  summary={summary}
+                  holidays={holidays}
+                  chartDailySeries={chartDailySeries}
+                  requestsPending={pendingRequestCount}
+                  pendingRequests={pendingRequests}
+                  teamMembers={subordinates}
+                  teamMembersLoading={subordinatesListLoading}
+                  isLoadingMetrics={fetchLoading}
+                  onSelectTeamMember={handleSelectTeamMember}
+                />
+                {user?._id && subordinates.length > 0 && (
+                  <TeamDailyUpdatesSection
+                    viewerUserId={user._id}
+                    onSelectMember={handleSelectTeamMember}
+                  />
+                )}
+              </>
+            )}
+
+            {activeTab === 'dailyUpdates' && user?._id && subordinates.length > 0 && (
+              <TeamDailyUpdatesSection
+                viewerUserId={user._id}
+                onSelectMember={handleSelectTeamMember}
               />
             )}
 
