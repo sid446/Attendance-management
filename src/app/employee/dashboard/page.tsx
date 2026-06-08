@@ -28,6 +28,7 @@ import {
 } from '@/lib/attendanceSummaryMetrics';
 import {
   requestWindowRejectionMessage,
+  istDateString,
   type RequestWindowConfig,
 } from '@/lib/attendanceRequestWindow';
 import type { ExcessAllowanceLookup, ExcessDisplayLookup } from '@/lib/excessHourAllowance';
@@ -488,7 +489,7 @@ function getCorrectionTimeDraft(dayRecord?: AttendanceRecord | null) {
 
 export default function EmployeeDashboard() {
   const [activeTab, setActiveTab] = useState<
-    'dashboard' | 'attendance' | 'clientPunch' | 'employees' | 'manageApprovers' | 'manageExcessHours' | 'dailyUpdates'
+    'dashboard' | 'attendance' | 'clientPunch' | 'employees' | 'manageApprovers' | 'manageExcessHours'
   >('dashboard');
   // Mobile drawer open
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -526,6 +527,9 @@ export default function EmployeeDashboard() {
 
   /** Pending attendance requests for this user as partner (review queue). */
   const [partnerPendingReviewCount, setPartnerPendingReviewCount] = useState(0);
+  /** Team leave / WFH / pending items for today (IST). */
+  const [teamDailyUpdatesCount, setTeamDailyUpdatesCount] = useState(0);
+  const [showDailyUpdatesModal, setShowDailyUpdatesModal] = useState(false);
 
   const getPartnerReviewIdentity = useCallback(() => {
     if (!user?.name || !user?.email) return null;
@@ -585,6 +589,52 @@ export default function EmployeeDashboard() {
       setPartnerPendingReviewCount(0);
     }
   }, [fetchPartnerReviewAccessToken]);
+
+  const fetchTeamDailyUpdatesCount = useCallback(async () => {
+    if (!user?._id || subordinates.length === 0) {
+      setTeamDailyUpdatesCount(0);
+      return;
+    }
+    try {
+      const res = await fetch(
+        `/api/employee/team-daily-updates?viewerUserId=${encodeURIComponent(user._id)}&date=${encodeURIComponent(istDateString())}`,
+        employeeCredentialsInit({ cache: 'no-store' })
+      );
+      const json = await res.json();
+      if (json.success && json.data?.summary && typeof json.data.summary.total === 'number') {
+        setTeamDailyUpdatesCount(json.data.summary.total);
+      } else {
+        setTeamDailyUpdatesCount(0);
+      }
+    } catch {
+      setTeamDailyUpdatesCount(0);
+    }
+  }, [user?._id, subordinates.length]);
+
+  const handleDailyUpdatesLoaded = useCallback(
+    (payload: { date: string; summary: { total: number } }) => {
+      if (payload.date === istDateString()) {
+        setTeamDailyUpdatesCount(payload.summary.total);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!user?._id || subordinates.length === 0) {
+      setTeamDailyUpdatesCount(0);
+      return;
+    }
+    void fetchTeamDailyUpdatesCount();
+  }, [user?._id, subordinates.length, fetchTeamDailyUpdatesCount]);
+
+  useEffect(() => {
+    if (!user?._id || subordinates.length === 0) return;
+    const id = window.setInterval(() => {
+      void fetchTeamDailyUpdatesCount();
+    }, PARTNER_PENDING_COUNT_TTL_MS);
+    return () => window.clearInterval(id);
+  }, [user?._id, subordinates.length, fetchTeamDailyUpdatesCount]);
 
   useEffect(() => {
     if (!user?.name || !user?.email) return;
@@ -1718,13 +1768,41 @@ export default function EmployeeDashboard() {
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             <button
               type="button"
-              className="relative hidden md:inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium text-foreground hover:bg-surface/80 sm:text-sm"
+              className="relative inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-2 text-xs font-medium text-foreground hover:bg-surface/80 sm:px-3 sm:text-sm"
               onClick={() => setShowHolidayListModal(true)}
               title={`Holiday list (${selectedYear})`}
+              aria-label={`Holiday list ${selectedYear}`}
             >
               <CalendarDays className="h-4 w-4 opacity-80" aria-hidden />
-              Holidays
+              <span className="hidden sm:inline">Holidays</span>
             </button>
+            {subordinates.length > 0 && (
+              <button
+                type="button"
+                className="relative inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-2 text-xs font-medium text-foreground hover:bg-surface/80 sm:px-3 sm:text-sm"
+                onClick={() => setShowDailyUpdatesModal(true)}
+                title={
+                  teamDailyUpdatesCount > 0
+                    ? `${teamDailyUpdatesCount} team update${teamDailyUpdatesCount === 1 ? '' : 's'} today`
+                    : 'Daily team updates'
+                }
+                aria-label={
+                  teamDailyUpdatesCount > 0
+                    ? `Daily updates, ${teamDailyUpdatesCount} for today`
+                    : 'Daily updates'
+                }
+              >
+                <span className="relative inline-flex shrink-0">
+                  <Newspaper className="h-4 w-4 opacity-80" aria-hidden />
+                  {teamDailyUpdatesCount > 0 && (
+                    <span className="absolute -right-2 -top-2 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-sky-600 px-1 text-[10px] font-bold leading-none text-white shadow-sm">
+                      {teamDailyUpdatesCount > 99 ? '99+' : teamDailyUpdatesCount}
+                    </span>
+                  )}
+                </span>
+                <span className="hidden sm:inline">Daily updates</span>
+              </button>
+            )}
             <button
               type="button"
               className="relative hidden md:inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium text-foreground hover:bg-surface/80 sm:text-sm"
@@ -1866,21 +1944,6 @@ export default function EmployeeDashboard() {
           {subordinates.length > 0 && (
             <button
               type="button"
-              className={navItemClass(activeTab === 'dailyUpdates')}
-              onClick={() => {
-                setActiveTab('dailyUpdates');
-                setSidebarOpen(false);
-              }}
-              title="Team leave and requests for today"
-            >
-              <Newspaper className="h-5 w-5 shrink-0 opacity-90" aria-hidden />
-              <span className={desktopSidebarCollapsed ? 'md:sr-only' : ''}>Daily updates</span>
-            </button>
-          )}
-
-          {subordinates.length > 0 && (
-            <button
-              type="button"
               className={navItemClass(activeTab === 'employees')}
               onClick={() => {
                 setActiveTab('employees');
@@ -1948,35 +2011,20 @@ export default function EmployeeDashboard() {
         <main className={`min-h-0 min-w-0 flex-1 overflow-y-auto transition-[margin] duration-200 ${desktopSidebarCollapsed ? 'md:ml-18' : 'md:ml-56'}`}>
           <div className="mx-auto max-w-7xl space-y-6 px-3 py-5 sm:px-6 sm:py-8 lg:px-10">
             {activeTab === 'dashboard' && (
-              <>
-                <EmployeeDashboardOverview
-                  user={attendanceUser ?? user}
-                  monthYear={monthYear}
-                  onMonthYearChange={handleMonthChange}
-                  alignedMetrics={alignedMetrics}
-                  summary={summary}
-                  holidays={holidays}
-                  chartDailySeries={chartDailySeries}
-                  requestsPending={pendingRequestCount}
-                  pendingRequests={pendingRequests}
-                  teamMembers={subordinates}
-                  teamMembersLoading={subordinatesListLoading}
-                  isLoadingMetrics={fetchLoading}
-                  onSelectTeamMember={handleSelectTeamMember}
-                />
-                {user?._id && subordinates.length > 0 && (
-                  <TeamDailyUpdatesSection
-                    viewerUserId={user._id}
-                    onSelectMember={handleSelectTeamMember}
-                  />
-                )}
-              </>
-            )}
-
-            {activeTab === 'dailyUpdates' && user?._id && subordinates.length > 0 && (
-              <TeamDailyUpdatesSection
-                viewerUserId={user._id}
-                onSelectMember={handleSelectTeamMember}
+              <EmployeeDashboardOverview
+                user={attendanceUser ?? user}
+                monthYear={monthYear}
+                onMonthYearChange={handleMonthChange}
+                alignedMetrics={alignedMetrics}
+                summary={summary}
+                holidays={holidays}
+                chartDailySeries={chartDailySeries}
+                requestsPending={pendingRequestCount}
+                pendingRequests={pendingRequests}
+                teamMembers={subordinates}
+                teamMembersLoading={subordinatesListLoading}
+                isLoadingMetrics={fetchLoading}
+                onSelectTeamMember={handleSelectTeamMember}
               />
             )}
 
@@ -2225,6 +2273,44 @@ export default function EmployeeDashboard() {
           </div>
         </main>
       </div>
+
+      {/* Daily updates modal */}
+      {showDailyUpdatesModal && user?._id && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm sm:p-4">
+          <div className="flex h-full w-full flex-col overflow-hidden bg-surface sm:h-auto sm:max-h-[90vh] sm:max-w-2xl sm:rounded-2xl sm:border sm:border-border sm:shadow-2xl">
+            <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between border-b border-border bg-background/80 p-3 backdrop-blur sm:p-4">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground sm:text-base">Daily updates</h3>
+                <p className="text-xs text-muted-foreground">
+                  Team leave, WFH, travel &amp; requests · IST
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDailyUpdatesModal(false);
+                  void fetchTeamDailyUpdatesCount();
+                }}
+                className="rounded-full border border-border bg-background p-2 text-muted-foreground hover:bg-surface hover:text-foreground"
+                aria-label="Close daily updates"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 sm:p-5">
+              <TeamDailyUpdatesSection
+                viewerUserId={user._id}
+                showHeader={false}
+                onLoaded={handleDailyUpdatesLoaded}
+                onSelectMember={(memberId) => {
+                  setShowDailyUpdatesModal(false);
+                  handleSelectTeamMember(memberId);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Correction Modal */}
       {showTeamExportModal && (

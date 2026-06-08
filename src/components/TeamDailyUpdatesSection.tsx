@@ -24,6 +24,10 @@ import {
 interface TeamDailyUpdatesSectionProps {
   viewerUserId: string;
   onSelectMember?: (userId: string) => void;
+  /** When false, only the body renders (e.g. inside a modal). Default true. */
+  showHeader?: boolean;
+  /** Called after each successful fetch (e.g. to refresh header badge for today). */
+  onLoaded?: (payload: DailyUpdatesPayload) => void;
 }
 
 interface DailyUpdatesPayload {
@@ -140,6 +144,8 @@ const DISPLAY_ORDER: TeamDailyUpdateCategory[] = [
 export function TeamDailyUpdatesSection({
   viewerUserId,
   onSelectMember,
+  showHeader = true,
+  onLoaded,
 }: TeamDailyUpdatesSectionProps) {
   const [date, setDate] = useState(() => istDateString());
   const [loading, setLoading] = useState(true);
@@ -159,14 +165,16 @@ export function TeamDailyUpdatesSection({
       if (!res.ok || !json.success) {
         throw new Error(json.error || "Failed to load daily updates");
       }
-      setPayload(json.data as DailyUpdatesPayload);
+      const data = json.data as DailyUpdatesPayload;
+      setPayload(data);
+      onLoaded?.(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
       setPayload(null);
     } finally {
       setLoading(false);
     }
-  }, [viewerUserId, date]);
+  }, [viewerUserId, date, onLoaded]);
 
   useEffect(() => {
     void fetchUpdates();
@@ -179,51 +187,41 @@ export function TeamDailyUpdatesSection({
 
   const visibleGroups = DISPLAY_ORDER.filter((key) => grouped[key].length > 0);
 
-  return (
-    <section className="rounded-xl border border-border bg-surface shadow-[inset_0_0_0_1px_rgba(147,197,253,0.18)]">
-      <header className="border-b border-border bg-background/60 px-4 py-4 sm:px-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="text-lg font-semibold tracking-tight text-foreground">Daily updates</h2>
-            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Who on your team is on leave, WFH, outstation, or has an approved or pending request
-              for the selected day (IST).
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-1 rounded-lg border border-border bg-background p-1">
-            <button
-              type="button"
-              onClick={() => setDate((d) => shiftIstDate(d, -1))}
-              className="rounded-md p-2 text-muted-foreground hover:bg-surface hover:text-foreground"
-              aria-label="Previous day"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <div className="min-w-[11rem] px-2 text-center text-sm font-medium text-foreground">
-              {formatDateHeading(date)}
-            </div>
-            <button
-              type="button"
-              onClick={() => setDate((d) => shiftIstDate(d, 1))}
-              className="rounded-md p-2 text-muted-foreground hover:bg-surface hover:text-foreground"
-              aria-label="Next day"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-            {date !== istDateString() && (
-              <button
-                type="button"
-                onClick={() => setDate(istDateString())}
-                className="ml-1 rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface"
-              >
-                Today
-              </button>
-            )}
-          </div>
-        </div>
-      </header>
+  const datePicker = (
+    <div className="flex flex-wrap items-center gap-1 rounded-lg border border-border bg-background p-1">
+      <button
+        type="button"
+        onClick={() => setDate((d) => shiftIstDate(d, -1))}
+        className="rounded-md p-2 text-muted-foreground hover:bg-surface hover:text-foreground"
+        aria-label="Previous day"
+      >
+        <ChevronLeft className="h-4 w-4" />
+      </button>
+      <div className="min-w-[11rem] px-2 text-center text-sm font-medium text-foreground">
+        {formatDateHeading(date)}
+      </div>
+      <button
+        type="button"
+        onClick={() => setDate((d) => shiftIstDate(d, 1))}
+        className="rounded-md p-2 text-muted-foreground hover:bg-surface hover:text-foreground"
+        aria-label="Next day"
+      >
+        <ChevronRight className="h-4 w-4" />
+      </button>
+      {date !== istDateString() && (
+        <button
+          type="button"
+          onClick={() => setDate(istDateString())}
+          className="ml-1 rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface"
+        >
+          Today
+        </button>
+      )}
+    </div>
+  );
 
-      <div className="space-y-4 p-4 sm:p-5">
+  const body = (
+      <div className={`space-y-4 ${showHeader ? 'p-4 sm:p-5' : 'p-0'}`}>
         {error && (
           <div className="rounded-lg border border-rose-500/30 bg-rose-950/20 px-3 py-2 text-sm text-rose-700">
             {error}
@@ -319,6 +317,32 @@ export function TeamDailyUpdatesSection({
           </>
         )}
       </div>
+  );
+
+  if (!showHeader) {
+    return (
+      <div className="space-y-4">
+        {datePicker}
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <section className="rounded-xl border border-border bg-surface shadow-[inset_0_0_0_1px_rgba(147,197,253,0.18)]">
+      <header className="border-b border-border bg-background/60 px-4 py-4 sm:px-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight text-foreground">Daily updates</h2>
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+              Who on your team is on leave, WFH, outstation, or has an approved or pending request
+              for the selected day (IST).
+            </p>
+          </div>
+          {datePicker}
+        </div>
+      </header>
+      {body}
     </section>
   );
 }
