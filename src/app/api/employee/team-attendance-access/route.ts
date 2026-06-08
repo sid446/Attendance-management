@@ -50,6 +50,7 @@ export async function GET(request: NextRequest) {
         data: [],
         access: {
           includeOwnTeam: false,
+          includeViewerSelf: false,
           extraUserCount: 0,
           extraPartnerNames: [],
           disabled: true,
@@ -106,10 +107,12 @@ export async function GET(request: NextRequest) {
       .map((id: unknown) => String(id || '').trim())
       .filter((id: string) => mongoose.Types.ObjectId.isValid(id));
 
+    const includeViewerSelf = extraUserIds.some((id) => id === viewerUserId);
+
     if (extraUserIds.length > 0) {
       addUsers(
         (await User.find({ _id: { $in: extraUserIds }, isActive: true }).sort({ name: 1 }).lean()) as VisibleUser[],
-        { includeViewer: true }
+        { includeViewer: includeViewerSelf }
       );
     }
 
@@ -132,6 +135,10 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    if (!includeViewerSelf) {
+      visible.delete(viewerUserId);
+    }
+
     const data = Array.from(visible.values()).sort((a, b) =>
       String(a.name || '').localeCompare(String(b.name || ''))
     );
@@ -141,6 +148,7 @@ export async function GET(request: NextRequest) {
       data,
       access: {
         includeOwnTeam,
+        includeViewerSelf,
         extraUserCount: extraUserIds.length,
         extraPartnerNames,
       },

@@ -123,6 +123,10 @@ export const TeamAttendanceAccessSection: React.FC<TeamAttendanceAccessSectionPr
       }
     });
 
+    if (!extraUserIds.includes(selectedViewerId)) {
+      visible.delete(selectedViewerId);
+    }
+
     return Array.from(visible.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [activeUsers, extraPartnerNames, extraUserIds, includeOwnTeam, isActive, selectedViewer, selectedViewerId]);
 

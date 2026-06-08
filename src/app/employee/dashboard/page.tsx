@@ -93,16 +93,26 @@ function emptyAttendanceSummary(
   };
 }
 
+type TeamAccessFetchResult = {
+  members: User[];
+  includeViewerSelf: boolean;
+};
+
 // Helper to fetch people visible in Team tab.
-async function fetchSubordinates(viewerUserId: string) {
-  if (!viewerUserId) return [];
+async function fetchSubordinates(viewerUserId: string): Promise<TeamAccessFetchResult> {
+  if (!viewerUserId) return { members: [], includeViewerSelf: false };
   const res = await fetch(
     `/api/employee/team-attendance-access?viewerUserId=${encodeURIComponent(viewerUserId)}`,
     employeeCredentialsInit({ cache: 'no-store' })
   );
   const json = await res.json();
-  if (!json.success || !Array.isArray(json.data)) return [];
-  return json.data.map((user: User) => normalizeSubordinateUser(user));
+  if (!json.success || !Array.isArray(json.data)) {
+    return { members: [], includeViewerSelf: false };
+  }
+  return {
+    members: json.data.map((user: User) => normalizeSubordinateUser(user)),
+    includeViewerSelf: json.access?.includeViewerSelf === true,
+  };
 }
 
 // Helper to fetch attendance for a user
@@ -490,6 +500,8 @@ export default function EmployeeDashboard() {
 
   // State for subordinates (if any)
   const [subordinates, setSubordinates] = useState<User[]>([]);
+  /** Admin Team Attendance Access: "Include viewer (self)" for this user. */
+  const [teamAccessIncludeViewerSelf, setTeamAccessIncludeViewerSelf] = useState(false);
   /** Employees whose Work Partner is this user (direct team for approver management). */
   const [ownTeamCount, setOwnTeamCount] = useState(0);
   const [showTeamExportModal, setShowTeamExportModal] = useState(false);
@@ -769,10 +781,12 @@ export default function EmployeeDashboard() {
 
       setSubordinatesListLoading(true);
       try {
-        const subs = await fetchSubordinates(String(userData!._id ?? ''));
-        setSubordinates(subs);
+        const teamAccess = await fetchSubordinates(String(userData!._id ?? ''));
+        setSubordinates(teamAccess.members);
+        setTeamAccessIncludeViewerSelf(teamAccess.includeViewerSelf);
       } catch {
         setSubordinates([]);
+        setTeamAccessIncludeViewerSelf(false);
       } finally {
         setSubordinatesListLoading(false);
         setLoading(false);
@@ -780,7 +794,12 @@ export default function EmployeeDashboard() {
     })();
   }, []);
 
-  const loadTeamAttendanceSummaries = useCallback(async (my: string, subs: User[]) => {
+  const loadTeamAttendanceSummaries = useCallback(async (
+    my: string,
+    subs: User[],
+    viewerId: string,
+    includeViewerSelf: boolean
+  ) => {
     if (subs.length === 0) {
       setSubordinateAttendance({});
       teamAttendanceLoadedMonthRef.current = my;
@@ -792,12 +811,11 @@ export default function EmployeeDashboard() {
     teamAttendanceLoadInFlightRef.current = true;
     setTeamAttendanceLoading(true);
     try {
-      const viewerId = user?._id ? normalizeUserId(user._id) : '';
       const results = await Promise.all(
         subs.map(async (sub) => {
           const subId = normalizeUserId(sub._id);
           if (!subId) return null;
-          if (viewerId && subId === viewerId) return null;
+          if (viewerId && subId === viewerId && !includeViewerSelf) return null;
           const attData = await fetchAttendanceForUser(sub._id, my);
           return {
             subId,
@@ -817,13 +835,18 @@ export default function EmployeeDashboard() {
       setTeamAttendanceLoading(false);
       teamAttendanceLoadInFlightRef.current = false;
     }
-  }, [user?._id]);
+  }, []);
 
   useEffect(() => {
     if (activeTab !== 'employees' || !user || subordinates.length === 0) return;
     if (teamAttendanceLoadedMonthRef.current === monthYear) return;
-    void loadTeamAttendanceSummaries(monthYear, subordinates);
-  }, [activeTab, user, subordinates, monthYear, loadTeamAttendanceSummaries]);
+    void loadTeamAttendanceSummaries(
+      monthYear,
+      subordinates,
+      normalizeUserId(user._id),
+      teamAccessIncludeViewerSelf
+    );
+  }, [activeTab, user, subordinates, monthYear, teamAccessIncludeViewerSelf, loadTeamAttendanceSummaries]);
 
   useEffect(() => {
     if (!selectedSubordinateId || activeTab !== 'employees') return;
@@ -1012,7 +1035,12 @@ export default function EmployeeDashboard() {
     setTeamAttendanceLoadedMonth(null);
     subordinateRequestsLoadedRef.current.clear();
     if (activeTab === 'employees' && subordinates.length > 0) {
-      void loadTeamAttendanceSummaries(val, subordinates);
+      void loadTeamAttendanceSummaries(
+        val,
+        subordinates,
+        user ? normalizeUserId(user._id) : '',
+        teamAccessIncludeViewerSelf
+      );
     } else {
       setSubordinateAttendance({});
     }
@@ -1396,10 +1424,12 @@ export default function EmployeeDashboard() {
   );
 
   const partnerTeamRows: PartnerTeamRow[] = useMemo(() => {
+    const viewerId = user?._id ? normalizeUserId(user._id) : '';
     const out: PartnerTeamRow[] = [];
     for (const sub of subordinates) {
       const userId = normalizeUserId(sub._id);
       if (!userId) continue;
+      if (viewerId && userId === viewerId && !teamAccessIncludeViewerSelf) continue;
       const pack = subordinateAttendance[userId];
       const metricsUser = pack?.userForMetrics ?? sub;
       const summaryForMetrics =
@@ -1420,7 +1450,24 @@ export default function EmployeeDashboard() {
       });
     }
     return out;
-  }, [subordinates, subordinateAttendance, holidays, monthYear, excessAllowanceMap]);
+  }, [subordinates, subordinateAttendance, holidays, monthYear, excessAllowanceMap, user?._id, teamAccessIncludeViewerSelf]);
+
+  const teamExportMembers = useMemo(() => {
+    const viewerId = user?._id ? normalizeUserId(user._id) : '';
+    if (teamAccessIncludeViewerSelf || !viewerId) return subordinates;
+    return subordinates.filter((sub) => normalizeUserId(sub._id) !== viewerId);
+  }, [subordinates, user?._id, teamAccessIncludeViewerSelf]);
+
+  const teamExportSummaries = useMemo(() => {
+    const viewerId = user?._id ? normalizeUserId(user._id) : '';
+    return Object.values(subordinateAttendance)
+      .map((pack) => pack.summary)
+      .filter((summary): summary is AttendanceSummaryView => {
+        if (!summary) return false;
+        if (teamAccessIncludeViewerSelf || !viewerId) return true;
+        return normalizeUserId(summary.userId) !== viewerId;
+      });
+  }, [subordinateAttendance, user?._id, teamAccessIncludeViewerSelf]);
 
   useEffect(() => {
     if (!user?._id) return;
@@ -2142,8 +2189,8 @@ export default function EmployeeDashboard() {
             </div>
             <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-background">
               <SummarySection
-                summaries={Object.values(subordinateAttendance).map(p => p.summary).filter(Boolean) as AttendanceSummaryView[]}
-                allUsers={subordinates}
+                summaries={teamExportSummaries}
+                allUsers={teamExportMembers}
                 holidays={holidays}
                 isLoading={subordinatesListLoading || teamAttendanceLoading}
                 onFilterChange={(filter) => { if (typeof filter === 'string') handleMonthChange(filter); }}
