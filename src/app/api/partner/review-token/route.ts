@@ -1,15 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
+import dbConnect from '@/lib/mongodb';
+import User from '@/models/User';
 import { createPartnerReviewToken } from '@/lib/partnerReviewToken';
+import { requireEmployeeSession } from '@/lib/employeeRouteAuth';
+import { getVisibleTeamMembersForViewer } from '@/lib/teamVisibilityForViewer';
+import { formatPartnerNameForReview } from '@/lib/selfApproveAttendanceRequests';
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json().catch(() => ({}));
-    const partnerName = String(body?.partnerName || '').trim();
-    const partnerEmail = String(body?.partnerEmail || '').trim();
+    const auth = await requireEmployeeSession(request);
+    if (auth instanceof NextResponse) return auth;
 
+    await dbConnect();
+
+    const user = await User.findById(auth.userId).select('name email').lean();
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
+    }
+
+    const { members } = await getVisibleTeamMembersForViewer(auth.userId);
+    if (members.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'You do not have permission to review team attendance requests' },
+        { status: 403 }
+      );
+    }
+
+    const partnerName = formatPartnerNameForReview(String(user.name || ''));
+    const partnerEmail = String(user.email || '').trim();
     if (!partnerName || !partnerEmail) {
       return NextResponse.json(
-        { success: false, error: 'partnerName and partnerEmail are required' },
+        { success: false, error: 'User profile is missing name or email' },
         { status: 400 }
       );
     }

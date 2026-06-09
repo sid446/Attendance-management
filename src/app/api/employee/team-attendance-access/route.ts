@@ -82,21 +82,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Employees whose attendance approver inbox matches this viewer (login or approver email).
-    const viewerEmails = Array.from(
-      new Set(
-        [viewerData.email, viewerData.attendanceEmail]
-          .map((value) => String(value || '').trim().toLowerCase())
-          .filter(Boolean)
-      )
-    );
-    if (viewerEmails.length > 0) {
+    // Approver inbox: employees whose attendanceEmail matches this viewer's login email only.
+    const viewerLoginEmail = String(viewerData.email || '').trim().toLowerCase();
+    if (viewerLoginEmail) {
       addUsers(
         (await User.find({
           isActive: true,
-          $or: viewerEmails.map((viewerEmail) => ({
-            attendanceEmail: new RegExp(`^${escapeRegex(viewerEmail)}$`, 'i'),
-          })),
+          attendanceEmail: new RegExp(`^${escapeRegex(viewerLoginEmail)}$`, 'i'),
         })
           .sort({ name: 1 })
           .lean()) as VisibleUser[]

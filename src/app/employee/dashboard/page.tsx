@@ -178,16 +178,6 @@ function formatExcessHourForSummary(val: number): string {
   return `${sign}${h}:${m.toString().padStart(2, '0')}`;
 }
 
-/** Same title-case name used for partner review URLs and pending-request API. */
-function formatPartnerNameForReview(name: string): string {
-  let n = name.replace(/\./g, ' ');
-  n = n.replace(/\s+/g, ' ').trim();
-  return n
-    .split(' ')
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(' ');
-}
-
 function mapEmployeeDayStatus(
   value: {
     typeOfPresence?: string;
@@ -531,26 +521,17 @@ export default function EmployeeDashboard() {
   const [teamDailyUpdatesCount, setTeamDailyUpdatesCount] = useState(0);
   const [showDailyUpdatesModal, setShowDailyUpdatesModal] = useState(false);
 
-  const getPartnerReviewIdentity = useCallback(() => {
-    if (!user?.name || !user?.email) return null;
-    return {
-      partnerName: formatPartnerNameForReview(user.name),
-      partnerEmail: String(user.email).trim(),
-    };
-  }, [user?.email, user?.name]);
-
   const fetchPartnerReviewAccessToken = useCallback(async () => {
     if (partnerReviewTokenRef.current) return partnerReviewTokenRef.current;
 
-    const identity = getPartnerReviewIdentity();
-    if (!identity) return null;
-
     try {
-      const res = await fetch('/api/partner/review-token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(identity),
-      });
+      const res = await fetch(
+        '/api/partner/review-token',
+        employeeCredentialsInit({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
       const json = await res.json();
       if (!res.ok || !json.success || !json.data?.token) return null;
 
@@ -559,7 +540,7 @@ export default function EmployeeDashboard() {
     } catch {
       return null;
     }
-  }, [getPartnerReviewIdentity]);
+  }, []);
 
   const fetchPartnerPendingReviewCount = useCallback(async (force = false) => {
     if (
@@ -637,9 +618,12 @@ export default function EmployeeDashboard() {
   }, [user?._id, subordinates.length, fetchTeamDailyUpdatesCount]);
 
   useEffect(() => {
-    if (!user?.name || !user?.email) return;
+    if (!user?._id || subordinates.length === 0) {
+      setPartnerPendingReviewCount(0);
+      return;
+    }
     void fetchPartnerPendingReviewCount(true);
-  }, [user?.name, user?.email, fetchPartnerPendingReviewCount]);
+  }, [user?._id, subordinates.length, fetchPartnerPendingReviewCount]);
 
   useEffect(() => {
     if (!user?._id) {
@@ -665,6 +649,7 @@ export default function EmployeeDashboard() {
   }, [user?._id]);
 
   useEffect(() => {
+    if (!user?._id || subordinates.length === 0) return;
     const onVis = () => {
       if (document.visibilityState === 'visible') {
         void fetchPartnerPendingReviewCount(false);
@@ -672,7 +657,7 @@ export default function EmployeeDashboard() {
     };
     document.addEventListener('visibilitychange', onVis);
     return () => document.removeEventListener('visibilitychange', onVis);
-  }, [fetchPartnerPendingReviewCount]);
+  }, [user?._id, subordinates.length, fetchPartnerPendingReviewCount]);
 
   // Attendance Data State
   const [summary, setSummary] = useState<AttendanceSummaryView | null>(null);
@@ -1546,6 +1531,8 @@ export default function EmployeeDashboard() {
       });
   }, [subordinateAttendance, user?._id, teamAccessIncludeViewerSelf]);
 
+  const canManageTeam = subordinates.length > 0;
+
   useEffect(() => {
     if (!user?._id) return;
     const ids = [user._id];
@@ -1776,7 +1763,7 @@ export default function EmployeeDashboard() {
               <CalendarDays className="h-4 w-4 opacity-80" aria-hidden />
               <span className="hidden sm:inline">Holidays</span>
             </button>
-            {subordinates.length > 0 && (
+            {canManageTeam && (
               <button
                 type="button"
                 className="relative inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-2 text-xs font-medium text-foreground hover:bg-surface/80 sm:px-3 sm:text-sm"
@@ -1803,10 +1790,11 @@ export default function EmployeeDashboard() {
                 <span className="hidden sm:inline">Daily updates</span>
               </button>
             )}
-            <button
-              type="button"
-              className="relative hidden md:inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium text-foreground hover:bg-surface/80 sm:text-sm"
-              onClick={goPartnerReview}
+            {canManageTeam && (
+              <button
+                type="button"
+                className="relative hidden md:inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium text-foreground hover:bg-surface/80 sm:text-sm"
+                onClick={goPartnerReview}
               title={
                 partnerPendingReviewCount > 0
                   ? `${partnerPendingReviewCount} pending request${partnerPendingReviewCount === 1 ? '' : 's'} to review`
@@ -1823,6 +1811,7 @@ export default function EmployeeDashboard() {
               </span>
               Review requests
             </button>
+            )}
             <button
               type="button"
               onClick={handleLogout}
@@ -1941,7 +1930,7 @@ export default function EmployeeDashboard() {
             <span className={desktopSidebarCollapsed ? 'md:sr-only' : ''}>Client punch</span>
           </button>
 
-          {subordinates.length > 0 && (
+          {canManageTeam && (
             <button
               type="button"
               className={navItemClass(activeTab === 'employees')}
@@ -1956,7 +1945,7 @@ export default function EmployeeDashboard() {
             </button>
           )}
 
-          {subordinates.length > 0 && (
+          {canManageTeam && (
             <button
               type="button"
               className={navItemClass(activeTab === 'manageExcessHours')}
@@ -1986,26 +1975,28 @@ export default function EmployeeDashboard() {
             </button>
           )}
 
-          <button
-            type="button"
-            className={`${navItemClass(false)} mt-1`}
-            onClick={goPartnerReview}
-            title={
-              partnerPendingReviewCount > 0
-                ? `${partnerPendingReviewCount} pending — review requests`
-                : 'Review requests'
-            }
-          >
-            <span className="relative inline-flex shrink-0">
-              <ClipboardList className="h-5 w-5 opacity-90" aria-hidden />
-              {partnerPendingReviewCount > 0 && (
-                <span className="absolute -right-2.5 -top-2 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white shadow-sm">
-                  {partnerPendingReviewCount > 99 ? '99+' : partnerPendingReviewCount}
-                </span>
-              )}
-            </span>
-            <span className={desktopSidebarCollapsed ? 'md:sr-only' : ''}>Review requests</span>
-          </button>
+          {canManageTeam && (
+            <button
+              type="button"
+              className={`${navItemClass(false)} mt-1`}
+              onClick={goPartnerReview}
+              title={
+                partnerPendingReviewCount > 0
+                  ? `${partnerPendingReviewCount} pending — review requests`
+                  : 'Review requests'
+              }
+            >
+              <span className="relative inline-flex shrink-0">
+                <ClipboardList className="h-5 w-5 opacity-90" aria-hidden />
+                {partnerPendingReviewCount > 0 && (
+                  <span className="absolute -right-2.5 -top-2 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white shadow-sm">
+                    {partnerPendingReviewCount > 99 ? '99+' : partnerPendingReviewCount}
+                  </span>
+                )}
+              </span>
+              <span className={desktopSidebarCollapsed ? 'md:sr-only' : ''}>Review requests</span>
+            </button>
+          )}
         </aside>
 
         <main className={`min-h-0 min-w-0 flex-1 overflow-y-auto transition-[margin] duration-200 ${desktopSidebarCollapsed ? 'md:ml-18' : 'md:ml-56'}`}>
@@ -2093,7 +2084,7 @@ export default function EmployeeDashboard() {
               </section>
             )}
 
-            {activeTab === 'employees' && (
+            {activeTab === 'employees' && canManageTeam && (
               <>
                 <div className="space-y-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
