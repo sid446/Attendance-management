@@ -1,16 +1,18 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 
+export type PredefinedValueType = 'teams' | 'designations' | 'paidFrom' | 'categories';
+
 export interface IPredefinedValues extends Document {
-  type: 'teams' | 'designations' | 'paidFrom' | 'categories';
+  type: PredefinedValueType;
   values: string[];
   createdAt: Date;
   updatedAt: Date;
 }
 
 interface IPredefinedValuesModel extends Model<IPredefinedValues> {
-  getValuesByType(type: string): Promise<string[]>;
-  addValue(type: string, value: string): Promise<boolean>;
-  removeValue(type: string, value: string): Promise<boolean>;
+  getValuesByType(type: PredefinedValueType): Promise<string[]>;
+  addValue(type: PredefinedValueType, value: string): Promise<boolean>;
+  removeValue(type: PredefinedValueType, value: string): Promise<boolean>;
   getAllValues(): Promise<{
     teams: string[];
     designations: string[];
@@ -37,12 +39,12 @@ const PredefinedValuesSchema: Schema<IPredefinedValues> = new Schema({
 });
 
 // Static methods
-PredefinedValuesSchema.statics.getValuesByType = async function(type: string): Promise<string[]> {
+PredefinedValuesSchema.statics.getValuesByType = async function(type: PredefinedValueType): Promise<string[]> {
   const doc = await this.findOne({ type });
   return doc ? doc.values : [];
 };
 
-PredefinedValuesSchema.statics.addValue = async function(type: string, value: string): Promise<boolean> {
+PredefinedValuesSchema.statics.addValue = async function(type: PredefinedValueType, value: string): Promise<boolean> {
   const trimmedValue = value.trim();
   if (!trimmedValue) return false;
 
@@ -58,7 +60,7 @@ PredefinedValuesSchema.statics.addValue = async function(type: string, value: st
   return result.modifiedCount > 0 || result.upsertedCount > 0;
 };
 
-PredefinedValuesSchema.statics.removeValue = async function(type: string, value: string): Promise<boolean> {
+PredefinedValuesSchema.statics.removeValue = async function(type: PredefinedValueType, value: string): Promise<boolean> {
   const result = await this.updateOne(
     { type },
     {
