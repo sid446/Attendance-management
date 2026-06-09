@@ -8,6 +8,7 @@ import { calculateLeaveUsage, updateLeaveBalanceOnApproval } from '@/lib/leaveMa
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { isAttendanceDatePartnerOnlyIst } from '@/lib/attendanceRequestApprovalWindow';
 import { sendPartnerRequestDecisionEmail } from '@/lib/attendanceRequestNotifications';
+import { reapplyExtraWorkEntriesToRecord } from '@/lib/extraWorkRequest';
 
 function calculateDuration(start: string, end: string): number {
     if (!start || !end) return 0;
@@ -63,6 +64,7 @@ function calculateSummary(
         isHalfDay = false;
         record.excessHour = 0;
       }
+      reapplyExtraWorkEntriesToRecord(record);
 
       // Update the record's halfDay flag
       record.halfDay = isHalfDay;

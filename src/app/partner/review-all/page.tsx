@@ -3,22 +3,30 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Download } from 'lucide-react';
+import {
+  formatExtraWorkSlotsTimeRange,
+  isExtraWorkRequest,
+  normalizeExtraWorkSlotsFromRequest,
+} from '@/lib/extraWorkRequest';
 
 interface Request {
   _id: string;
   userName: string;
   date: string;
   requestedStatus: string;
+  requestType?: 'correction' | 'extra_work';
   reason: string;
   startTime?: string;
   endTime?: string;
   originalCheckin?: string;
   originalCheckout?: string;
+  extraWorkSlots?: { startTime: string; endTime: string; reason: string }[];
 }
 
 interface RequestGroup {
   userName: string;
   requestedStatus: string;
+  requestType?: 'correction' | 'extra_work';
   dates: string[];
   dateDisplay: string;
   reason: string;
@@ -147,10 +155,15 @@ function ReviewAllPageContent() {
       return {
         userName: req.userName,
         requestedStatus: req.requestedStatus,
+        requestType: req.requestType,
         dates,
         dateDisplay: getDateDisplay(dates),
         reason: req.reason,
-        timeRange: req.startTime && req.endTime ? `${req.startTime} - ${req.endTime}` : '-',
+        timeRange: isExtraWorkRequest(req)
+          ? formatExtraWorkSlotsTimeRange(normalizeExtraWorkSlotsFromRequest(req)) || '-'
+          : req.startTime && req.endTime
+            ? `${req.startTime} - ${req.endTime}`
+            : '-',
         originalTimeRange: (req.originalCheckin || req.originalCheckout) 
           ? `${req.originalCheckin || '??:??'} - ${req.originalCheckout || '??:??'}` 
           : '-',
@@ -586,6 +599,7 @@ function ReviewAllPageContent() {
                         const idx = getGroupIdx(group);
                         const isSelected = selectedGroupIds.includes(idx);
                         const isLeave = group.requestedStatus.toLowerCase().includes('leave') || group.requestedStatus === 'On leave';
+                        const isExtraWork = isExtraWorkRequest(group);
                         return (
                           <tr
                             key={`${idx}-${i}`}
@@ -604,9 +618,13 @@ function ReviewAllPageContent() {
                             </td>
                             <td className="px-3 py-3 align-top">
                               <span className={`inline-flex px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest border ${
-                                isLeave ? 'bg-amber-500/15 text-amber-800 border-amber-500/35' : 'bg-blue-500/15 text-blue-800 border-blue-500/35'
+                                isExtraWork
+                                  ? 'bg-orange-500/15 text-orange-900 border-orange-500/35'
+                                  : isLeave
+                                    ? 'bg-amber-500/15 text-amber-800 border-amber-500/35'
+                                    : 'bg-blue-500/15 text-blue-800 border-blue-500/35'
                               }`}>
-                                {group.requestedStatus}
+                                {isExtraWork ? 'Extra work hours' : group.requestedStatus}
                               </span>
                             </td>
                             <td className="px-3 py-3 align-top text-[11px] font-bold text-foreground">{group.dateDisplay}</td>
@@ -625,7 +643,7 @@ function ReviewAllPageContent() {
                               />
                             </td>
                             <td className="px-3 py-3 align-top">
-                              {isFixedValueType(group.requestedStatus) ? (
+                              {isExtraWork || isFixedValueType(group.requestedStatus) ? (
                                 <span className="text-[11px] font-bold text-muted-foreground">—</span>
                               ) : (
                                 <input
@@ -676,6 +694,7 @@ function ReviewAllPageContent() {
                   const isSelected = selectedGroupIds.includes(idx);
                   const isExpanded = expandedReasons[idx];
                   const isLeave = group.requestedStatus.toLowerCase().includes('leave') || group.requestedStatus === 'On leave';
+                  const isExtraWork = isExtraWorkRequest(group);
                   
                   return (
                     <div 
@@ -703,9 +722,13 @@ function ReviewAllPageContent() {
                               <div className="flex items-center gap-2 min-w-0">
                                 <h3 className="text-sm font-bold text-foreground truncate">{group.userName}</h3>
                                 <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest border ${
-                                  isLeave ? 'bg-amber-500/15 text-amber-800 border-amber-500/35' : 'bg-blue-500/15 text-blue-800 border-blue-500/35'
+                                  isExtraWork
+                                    ? 'bg-orange-500/15 text-orange-900 border-orange-500/35'
+                                    : isLeave
+                                      ? 'bg-amber-500/15 text-amber-800 border-amber-500/35'
+                                      : 'bg-blue-500/15 text-blue-800 border-blue-500/35'
                                 }`}>
-                                  {group.requestedStatus}
+                                  {isExtraWork ? 'Extra work hours' : group.requestedStatus}
                                 </span>
                               </div>
                               <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-tighter">{group.dateDisplay}</p>
@@ -715,15 +738,28 @@ function ReviewAllPageContent() {
                             <div className="grid grid-cols-2 gap-3 mb-3">
                               {/* Left: Times */}
                               <div className="flex flex-col gap-1.5 p-2 bg-background/70 rounded-lg border border-border">
-                                <div className="flex items-center justify-between text-[10px] font-mono text-muted-foreground uppercase tracking-tight">
-                                  <span>Actual</span>
-                                  <span>Request</span>
-                                </div>
-                                <div className="flex items-center justify-between gap-2 text-xs font-mono">
-                                  <span className="text-muted-foreground">{group.originalTimeRange === '-' ? '--:--' : group.originalTimeRange}</span>
-                                  <svg className="w-3 h-3 text-muted-foreground/70 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
-                                  <span className="text-emerald-700 font-black">{group.timeRange === '-' ? '--:--' : group.timeRange}</span>
-                                </div>
+                                {isExtraWork ? (
+                                  <>
+                                    <div className="text-[10px] font-mono text-muted-foreground uppercase tracking-tight">
+                                      Extra work slot
+                                    </div>
+                                    <div className="text-xs font-mono text-orange-800 font-black">
+                                      {group.timeRange === '-' ? '--:--' : group.timeRange}
+                                    </div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="flex items-center justify-between text-[10px] font-mono text-muted-foreground uppercase tracking-tight">
+                                      <span>Actual</span>
+                                      <span>Request</span>
+                                    </div>
+                                    <div className="flex items-center justify-between gap-2 text-xs font-mono">
+                                      <span className="text-muted-foreground">{group.originalTimeRange === '-' ? '--:--' : group.originalTimeRange}</span>
+                                      <svg className="w-3 h-3 text-muted-foreground/70 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                                      <span className="text-emerald-700 font-black">{group.timeRange === '-' ? '--:--' : group.timeRange}</span>
+                                    </div>
+                                  </>
+                                )}
                               </div>
 
                               {/* Right: Reason */}
@@ -757,7 +793,7 @@ function ReviewAllPageContent() {
                                       placeholder="Remark..." 
                                     />
                                   </div>
-                                  {!isFixedValueType(group.requestedStatus) && (
+                                  {!isExtraWork && !isFixedValueType(group.requestedStatus) && (
                                     <input 
                                       type="number" 
                                       step="0.01" 

@@ -3,6 +3,12 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { ArrowLeft, CheckCircle } from 'lucide-react';
+import {
+  formatExtraWorkHoursLabel,
+  isExtraWorkRequest,
+  normalizeExtraWorkSlotsFromRequest,
+  sumExtraWorkSlotHours,
+} from '@/lib/extraWorkRequest';
 
 interface AttendanceRequest {
   _id: string;
@@ -10,10 +16,12 @@ interface AttendanceRequest {
   partnerName: string;
   date: string;
   requestedStatus: string;
+  requestType?: 'correction' | 'extra_work';
   originalStatus: string;
   reason?: string;
   startTime?: string;
   endTime?: string;
+  extraWorkSlots?: { startTime: string; endTime: string; reason: string }[];
   status: string;
 }
 
@@ -224,10 +232,16 @@ function PartnerReviewContent() {
 
   if (!request) return null;
 
+  const isExtraWork = isExtraWorkRequest(request);
   const isLeave = isLeaveRequestType(request.requestedStatus);
   const isPending = request.status === 'Pending';
-  const timeRange =
-    request.startTime && request.endTime ? `${request.startTime} - ${request.endTime}` : '--:--';
+  const extraWorkSlots = isExtraWork ? normalizeExtraWorkSlotsFromRequest(request) : [];
+  const timeRange = isExtraWork
+    ? extraWorkSlots.map((s) => `${s.startTime}–${s.endTime}`).join(', ') || '--:--'
+    : request.startTime && request.endTime
+      ? `${request.startTime} - ${request.endTime}`
+      : '--:--';
+  const extraHours = isExtraWork ? sumExtraWorkSlotHours(extraWorkSlots) : null;
   const originalDisplay = request.originalStatus?.trim() || '--:--';
   const dateDisplay = formatDate(request.date);
 
@@ -269,12 +283,14 @@ function PartnerReviewContent() {
                   <h3 className="text-sm font-bold text-foreground truncate">{request.userName}</h3>
                   <span
                     className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-widest border ${
-                      isLeave
-                        ? 'bg-amber-500/15 text-amber-800 border-amber-500/35'
-                        : 'bg-blue-500/15 text-blue-800 border-blue-500/35'
+                      isExtraWork
+                        ? 'bg-orange-500/15 text-orange-900 border-orange-500/35'
+                        : isLeave
+                          ? 'bg-amber-500/15 text-amber-800 border-amber-500/35'
+                          : 'bg-blue-500/15 text-blue-800 border-blue-500/35'
                     }`}
                   >
-                    {request.requestedStatus}
+                    {isExtraWork ? 'Extra work hours' : request.requestedStatus}
                   </span>
                 </div>
                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-tighter">{dateDisplay}</p>
@@ -282,19 +298,47 @@ function PartnerReviewContent() {
 
               <div className="grid grid-cols-2 gap-3 mb-3">
                 <div className="flex flex-col gap-1.5 p-2 bg-background/70 rounded-lg border border-border">
-                  <div className="flex items-center justify-between text-[10px] font-mono text-muted-foreground uppercase tracking-tight">
-                    <span>Actual</span>
-                    <span>Request</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2 text-xs font-mono">
-                    <span className="text-muted-foreground truncate" title={originalDisplay}>
-                      {originalDisplay}
-                    </span>
-                    <svg className="w-3 h-3 text-muted-foreground/70 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                    </svg>
-                    <span className="text-emerald-700 font-black shrink-0">{timeRange}</span>
-                  </div>
+                  {isExtraWork ? (
+                    <>
+                      <div className="text-[10px] font-mono text-muted-foreground uppercase tracking-tight">
+                        Extra work slots
+                      </div>
+                      <div className="space-y-1.5 mt-1">
+                        {extraWorkSlots.map((slot, i) => (
+                          <div key={`${slot.startTime}-${slot.endTime}-${i}`} className="text-[11px]">
+                            <div className="font-mono text-orange-800 font-bold">
+                              {slot.startTime}–{slot.endTime}
+                            </div>
+                            <div className="text-muted-foreground italic line-clamp-2">{slot.reason}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {extraHours != null && extraHours > 0 && (
+                        <div className="text-[10px] text-muted-foreground mt-2">
+                          Total: {formatExtraWorkHoursLabel(extraHours)}
+                        </div>
+                      )}
+                      <div className="text-[10px] text-muted-foreground mt-1">
+                        Day status: {originalDisplay}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between text-[10px] font-mono text-muted-foreground uppercase tracking-tight">
+                        <span>Actual</span>
+                        <span>Request</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 text-xs font-mono">
+                        <span className="text-muted-foreground truncate" title={originalDisplay}>
+                          {originalDisplay}
+                        </span>
+                        <svg className="w-3 h-3 text-muted-foreground/70 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                        </svg>
+                        <span className="text-emerald-700 font-black shrink-0">{timeRange}</span>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <div
@@ -330,7 +374,7 @@ function PartnerReviewContent() {
                         className="flex-1 h-9 px-3 bg-background border border-border rounded-lg text-xs text-foreground placeholder:text-muted-foreground focus:border-emerald-500 outline-none"
                         placeholder="Remark..."
                       />
-                      {!isFixedValueType(request.requestedStatus) && (
+                      {!isExtraWork && !isFixedValueType(request.requestedStatus) && (
                         <input
                           type="number"
                           step="0.01"

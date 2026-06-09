@@ -9,6 +9,11 @@ import LeaveTransaction from '@/models/LeaveTransaction';
 import { isAttendanceDatePartnerOnlyIst } from '@/lib/attendanceRequestApprovalWindow';
 import { sendPartnerRequestDecisionEmail } from '@/lib/attendanceRequestNotifications';
 import { requireEmployeeOrHrSession } from '@/lib/employeeRouteAuth';
+import {
+  applyExtraWorkSlotsToRecord,
+  isExtraWorkRequest,
+  normalizeExtraWorkSlotsFromRequest,
+} from '@/lib/extraWorkRequest';
 
 export async function POST(request: NextRequest) {
   try {
@@ -212,6 +217,29 @@ export async function POST(request: NextRequest) {
         console.error('Error while checking/removing prior leave transactions:', e);
       }
 
+      if (isExtraWorkRequest(attendanceRequest)) {
+        const slots = normalizeExtraWorkSlotsFromRequest(attendanceRequest);
+        if (slots.length === 0) {
+          return NextResponse.json(
+            { success: false, error: 'Extra work request is missing valid time slots.' },
+            { status: 400 }
+          );
+        }
+        try {
+          applyExtraWorkSlotsToRecord(rec, slots, String(attendanceRequest._id));
+        } catch (err) {
+          return NextResponse.json(
+            { success: false, error: err instanceof Error ? err.message : 'Invalid extra work hours' },
+            { status: 400 }
+          );
+        }
+
+        attendanceRecord.records.set(attendanceRequest.date, rec);
+        attendanceRecord.markModified('records');
+        const userForSummary = await User.findById(attendanceRequest.userId);
+        attendanceRecord.summary = calculateSummary(attendanceRecord.records, userForSummary);
+        await attendanceRecord.save();
+      } else {
       // Update the attendance record with the requested status
       rec.typeOfPresence = attendanceRequest.requestedStatus;
 
@@ -562,6 +590,7 @@ export async function POST(request: NextRequest) {
         } catch (e) {
           console.error('Failed to adjust leave balance for outstation/clientplace approval', e);
         }
+      }
     }
 
     // Send email notification

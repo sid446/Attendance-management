@@ -20,6 +20,7 @@ import {
 import { EmployeeDashboardCharts } from "@/components/EmployeeDashboardCharts";
 import { EmployeeSummaryMonthPicker } from "@/components/EmployeeSummaryMonthPicker";
 import type { EmployeeAttendanceRequest } from "@/types/employeeAttendanceRequest";
+import { isExtraWorkRequest } from "@/lib/extraWorkRequest";
 
 function formatRequestDate(dateStr: string): string {
   const iso = dateStr.split("T")[0];
@@ -483,8 +484,14 @@ export function EmployeeDashboardOverview({
                       </div>
                       <dl className="mt-2 space-y-1 text-xs">
                         <div className="flex gap-2">
-                          <dt className="shrink-0 text-muted-foreground">Requested</dt>
-                          <dd className="font-medium text-foreground">{req.requestedStatus}</dd>
+                          <dt className="shrink-0 text-muted-foreground">Type</dt>
+                          <dd className="font-medium text-foreground">
+                            {isExtraWorkRequest(req) ? (
+                              <span className="text-orange-800">Extra work hours</span>
+                            ) : (
+                              req.requestedStatus
+                            )}
+                          </dd>
                         </div>
                         {req.originalStatus ? (
                           <div className="flex gap-2">

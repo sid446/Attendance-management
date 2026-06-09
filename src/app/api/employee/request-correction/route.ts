@@ -17,6 +17,7 @@ import {
 import { getEffectiveRequestWindowBoundsForUser } from '@/lib/attendanceRequestWindowDb';
 import { forbidUnlessSelf, requireEmployeeOrHrSession, requireEmployeeSession } from '@/lib/employeeRouteAuth';
 import { autoApproveSelfRequests } from '@/lib/selfApproveAttendanceRequests';
+import { isExtraWorkRequest } from '@/lib/extraWorkRequest';
 
 const TIME_REQUIRED_PREFIXES = [
   'Present - in office',
@@ -175,9 +176,11 @@ export async function POST(request: NextRequest) {
     }
 
     const existingForDate = await AttendanceRequest.find({ userId: user._id, date });
-    const hasActiveForDate = existingForDate.some((r: any) => r.status !== 'Rejected');
-    
-    if (hasActiveForDate) {
+    const hasActiveCorrection = existingForDate.some(
+      (r) => r.status !== 'Rejected' && !isExtraWorkRequest(r)
+    );
+
+    if (hasActiveCorrection) {
       return NextResponse.json(
         { success: false, error: 'You already have a correction request for this date which is not rejected yet.' },
         { status: 400 }
@@ -195,6 +198,7 @@ export async function POST(request: NextRequest) {
       date,
       monthYear,
       requestedStatus,
+      requestType: 'correction',
       reason,
       startTime,
       endTime,

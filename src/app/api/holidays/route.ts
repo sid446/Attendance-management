@@ -3,6 +3,7 @@ import dbConnect from '@/lib/mongodb';
 import Holiday from '@/models/Holiday';
 import Attendance, { type IDailyRecord } from '@/models/Attendance';
 import User, { IUser } from '@/models/User';
+import { reapplyExtraWorkEntriesToRecord } from '@/lib/extraWorkRequest';
 
 // GET /api/holidays - Get all holidays, optionally filtered by year
 export async function GET(request: NextRequest) {
@@ -391,6 +392,7 @@ function calculateSummary(
 
     // Update record's excessHour
     record.excessHour = Number(calculatedExcessHour.toFixed(2));
+    reapplyExtraWorkEntriesToRecord(record);
 
     totalHour += record.totalHour;
     excessHour += record.excessHour;
@@ -522,6 +524,7 @@ async function updateAttendanceForDate(date: string, typeOfPresence: string | nu
             : 'ThumbMachine';
         record.typeOfPresence = restoreType;
         record.totalHour = calculateTotalHours(checkin, checkout);
+        reapplyExtraWorkEntriesToRecord(record);
         record.value = record.totalHour > 0 ? 1 : 0;
         record.remarks = '';
         record.previousTypeOfPresence = undefined;

@@ -33,6 +33,13 @@ import {
 } from '@/lib/attendanceRequestWindow';
 import type { ExcessAllowanceLookup, ExcessDisplayLookup } from '@/lib/excessHourAllowance';
 import {
+  calculateExtraWorkHours,
+  EXTRA_WORK_REQUEST_STATUS,
+  formatExtraWorkHoursLabel,
+  isExtraWorkRequest,
+  sumExtraWorkSlotHours,
+} from '@/lib/extraWorkRequest';
+import {
   LogOut,
   X,
   Loader2,
@@ -48,7 +55,31 @@ import {
   IndianRupee,
   Clock,
   Newspaper,
+  Plus,
+  Trash2,
 } from 'lucide-react';
+
+type ExtraWorkSlotDraft = {
+  id: string;
+  startTime: string;
+  endTime: string;
+  reason: string;
+  copyPreviousReason: boolean;
+};
+
+function createExtraWorkSlotDraft(): ExtraWorkSlotDraft {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+    startTime: '',
+    endTime: '',
+    reason: '',
+    copyPreviousReason: false,
+  };
+}
+
+function createInitialExtraWorkSlots(): ExtraWorkSlotDraft[] {
+  return [createExtraWorkSlotDraft()];
+}
 
 function normalizeUserId(value: unknown): string {
   if (value == null) return '';
@@ -477,6 +508,41 @@ function getCorrectionTimeDraft(dayRecord?: AttendanceRecord | null) {
   };
 }
 
+/** Day has uploaded attendance (punch or present status) — eligible for extra-work requests. */
+function hasUploadedAttendance(dayRecord?: AttendanceRecord | null): boolean {
+  if (!dayRecord) return false;
+  const inMarked = !!dayRecord.inTime && dayRecord.inTime !== '00:00';
+  const outMarked = !!dayRecord.outTime && dayRecord.outTime !== '00:00';
+  if (inMarked || outMarked) return true;
+  const typeLower = String(dayRecord.typeOfPresence || '').toLowerCase();
+  if (typeLower.includes('leave') || typeLower === 'absent') return false;
+  return dayRecord.status === 'Present' || dayRecord.status === 'HalfDay';
+}
+
+function hasPendingCorrectionRequest(
+  requests: EmployeeAttendanceRequest[],
+  date: string
+): boolean {
+  return requests.some(
+    (r) =>
+      r.date.split('T')[0] === date &&
+      (r.status === 'Pending' || r.status === 'PendingHr') &&
+      !isExtraWorkRequest(r)
+  );
+}
+
+function hasPendingExtraWorkRequest(
+  requests: EmployeeAttendanceRequest[],
+  date: string
+): boolean {
+  return requests.some(
+    (r) =>
+      r.date.split('T')[0] === date &&
+      (r.status === 'Pending' || r.status === 'PendingHr') &&
+      isExtraWorkRequest(r)
+  );
+}
+
 export default function EmployeeDashboard() {
   const [activeTab, setActiveTab] = useState<
     'dashboard' | 'attendance' | 'clientPunch' | 'employees' | 'manageApprovers' | 'manageExcessHours'
@@ -672,11 +738,15 @@ export default function EmployeeDashboard() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedDateStatus, setSelectedDateStatus] = useState<string | null>(null); // Track the status of selected date
   const [selectedDateIsMissedEntry, setSelectedDateIsMissedEntry] = useState(false);
+  const [selectedDateHasUploadedAttendance, setSelectedDateHasUploadedAttendance] = useState(false);
+  const [requestModalTab, setRequestModalTab] = useState<'correction' | 'extra_work'>('correction');
   const [requestStatus, setRequestStatus] = useState('Official Holiday Duty (OHD)');
   const [requestReason, setRequestReason] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
+  const [extraWorkSlots, setExtraWorkSlots] = useState<ExtraWorkSlotDraft[]>(createInitialExtraWorkSlots);
   const [sendingRequest, setSendingRequest] = useState(false);
+  const [sendingExtraWorkRequest, setSendingExtraWorkRequest] = useState(false);
 
   // Future Request Modal State
   const [showFutureModal, setShowFutureModal] = useState(false);
@@ -720,6 +790,51 @@ export default function EmployeeDashboard() {
     [selectedDayRecord]
   );
   const correctionStatusRequiresTimePair = requiresCorrectionTimePair(requestStatus);
+  const extraWorkHoursPreview = useMemo(() => {
+    const withHours = extraWorkSlots
+      .map((slot) => {
+        const hours = calculateExtraWorkHours(slot.startTime, slot.endTime);
+        return hours != null && hours > 0 ? hours : 0;
+      })
+      .filter((h) => h > 0);
+    if (withHours.length === 0) return null;
+    return sumExtraWorkSlotHours(withHours.map((hours) => ({ hours })));
+  }, [extraWorkSlots]);
+
+  const updateExtraWorkSlot = (id: string, patch: Partial<ExtraWorkSlotDraft>) => {
+    setExtraWorkSlots((prev) => {
+      const idx = prev.findIndex((s) => s.id === id);
+      if (idx < 0) return prev;
+
+      let next = prev.map((slot, index) => {
+        if (slot.id !== id) return slot;
+        const updated = { ...slot, ...patch };
+        if (patch.copyPreviousReason === true && index > 0) {
+          updated.reason = prev[index - 1].reason;
+        }
+        if (patch.copyPreviousReason === false) {
+          updated.copyPreviousReason = false;
+        }
+        return updated;
+      });
+
+      if (patch.reason !== undefined && idx + 1 < next.length && next[idx + 1].copyPreviousReason) {
+        next = next.map((slot, index) =>
+          index === idx + 1 ? { ...slot, reason: String(patch.reason) } : slot
+        );
+      }
+
+      return next;
+    });
+  };
+
+  const addExtraWorkSlot = () => {
+    setExtraWorkSlots((prev) => [...prev, createExtraWorkSlotDraft()]);
+  };
+
+  const removeExtraWorkSlot = (id: string) => {
+    setExtraWorkSlots((prev) => (prev.length <= 1 ? prev : prev.filter((s) => s.id !== id)));
+  };
 
   useEffect(() => {
     (async () => {
@@ -1170,12 +1285,7 @@ export default function EmployeeDashboard() {
       const isMissedEntry =
         !!dayRecord && isPartialPunch && !isHoliday && !isLeaveDay && !isAbsent;
 
-      // Check if there's already a pending request for this date
-      const existingRequest = employeeRequests.find(r => r.date.split('T')[0] === date);
-      if (existingRequest && (existingRequest.status === 'Pending' || existingRequest.status === 'PendingHr')) {
-        alert('You already have a pending request for this date. Please wait for it to be processed.');
-        return;
-      }
+      const uploadedAttendance = hasUploadedAttendance(dayRecord);
 
       if (!isAbsent && !isPresent && !isHalfDay && !isHoliday && !isMissingPunch) {
         alert('Correction requests are only allowed for days marked as Present, Absent, Half Day, Holiday/Week Off, or when attendance in/out is not marked.');
@@ -1185,6 +1295,9 @@ export default function EmployeeDashboard() {
       setSelectedDate(date);
       setSelectedDateStatus(isHoliday ? 'Holiday' : null);
       setSelectedDateIsMissedEntry(isMissedEntry);
+      setSelectedDateHasUploadedAttendance(uploadedAttendance);
+      setRequestModalTab('correction');
+      setExtraWorkSlots(createInitialExtraWorkSlots());
       // Set default status based on the day type
       if (isMissedEntry) {
         setRequestStatus('Present - in office');
@@ -1205,8 +1318,92 @@ export default function EmployeeDashboard() {
     }
   };
 
+  const closeDayRequestModal = () => {
+    setSelectedDate(null);
+    setSelectedDateIsMissedEntry(false);
+    setSelectedDateHasUploadedAttendance(false);
+    setRequestModalTab('correction');
+    setExtraWorkSlots(createInitialExtraWorkSlots());
+  };
+
+  const submitExtraWorkRequest = async () => {
+    if (!selectedDate || !user) return;
+    if (hasPendingExtraWorkRequest(employeeRequests, selectedDate)) {
+      alert('You already have a pending extra work request for this date.');
+      return;
+    }
+
+    const slotsPayload = extraWorkSlots.map((slot) => ({
+      startTime: slot.startTime,
+      endTime: slot.endTime,
+      reason: slot.reason.trim(),
+    }));
+
+    for (let i = 0; i < slotsPayload.length; i++) {
+      const slot = slotsPayload[i];
+      if (!slot.startTime || !slot.endTime) {
+        alert(`Slot ${i + 1}: enter both start and end time.`);
+        return;
+      }
+      const hours = calculateExtraWorkHours(slot.startTime, slot.endTime);
+      if (hours === null) {
+        alert(`Slot ${i + 1}: use valid times with start earlier than end.`);
+        return;
+      }
+      if (!slot.reason) {
+        alert(`Slot ${i + 1}: provide a work explanation.`);
+        return;
+      }
+    }
+
+    const totalHours = sumExtraWorkSlotHours(
+      slotsPayload.map((s) => ({
+        startTime: s.startTime,
+        endTime: s.endTime,
+      }))
+    );
+
+    setSendingExtraWorkRequest(true);
+    try {
+      const res = await fetch('/api/employee/request-extra-work', employeeCredentialsInit({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user._id,
+          date: selectedDate,
+          slots: slotsPayload,
+        }),
+      }));
+      const json = await res.json();
+      if (!res.ok) {
+        alert(json.error || 'Failed to send extra work request');
+        return;
+      }
+      if (json.success) {
+        if (json.autoApproved) {
+          alert('Extra work request auto-approved.');
+        } else {
+          alert(`Extra work request (${formatExtraWorkHoursLabel(totalHours)}) sent to ${json.sentTo}!`);
+        }
+        closeDayRequestModal();
+        fetchAttendance(user._id, monthYear, user);
+        void fetchPartnerPendingReviewCount(true);
+      } else {
+        alert(json.error || 'Failed to send extra work request');
+      }
+    } catch {
+      alert('Error sending extra work request');
+    } finally {
+      setSendingExtraWorkRequest(false);
+    }
+  };
+
   const submitRequest = async () => {
     if (!selectedDate || !user) return;
+    if (hasPendingCorrectionRequest(employeeRequests, selectedDate)) {
+      alert('You already have a pending correction request for this date.');
+      return;
+    }
     if (!requestReason.trim()) {
       alert('Please provide a reason for your attendance correction request.');
       return;
@@ -1307,7 +1504,7 @@ export default function EmployeeDashboard() {
         } else {
           alert(`Request sent successfully to ${json.sentTo}!`);
         }
-        setSelectedDate(null);
+        closeDayRequestModal();
         fetchAttendance(user._id, monthYear, user);
         void fetchPartnerPendingReviewCount(true);
       } else {
@@ -2386,81 +2583,257 @@ export default function EmployeeDashboard() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4">
           <div className="w-full max-w-md bg-surface border border-border rounded-xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
             <div className="p-3 sm:p-4 border-b border-border flex justify-between items-center bg-background/60">
-              <h3 className="font-semibold text-foreground text-sm sm:text-base">Request Correction</h3>
+              <h3 className="font-semibold text-foreground text-sm sm:text-base">
+                {requestModalTab === 'extra_work' ? 'Report extra work' : 'Request correction'}
+              </h3>
               <button
-                onClick={() => {
-                  setSelectedDate(null);
-                  setSelectedDateIsMissedEntry(false);
-                }}
+                onClick={closeDayRequestModal}
                 className="text-muted-foreground hover:text-foreground"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
             <div className="p-4 sm:p-6 space-y-4">
-              <div className="p-3 bg-emerald-900/20 border border-emerald-500/30 rounded-lg text-emerald-200 text-sm">
-                Requesting change for <strong>{selectedDate}</strong>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">Select Correct Status</label>
-                <select
-                  value={requestStatus}
-                  onChange={(e) => setRequestStatus(e.target.value)}
-                  className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-emerald-500 text-sm sm:text-base"
+              {selectedDateHasUploadedAttendance && (
+                <div
+                  className="inline-flex w-full gap-1 rounded-lg border border-border bg-muted/30 p-1"
+                  role="tablist"
+                  aria-label="Request type"
                 >
-                  {getCorrectionStatusOptions().map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-
-              {correctionStatusRequiresTimePair && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-muted-foreground">Start Time</label>
-                    <input
-                      type="time"
-                      value={startTime}
-                      onChange={(e) => setStartTime(e.target.value)}
-                      className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-emerald-500 text-sm sm:text-base"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-muted-foreground">End Time</label>
-                    <input
-                      type="time"
-                      value={endTime}
-                      onChange={(e) => setEndTime(e.target.value)}
-                      className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-emerald-500 text-sm sm:text-base"
-                    />
-                  </div>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={requestModalTab === 'correction'}
+                    onClick={() => setRequestModalTab('correction')}
+                    className={`flex-1 rounded-md px-3 py-2.5 text-sm font-semibold transition-all ${
+                      requestModalTab === 'correction'
+                        ? 'bg-emerald-100 text-emerald-950 shadow-sm ring-2 ring-emerald-600 border border-emerald-500'
+                        : 'text-muted-foreground hover:bg-background hover:text-foreground'
+                    }`}
+                  >
+                    Correction
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={requestModalTab === 'extra_work'}
+                    onClick={() => setRequestModalTab('extra_work')}
+                    className={`flex-1 rounded-md px-3 py-2.5 text-sm font-semibold transition-all ${
+                      requestModalTab === 'extra_work'
+                        ? 'bg-amber-100 text-amber-950 shadow-sm ring-2 ring-amber-600 border border-amber-500'
+                        : 'text-muted-foreground hover:bg-background hover:text-foreground'
+                    }`}
+                  >
+                    Extra work
+                  </button>
                 </div>
               )}
 
-              {correctionStatusRequiresTimePair && (
-                <p className="text-xs text-muted-foreground">
-                  Enter both times in 24-hour format. In time must be earlier than out time.
-                </p>
+              {requestModalTab === 'extra_work' ? (
+                <>
+                  <div className="p-3 bg-background border-2 border-amber-500 rounded-lg text-foreground text-sm">
+                    Report additional hours worked on <strong>{selectedDate}</strong> (outside your regular punch).
+                    Your partner will review this as <strong>{EXTRA_WORK_REQUEST_STATUS}</strong>.
+                  </div>
+
+                  {selectedDayRecord && (
+                    <div className="rounded-lg border border-border bg-background/60 px-3 py-2 text-xs text-muted-foreground">
+                      Uploaded attendance:{' '}
+                      <span className="font-mono text-foreground">
+                        {selectedDayRecord.inTime || '--:--'} → {selectedDayRecord.outTime || '--:--'}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    {extraWorkSlots.map((slot, index) => (
+                      <div
+                        key={slot.id}
+                        className="rounded-lg border-2 border-amber-500/70 bg-background p-3 space-y-3"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-semibold text-foreground">
+                            Time slot {index + 1}
+                          </p>
+                          {extraWorkSlots.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeExtraWorkSlot(slot.id)}
+                              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-500/10"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Remove
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-muted-foreground">From *</label>
+                            <input
+                              type="time"
+                              value={slot.startTime}
+                              onChange={(e) => updateExtraWorkSlot(slot.id, { startTime: e.target.value })}
+                              className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-amber-500 text-sm"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-muted-foreground">Until *</label>
+                            <input
+                              type="time"
+                              value={slot.endTime}
+                              onChange={(e) => updateExtraWorkSlot(slot.id, { endTime: e.target.value })}
+                              className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-amber-500 text-sm"
+                            />
+                          </div>
+                        </div>
+
+                        {slot.startTime && slot.endTime && calculateExtraWorkHours(slot.startTime, slot.endTime) != null && (
+                          <p className="text-xs text-foreground">
+                            This slot:{' '}
+                            <strong>
+                              {formatExtraWorkHoursLabel(
+                                calculateExtraWorkHours(slot.startTime, slot.endTime) ?? 0
+                              )}
+                            </strong>
+                          </p>
+                        )}
+
+                        {index > 0 && (
+                          <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={slot.copyPreviousReason}
+                              onChange={(e) =>
+                                updateExtraWorkSlot(slot.id, { copyPreviousReason: e.target.checked })
+                              }
+                              className="h-4 w-4 rounded border-border text-amber-600 accent-amber-600"
+                            />
+                            Same explanation as previous slot
+                          </label>
+                        )}
+
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-muted-foreground">Work explanation *</label>
+                          <textarea
+                            value={slot.reason}
+                            onChange={(e) => updateExtraWorkSlot(slot.id, { reason: e.target.value })}
+                            readOnly={slot.copyPreviousReason}
+                            placeholder={
+                              index === 0
+                                ? 'E.g., Morning client call and document review...'
+                                : 'Explain what you did in this time slot...'
+                            }
+                            className={`w-full bg-background border border-border rounded-lg p-3 text-foreground outline-none focus:border-amber-500 min-h-20 text-sm ${
+                              slot.copyPreviousReason ? 'opacity-80 cursor-not-allowed' : ''
+                            }`}
+                            required
+                          />
+                        </div>
+                      </div>
+                    ))}
+
+                    <button
+                      type="button"
+                      onClick={addExtraWorkSlot}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-amber-500 bg-background px-3 py-2.5 text-sm font-medium text-foreground hover:bg-muted/40"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Add another time slot
+                    </button>
+                  </div>
+
+                  {extraWorkHoursPreview != null && extraWorkHoursPreview > 0 && (
+                    <p className="text-sm text-foreground">
+                      Total extra hours claimed:{' '}
+                      <strong>{formatExtraWorkHoursLabel(extraWorkHoursPreview)}</strong>
+                    </p>
+                  )}
+
+                  <button
+                    onClick={submitExtraWorkRequest}
+                    disabled={sendingExtraWorkRequest}
+                    className="w-full bg-amber-800 hover:bg-amber-700 disabled:bg-muted disabled:text-muted-foreground disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg flex items-center justify-center gap-2 mt-2 text-sm sm:text-base"
+                  >
+                    {sendingExtraWorkRequest ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4" />
+                    )}
+                    Send extra work request
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="p-3 bg-background border-2 border-emerald-500 rounded-lg text-foreground text-sm">
+                    Requesting attendance correction for <strong>{selectedDate}</strong>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-muted-foreground">Select correct status</label>
+                    <select
+                      value={requestStatus}
+                      onChange={(e) => setRequestStatus(e.target.value)}
+                      className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-emerald-500 text-sm sm:text-base"
+                    >
+                      {getCorrectionStatusOptions().map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {correctionStatusRequiresTimePair && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-muted-foreground">Start time</label>
+                        <input
+                          type="time"
+                          value={startTime}
+                          onChange={(e) => setStartTime(e.target.value)}
+                          className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-emerald-500 text-sm sm:text-base"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-muted-foreground">End time</label>
+                        <input
+                          type="time"
+                          value={endTime}
+                          onChange={(e) => setEndTime(e.target.value)}
+                          className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-emerald-500 text-sm sm:text-base"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {correctionStatusRequiresTimePair && (
+                    <p className="text-xs text-muted-foreground">
+                      Enter both times in 24-hour format. In time must be earlier than out time.
+                    </p>
+                  )}
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-muted-foreground">Reason *</label>
+                    <textarea
+                      value={requestReason}
+                      onChange={(e) => setRequestReason(e.target.value)}
+                      placeholder="E.g., Forgot to punch out due to client meeting..."
+                      className="w-full bg-background border border-border rounded-lg p-3 text-foreground outline-none focus:border-emerald-500 min-h-20 text-sm sm:text-base"
+                      required
+                    />
+                  </div>
+
+                  <button
+                    onClick={submitRequest}
+                    disabled={sendingRequest || !requestReason.trim()}
+                    className="w-full bg-emerald-800 hover:bg-emerald-700 disabled:bg-muted disabled:text-muted-foreground disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg flex items-center justify-center gap-2 mt-4 text-sm sm:text-base"
+                  >
+                    {sendingRequest ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    Send correction request
+                  </button>
+                </>
               )}
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">Reason *</label>
-                <textarea
-                  value={requestReason}
-                  onChange={(e) => setRequestReason(e.target.value)}
-                  placeholder="E.g., Forgot to punch out due to client meeting..."
-                  className="w-full bg-background border border-border rounded-lg p-3 text-foreground outline-none focus:border-emerald-500 min-h-20 text-sm sm:text-base"
-                  required
-                />
-              </div>
-
-              <button
-                onClick={submitRequest}
-                disabled={sendingRequest || !requestReason.trim()}
-                className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg flex items-center justify-center gap-2 mt-4 text-sm sm:text-base"
-              >
-                {sendingRequest ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                Send Request to Partner
-              </button>
             </div>
           </div>
         </div>

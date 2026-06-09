@@ -5,6 +5,11 @@ import Attendance from '@/models/Attendance';
 import User from '@/models/User';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { isAttendanceDatePartnerOnlyIst } from '@/lib/attendanceRequestApprovalWindow';
+import {
+  applyExtraWorkSlotsToRecord,
+  isExtraWorkRequest,
+  normalizeExtraWorkSlotsFromRequest,
+} from '@/lib/extraWorkRequest';
 
 function calculateDuration(start: string, end: string): number {
     if (!start || !end) return 0;
@@ -119,12 +124,24 @@ export async function POST(request: NextRequest) {
                 };
             }
 
+            const userObj = await User.findById(userId);
+
+            if (isExtraWorkRequest(reqRecord)) {
+                const slots = normalizeExtraWorkSlotsFromRequest(reqRecord);
+                applyExtraWorkSlotsToRecord(rec, slots, String(reqRecord._id));
+                attendance.records.set(date, rec);
+                attendance.markModified('records');
+                attendance.summary = calculateSummary(attendance.records, userObj);
+                await attendance.save();
+                successCount++;
+                continue;
+            }
+
             // Update details
             rec.typeOfPresence = requestedStatus as any; // Still use the requested status type (e.g. On leave)
             rec.remarks = appliedRemark; // Apply bulk remark to daily record too? Or just keep in request? Let's add it to record for visibility.
             
             // Fetch user schedule for the day
-            const userObj = await User.findById(userId);
             let scheduledInTime = '';
             let scheduledOutTime = '';
             let scheduledMinutes = 0;

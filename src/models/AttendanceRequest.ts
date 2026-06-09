@@ -30,6 +30,7 @@ export const TYPE_OF_PRESENCE_ENUM = [
   'Present - ClientPlace (Weekoff)',
   'Present - Outstation (Weekdays)',
   'Present - ClientPlace (Weekdays)',
+  'Extra work hours',
 ] as const;
 
 export type TypeOfPresence = (typeof TYPE_OF_PRESENCE_ENUM)[number];
@@ -46,6 +47,10 @@ export interface IAttendanceRequest extends Document {
   status: 'Pending' | 'PendingHr' | 'Approved' | 'Rejected';
   startTime?: string;
   endTime?: string;
+  /** Distinguishes attendance correction from extra-work hour claims. */
+  requestType?: 'correction' | 'extra_work';
+  /** Multiple extra-work slots in one request (each with its own explanation). */
+  extraWorkSlots?: { startTime: string; endTime: string; reason: string }[];
   partnerRemarks?: string;
   /** Set when partner approves but HR must finalize (stale attendance date). */
   partnerApprovedAt?: Date;
@@ -88,6 +93,21 @@ const AttendanceRequestSchema: Schema = new Schema(
     },
     startTime: { type: String },
     endTime: { type: String },
+    requestType: {
+      type: String,
+      enum: ['correction', 'extra_work'],
+      default: 'correction',
+    },
+    extraWorkSlots: {
+      type: [
+        {
+          startTime: { type: String, required: true },
+          endTime: { type: String, required: true },
+          reason: { type: String, required: true },
+        },
+      ],
+      default: undefined,
+    },
     partnerRemarks: { type: String },
     partnerApprovedAt: { type: Date },
     partnerProposedValue: { type: String },

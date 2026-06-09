@@ -14,6 +14,15 @@ export interface IDailyRecord {
   remarks?: string;
   /** Set when a day is marked Holiday so reverting a moved holiday can restore the prior status. */
   previousTypeOfPresence?: string;
+  /** Approved extra-work time slots (additive to totalHour / excessHour). */
+  extraWorkEntries?: {
+    startTime: string;
+    endTime: string;
+    hours: number;
+    reason?: string;
+    requestId?: string;
+    approvedAt?: string;
+  }[];
 }
 
 // Monthly summary interface
@@ -119,6 +128,19 @@ const DailyRecordSchema: Schema = new Schema(
     },
     previousTypeOfPresence: {
       type: String,
+      default: undefined,
+    },
+    extraWorkEntries: {
+      type: [
+        {
+          startTime: { type: String, required: true },
+          endTime: { type: String, required: true },
+          hours: { type: Number, required: true, min: 0 },
+          reason: { type: String, default: '' },
+          requestId: { type: String },
+          approvedAt: { type: String },
+        },
+      ],
       default: undefined,
     },
   },

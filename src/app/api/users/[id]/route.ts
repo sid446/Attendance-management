@@ -16,6 +16,7 @@ import {
   isValidPunchTime,
 } from '@/lib/attendanceHours';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
+import { reapplyExtraWorkEntriesToRecord } from '@/lib/extraWorkRequest';
 import {
   applyManagedEffectiveHistories,
   ManagedEffectiveField,
@@ -645,6 +646,7 @@ async function recalculateAttendanceFromDate(userId: string, fromDate: Date) {
         dayExcess = Number((record.totalHour - dayScheduledHours).toFixed(2));
       }
       record.excessHour = dayExcess;
+      reapplyExtraWorkEntriesToRecord(record);
 
       const includeInHoursSummary = !shouldExcludeFromHoursSummary(String(record.typeOfPresence || ''), dateStr);
       if (includeInHoursSummary) {

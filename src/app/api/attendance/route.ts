@@ -13,6 +13,7 @@ import {
   isValidPunchTime,
 } from '@/lib/attendanceHours';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
+import { reapplyExtraWorkEntriesToRecord } from '@/lib/extraWorkRequest';
 
 // GET - Fetch attendance records
 export async function GET(request: NextRequest) {
@@ -560,6 +561,10 @@ export async function POST(request: NextRequest) {
             halfDay: finalHalfDay,
             value: finalValue,
             remarks: remarksStr,
+            ...(Array.isArray(existingRecordBeforeUpdate?.extraWorkEntries) &&
+            existingRecordBeforeUpdate.extraWorkEntries.length > 0
+              ? { extraWorkEntries: existingRecordBeforeUpdate.extraWorkEntries }
+              : {}),
           });
 
           // Recalculate summary with user-specific schedule
@@ -980,6 +985,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      const existingDailyRecord = attendance.records.get(date);
       attendance.records.set(date, {
         checkin: dailyRecord.checkin || '',
         checkout: dailyRecord.checkout || '',
@@ -989,6 +995,12 @@ export async function POST(request: NextRequest) {
         halfDay: dailyRecord.halfDay || false,
         value: dailyRecord.value ?? 0,
         remarks: dailyRecord.remarks || '',
+        ...(Array.isArray(existingDailyRecord?.extraWorkEntries) &&
+        existingDailyRecord.extraWorkEntries.length > 0
+          ? { extraWorkEntries: existingDailyRecord.extraWorkEntries }
+          : Array.isArray(dailyRecord.extraWorkEntries) && dailyRecord.extraWorkEntries.length > 0
+            ? { extraWorkEntries: dailyRecord.extraWorkEntries }
+            : {}),
       });
 
       // Recalculate summary with user-specific logic
@@ -1225,6 +1237,7 @@ function calculateSummary(
     }
     // Update record's excessHour
     record.excessHour = Number(dayExcess.toFixed(2));
+    reapplyExtraWorkEntriesToRecord(record);
     const includeInHoursSummary = !shouldExcludeFromSummaryHours(record.typeOfPresence, dateStr);
     if (includeInHoursSummary) {
       totalHour += record.totalHour;

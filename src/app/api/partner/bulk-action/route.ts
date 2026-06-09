@@ -35,6 +35,11 @@ import { verifyPartnerReviewToken } from '@/lib/partnerReviewToken';
 import { transporter, mailOptions } from '@/lib/mailer';
 import { isAttendanceDatePartnerOnlyIst } from '@/lib/attendanceRequestApprovalWindow';
 import {
+  applyExtraWorkSlotsToRecord,
+  isExtraWorkRequest,
+  normalizeExtraWorkSlotsFromRequest,
+} from '@/lib/extraWorkRequest';
+import {
   type RequestDecisionRow,
   resolvePartnerNotificationEmail,
   sendPartnerRequestDecisionEmail,
@@ -283,6 +288,20 @@ export async function POST(request: NextRequest) {
                         typeOfPresence: 'Absent', halfDay: false, value: 0
                     };
                 }
+
+                if (isExtraWorkRequest(reqRecord)) {
+                    try {
+                        const slots = normalizeExtraWorkSlotsFromRequest(reqRecord);
+                        applyExtraWorkSlotsToRecord(rec, slots, String(reqRecord._id));
+                    } catch (extraErr) {
+                        console.error('Failed to apply extra work in bulk-action:', extraErr);
+                        throw extraErr;
+                    }
+                    attendance.records.set(date, rec);
+                    attendance.markModified('records');
+                    attendance.summary = calculateSummary(attendance.records, userObj);
+                    await attendance.save();
+                } else {
 
                                 // If existing record was a paid leave and the approved action moves it to non-leave,
                                 // remove prior 'used' leave transactions so snapshots stay consistent.
@@ -553,6 +572,7 @@ export async function POST(request: NextRequest) {
                 if (isLeaveRequest && leaveIsPaid) {
                   const { updateLeaveBalanceOnApproval } = await import('@/lib/leaveManagement');
                   await updateLeaveBalanceOnApproval(userId, date, true);
+                }
                 }
             }
 

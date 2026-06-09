@@ -4,6 +4,7 @@ import Attendance from '@/models/Attendance';
 import User from '@/models/User';
 import { calculateLeaveUsage, updateLeaveBalanceOnApproval } from '@/lib/leaveManagement';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
+import { reapplyExtraWorkEntriesToRecord } from '@/lib/extraWorkRequest';
 
 function calculateDuration(start: string, end: string): number {
     if (!start || !end) return 0;
@@ -102,6 +103,7 @@ function calculateSummary(
       calculatedHalf = false;
       record.excessHour = 0;
     }
+    reapplyExtraWorkEntriesToRecord(record);
 
     if (calculatedHalf) totalHalfDay++;
 

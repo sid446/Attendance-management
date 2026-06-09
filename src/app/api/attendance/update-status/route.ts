@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Attendance from '@/models/Attendance';
 import User from '@/models/User';
+import { reapplyExtraWorkEntriesToRecord } from '@/lib/extraWorkRequest';
 
 // Helper to recalculate summary (duplicated from main route, ideally moved to lib)
 function calculateSummary(
@@ -26,10 +27,11 @@ function calculateSummary(
       record.typeOfPresence === 'Weekoff - special allowance' ||
       isSundayDate;
 
-      totalHour += record.totalHour || 0;
       if (isNonWorkingDayRecord) {
         record.excessHour = 0;
       }
+      reapplyExtraWorkEntriesToRecord(record);
+      totalHour += record.totalHour || 0;
       excessHour += record.excessHour || 0;
   
 // Determine if this is an articleship employee

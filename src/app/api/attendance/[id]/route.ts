@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Attendance from '@/models/Attendance';
 import User from '@/models/User';
+import { reapplyExtraWorkEntriesToRecord } from '@/lib/extraWorkRequest';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -145,6 +146,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       if (record && isNonWorkingDayRecord) {
         record.halfDay = false;
         record.excessHour = 0;
+      }
+      if (record) {
+        reapplyExtraWorkEntriesToRecord(record);
       }
 
       // Recalculate summary
@@ -295,6 +299,7 @@ function calculateSummary(records: Map<string, {
       halfDay = false;
       record.excessHour = 0;
     }
+    reapplyExtraWorkEntriesToRecord(record);
 
     // Update the record's halfDay flag
     record.halfDay = halfDay;
