@@ -6,7 +6,12 @@ import PendingAttendance from '@/models/PendingAttendance';
 import User, { IUser } from '@/models/User';
 import Holiday from '@/models/Holiday';
 import { normalizeForMatch } from '@/lib/attendanceNameMatch';
-import { calculateLeaveUsageForMultipleDays, updateLeaveBalanceOnApproval, reconcilePartialLeaveFromAttendance } from '@/lib/leaveManagement';
+import {
+  calculateLeaveUsage,
+  calculateLeaveUsageForMultipleDays,
+  updateLeaveBalanceOnApproval,
+  reconcilePartialLeaveFromAttendance,
+} from '@/lib/leaveManagement';
 import {
   calculateTotalHours,
   isSinglePunch,
@@ -435,52 +440,6 @@ export async function POST(request: NextRequest) {
               }
             }
           }
-          // Override if Approved Request Exists
-          if (!isFixedDataUpload && approvedRequest) {
-             let requestTotalHour = 0;
-             if (approvedRequest.startTime && approvedRequest.endTime) {
-                 const [h1, m1] = String(approvedRequest.startTime).split(':').map(Number);
-                 const [h2, m2] = String(approvedRequest.endTime).split(':').map(Number);
-                 if (!isNaN(h1) && !isNaN(m1) && !isNaN(h2) && !isNaN(m2)) {
-                    const minutes = (h2 * 60 + m2) - (h1 * 60 + m1);
-                    requestTotalHour = Math.max(0, Math.round((minutes / 60) * 100) / 100);
-                 }
-             }
-             
-             if (totalHour > requestTotalHour) {
-                 typeOfPresence = 'Present'; 
-                 remarksStr += (remarksStr ? ' | ' : '') + `Present (Machine ${totalHour}h > Request ${requestTotalHour}h)`;
-                 finalValue = 1;
-             } else {
-                 typeOfPresence = approvedRequest.requestedStatus;
-                 remarksStr += (remarksStr ? ' | ' : '') + `Overridden by Approved Request: ${approvedRequest.requestedStatus}`;
-
-                 if (approvedRequest.startTime && approvedRequest.endTime) {
-                     finalCheckin = approvedRequest.startTime;
-                     finalCheckout = approvedRequest.endTime;
-                     finalEditedCheckin = approvedRequest.startTime;
-                     finalEditedCheckout = approvedRequest.endTime;
-                     finalTotalHour = requestTotalHour;
-                 } else {
-                     const isLeaveType = ['On leave', 'Absent'].includes(approvedRequest.requestedStatus);
-                     if (isLeaveType) {
-                         finalCheckin = '';
-                         finalCheckout = '';
-                         finalTotalHour = 0;
-                     }
-                 }
-
-                 if (typeOfPresence === 'On leave' || typeOfPresence === 'Absent') {
-                     finalValue = 0;
-                 } else if (typeOfPresence && typeOfPresence.includes('Half Day')) {
-                     finalValue = 0.5; 
-                     finalHalfDay = true;
-                 } else {
-                     finalValue = 1;
-                 }
-             }
-          }
-
           // Special handling for Article employees (case-insensitive employmentType)
           const empTypeStr = String(user?.employmentType || '').toLowerCase();
           const isArticleEmployee = user && (empTypeStr === 'article' || user.designation?.toLowerCase() === 'article');
@@ -550,6 +509,71 @@ export async function POST(request: NextRequest) {
             }
           }
 
+          // Approved request wins last — article/halftime/no-punch logic must not override leave.
+          let appliedApprovedLeaveOverride = false;
+          if (!isFixedDataUpload && approvedRequest) {
+            let requestTotalHour = 0;
+            if (approvedRequest.startTime && approvedRequest.endTime) {
+              const [h1, m1] = String(approvedRequest.startTime).split(':').map(Number);
+              const [h2, m2] = String(approvedRequest.endTime).split(':').map(Number);
+              if (!isNaN(h1) && !isNaN(m1) && !isNaN(h2) && !isNaN(m2)) {
+                const minutes = (h2 * 60 + m2) - (h1 * 60 + m1);
+                requestTotalHour = Math.max(0, Math.round((minutes / 60) * 100) / 100);
+              }
+            }
+
+            if (totalHour > requestTotalHour) {
+              typeOfPresence = 'Present';
+              remarksStr += (remarksStr ? ' | ' : '') + `Present (Machine ${totalHour}h > Request ${requestTotalHour}h)`;
+              finalValue = 1;
+            } else {
+              typeOfPresence = approvedRequest.requestedStatus;
+              remarksStr += (remarksStr ? ' | ' : '') + `Overridden by Approved Request: ${approvedRequest.requestedStatus}`;
+              appliedApprovedLeaveOverride = isLeaveRequestStatus(approvedRequest.requestedStatus);
+
+              if (approvedRequest.startTime && approvedRequest.endTime) {
+                finalCheckin = approvedRequest.startTime;
+                finalCheckout = approvedRequest.endTime;
+                finalEditedCheckin = approvedRequest.startTime;
+                finalEditedCheckout = approvedRequest.endTime;
+                finalTotalHour = requestTotalHour;
+              } else if (isLeaveRequestStatus(approvedRequest.requestedStatus)) {
+                finalCheckin = '';
+                finalCheckout = '';
+                finalEditedCheckin = '';
+                finalEditedCheckout = '';
+                finalTotalHour = 0;
+                finalHalfDay = false;
+              }
+
+              if (isLeaveRequestStatus(approvedRequest.requestedStatus)) {
+                const existingWasLeave = existingRecordBeforeUpdate &&
+                  String(existingRecordBeforeUpdate.typeOfPresence || '').toLowerCase().includes('leave');
+                if (existingWasLeave) {
+                  typeOfPresence = 'On leave';
+                  finalValue = Number(existingRecordBeforeUpdate?.value ?? 0);
+                  finalHalfDay = false;
+                } else {
+                  const leaveUsage = await calculateLeaveUsage(
+                    user._id,
+                    isoDate,
+                    approvedRequest.requestedStatus
+                  );
+                  finalValue = leaveUsage.value;
+                  typeOfPresence = leaveUsage.isPaidLeave ? 'On leave' : 'Absent';
+                  finalHalfDay = false;
+                }
+              } else if (typeOfPresence === 'Absent') {
+                finalValue = 0;
+              } else if (typeOfPresence && typeOfPresence.includes('Half Day')) {
+                finalValue = 0.5;
+                finalHalfDay = true;
+              } else {
+                finalValue = 1;
+              }
+            }
+          }
+
           attendance.records.set(isoDate, {
             checkin: finalCheckin,
             checkout: finalCheckout,
@@ -598,7 +622,7 @@ export async function POST(request: NextRequest) {
             existingRecordBeforeUpdate.typeOfPresence === 'On leave' &&
             Number(existingRecordBeforeUpdate.value || 0) >= 1
           );
-          if (isLeaveCandidateType && !wasAlreadyPaidLeave) {
+          if (isLeaveCandidateType && !wasAlreadyPaidLeave && !appliedApprovedLeaveOverride) {
             const key = String(user._id);
             if (!uploadedLeaveCandidates.has(key)) {
               uploadedLeaveCandidates.set(key, new Set<string>());
@@ -1071,6 +1095,11 @@ function mapFixedPresenceCodeToType(codeRaw: string): string {
     default:
       return String(codeRaw || '').trim();
   }
+}
+
+function isLeaveRequestStatus(status: string): boolean {
+  const normalized = String(status || '').toLowerCase();
+  return normalized.includes('leave') || normalized === 'absent' || status === 'On leave';
 }
 
 function getPresenceValueByType(typeOfPresence: string): number {
