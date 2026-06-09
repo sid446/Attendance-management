@@ -119,7 +119,8 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
         r.odId.toLowerCase().includes(term) ||
         r.designation?.toLowerCase().includes(term) ||
         r.workingUnderPartner?.toLowerCase().includes(term) ||
-        r.registeredUnderPartner?.toLowerCase().includes(term)
+        r.registeredUnderPartner?.toLowerCase().includes(term) ||
+        r.email?.toLowerCase().includes(term)
     );
   }, [rows, searchTerm]);
 
@@ -155,6 +156,8 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
         return 'border-violet-200 bg-violet-50 text-violet-950';
       case 'approver-same-as-employee':
         return 'border-orange-200 bg-orange-50 text-orange-950';
+      case 'non-asija-email':
+        return 'border-sky-200 bg-sky-50 text-sky-950';
     }
   };
 
@@ -435,6 +438,11 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
                         <p className="mt-3 text-xs text-orange-900">
                           Employee email and attendance email are the same ({row.email}) — attendance
                           should be approved by a different person (partner/approver email).
+                        </p>
+                      )}
+                      {row.exceptions.includes('non-asija-email') && (
+                        <p className="mt-3 text-xs text-sky-900">
+                          Employee login email ({row.email || '—'}) must end with @asija.in.
                         </p>
                       )}
                       {row.missingBiometricDates && row.missingBiometricDates.length > 0 && (

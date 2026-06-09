@@ -22,6 +22,7 @@ const ALL_EXCEPTION_TYPES: MisExceptionType[] = [
   'no-schedule',
   'no-pl-partner',
   'approver-same-as-employee',
+  'non-asija-email',
 ];
 
 function isValidExceptionType(v: string | null): v is MisExceptionType {
@@ -95,6 +96,7 @@ export async function GET(request: NextRequest) {
       'no-schedule': 0,
       'no-pl-partner': 0,
       'approver-same-as-employee': 0,
+      'non-asija-email': 0,
     };
 
     for (const user of activeUsers) {

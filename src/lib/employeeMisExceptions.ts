@@ -7,7 +7,8 @@ export type MisExceptionType =
   | 'missing-biometric'
   | 'no-schedule'
   | 'no-pl-partner'
-  | 'approver-same-as-employee';
+  | 'approver-same-as-employee'
+  | 'non-asija-email';
 
 export const MIS_EXCEPTION_LABELS: Record<MisExceptionType, string> = {
   'missing-attendance': 'Active — attendance not uploaded for month',
@@ -15,6 +16,7 @@ export const MIS_EXCEPTION_LABELS: Record<MisExceptionType, string> = {
   'no-schedule': 'Attendance timing schedule not defined',
   'no-pl-partner': 'PL partner not defined (registered or working under partner missing)',
   'approver-same-as-employee': 'Employee email same as attendance email',
+  'non-asija-email': 'Email does not end with @asija.in',
 };
 
 export type MisExceptionRow = {
@@ -171,6 +173,15 @@ export function isAttendanceApproverSameAsEmployee(user: any): boolean {
   return attendanceEmail === employeeEmail;
 }
 
+const ASIJA_EMAIL_SUFFIX = '@asija.in';
+
+/** Employee login email must end with @asija.in. */
+export function isAsijaEmail(email: unknown): boolean {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return false;
+  return normalized.endsWith(ASIJA_EMAIL_SUFFIX);
+}
+
 function hasValidPunch(rec: any): boolean {
   const checkin = normalizeStr(rec?.editedCheckin || rec?.checkin);
   const checkout = normalizeStr(rec?.editedCheckout || rec?.checkout);
@@ -287,6 +298,7 @@ export function computeMisExceptionsForUser(
   if (!hasAttendanceScheduleDefined(user, opts.partnerAsOf)) types.push('no-schedule');
   if (!hasPlPartnerDefined(user, opts.partnerAsOf)) types.push('no-pl-partner');
   if (isAttendanceApproverSameAsEmployee(user)) types.push('approver-same-as-employee');
+  if (!isAsijaEmail(user?.email)) types.push('non-asija-email');
 
   return types;
 }
