@@ -36,8 +36,10 @@ export interface DailyExcessApprovalRow {
 }
 
 /**
- * Untouched positive excess counts in full. Partner-set allowance caps that day (0 … raw).
- * Deficit (negative) always counts.
+ * Partner-set allowance caps how much of that day's excess/deficit counts.
+ * Magnitude is stored as non-negative allowedExcessHours for non-zero raw days.
+ * For zero-excess days, allowedExcessHours is the signed manual counts-as override.
+ * Untouched days (null) use the calculated raw value (0 when raw is zero).
  */
 export function applyDayWiseExcessApprovals(
   days: Array<{
@@ -60,13 +62,25 @@ export function applyDayWiseExcessApprovals(
     if (rawDay > 0 && day.allowedExcessHours != null) {
       const allowed = Math.max(0, Number(Number(day.allowedExcessHours).toFixed(2)));
       countsAs = Number(Math.min(rawDay, allowed).toFixed(2));
+    } else if (rawDay < 0 && day.allowedExcessHours != null) {
+      const absRaw = Math.abs(rawDay);
+      const allowed = Math.max(
+        0,
+        Math.min(absRaw, Number(Number(day.allowedExcessHours).toFixed(2)))
+      );
+      countsAs = Number((-allowed).toFixed(2));
+    } else if (rawDay === 0) {
+      countsAs =
+        day.allowedExcessHours != null
+          ? Number(Number(day.allowedExcessHours).toFixed(2))
+          : 0;
     }
 
     display += countsAs;
     rows.push({
       date: day.date,
       rawExcessHour: rawDay,
-      allowedExcessHours: rawDay > 0 ? day.allowedExcessHours : null,
+      allowedExcessHours: day.allowedExcessHours,
       countsAs,
       typeOfPresence: day.typeOfPresence,
       missedEntry: day.missedEntry,
@@ -126,8 +140,8 @@ export function applyExcessHourAllowance(
 }
 
 /**
- * Apply partner day allowance to a single day's raw excess.
- * Untouched days (no map entry) keep full raw excess; deficits always count in full.
+ * Apply partner day allowance to a single day's raw excess/deficit.
+ * Untouched days (no map entry) keep full raw value; zero-excess days stay 0.
  */
 export function applyDayAllowanceToRawExcess(
   rawExcessHour: number,
@@ -136,12 +150,17 @@ export function applyDayAllowanceToRawExcess(
   dayAllowanceMap?: ExcessDayAllowanceLookup | null
 ): number {
   const raw = Number(Number(rawExcessHour).toFixed(2));
-  if (raw <= 0) return raw;
-  if (!dayAllowanceMap) return raw;
+  if (!dayAllowanceMap) return raw === 0 ? 0 : raw;
   const key = excessDayAllowanceKey(userId, date);
-  if (!Object.prototype.hasOwnProperty.call(dayAllowanceMap, key)) return raw;
-  const allowed = Math.max(0, Number(Number(dayAllowanceMap[key]).toFixed(2)));
-  return Number(Math.min(raw, allowed).toFixed(2));
+  if (!Object.prototype.hasOwnProperty.call(dayAllowanceMap, key)) {
+    return raw === 0 ? 0 : raw;
+  }
+  const stored = Number(Number(dayAllowanceMap[key]).toFixed(2));
+  if (raw === 0) return stored;
+  const allowed = Math.max(0, stored);
+  if (raw > 0) return Number(Math.min(raw, allowed).toFixed(2));
+  const absRaw = Math.abs(raw);
+  return Number(-Math.min(absRaw, allowed).toFixed(2));
 }
 
 /**

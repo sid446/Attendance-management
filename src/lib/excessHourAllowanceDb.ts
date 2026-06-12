@@ -281,7 +281,7 @@ type LegacyDayApprovalDoc = {
 
 function resolveDayAllowedHours(doc: LegacyDayApprovalDoc): number | null {
   if (doc.allowedExcessHours != null && Number.isFinite(Number(doc.allowedExcessHours))) {
-    return Math.max(0, Number(Number(doc.allowedExcessHours).toFixed(2)));
+    return Number(Number(doc.allowedExcessHours).toFixed(2));
   }
   if (typeof doc.approved === 'boolean') {
     return doc.approved ? null : 0;
@@ -319,28 +319,20 @@ export async function computeDailyExcessBreakdown(
   const records = recordsToMap(attendance?.records as Record<string, unknown> | Map<string, unknown>);
   const approvals = dayApprovals ?? (await fetchDayApprovalsForUsersMonth([userId], monthYear));
 
-  const days = monthDateStrings(monthYear)
-    .map((date) => {
-      const rec = records[date];
-      const rawExcessHour = Number(rec?.excessHour ?? 0);
-      if (rawExcessHour === 0) return null;
-      const approvalKey = `${userId}:${date}`;
-      const hasDecision = Object.prototype.hasOwnProperty.call(approvals, approvalKey);
-      const { typeOfPresence, missedEntry } = dayContextFromRecord(rec);
-      return {
-        date,
-        rawExcessHour,
-        allowedExcessHours:
-          rawExcessHour > 0
-            ? hasDecision
-              ? approvals[approvalKey]
-              : null
-            : null,
-        typeOfPresence: typeOfPresence || undefined,
-        missedEntry,
-      };
-    })
-    .filter((row): row is NonNullable<typeof row> => row != null);
+  const days = monthDateStrings(monthYear).map((date) => {
+    const rec = records[date];
+    const rawExcessHour = Number(rec?.excessHour ?? 0);
+    const approvalKey = `${userId}:${date}`;
+    const hasDecision = Object.prototype.hasOwnProperty.call(approvals, approvalKey);
+    const { typeOfPresence, missedEntry } = dayContextFromRecord(rec);
+    return {
+      date,
+      rawExcessHour,
+      allowedExcessHours: hasDecision ? approvals[approvalKey] : null,
+      typeOfPresence: typeOfPresence || undefined,
+      missedEntry,
+    };
+  });
 
   return applyDayWiseExcessApprovals(days);
 }
@@ -428,14 +420,27 @@ export async function fetchExcessChangeLogsForUsersMonth(
   return out;
 }
 
+export async function getDayRawExcessHour(
+  userId: string,
+  monthYear: string,
+  date: string
+): Promise<number> {
+  const attendance = await Attendance.findOne({ userId, monthYear }).lean();
+  const records = recordsToMap(attendance?.records as Record<string, unknown> | Map<string, unknown>);
+  return Number(records[date]?.excessHour ?? 0);
+}
+
 export async function upsertDayExcessApproval(
   userId: string,
   date: string,
   allowedExcessHours: number,
-  setByUserId: string
+  setByUserId: string,
+  options?: { signedOverride?: boolean }
 ) {
   const monthYear = date.slice(0, 7);
-  const hours = Math.max(0, Number(Number(allowedExcessHours).toFixed(2)));
+  const hours = options?.signedOverride
+    ? Number(Number(allowedExcessHours).toFixed(2))
+    : Math.max(0, Number(Number(allowedExcessHours).toFixed(2)));
   return PartnerExcessDayApproval.findOneAndUpdate(
     { userId, date },
     { $set: { monthYear, allowedExcessHours: hours, setByUserId }, $unset: { approved: '' } },

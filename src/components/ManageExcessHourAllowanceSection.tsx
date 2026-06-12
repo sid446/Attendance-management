@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Clock, History, Loader2, RotateCcw } from "lucide-react";
 import { EmployeeSummaryMonthPicker } from "@/components/EmployeeSummaryMonthPicker";
-import { formatHoursMinutes, parseHoursMinutes } from "@/lib/attendanceSummaryMetrics";
+import { formatHoursMinutes, parseHoursMinutes, parseSignedHoursMinutes } from "@/lib/attendanceSummaryMetrics";
 import type { DailyExcessApprovalRow } from "@/lib/excessHourAllowance";
 
 interface ExcessDayChangeLogEntry {
@@ -102,7 +102,17 @@ function PresenceInfo({
 }
 
 function allowanceLabel(day: DailyExcessApprovalRow): string {
-  if (day.rawExcessHour <= 0) return "Deficit (always counts)";
+  const absRaw = Math.abs(day.rawExcessHour);
+  if (day.rawExcessHour === 0) {
+    if (day.allowedExcessHours == null) return "Default (0:00)";
+    return `Manual (${formatSignedExcess(day.allowedExcessHours)})`;
+  }
+  if (day.rawExcessHour < 0) {
+    if (day.allowedExcessHours == null) return `Default (${formatSignedExcess(day.rawExcessHour)})`;
+    if (day.allowedExcessHours === 0) return "None counted (0:00)";
+    if (day.allowedExcessHours >= absRaw) return `Full (${formatSignedExcess(day.rawExcessHour)})`;
+    return `Count ${formatHoursMinutes(day.allowedExcessHours)} of ${formatHoursMinutes(absRaw)} deficit`;
+  }
   if (day.allowedExcessHours == null) return `Default (${formatSignedExcess(day.rawExcessHour)})`;
   if (day.allowedExcessHours === 0) return "None allowed (0:00)";
   if (day.allowedExcessHours >= day.rawExcessHour) {
@@ -112,10 +122,21 @@ function allowanceLabel(day: DailyExcessApprovalRow): string {
 }
 
 function allowanceClass(day: DailyExcessApprovalRow): string {
-  if (day.rawExcessHour <= 0) return "text-sky-700 bg-sky-950/20 border-sky-500/20";
-  if (day.allowedExcessHours == null) return "text-muted-foreground bg-background border-border";
+  const absRaw = Math.abs(day.rawExcessHour);
+  if (day.rawExcessHour === 0) {
+    if (day.allowedExcessHours == null) return "text-muted-foreground bg-background border-border";
+    if (day.allowedExcessHours === 0) return "text-muted-foreground bg-background border-border";
+    return day.allowedExcessHours > 0
+      ? "text-emerald-700 bg-emerald-950/20 border-emerald-500/30"
+      : "text-sky-700 bg-sky-950/20 border-sky-500/20";
+  }
+  if (day.allowedExcessHours == null) {
+    return day.rawExcessHour < 0
+      ? "text-sky-700 bg-sky-950/20 border-sky-500/20"
+      : "text-muted-foreground bg-background border-border";
+  }
   if (day.allowedExcessHours === 0) return "text-rose-700 bg-rose-950/20 border-rose-500/30";
-  if (day.allowedExcessHours >= day.rawExcessHour) {
+  if (day.allowedExcessHours >= absRaw) {
     return "text-emerald-700 bg-emerald-950/20 border-emerald-500/30";
   }
   return "text-amber-700 bg-amber-950/20 border-amber-500/30";
@@ -184,7 +205,10 @@ export function ManageExcessHourAllowanceSection({
     if (day.allowedExcessHours != null) {
       return formatHoursMinutes(day.allowedExcessHours);
     }
-    return formatHoursMinutes(day.rawExcessHour);
+    if (day.rawExcessHour !== 0) {
+      return formatHoursMinutes(Math.abs(day.rawExcessHour));
+    }
+    return formatHoursMinutes(0);
   };
 
   const setDraftValue = (employeeId: string, date: string, value: string) => {
@@ -247,10 +271,9 @@ export function ManageExcessHourAllowanceSection({
             </h2>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
               Manage excess for your work-partner team and employees who list you as their
-              attendance approver. Each day&apos;s excess counts in full until you change it. Set how
-              many hours to allow per day (0 to the day&apos;s excess). Reset restores the default.
-              Deficit days always count. Every change is logged with your email, old value, and new
-              value.
+              attendance approver. All days in the month are listed and can be edited. For days
+              with calculated excess or deficit, set how many hours count (0 up to that day&apos;s
+              amount). On zero days, enter a manual + or − value. Reset restores the default.
             </p>
           </div>
           <EmployeeSummaryMonthPicker
@@ -294,7 +317,6 @@ export function ManageExcessHourAllowanceSection({
           <div className="space-y-3">
             {filteredMembers.map((member) => {
               const expanded = expandedId === member._id;
-              const hasDays = member.days.length > 0;
 
               return (
                 <div
@@ -335,33 +357,30 @@ export function ManageExcessHourAllowanceSection({
 
                   {expanded && (
                     <div className="border-t border-border px-3 py-3 sm:px-4">
-                      {!hasDays ? (
-                        <p className="py-4 text-sm text-muted-foreground">
-                          No excess or deficit days recorded for {monthYear}.
-                        </p>
-                      ) : (
-                        <div className="overflow-x-auto rounded-lg border border-border">
-                          <table className="w-full min-w-[860px] text-left text-sm">
-                            <thead className="border-b border-border bg-background/80 text-xs uppercase tracking-wide text-muted-foreground">
-                              <tr>
-                                <th className="px-3 py-2.5">Date</th>
-                                <th className="px-3 py-2.5">Presence</th>
-                                <th className="px-3 py-2.5 text-right">Day excess</th>
-                                <th className="px-3 py-2.5">Allowance</th>
-                                <th className="px-3 py-2.5 text-right">Counts as</th>
-                                <th className="px-3 py-2.5 text-right">Set allowed</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {member.days.map((day) => {
-                                const rowKey = `${member._id}:${day.date}`;
-                                const saving = savingKey === rowKey;
-                                const canSetAllowance = day.rawExcessHour > 0;
-                                const draftValue = getDraftValue(member._id, day);
-                                const parsedDraft = parseHoursMinutes(draftValue);
-                                const maxAllowance = day.rawExcessHour;
+                      <div className="overflow-x-auto rounded-lg border border-border">
+                        <table className="w-full min-w-[860px] text-left text-sm">
+                          <thead className="border-b border-border bg-background/80 text-xs uppercase tracking-wide text-muted-foreground">
+                            <tr>
+                              <th className="px-3 py-2.5">Date</th>
+                              <th className="px-3 py-2.5">Presence</th>
+                              <th className="px-3 py-2.5 text-right">Day excess</th>
+                              <th className="px-3 py-2.5">Allowance</th>
+                              <th className="px-3 py-2.5 text-right">Counts as</th>
+                              <th className="px-3 py-2.5 text-right">Set allowed</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {member.days.map((day) => {
+                              const rowKey = `${member._id}:${day.date}`;
+                              const saving = savingKey === rowKey;
+                              const isZeroDay = day.rawExcessHour === 0;
+                              const draftValue = getDraftValue(member._id, day);
+                              const parsedDraft = isZeroDay
+                                ? parseSignedHoursMinutes(draftValue)
+                                : parseHoursMinutes(draftValue);
+                              const maxAllowance = Math.abs(day.rawExcessHour);
 
-                                return (
+                              return (
                                   <tr key={day.date} className="border-b border-border/70">
                                     <td className="px-3 py-2.5 text-foreground">
                                       {formatDateLabel(day.date)}
@@ -389,51 +408,57 @@ export function ManageExcessHourAllowanceSection({
                                       {formatSignedExcess(day.countsAs)}
                                     </td>
                                     <td className="px-3 py-2.5">
-                                      {canSetAllowance ? (
-                                        <div className="flex flex-wrap items-center justify-end gap-1">
-                                          <input
-                                            type="text"
-                                            inputMode="decimal"
-                                            value={draftValue}
-                                            disabled={saving}
-                                            onChange={(e) =>
-                                              setDraftValue(member._id, day.date, e.target.value)
-                                            }
-                                            className="w-16 rounded-md border border-border bg-background px-2 py-1 text-right font-mono text-xs tabular-nums text-foreground"
-                                            placeholder={formatHoursMinutes(maxAllowance)}
-                                            title={`Hours to allow, H:MM (max ${formatHoursMinutes(maxAllowance)})`}
-                                            aria-label={`Allowed hours for ${day.date}`}
-                                          />
-                                          <button
-                                            type="button"
-                                            disabled={saving || parsedDraft == null}
-                                            onClick={() => {
-                                              if (parsedDraft == null) return;
-                                              void setDayAllowance(
-                                                member._id,
-                                                day.date,
-                                                Math.min(maxAllowance, parsedDraft)
-                                              );
-                                            }}
-                                            className="rounded-md bg-emerald-700 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-600 disabled:opacity-50"
-                                          >
-                                            {saving ? (
-                                              <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-                                            ) : (
-                                              "Save"
-                                            )}
-                                          </button>
-                                          <button
-                                            type="button"
-                                            disabled={saving}
-                                            onClick={() =>
-                                              setDraftValue(member._id, day.date, "0:00")
-                                            }
-                                            className="rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-surface disabled:opacity-50"
-                                            title="Set allowed to 0"
-                                          >
-                                            0
-                                          </button>
+                                      <div className="flex flex-wrap items-center justify-end gap-1">
+                                        <input
+                                          type="text"
+                                          inputMode="decimal"
+                                          value={draftValue}
+                                          disabled={saving}
+                                          onChange={(e) =>
+                                            setDraftValue(member._id, day.date, e.target.value)
+                                          }
+                                          className="w-16 rounded-md border border-border bg-background px-2 py-1 text-right font-mono text-xs tabular-nums text-foreground"
+                                          placeholder={isZeroDay ? "0:00" : formatHoursMinutes(maxAllowance)}
+                                          title={
+                                            isZeroDay
+                                              ? "Hours to count (+ or − H:MM, e.g. 1:30 or -0:45)"
+                                              : `Hours to count, H:MM (max ${formatHoursMinutes(maxAllowance)})`
+                                          }
+                                          aria-label={`Allowed hours for ${day.date}`}
+                                        />
+                                        <button
+                                          type="button"
+                                          disabled={saving || parsedDraft == null}
+                                          onClick={() => {
+                                            if (parsedDraft == null) return;
+                                            void setDayAllowance(
+                                              member._id,
+                                              day.date,
+                                              isZeroDay
+                                                ? parsedDraft
+                                                : Math.min(maxAllowance, parsedDraft)
+                                            );
+                                          }}
+                                          className="rounded-md bg-emerald-700 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-600 disabled:opacity-50"
+                                        >
+                                          {saving ? (
+                                            <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+                                          ) : (
+                                            "Save"
+                                          )}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={saving}
+                                          onClick={() =>
+                                            setDraftValue(member._id, day.date, "0:00")
+                                          }
+                                          className="rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-surface disabled:opacity-50"
+                                          title="Set counts-as to 0"
+                                        >
+                                          0
+                                        </button>
+                                        {!isZeroDay && (
                                           <button
                                             type="button"
                                             disabled={saving}
@@ -445,30 +470,26 @@ export function ManageExcessHourAllowanceSection({
                                               )
                                             }
                                             className="rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-surface disabled:opacity-50"
-                                            title="Allow full day excess"
+                                            title="Count full day excess/deficit"
                                           >
                                             Full
                                           </button>
-                                          {day.allowedExcessHours != null && (
-                                            <button
-                                              type="button"
-                                              disabled={saving}
-                                              onClick={() =>
-                                                void setDayAllowance(member._id, day.date, "clear")
-                                              }
-                                              className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-surface disabled:opacity-50"
-                                              title="Restore default (full excess counts)"
-                                            >
-                                              <RotateCcw className="h-3 w-3" aria-hidden />
-                                              Reset
-                                            </button>
-                                          )}
-                                        </div>
-                                      ) : (
-                                        <span className="block text-right text-xs text-muted-foreground">
-                                          —
-                                        </span>
-                                      )}
+                                        )}
+                                        {day.allowedExcessHours != null && (
+                                          <button
+                                            type="button"
+                                            disabled={saving}
+                                            onClick={() =>
+                                              void setDayAllowance(member._id, day.date, "clear")
+                                            }
+                                            className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-surface disabled:opacity-50"
+                                            title="Restore default"
+                                          >
+                                            <RotateCcw className="h-3 w-3" aria-hidden />
+                                            Reset
+                                          </button>
+                                        )}
+                                      </div>
                                     </td>
                                   </tr>
                                 );
@@ -490,7 +511,6 @@ export function ManageExcessHourAllowanceSection({
                             </tfoot>
                           </table>
                         </div>
-                      )}
 
                       {(member.changeLogs ?? []).length > 0 && (
                         <div className="mt-4 rounded-lg border border-border bg-background/50">
@@ -540,9 +560,9 @@ export function ManageExcessHourAllowanceSection({
 
         <p className="flex items-start gap-2 text-xs text-muted-foreground">
           <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-          Days you have not changed keep their full calculated excess. Enter allowed time as H:MM
-          (e.g. 1:30), same as elsewhere in summaries. Use 0 / Full shortcuts, or Reset to clear
-          your change.
+          All calendar days are shown and editable. For calculated excess/deficit, enter how many
+          hours count as H:MM (0 up to that day&apos;s amount). On zero days, use + or − H:MM for a
+          manual value. Use 0 / Full shortcuts where applicable, or Reset to clear your change.
         </p>
       </div>
     </section>

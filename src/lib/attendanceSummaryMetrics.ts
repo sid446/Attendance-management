@@ -52,6 +52,18 @@ export function parseHoursMinutes(value: string): number | null {
   return Number(parsed.toFixed(2));
 }
 
+/** Like parseHoursMinutes but allows a leading minus (e.g. -1:30). */
+export function parseSignedHoursMinutes(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const negative = trimmed.startsWith('-') || trimmed.startsWith('−');
+  const body = negative ? trimmed.replace(/^[-−]/, '').trim() : trimmed;
+  if (!body) return null;
+  const magnitude = parseHoursMinutes(body);
+  if (magnitude == null) return null;
+  return Number((negative ? -magnitude : magnitude).toFixed(2));
+}
+
 export function monthDateStrings(monthYear: string): string[] {
   const [ys, ms] = monthYear.split('-');
   const y = parseInt(ys, 10);

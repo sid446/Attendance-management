@@ -10,6 +10,7 @@ import {
   fetchExcessChangeLogsForUsersMonth,
   getCurrentDayAllowedExcess,
   getDayAttendanceContext,
+  getDayRawExcessHour,
   logExcessDayChange,
   upsertDayExcessApproval,
 } from '@/lib/excessHourAllowanceDb';
@@ -78,12 +79,11 @@ export async function GET(request: NextRequest) {
           displayExcessHour: breakdown.displayExcess,
           monthlyRawExcessHour: monthlyRaw,
           days: breakdown.rows,
-          adjustedPositiveDays: breakdown.rows.filter(
-            (d) =>
-              d.rawExcessHour > 0 &&
-              d.allowedExcessHours != null &&
-              d.allowedExcessHours !== d.rawExcessHour
-          ).length,
+          adjustedPositiveDays: breakdown.rows.filter((d) => {
+            if (d.allowedExcessHours == null) return false;
+            if (d.rawExcessHour === 0) return d.allowedExcessHours !== 0;
+            return d.allowedExcessHours !== Math.abs(d.rawExcessHour);
+          }).length,
           partnerAdjusted: breakdown.rows.some((d) => d.allowedExcessHours != null),
           changeLogs: changeLogsByUser[member._id] ?? [],
         };
@@ -173,6 +173,8 @@ export async function PATCH(request: NextRequest) {
 
     const oldAllowed = await getCurrentDayAllowedExcess(employeeId, date);
     const dayContext = await getDayAttendanceContext(employeeId, monthYear, date);
+    const rawExcessHour = await getDayRawExcessHour(employeeId, monthYear, date);
+    const isZeroDay = rawExcessHour === 0;
 
     if (clear) {
       if (oldAllowed == null) {
@@ -192,32 +194,43 @@ export async function PATCH(request: NextRequest) {
         typeOfPresence: dayContext.typeOfPresence,
         missedEntry: dayContext.missedEntry,
       });
-    } else if (
-      typeof allowedExcessHours !== 'number' ||
-      !Number.isFinite(allowedExcessHours) ||
-      allowedExcessHours < 0
-    ) {
+    } else if (typeof allowedExcessHours !== 'number' || !Number.isFinite(allowedExcessHours)) {
       return NextResponse.json(
         {
           success: false,
-          error: 'allowedExcessHours must be a non-negative number, or pass clear: true',
+          error: 'allowedExcessHours must be a finite number, or pass clear: true',
+        },
+        { status: 400 }
+      );
+    } else if (!isZeroDay && allowedExcessHours < 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Use a non-negative value for days with calculated excess or deficit',
         },
         { status: 400 }
       );
     } else {
-      const newAllowed = Math.max(0, Number(Number(allowedExcessHours).toFixed(2)));
-      if (oldAllowed === newAllowed) {
+      const newAllowed = isZeroDay
+        ? Number(Number(allowedExcessHours).toFixed(2))
+        : Math.max(0, Number(Number(allowedExcessHours).toFixed(2)));
+      const absRaw = Math.abs(rawExcessHour);
+      const cappedAllowed =
+        isZeroDay || absRaw === 0 ? newAllowed : Math.min(absRaw, newAllowed);
+      if (oldAllowed === cappedAllowed) {
         return NextResponse.json(
           { success: false, error: 'Allowed hours are already set to this value' },
           { status: 400 }
         );
       }
-      await upsertDayExcessApproval(employeeId, date, newAllowed, viewerUserId);
+      await upsertDayExcessApproval(employeeId, date, cappedAllowed, viewerUserId, {
+        signedOverride: isZeroDay,
+      });
       await logExcessDayChange({
         userId: employeeId,
         date,
         oldAllowedExcessHours: oldAllowed,
-        newAllowedExcessHours: newAllowed,
+        newAllowedExcessHours: cappedAllowed,
         changedByUserId: viewerUserId,
         changedByEmail,
         typeOfPresence: dayContext.typeOfPresence,
