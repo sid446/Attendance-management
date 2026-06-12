@@ -130,22 +130,25 @@ function emptyAttendanceSummary(
 type TeamAccessFetchResult = {
   members: User[];
   includeViewerSelf: boolean;
+  approverInboxCount: number;
 };
 
 // Helper to fetch people visible in Team tab.
 async function fetchSubordinates(viewerUserId: string): Promise<TeamAccessFetchResult> {
-  if (!viewerUserId) return { members: [], includeViewerSelf: false };
+  if (!viewerUserId) return { members: [], includeViewerSelf: false, approverInboxCount: 0 };
   const res = await fetch(
     `/api/employee/team-attendance-access?viewerUserId=${encodeURIComponent(viewerUserId)}`,
     employeeCredentialsInit({ cache: 'no-store' })
   );
   const json = await res.json();
   if (!json.success || !Array.isArray(json.data)) {
-    return { members: [], includeViewerSelf: false };
+    return { members: [], includeViewerSelf: false, approverInboxCount: 0 };
   }
   return {
     members: json.data.map((user: User) => normalizeSubordinateUser(user)),
     includeViewerSelf: json.access?.includeViewerSelf === true,
+    approverInboxCount:
+      typeof json.access?.approverInboxCount === 'number' ? json.access.approverInboxCount : 0,
   };
 }
 
@@ -563,6 +566,8 @@ export default function EmployeeDashboard() {
   const [teamAccessIncludeViewerSelf, setTeamAccessIncludeViewerSelf] = useState(false);
   /** Employees whose Work Partner is this user (direct team for approver management). */
   const [ownTeamCount, setOwnTeamCount] = useState(0);
+  /** Employees whose attendanceEmail is this user's login email. */
+  const [approverInboxCount, setApproverInboxCount] = useState(0);
   const [showTeamExportModal, setShowTeamExportModal] = useState(false);
   const [subordinateAttendance, setSubordinateAttendance] = useState<Record<string, SubordinateAttendancePack>>({});
   const [subordinatesListLoading, setSubordinatesListLoading] = useState(false);
@@ -947,9 +952,11 @@ export default function EmployeeDashboard() {
         const teamAccess = await fetchSubordinates(String(userData!._id ?? ''));
         setSubordinates(teamAccess.members);
         setTeamAccessIncludeViewerSelf(teamAccess.includeViewerSelf);
+        setApproverInboxCount(teamAccess.approverInboxCount);
       } catch {
         setSubordinates([]);
         setTeamAccessIncludeViewerSelf(false);
+        setApproverInboxCount(0);
       } finally {
         setSubordinatesListLoading(false);
         setLoading(false);
@@ -1729,6 +1736,8 @@ export default function EmployeeDashboard() {
   }, [subordinateAttendance, user?._id, teamAccessIncludeViewerSelf]);
 
   const canManageTeam = subordinates.length > 0;
+  /** Excess hours: work-partner team or attendance-approver inbox (independent of team tab list). */
+  const canManageExcessHours = approverInboxCount > 0 || ownTeamCount > 0;
 
   useEffect(() => {
     if (!user?._id) return;
@@ -2073,10 +2082,24 @@ export default function EmployeeDashboard() {
           `}
         >
           <div
-            className={`mb-3 border-b border-border pb-3 ${desktopSidebarCollapsed ? 'md:px-0 md:text-center' : ''}`}
+            className={`mb-3 border-b border-border pb-3 ${desktopSidebarCollapsed ? 'md:flex md:flex-col md:items-center md:px-0' : 'px-1'}`}
+            title={`${user.name} · ${user.email}`}
           >
+            {desktopSidebarCollapsed ? (
+              <span
+                className="hidden md:flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-900"
+                aria-hidden
+              >
+                {(user.name || user.email || '?').charAt(0).toUpperCase()}
+              </span>
+            ) : (
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-foreground">{user.name}</p>
+                <p className="truncate text-[11px] text-muted-foreground">{user.email}</p>
+              </div>
+            )}
             <p
-              className={`text-[10px] font-medium uppercase tracking-wider text-muted-foreground ${desktopSidebarCollapsed ? 'md:sr-only' : ''}`}
+              className={`mt-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground ${desktopSidebarCollapsed ? 'md:sr-only' : ''}`}
             >
               Workspace
             </p>
@@ -2142,7 +2165,7 @@ export default function EmployeeDashboard() {
             </button>
           )}
 
-          {canManageTeam && (
+          {canManageExcessHours && (
             <button
               type="button"
               className={navItemClass(activeTab === 'manageExcessHours')}
@@ -2150,7 +2173,7 @@ export default function EmployeeDashboard() {
                 setActiveTab('manageExcessHours');
                 setSidebarOpen(false);
               }}
-              title="Set allowed excess hours for your team"
+              title="Set allowed excess hours for your team or attendance-approver inbox"
             >
               <Clock className="h-5 w-5 shrink-0 opacity-90" aria-hidden />
               <span className={desktopSidebarCollapsed ? 'md:sr-only' : ''}>Excess hours</span>
@@ -2455,7 +2478,7 @@ export default function EmployeeDashboard() {
               <ManageAttendanceApproverSection viewerUserId={user._id} />
             )}
 
-            {activeTab === 'manageExcessHours' && user && subordinates.length > 0 && (
+            {activeTab === 'manageExcessHours' && user && canManageExcessHours && (
               <ManageExcessHourAllowanceSection viewerUserId={user._id} />
             )}
           </div>

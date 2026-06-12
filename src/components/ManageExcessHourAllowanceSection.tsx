@@ -246,9 +246,11 @@ export function ManageExcessHourAllowanceSection({
               Excess hours by day
             </h2>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Each day&apos;s excess counts in full until you change it. Set how many hours to allow
-              per day (0 to the day&apos;s excess). Reset restores the default. Deficit days always
-              count. Every change is logged with your email, old value, and new value.
+              Manage excess for your work-partner team and employees who list you as their
+              attendance approver. Each day&apos;s excess counts in full until you change it. Set how
+              many hours to allow per day (0 to the day&apos;s excess). Reset restores the default.
+              Deficit days always count. Every change is logged with your email, old value, and new
+              value.
             </p>
           </div>
           <EmployeeSummaryMonthPicker
@@ -286,7 +288,7 @@ export function ManageExcessHourAllowanceSection({
           </div>
         ) : filteredMembers.length === 0 ? (
           <p className="rounded-lg border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
-            No team members found for this month.
+            No employees in your work-partner team or attendance-approver inbox for this month.
           </p>
         ) : (
           <div className="space-y-3">

@@ -35,6 +35,7 @@ interface SidebarProps {
   sectionAccess: Record<HrConsoleSectionId, HrAccessLevel> | null;
   permissionsLoaded: boolean;
   userRole: string;
+  userEmail?: string;
 }
 
 type NavItem = {
@@ -125,6 +126,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   sectionAccess,
   permissionsLoaded,
   userRole,
+  userEmail = '',
 }) => {
   const nav = (id: HrConsoleSectionId) => showSection(id, sectionAccess, permissionsLoaded, userRole);
 
@@ -244,6 +246,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       <div className="shrink-0 border-t border-blue-200/85 px-3 py-3">
+        {userEmail ? (
+          <div className="mb-2 min-w-0 px-3 py-1">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Signed in as</p>
+            <p className="truncate text-xs font-medium text-slate-800" title={userEmail}>
+              {userEmail}
+            </p>
+          </div>
+        ) : null}
         <button
           type="button"
           onClick={onLogout}

@@ -4,6 +4,7 @@ import dbConnect from '@/lib/mongodb';
 import TeamAttendanceAccess from '@/models/TeamAttendanceAccess';
 import User from '@/models/User';
 import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAuth';
+import { getApproverInboxMembersForViewer } from '@/lib/teamVisibilityForViewer';
 
 function normalizeName(value: unknown): string {
   return String(value || '').replace(/[.\s]/g, '').toLowerCase();
@@ -43,6 +44,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Viewer not found' }, { status: 404 });
     }
 
+    const approverInbox = await getApproverInboxMembersForViewer(viewerUserId);
+    const approverInboxCount = approverInbox.length;
+
     const rule = await TeamAttendanceAccess.findOne({ viewerUserId }).lean();
     if (rule && rule.isActive === false) {
       return NextResponse.json({
@@ -53,6 +57,7 @@ export async function GET(request: NextRequest) {
           includeViewerSelf: false,
           extraUserCount: 0,
           extraPartnerNames: [],
+          approverInboxCount,
           disabled: true,
         },
       });
@@ -143,6 +148,7 @@ export async function GET(request: NextRequest) {
         includeViewerSelf,
         extraUserCount: extraUserIds.length,
         extraPartnerNames,
+        approverInboxCount,
       },
     });
   } catch (error) {

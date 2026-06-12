@@ -132,3 +132,71 @@ export async function getVisibleTeamMembersForViewer(
 
   return { members, includeViewerSelf };
 }
+
+/** Employees whose attendanceEmail matches the viewer's login email. */
+export async function getApproverInboxMembersForViewer(
+  viewerUserId: string
+): Promise<VisibleTeamMember[]> {
+  const viewer = await User.findById(viewerUserId).lean();
+  if (!viewer) return [];
+
+  const viewerLoginEmail = String((viewer as VisibleUser).email || '').trim().toLowerCase();
+  if (!viewerLoginEmail) return [];
+
+  const inboxUsers = (await User.find({
+    isActive: true,
+    attendanceEmail: new RegExp(`^${escapeRegex(viewerLoginEmail)}$`, 'i'),
+  })
+    .sort({ name: 1 })
+    .lean()) as VisibleUser[];
+
+  return inboxUsers.map(toMember);
+}
+
+/** Direct reports where the viewer is the Work Partner. */
+export async function getOwnTeamMembersForViewer(
+  viewerUserId: string
+): Promise<VisibleTeamMember[]> {
+  const viewer = await User.findById(viewerUserId).lean();
+  if (!viewer) return [];
+
+  const normalizedViewerName = normalizeName((viewer as VisibleUser).name);
+  if (!normalizedViewerName) return [];
+
+  const activeUsers = await User.find({ isActive: true }).sort({ name: 1 }).lean();
+  return (activeUsers as VisibleUser[])
+    .filter((user) => {
+      const workingUnder = normalizeName(user.workingUnderPartner);
+      return workingUnder && workingUnder === normalizedViewerName;
+    })
+    .map(toMember);
+}
+
+/**
+ * Excess-hour management: approver inbox + work-partner team always;
+ * plus admin Team Attendance Access extras when that rule is active.
+ */
+export async function getExcessHoursManageableMembersForViewer(
+  viewerUserId: string
+): Promise<VisibleTeamMember[]> {
+  const visible = new Map<string, VisibleTeamMember>();
+
+  const addMembers = (members: VisibleTeamMember[]) => {
+    members.forEach((member) => {
+      if (member._id && member._id !== viewerUserId) {
+        visible.set(member._id, member);
+      }
+    });
+  };
+
+  addMembers(await getApproverInboxMembersForViewer(viewerUserId));
+  addMembers(await getOwnTeamMembersForViewer(viewerUserId));
+
+  const rule = await TeamAttendanceAccess.findOne({ viewerUserId }).lean();
+  if (rule && rule.isActive !== false) {
+    const { members } = await getVisibleTeamMembersForViewer(viewerUserId);
+    addMembers(members);
+  }
+
+  return Array.from(visible.values()).sort((a, b) => a.name.localeCompare(b.name));
+}

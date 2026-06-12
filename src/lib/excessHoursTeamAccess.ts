@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import User from '@/models/User';
 import {
-  getVisibleTeamMembersForViewer,
+  getExcessHoursManageableMembersForViewer,
   type VisibleTeamMember,
 } from '@/lib/teamVisibilityForViewer';
 
@@ -27,12 +27,11 @@ export function visibleMemberToApiUser(member: VisibleTeamMember): LeanUser {
   };
 }
 
-/** Same team scope as Team attendance / Daily updates (partner + attendance approver inbox). */
+/** Work-partner team + attendance-approver inbox (+ admin extras when team access is active). */
 export async function getExcessHoursTeamForViewer(
   viewerUserId: string
 ): Promise<VisibleTeamMember[]> {
-  const { members } = await getVisibleTeamMembersForViewer(viewerUserId);
-  return members;
+  return getExcessHoursManageableMembersForViewer(viewerUserId);
 }
 
 export async function assertViewerCanManageTeamMember(
@@ -46,7 +45,7 @@ export async function assertViewerCanManageTeamMember(
   const viewer = (await User.findById(viewerUserId).lean()) as LeanUser | null;
   if (!viewer) return null;
 
-  const { members } = await getVisibleTeamMembersForViewer(viewerUserId);
+  const members = await getExcessHoursManageableMembersForViewer(viewerUserId);
   const employee = members.find((m) => m._id === employeeId);
   if (!employee) return null;
 

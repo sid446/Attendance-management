@@ -1606,6 +1606,7 @@ export default function AttendanceUpload() {
           sectionAccess={hrPermState?.sections ?? null}
           permissionsLoaded={hrPermState !== null}
           userRole={userRole}
+          userEmail={userEmail}
         />
 
         {/* Main content */}
