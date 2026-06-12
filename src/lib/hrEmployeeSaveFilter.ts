@@ -1,4 +1,9 @@
-import { MANAGED_EFFECTIVE_FIELDS, type ManagedEffectiveField } from '@/lib/userFieldHistory';
+import {
+  getActiveFieldHistoryEntry,
+  MANAGED_EFFECTIVE_FIELDS,
+  normalizeManagedFieldValue,
+  type ManagedEffectiveField,
+} from '@/lib/userFieldHistory';
 import {
   EMPLOYEE_MANAGEMENT_TAB_IDS,
   USER_PUT_KEY_TO_EMPLOYEE_TABS,
@@ -6,6 +11,73 @@ import {
 } from '@/lib/hrConsolePermissionUtils';
 
 export type EmployeeTabAccess = Record<EmployeeManagementTabId, 'none' | 'view' | 'edit'>;
+
+type HistoryCompareEntry = {
+  value: string;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+};
+
+function toHistoryCompareKey(entries: unknown): string {
+  if (!Array.isArray(entries)) return '[]';
+  const normalized: HistoryCompareEntry[] = entries.map((entry) => {
+    const row = entry as { value?: unknown; effectiveFrom?: unknown; effectiveTo?: unknown };
+    const effectiveTo =
+      row.effectiveTo == null || row.effectiveTo === '' ? null : String(row.effectiveTo).slice(0, 10);
+    const effectiveFrom = row.effectiveFrom == null ? '' : String(row.effectiveFrom).slice(0, 10);
+    return {
+      value: normalizeManagedFieldValue(row.value),
+      effectiveFrom,
+      effectiveTo,
+    };
+  });
+  normalized.sort((a, b) => {
+    const byFrom = a.effectiveFrom.localeCompare(b.effectiveFrom);
+    if (byFrom !== 0) return byFrom;
+    return a.value.localeCompare(b.value);
+  });
+  return JSON.stringify(normalized);
+}
+
+/**
+ * Drop managed-field history that would revert an in-form dropdown edit on save.
+ * Skips fields whose history rows were edited (delete/add/edit) so removals persist.
+ */
+export function stripStaleManagedFieldHistories(
+  formData: Record<string, unknown>,
+  originalFieldHistories?: unknown
+): void {
+  const histories = formData.fieldHistories;
+  if (!histories || typeof histories !== 'object' || Array.isArray(histories)) return;
+
+  const original =
+    originalFieldHistories && typeof originalFieldHistories === 'object' && !Array.isArray(originalFieldHistories)
+      ? (originalFieldHistories as Record<string, unknown>)
+      : {};
+
+  const source = histories as Record<string, unknown[]>;
+  for (const field of MANAGED_EFFECTIVE_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(formData, field)) continue;
+    const rows = source[field];
+    if (!Array.isArray(rows)) continue;
+
+    const historyWasEdited = toHistoryCompareKey(rows) !== toHistoryCompareKey(original[field]);
+    if (historyWasEdited) continue;
+
+    if (rows.length === 0) continue;
+
+    const formValue = normalizeManagedFieldValue(formData[field]);
+    const active = getActiveFieldHistoryEntry(rows as Parameters<typeof getActiveFieldHistoryEntry>[0]);
+    const historyValue = normalizeManagedFieldValue(active?.value);
+    if (formValue !== historyValue) {
+      delete source[field];
+    }
+  }
+
+  if (Object.keys(source).length === 0) {
+    delete formData.fieldHistories;
+  }
+}
 
 /** Include only history segments the operator may edit (by underlying managed field). */
 export function pickEditableFieldHistories(

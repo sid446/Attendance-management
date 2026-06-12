@@ -3,7 +3,12 @@ import { Edit2, Save, X, Plus, Upload, FileUp, Filter, Trash2, Search, Download,
 import * as XLSX from 'xlsx';
 import { User as UserBase, ScheduleTime, DailySchedule } from '@/types/ui';
 import { fullEditDefaults, type EmployeeManagementTabId, type HrAccessLevel } from '@/lib/hrConsolePermissionUtils';
-import { pickEditableUserPutBody, pickEditableFieldHistories, type EmployeeTabAccess } from '@/lib/hrEmployeeSaveFilter';
+import {
+  pickEditableUserPutBody,
+  pickEditableFieldHistories,
+  stripStaleManagedFieldHistories,
+  type EmployeeTabAccess,
+} from '@/lib/hrEmployeeSaveFilter';
 import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
 import { confirmMajorAction } from '@/lib/confirmMajorAction';
 import { getActiveFieldHistoryEntry } from '@/lib/userFieldHistory';
@@ -1252,6 +1257,7 @@ export const EmployeeManagementSection: React.FC<{
 
     try {
       const prepared = prepareFormDataForSave(formData) as Record<string, unknown>;
+      stripStaleManagedFieldHistories(prepared, (editingUser as User).fieldHistories);
       const payload = pickEditableUserPutBody(prepared, tabAccess, {
         changedBy: 'HR Admin',
         changeReason: changeReason || 'Employee information update',
@@ -2207,11 +2213,17 @@ export const EmployeeManagementSection: React.FC<{
         }));
       }
 
-      return {
+      const next = {
         ...prev,
         fieldHistories: histories,
         [field]: active?.value ?? '',
       } as Partial<User>;
+
+      if (field === 'workingUnderPartner') {
+        next.team = active?.value ?? '';
+      }
+
+      return next;
     });
 
     setFieldHistoryEdit(null);
@@ -2247,6 +2259,10 @@ export const EmployeeManagementSection: React.FC<{
         fieldHistories: histories,
         [field]: active?.value ?? '',
       } as Partial<User>;
+
+      if (field === 'workingUnderPartner') {
+        next.team = active?.value ?? '';
+      }
 
       if (active && field in getDefaultManagedEffectiveDates()) {
         setManagedFieldsEffectiveFromByField((p) => ({

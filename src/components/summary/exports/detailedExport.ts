@@ -621,7 +621,7 @@ export async function exportDetailedAttendance(ctx: SummaryExportContext): Promi
       const weekoffs_total = Number(uniqueWeekoffs.toFixed(3));
       const staffWeekoffWorking = Number((wo_pio + (weekoff_hd_days_converted / 2) + wfh_weekoff).toFixed(3));
 
-      // Staff Overtime (non-articles): hours from ThumbMachine excess Ã¢â€ â€™ days, plus 1 day per each full 6h of net period excess (worked Ã¢Ë†â€™ scheduled)
+      // Staff Overtime (non-articles): hours from ThumbMachine excess days, plus 1 day per each full 6h of net period excess (worked  scheduled)
       const thumbOvertimeDays = Number(((staffOvertime || 0) / (weekdayHours || 8)).toFixed(2));
       const periodExcessHours = Math.max(0, Number(item.calcExcessDeficit) || 0);
       const overtimeDaysFromExcessBlocks =

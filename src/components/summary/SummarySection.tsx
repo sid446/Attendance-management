@@ -25,7 +25,7 @@ export const SummarySection: React.FC<SummarySectionProps> = (props) => {
 
   return (
     <section className="space-y-5 text-slate-900" aria-labelledby="attendance-summary-heading">
-      {/* Page header Ã¢â‚¬â€ title, hint, workflow */}
+      {/* Page header  title, hint, workflow */}
       <SummaryHeader currentPeriodLabel={s.currentPeriodLabel} />
 
       <SummaryPeriodControls
@@ -55,7 +55,7 @@ export const SummarySection: React.FC<SummarySectionProps> = (props) => {
         hasActiveFilters={s.hasActiveFilters}
       />
 
-      {/* KPI strip Ã¢â‚¬â€ calm metrics */}
+      {/* KPI strip calm metrics */}
       <SummaryStatsCards stats={s.stats} />
 
 
@@ -67,7 +67,7 @@ export const SummarySection: React.FC<SummarySectionProps> = (props) => {
               Employees
             </h2>
             <p className="text-xs text-slate-500">
-              {s.isLoading ? 'LoadingÃ¢â‚¬Â¦' : `${s.filteredSummaries.length} in this period`}
+              {s.isLoading ? 'Loading' : `${s.filteredSummaries.length} in this period`}
               {!s.isLoading && s.filteredSummaries.length > 0 && s.displayedSummaries.length < s.filteredSummaries.length && (
                 <span className="text-slate-500"> · Showing {s.displayedSummaries.length}</span>
               )}
@@ -88,7 +88,7 @@ export const SummarySection: React.FC<SummarySectionProps> = (props) => {
         {s.isLoading ? (
           <div className="flex flex-col items-center gap-3 px-4 py-14 text-center text-sm text-slate-500">
              <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" aria-hidden />
-             <p>Loading summaryÃ¢â‚¬Â¦</p>
+             <p>Loading summary</p>
           </div>
         ) : s.filteredSummaries.length === 0 ? (
           <div className="flex flex-col items-center gap-3 px-4 py-14 text-center text-sm text-slate-500">
@@ -122,7 +122,7 @@ export const SummarySection: React.FC<SummarySectionProps> = (props) => {
               {s.summaryTableFullscreen && (
                 <div className="flex shrink-0 items-center justify-between gap-3 border-b border-blue-200/65 bg-panel px-4 py-3">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-slate-900">Employees Ã¢â‚¬â€ full screen</p>
+                    <p className="text-sm font-medium text-slate-900">Employees  full screen</p>
                     <p className="truncate text-xs text-slate-500">
                       Scroll horizontally for all columns · {s.currentPeriodLabel} · Esc to close
                     </p>
@@ -191,7 +191,7 @@ export const SummarySection: React.FC<SummarySectionProps> = (props) => {
                     <div className="flex items-center gap-1 justify-end">Worked{s.sortField === 'totalHour' && (s.sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
                   <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-slate-600 cursor-pointer hover:bg-slate-100 select-none" onClick={() => s.handleSort('calcExcessDeficit')}>
-                    <div className="flex items-center gap-1 justify-end">+/Ã¢Ë†â€™ hrs{s.sortField === 'calcExcessDeficit' && (s.sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
+                    <div className="flex items-center gap-1 justify-end">+ hrs{s.sortField === 'calcExcessDeficit' && (s.sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}</div>
                   </th>
                 </tr>
               </thead>
@@ -225,8 +225,8 @@ export const SummarySection: React.FC<SummarySectionProps> = (props) => {
                       <button type="button" className="text-left font-medium text-slate-800 hover:text-blue-700 cursor-pointer" onClick={() => s.onEmployeeDetailClick?.(item.userId)}>{item.userName}</button>
                       <div className="font-mono text-[10px] text-slate-500 hidden md:block">{item.employeeCode || item.odId || item.userId}</div>
                     </td>
-                    <td className="px-4 py-2.5 text-left text-sm text-slate-500">{item.team || 'Ã¢â‚¬â€'}</td>
-                    <td className="px-4 py-2.5 text-left text-sm text-slate-500">{item.designation || 'Ã¢â‚¬â€'}</td>
+                    <td className="px-4 py-2.5 text-left text-sm text-slate-500">{item.team || ''}</td>
+                    <td className="px-4 py-2.5 text-left text-sm text-slate-500">{item.designation || ''}</td>
                     <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-500">{Object.keys(item.recordDetails || {}).length}</td>
                     <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-500">
                         {(() => {
@@ -326,7 +326,7 @@ export const SummarySection: React.FC<SummarySectionProps> = (props) => {
                           const breakdown = s.getExcessResultForItem(item).breakdown;
                           s.setDetailModal({
                             isOpen: true,
-                            title: `Excess / deficit Ã¢â‚¬â€ ${item.userName}`,
+                            title: `Excess / deficit  ${item.userName}`,
                             data: breakdown
                           });
                         }}
@@ -350,7 +350,7 @@ export const SummarySection: React.FC<SummarySectionProps> = (props) => {
                             className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600"
                             aria-hidden
                           />
-                          Showing {s.displayedSummaries.length} of {s.filteredSummaries.length} Ã¢â‚¬â€ scroll for more
+                          Showing {s.displayedSummaries.length} of {s.filteredSummaries.length}  scroll for more
                         </span>
                         <button
                           type="button"
