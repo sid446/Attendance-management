@@ -39,6 +39,7 @@ import {
   isExtraWorkRequest,
   sumExtraWorkSlotHours,
 } from '@/lib/extraWorkRequest';
+import { requiresAttendanceRequestTimePair } from '@/lib/attendanceRequestTimeRules';
 import {
   LogOut,
   X,
@@ -472,14 +473,6 @@ const TIMED_CATEGORIES = [
   'Present - client place'
 ];
 
-const CORRECTION_TIME_REQUIRED_PREFIXES = [
-  'Present - in office',
-  'Half Day',
-  'WFH',
-  'Present - outstation',
-  'Present - client place',
-];
-
 const TIME_INPUT_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 function parseTimeToMinutes(time: string): number | null {
@@ -492,13 +485,6 @@ function isTimeRangeValid(startTime: string, endTime: string): boolean {
   const startMinutes = parseTimeToMinutes(startTime);
   const endMinutes = parseTimeToMinutes(endTime);
   return startMinutes !== null && endMinutes !== null && startMinutes < endMinutes;
-}
-
-function requiresCorrectionTimePair(status: string): boolean {
-  const normalized = status.trim().toLowerCase();
-  return CORRECTION_TIME_REQUIRED_PREFIXES.some((prefix) =>
-    normalized.startsWith(prefix.toLowerCase())
-  );
 }
 
 function getCorrectionTimeDraft(dayRecord?: AttendanceRecord | null) {
@@ -794,7 +780,7 @@ export default function EmployeeDashboard() {
     () => getCorrectionTimeDraft(selectedDayRecord),
     [selectedDayRecord]
   );
-  const correctionStatusRequiresTimePair = requiresCorrectionTimePair(requestStatus);
+  const correctionStatusRequiresTimePair = requiresAttendanceRequestTimePair(requestStatus);
   const extraWorkHoursPreview = useMemo(() => {
     const withHours = extraWorkSlots
       .map((slot) => {

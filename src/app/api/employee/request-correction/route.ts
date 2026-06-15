@@ -18,14 +18,7 @@ import { getEffectiveRequestWindowBoundsForUser } from '@/lib/attendanceRequestW
 import { forbidUnlessSelf, requireEmployeeOrHrSession, requireEmployeeSession } from '@/lib/employeeRouteAuth';
 import { autoApproveSelfRequests } from '@/lib/selfApproveAttendanceRequests';
 import { isExtraWorkRequest } from '@/lib/extraWorkRequest';
-
-const TIME_REQUIRED_PREFIXES = [
-  'Present - in office',
-  'Half Day',
-  'WFH',
-  'Present - outstation',
-  'Present - client place'
-];
+import { requiresAttendanceRequestTimePair } from '@/lib/attendanceRequestTimeRules';
 
 const TIME_INPUT_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -33,11 +26,6 @@ function parseTimeToMinutes(time: string): number | null {
   if (!TIME_INPUT_PATTERN.test(time)) return null;
   const [hours, minutes] = time.split(':').map(Number);
   return hours * 60 + minutes;
-}
-
-function requiresTimePair(status: string): boolean {
-  const normalized = status.trim().toLowerCase();
-  return TIME_REQUIRED_PREFIXES.some((prefix) => normalized.startsWith(prefix.toLowerCase()));
 }
 
 export async function GET(request: NextRequest) {
@@ -142,7 +130,7 @@ export async function POST(request: NextRequest) {
 
     const monthYear = date.substring(0, 7); // YYYY-MM
 
-    const needsTimes = requiresTimePair(requestedStatus);
+    const needsTimes = requiresAttendanceRequestTimePair(requestedStatus);
     const hasStartTime = typeof startTime === 'string' && startTime.trim() !== '';
     const hasEndTime = typeof endTime === 'string' && endTime.trim() !== '';
 

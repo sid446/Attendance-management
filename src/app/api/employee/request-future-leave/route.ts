@@ -19,14 +19,7 @@ import {
 import { getEffectiveRequestWindowBoundsForUser } from '@/lib/attendanceRequestWindowDb';
 import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAuth';
 import { autoApproveSelfRequests } from '@/lib/selfApproveAttendanceRequests';
-
-const TIME_REQUIRED_PREFIXES = [
-  'Present - in office',
-  'Half Day',
-  'WFH',
-  'Present - outstation',
-  'Present - client place'
-];
+import { requiresAttendanceRequestTimePair } from '@/lib/attendanceRequestTimeRules';
 
 const ZERO_TIME_PREFIXES = ['On leave', 'Weekoff - special allowance'];
 
@@ -36,11 +29,6 @@ function parseTimeToMinutes(time: string): number | null {
   if (!TIME_INPUT_PATTERN.test(time)) return null;
   const [hours, minutes] = time.split(':').map(Number);
   return hours * 60 + minutes;
-}
-
-function requiresTimePair(requestType: string): boolean {
-  const normalized = requestType.trim().toLowerCase();
-  return TIME_REQUIRED_PREFIXES.some((prefix) => normalized.startsWith(prefix.toLowerCase()));
 }
 
 function isZeroTimeRequest(requestType: string): boolean {
@@ -83,7 +71,7 @@ export async function POST(request: NextRequest) {
     const start = new Date(startDate);
     const end = new Date(endDate);
 
-    const needsTimes = requiresTimePair(requestType);
+    const needsTimes = requiresAttendanceRequestTimePair(requestType);
     const zeroTimeRequest = isZeroTimeRequest(requestType);
     const hasStartTime = typeof startTime === 'string' && startTime.trim() !== '';
     const hasEndTime = typeof endTime === 'string' && endTime.trim() !== '';
