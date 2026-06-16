@@ -957,7 +957,8 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
                 <span className="font-medium text-slate-900">Article</span>
                 <ul className="ml-2 mt-1 list-inside list-disc space-y-0.5 text-slate-700">
                   <li>2 late in a month: Warning</li>
-                  <li>3 or more late in a month: ₹25 fine</li>
+                  <li>3–7 late in a month: ₹25 fine</li>
+                  <li>8 or more late in a month: ₹50 fine</li>
                 </ul>
               </div>
             </div>

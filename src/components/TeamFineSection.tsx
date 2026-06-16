@@ -175,7 +175,7 @@ export function TeamFineSection({ monthYear, teamMembers }: TeamFineSectionProps
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" aria-hidden />
           <p className="text-xs text-muted-foreground sm:text-sm">
             View only — fines are calculated and updated by HR. Staff: 2 late = warning, 3–7 = ₹50, 8+ = ₹100.
-            Article: 2 late = warning, 3+ = ₹25.
+            Article: 2 late = warning, 3–7 = ₹25, 8+ = ₹50.
           </p>
         </div>
       </div>

@@ -7,7 +7,7 @@ import { getWorkingUnderPartnerForDate } from '@/lib/userFieldHistory';
 
 // Fine calculation rules
 // Staff: 2 late days in month = warning, 3-7 late days = 50 each, 8+ = 100 each
-// Article: 2 late days in month = warning, 3+ late days = 25 each
+// Article: 2 late days in month = warning, 3-7 late days = 25 each, 8+ = 50 each
 
 interface FineRule {
   consecutiveDay: number;
@@ -230,9 +230,12 @@ export async function POST(request: NextRequest) {
           if (i < 2) {
             isWarning = true;
             remark = `Warning for ${i + 1} late day(s)`;
-          } else {
+          } else if (i >= 2 && i < 7) {
             fineAmount = 25;
             remark = `Fine ₹25 for ${i + 1}th late day`;
+          } else {
+            fineAmount = 50;
+            remark = `Fine ₹50 for ${i + 1}th late day`;
           }
         }
         let serialNo = '';
