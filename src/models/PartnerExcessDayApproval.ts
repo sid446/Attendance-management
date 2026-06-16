@@ -4,7 +4,9 @@ export interface IPartnerExcessDayApproval extends Document {
   userId: Types.ObjectId;
   monthYear: string;
   date: string;
-  allowedExcessHours: number;
+  /** Partner-set allowed hours; omitted when only a remark is stored. */
+  allowedExcessHours?: number;
+  remark?: string;
   setByUserId: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -15,7 +17,8 @@ const PartnerExcessDayApprovalSchema = new Schema(
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     monthYear: { type: String, required: true, match: /^\d{4}-\d{2}$/ },
     date: { type: String, required: true, match: /^\d{4}-\d{2}-\d{2}$/ },
-    allowedExcessHours: { type: Number, required: true },
+    allowedExcessHours: { type: Number },
+    remark: { type: String, default: '', maxlength: 500 },
     setByUserId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   },
   { timestamps: true }

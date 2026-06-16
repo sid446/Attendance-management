@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Clock, History, Loader2, RotateCcw } from "lucide-react";
+import { ChevronDown, ChevronRight, Clock, Download, History, Loader2, RotateCcw } from "lucide-react";
 import { EmployeeSummaryMonthPicker } from "@/components/EmployeeSummaryMonthPicker";
 import { formatHoursMinutes, parseHoursMinutes, parseSignedHoursMinutes } from "@/lib/attendanceSummaryMetrics";
 import type { DailyExcessApprovalRow } from "@/lib/excessHourAllowance";
+import { exportExcessHourSheet } from "@/components/summary/exports/excessHourExport";
 
 interface ExcessDayChangeLogEntry {
   date: string;
@@ -157,6 +158,8 @@ export function ManageExcessHourAllowanceSection({
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [draftAllowance, setDraftAllowance] = useState<Record<string, string>>({});
+  const [draftRemark, setDraftRemark] = useState<Record<string, string>>({});
+  const [exporting, setExporting] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!viewerUserId || !monthYear) return;
@@ -216,10 +219,24 @@ export function ManageExcessHourAllowanceSection({
     setDraftAllowance((prev) => ({ ...prev, [key]: value }));
   };
 
+  const getDraftRemark = (employeeId: string, day: DailyExcessApprovalRow): string => {
+    const key = `${employeeId}:${day.date}`;
+    if (Object.prototype.hasOwnProperty.call(draftRemark, key)) {
+      return draftRemark[key];
+    }
+    return day.remark || "";
+  };
+
+  const setDraftRemarkValue = (employeeId: string, date: string, value: string) => {
+    const key = `${employeeId}:${date}`;
+    setDraftRemark((prev) => ({ ...prev, [key]: value }));
+  };
+
   const setDayAllowance = async (
     employeeId: string,
     date: string,
-    allowedExcessHours: number | "clear"
+    allowedExcessHours: number | "clear" | null,
+    options?: { remark?: string; remarkOnly?: boolean }
   ) => {
     const key = `${employeeId}:${date}`;
     setSavingKey(key);
@@ -234,9 +251,14 @@ export function ManageExcessHourAllowanceSection({
           employeeId,
           monthYear,
           date,
-          ...(allowedExcessHours === "clear"
-            ? { clear: true }
-            : { allowedExcessHours }),
+          ...(options?.remarkOnly
+            ? { remarkOnly: true, remark: options.remark ?? "" }
+            : allowedExcessHours === "clear"
+              ? { clear: true }
+              : {
+                  allowedExcessHours,
+                  ...(options?.remark !== undefined ? { remark: options.remark } : {}),
+                }),
         }),
       });
       const json = await res.json();
@@ -244,11 +266,18 @@ export function ManageExcessHourAllowanceSection({
         throw new Error(json.error || "Failed to update allowance");
       }
       setMessage(
-        allowedExcessHours === "clear"
-          ? "Day restored to default (full excess counts)."
-          : `Allowed ${formatHoursMinutes(allowedExcessHours)} for that day.`
+        options?.remarkOnly
+          ? "Remark saved."
+          : allowedExcessHours === "clear"
+            ? "Day restored to default (full excess counts)."
+            : `Allowed ${formatHoursMinutes(allowedExcessHours as number)} for that day.`
       );
       setDraftAllowance((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      setDraftRemark((prev) => {
         const next = { ...prev };
         delete next[key];
         return next;
@@ -258,6 +287,28 @@ export function ManageExcessHourAllowanceSection({
       setError(e instanceof Error ? e.message : "Failed to update");
     } finally {
       setSavingKey(null);
+    }
+  };
+
+  const handleExport = async (targetMembers: TeamMemberRow[]) => {
+    if (targetMembers.length === 0) return;
+    setExporting(true);
+    setError(null);
+    try {
+      await exportExcessHourSheet(
+        targetMembers.map((m) => ({
+          _id: m._id,
+          name: m.name,
+          employeeCode: m.employeeCode,
+          odId: m.odId,
+          days: m.days,
+        })),
+        monthYear
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Export failed");
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -279,8 +330,23 @@ export function ManageExcessHourAllowanceSection({
           <EmployeeSummaryMonthPicker
             monthYear={monthYear}
             onMonthYearChange={setMonthYear}
-            disabled={loading || savingKey !== null}
+            disabled={loading || savingKey !== null || exporting}
           />
+          {!loading && filteredMembers.length > 0 && (
+            <button
+              type="button"
+              disabled={exporting || savingKey !== null}
+              onClick={() => void handleExport(filteredMembers)}
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-foreground hover:bg-surface disabled:opacity-50"
+            >
+              {exporting ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <Download className="h-4 w-4" aria-hidden />
+              )}
+              Export all
+            </button>
+          )}
         </div>
       </header>
 
@@ -357,15 +423,33 @@ export function ManageExcessHourAllowanceSection({
 
                   {expanded && (
                     <div className="border-t border-border px-3 py-3 sm:px-4">
+                      <div className="mb-3 flex justify-end">
+                        <button
+                          type="button"
+                          disabled={exporting || savingKey !== null}
+                          onClick={() => void handleExport([member])}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-surface disabled:opacity-50"
+                        >
+                          {exporting ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                          ) : (
+                            <Download className="h-3.5 w-3.5" aria-hidden />
+                          )}
+                          Export sheet
+                        </button>
+                      </div>
                       <div className="overflow-x-auto rounded-lg border border-border">
-                        <table className="w-full min-w-[860px] text-left text-sm">
+                        <table className="w-full min-w-[1020px] text-left text-sm">
                           <thead className="border-b border-border bg-background/80 text-xs uppercase tracking-wide text-muted-foreground">
                             <tr>
                               <th className="px-3 py-2.5">Date</th>
                               <th className="px-3 py-2.5">Presence</th>
+                              <th className="px-3 py-2.5">In</th>
+                              <th className="px-3 py-2.5">Out</th>
                               <th className="px-3 py-2.5 text-right">Day excess</th>
                               <th className="px-3 py-2.5">Allowance</th>
                               <th className="px-3 py-2.5 text-right">Counts as</th>
+                              <th className="px-3 py-2.5">Remarks</th>
                               <th className="px-3 py-2.5 text-right">Set allowed</th>
                             </tr>
                           </thead>
@@ -375,6 +459,7 @@ export function ManageExcessHourAllowanceSection({
                               const saving = savingKey === rowKey;
                               const isZeroDay = day.rawExcessHour === 0;
                               const draftValue = getDraftValue(member._id, day);
+                              const remarkValue = getDraftRemark(member._id, day);
                               const parsedDraft = isZeroDay
                                 ? parseSignedHoursMinutes(draftValue)
                                 : parseHoursMinutes(draftValue);
@@ -394,6 +479,12 @@ export function ManageExcessHourAllowanceSection({
                                         missedEntry={day.missedEntry}
                                       />
                                     </td>
+                                    <td className="px-3 py-2.5 font-mono text-xs tabular-nums text-foreground">
+                                      {day.checkIn || "—"}
+                                    </td>
+                                    <td className="px-3 py-2.5 font-mono text-xs tabular-nums text-foreground">
+                                      {day.checkOut || "—"}
+                                    </td>
                                     <td className="px-3 py-2.5 text-right font-mono tabular-nums">
                                       {formatSignedExcess(day.rawExcessHour)}
                                     </td>
@@ -406,6 +497,40 @@ export function ManageExcessHourAllowanceSection({
                                     </td>
                                     <td className="px-3 py-2.5 text-right font-mono tabular-nums text-emerald-700">
                                       {formatSignedExcess(day.countsAs)}
+                                    </td>
+                                    <td className="px-3 py-2.5">
+                                      <div className="flex min-w-[180px] items-start gap-1">
+                                        <input
+                                          type="text"
+                                          value={remarkValue}
+                                          disabled={saving}
+                                          onChange={(e) =>
+                                            setDraftRemarkValue(member._id, day.date, e.target.value)
+                                          }
+                                          maxLength={500}
+                                          className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
+                                          placeholder="Add remark…"
+                                          aria-label={`Remark for ${day.date}`}
+                                        />
+                                        <button
+                                          type="button"
+                                          disabled={saving}
+                                          onClick={() =>
+                                            void setDayAllowance(member._id, day.date, null, {
+                                              remarkOnly: true,
+                                              remark: remarkValue,
+                                            })
+                                          }
+                                          className="shrink-0 rounded-md border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground hover:bg-surface disabled:opacity-50"
+                                          title="Save remark"
+                                        >
+                                          {saving ? (
+                                            <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+                                          ) : (
+                                            "Save"
+                                          )}
+                                        </button>
+                                      </div>
                                     </td>
                                     <td className="px-3 py-2.5">
                                       <div className="flex flex-wrap items-center justify-end gap-1">
@@ -436,7 +561,8 @@ export function ManageExcessHourAllowanceSection({
                                               day.date,
                                               isZeroDay
                                                 ? parsedDraft
-                                                : Math.min(maxAllowance, parsedDraft)
+                                                : Math.min(maxAllowance, parsedDraft),
+                                              { remark: remarkValue }
                                             );
                                           }}
                                           className="rounded-md bg-emerald-700 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-600 disabled:opacity-50"
@@ -497,13 +623,14 @@ export function ManageExcessHourAllowanceSection({
                             </tbody>
                             <tfoot className="border-t border-border bg-background/60">
                               <tr>
-                                <td className="px-3 py-2.5 font-medium text-foreground" colSpan={3}>
+                                <td className="px-3 py-2.5 font-medium text-foreground" colSpan={5}>
                                   Month total
                                 </td>
                                 <td className="px-3 py-2.5" />
                                 <td className="px-3 py-2.5 text-right font-mono tabular-nums font-semibold text-emerald-700">
                                   {formatSignedExcess(member.displayExcessHour)}
                                 </td>
+                                <td className="px-3 py-2.5" />
                                 <td className="px-3 py-2.5 text-right text-xs text-muted-foreground">
                                   raw {formatSignedExcess(member.rawExcessHour)}
                                 </td>

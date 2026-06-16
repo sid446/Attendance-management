@@ -25,13 +25,13 @@ import {
   getEmploymentTypeForDate,
   isHalftimeEmploymentType,
   isLateArrivalLikeSummary,
-} from '@/lib/attendanceSummaryMetrics';
-import { getScheduledTimes } from '@/lib/scheduleUtils';
-import {
   computeSummaryAlignedMetrics,
+  calendarStatusLabelForDay,
+  calendarStatusShortLabel,
   type SummaryMetricsOptions,
   type SummaryAlignedMetrics,
 } from '@/lib/attendanceSummaryMetrics';
+import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { useExcessAllowanceMaps } from '@/hooks/useExcessAllowanceMaps';
 import { SummaryAlignedMetricsStrip } from '@/components/SummaryAlignedMetricsStrip';
 interface ApprovedRequest {
@@ -1153,6 +1153,11 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                     bgClass = 'bg-teal-50/40';
                   }
                 } else if (rec) {
+                  status = calendarStatusLabelForDay(
+                    String(status ?? ''),
+                    type,
+                    dateObj
+                  );
                   const cell = resolveAttendanceCellStyle({
                     status,
                     type,
@@ -1310,7 +1315,9 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                             if (status === 'Missed Entry') return 'Missed';
                             if (status === 'Leave' || status === 'On leave') return 'Leave';
                             if (status === 'Unpaid Leave') return 'Unpaid';
-                            if (status === 'Holiday' || status === 'Week Off') return 'Hol';
+                            if (status === 'Holiday' || status === 'Week Off') {
+                              return calendarStatusShortLabel(status);
+                            }
                             if (
                               !isHalftimeDay &&
                               (status === 'HalfDay' || status === 'Half Day (HD)' || tl.includes('half day'))
@@ -1339,7 +1346,17 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                           </div>
                         )}
                         {/* Show type if different from status */}
-                        {type && type !== status && status !== 'Leave' && status !== 'On leave' && status !== 'Unpaid Leave' && status !== 'Holiday' && (
+                        {type &&
+                          type !== status &&
+                          status !== 'Leave' &&
+                          status !== 'On leave' &&
+                          status !== 'Unpaid Leave' &&
+                          status !== 'Holiday' &&
+                          status !== 'Week Off' &&
+                          !(
+                            dateObj.getDay() === 0 &&
+                            (type === 'Holiday' || type === 'Sunday')
+                          ) && (
                           <div className="truncate text-[10px] text-slate-500" title={type}>
                             {type}
                           </div>
@@ -1415,7 +1432,11 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
           </div>
           <div className="flex items-center gap-2">
             <div className="h-4 w-4 rounded border border-cyan-300 bg-cyan-100" />
-            <span className="text-slate-700">Holiday / week off</span>
+            <span className="text-slate-700">Holiday</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-4 w-4 rounded border border-cyan-300 bg-cyan-100" />
+            <span className="text-slate-700">Week off (Sunday)</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="h-4 w-4 rounded border border-slate-300 bg-panel" />

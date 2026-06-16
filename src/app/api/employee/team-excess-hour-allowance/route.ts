@@ -12,6 +12,7 @@ import {
   getDayAttendanceContext,
   getDayRawExcessHour,
   logExcessDayChange,
+  updateDayExcessRemark,
   upsertDayExcessApproval,
 } from '@/lib/excessHourAllowanceDb';
 import {
@@ -128,6 +129,9 @@ export async function PATCH(request: NextRequest) {
     const date = String(body?.date || '').trim();
     const clear = body?.clear === true;
     const allowedExcessHours = body?.allowedExcessHours;
+    const remarkOnly = body?.remarkOnly === true;
+    const remark =
+      body?.remark !== undefined ? String(body.remark || '').trim().slice(0, 500) : undefined;
 
     if (!mongoose.Types.ObjectId.isValid(viewerUserId)) {
       return NextResponse.json({ success: false, error: 'Valid viewerUserId is required' }, { status: 400 });
@@ -176,7 +180,15 @@ export async function PATCH(request: NextRequest) {
     const rawExcessHour = await getDayRawExcessHour(employeeId, monthYear, date);
     const isZeroDay = rawExcessHour === 0;
 
-    if (clear) {
+    if (remarkOnly) {
+      if (remark === undefined) {
+        return NextResponse.json(
+          { success: false, error: 'remark is required for remark-only updates' },
+          { status: 400 }
+        );
+      }
+      await updateDayExcessRemark(employeeId, date, remark, viewerUserId);
+    } else if (clear) {
       if (oldAllowed == null) {
         return NextResponse.json(
           { success: false, error: 'This day is already on the default allowance' },
@@ -218,24 +230,30 @@ export async function PATCH(request: NextRequest) {
       const cappedAllowed =
         isZeroDay || absRaw === 0 ? newAllowed : Math.min(absRaw, newAllowed);
       if (oldAllowed === cappedAllowed) {
-        return NextResponse.json(
-          { success: false, error: 'Allowed hours are already set to this value' },
-          { status: 400 }
-        );
+        if (remark !== undefined) {
+          await updateDayExcessRemark(employeeId, date, remark, viewerUserId);
+        } else {
+          return NextResponse.json(
+            { success: false, error: 'Allowed hours are already set to this value' },
+            { status: 400 }
+          );
+        }
+      } else {
+        await upsertDayExcessApproval(employeeId, date, cappedAllowed, viewerUserId, {
+          signedOverride: isZeroDay,
+          ...(remark !== undefined ? { remark } : {}),
+        });
+        await logExcessDayChange({
+          userId: employeeId,
+          date,
+          oldAllowedExcessHours: oldAllowed,
+          newAllowedExcessHours: cappedAllowed,
+          changedByUserId: viewerUserId,
+          changedByEmail,
+          typeOfPresence: dayContext.typeOfPresence,
+          missedEntry: dayContext.missedEntry,
+        });
       }
-      await upsertDayExcessApproval(employeeId, date, cappedAllowed, viewerUserId, {
-        signedOverride: isZeroDay,
-      });
-      await logExcessDayChange({
-        userId: employeeId,
-        date,
-        oldAllowedExcessHours: oldAllowed,
-        newAllowedExcessHours: cappedAllowed,
-        changedByUserId: viewerUserId,
-        changedByEmail,
-        typeOfPresence: dayContext.typeOfPresence,
-        missedEntry: dayContext.missedEntry,
-      });
     }
 
     const breakdown = await computeDailyExcessBreakdown(employeeId, monthYear);

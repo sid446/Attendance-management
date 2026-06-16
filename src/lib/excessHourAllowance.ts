@@ -33,6 +33,9 @@ export interface DailyExcessApprovalRow {
   countsAs: number;
   typeOfPresence?: string;
   missedEntry?: boolean;
+  checkIn?: string;
+  checkOut?: string;
+  remark?: string;
 }
 
 /**
@@ -48,6 +51,9 @@ export function applyDayWiseExcessApprovals(
     allowedExcessHours: number | null;
     typeOfPresence?: string;
     missedEntry?: boolean;
+    checkIn?: string;
+    checkOut?: string;
+    remark?: string;
   }>
 ): { displayExcess: number; rawExcess: number; rows: DailyExcessApprovalRow[] } {
   let raw = 0;
@@ -84,6 +90,9 @@ export function applyDayWiseExcessApprovals(
       countsAs,
       typeOfPresence: day.typeOfPresence,
       missedEntry: day.missedEntry,
+      checkIn: day.checkIn,
+      checkOut: day.checkOut,
+      remark: day.remark,
     });
   }
 

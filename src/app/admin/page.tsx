@@ -1596,6 +1596,9 @@ export default function AttendanceUpload() {
             } else if (userRole === 'restricted_admin' && section !== 'upload') {
               return;
             }
+            if (section !== 'summary') {
+              setEmployeeManagementModal({ open: false, userId: null });
+            }
             setActiveSection(section);
           }}
           uploadTotal={uploadTotal}
@@ -1677,7 +1680,6 @@ export default function AttendanceUpload() {
              {/* Employee Management Section */}
             {activeSection === 'employees' && (
               <EmployeeManagementSection
-                selectedUserId={selectedEmployeeId}
                 onRefreshUsers={fetchUsers}
                 employeesSectionAccess={hrPermState?.sections.employees ?? 'edit'}
                 employeeTabAccess={hrPermState?.employeeTabs}
@@ -1711,7 +1713,6 @@ export default function AttendanceUpload() {
                 }}
                 onEmployeeDetailClick={(userId) => {
                   setEmployeeManagementModal({ open: true, userId });
-                  setSelectedEmployeeId(userId);
                 }}
               />
             )}

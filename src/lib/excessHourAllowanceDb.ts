@@ -272,11 +272,32 @@ export async function getDayAttendanceContext(
   return dayContextFromRecord(records[date]);
 }
 
+function effectivePunchTime(
+  rec:
+    | {
+        editedCheckin?: string;
+        checkin?: string;
+        editedCheckout?: string;
+        checkout?: string;
+      }
+    | undefined,
+  kind: 'in' | 'out'
+): string {
+  if (!rec) return '';
+  const raw =
+    kind === 'in'
+      ? String(rec.editedCheckin || rec.checkin || '').trim()
+      : String(rec.editedCheckout || rec.checkout || '').trim();
+  if (!raw || raw === '00:00') return '';
+  return raw;
+}
+
 type LegacyDayApprovalDoc = {
   userId?: unknown;
   date?: string;
   allowedExcessHours?: unknown;
   approved?: unknown;
+  remark?: unknown;
 };
 
 function resolveDayAllowedHours(doc: LegacyDayApprovalDoc): number | null {
@@ -293,19 +314,42 @@ export async function fetchDayApprovalsForUsersMonth(
   userIds: string[],
   monthYear: string
 ): Promise<Record<string, number>> {
+  const details = await fetchDayApprovalDetailsForUsersMonth(userIds, monthYear);
+  const out: Record<string, number> = {};
+  for (const [key, detail] of Object.entries(details)) {
+    if (detail.allowedExcessHours != null) {
+      out[key] = detail.allowedExcessHours;
+    }
+  }
+  return out;
+}
+
+export interface DayApprovalDetail {
+  allowedExcessHours: number | null;
+  remark: string;
+}
+
+export async function fetchDayApprovalDetailsForUsersMonth(
+  userIds: string[],
+  monthYear: string
+): Promise<Record<string, DayApprovalDetail>> {
   if (userIds.length === 0) return {};
   const docs = await PartnerExcessDayApproval.find({
     userId: { $in: userIds },
     monthYear,
   })
-    .select('userId date allowedExcessHours approved')
+    .select('userId date allowedExcessHours approved remark')
     .lean();
 
-  const out: Record<string, number> = {};
+  const out: Record<string, DayApprovalDetail> = {};
   for (const doc of docs) {
     const allowed = resolveDayAllowedHours(doc as LegacyDayApprovalDoc);
-    if (allowed == null) continue;
-    out[`${String(doc.userId)}:${doc.date}`] = allowed;
+    const remark = String((doc as LegacyDayApprovalDoc).remark || '').trim();
+    if (allowed == null && !remark) continue;
+    out[`${String(doc.userId)}:${doc.date}`] = {
+      allowedExcessHours: allowed,
+      remark,
+    };
   }
   return out;
 }
@@ -313,11 +357,20 @@ export async function fetchDayApprovalsForUsersMonth(
 export async function computeDailyExcessBreakdown(
   userId: string,
   monthYear: string,
-  dayApprovals?: Record<string, number>
+  dayApprovals?: Record<string, number>,
+  dayDetails?: Record<string, DayApprovalDetail>
 ): Promise<ReturnType<typeof applyDayWiseExcessApprovals>> {
   const attendance = await Attendance.findOne({ userId, monthYear }).lean();
   const records = recordsToMap(attendance?.records as Record<string, unknown> | Map<string, unknown>);
-  const approvals = dayApprovals ?? (await fetchDayApprovalsForUsersMonth([userId], monthYear));
+  const details =
+    dayDetails ?? (await fetchDayApprovalDetailsForUsersMonth([userId], monthYear));
+  const approvals =
+    dayApprovals ??
+    Object.fromEntries(
+      Object.entries(details)
+        .filter(([, d]) => d.allowedExcessHours != null)
+        .map(([key, d]) => [key, d.allowedExcessHours as number])
+    );
 
   const days = monthDateStrings(monthYear).map((date) => {
     const rec = records[date];
@@ -325,12 +378,16 @@ export async function computeDailyExcessBreakdown(
     const approvalKey = `${userId}:${date}`;
     const hasDecision = Object.prototype.hasOwnProperty.call(approvals, approvalKey);
     const { typeOfPresence, missedEntry } = dayContextFromRecord(rec);
+    const detail = details[approvalKey];
     return {
       date,
       rawExcessHour,
       allowedExcessHours: hasDecision ? approvals[approvalKey] : null,
       typeOfPresence: typeOfPresence || undefined,
       missedEntry,
+      checkIn: effectivePunchTime(rec, 'in') || undefined,
+      checkOut: effectivePunchTime(rec, 'out') || undefined,
+      remark: detail?.remark || undefined,
     };
   });
 
@@ -435,17 +492,66 @@ export async function upsertDayExcessApproval(
   date: string,
   allowedExcessHours: number,
   setByUserId: string,
-  options?: { signedOverride?: boolean }
+  options?: { signedOverride?: boolean; remark?: string }
 ) {
   const monthYear = date.slice(0, 7);
   const hours = options?.signedOverride
     ? Number(Number(allowedExcessHours).toFixed(2))
     : Math.max(0, Number(Number(allowedExcessHours).toFixed(2)));
+  const update: Record<string, unknown> = {
+    monthYear,
+    allowedExcessHours: hours,
+    setByUserId,
+  };
+  if (options?.remark !== undefined) {
+    update.remark = String(options.remark || '').trim().slice(0, 500);
+  }
   return PartnerExcessDayApproval.findOneAndUpdate(
     { userId, date },
-    { $set: { monthYear, allowedExcessHours: hours, setByUserId }, $unset: { approved: '' } },
+    { $set: update, $unset: { approved: '' } },
     { upsert: true, new: true }
   ).lean();
+}
+
+export async function updateDayExcessRemark(
+  userId: string,
+  date: string,
+  remark: string,
+  setByUserId: string
+) {
+  const monthYear = date.slice(0, 7);
+  const trimmed = String(remark || '').trim().slice(0, 500);
+  const existing = await PartnerExcessDayApproval.findOne({ userId, date }).lean();
+
+  if (!trimmed) {
+    if (!existing) return null;
+    const allowed = resolveDayAllowedHours(existing as LegacyDayApprovalDoc);
+    if (allowed == null) {
+      await PartnerExcessDayApproval.deleteOne({ userId, date });
+      return null;
+    }
+    return PartnerExcessDayApproval.findOneAndUpdate(
+      { userId, date },
+      { $set: { remark: '' } },
+      { new: true }
+    ).lean();
+  }
+
+  if (existing) {
+    return PartnerExcessDayApproval.findOneAndUpdate(
+      { userId, date },
+      { $set: { remark: trimmed } },
+      { new: true }
+    ).lean();
+  }
+
+  return PartnerExcessDayApproval.create({
+    userId,
+    date,
+    monthYear,
+    remark: trimmed,
+    setByUserId,
+  });
 }
 
 export async function deleteDayExcessApproval(userId: string, date: string) {

@@ -8,6 +8,50 @@ import { getScheduledTimes } from './scheduleUtils';
 
 import { applyExcessHourAllowance, lookupExcessAllowance, lookupExcessDisplay, type ExcessAllowanceLookup, type ExcessDayAllowanceLookup, type ExcessDisplayLookup } from './excessHourAllowance';
 
+/** True when the ISO date (YYYY-MM-DD) falls on a Sunday. */
+export function isSundayDate(dateStr: string): boolean {
+  const d = new Date(`${dateStr}T12:00:00`);
+  return !Number.isNaN(d.getTime()) && d.getDay() === 0;
+}
+
+/** Holidays list detail: Sundays are week off, not company holiday. */
+export function holidayMetricDetailLabel(dateStr: string): string {
+  return isSundayDate(dateStr) ? 'Week off' : 'Company holiday';
+}
+
+/** Calendar badge: backend stores Sundays as Holiday; show as week off in UI only. */
+export function calendarStatusLabelForDay(
+  status: string,
+  typeOfPresence: string | undefined,
+  date: Date
+): string {
+  if (date.getDay() !== 0) return status;
+  const t = String(typeOfPresence || '').toLowerCase();
+  const isWeeklyOffType =
+    status === 'Holiday' ||
+    status === 'Week Off' ||
+    t === 'holiday' ||
+    t === 'sunday' ||
+    t === 'weekoff' ||
+    t.includes('week off');
+  if (
+    isWeeklyOffType &&
+    status !== 'Present' &&
+    status !== 'HalfDay' &&
+    status !== 'Half Day (HD)'
+  ) {
+    return 'Week Off';
+  }
+  return status;
+}
+
+/** Short mobile badge for week off vs company holiday. */
+export function calendarStatusShortLabel(status: string): string {
+  if (status === 'Week Off') return 'Off';
+  if (status === 'Holiday') return 'Hol';
+  return status;
+}
+
 export interface SummaryMetricsOptions {
   /** Team leaderboard: only in or only out counts as absent (not present / half day). */
   treatSinglePunchAsAbsent?: boolean;
@@ -352,6 +396,15 @@ export function getHalfDayCountLikeSummary(
   return n;
 }
 
+/** Paid full-day leave (value = 1) — counted under Leave, not Absent. */
+function isPaidFullLeaveRecord(recAny: unknown): boolean {
+  const rec = recAny as { typeOfPresence?: string; value?: unknown };
+  return (
+    (rec?.typeOfPresence === 'On leave' || rec?.typeOfPresence === 'Leave') &&
+    Number(rec?.value) === 1
+  );
+}
+
 export function getAbsentCountLikeSummary(
   item: AttendanceSummaryView,
   holidayDates: Set<string>,
@@ -371,7 +424,9 @@ export function getAbsentCountLikeSummary(
       return;
     }
     if (rec.typeOfPresence === 'Leave' || rec.typeOfPresence === 'On leave') {
-      calcAbsent += 1;
+      if (!isPaidFullLeaveRecord(rec)) {
+        calcAbsent += 1;
+      }
       return;
     }
 
@@ -674,7 +729,9 @@ function isAbsentDayInRecords(
     return false;
   }
   if (rec.typeOfPresence === 'Absent') return true;
-  if (rec.typeOfPresence === 'Leave' || rec.typeOfPresence === 'On leave') return true;
+  if (rec.typeOfPresence === 'Leave' || rec.typeOfPresence === 'On leave') {
+    return !isPaidFullLeaveRecord(rec);
+  }
 
   const typeLower = String(rec.typeOfPresence || '').toLowerCase();
   const isPresenceType =
@@ -736,11 +793,7 @@ function isHalfDayInRecords(dateStr: string, recAny: unknown, user: User | undef
 }
 
 function isFullLeaveDayInRecords(recAny: unknown): boolean {
-  const record = recAny as any;
-  return (
-    (record?.typeOfPresence === 'On leave' || record?.typeOfPresence === 'Leave') &&
-    record?.value === 1
-  );
+  return isPaidFullLeaveRecord(recAny);
 }
 
 export type SummaryMetricDayKind =
@@ -791,10 +844,7 @@ export function getSummaryMetricDays(
       case 'holidays':
         include = isHolidayInRecords(dateStr, holidayDates);
         if (include) {
-          detail =
-            new Date(`${dateStr}T12:00:00`).getDay() === 0
-              ? 'Sunday'
-              : 'Company holiday';
+          detail = holidayMetricDetailLabel(dateStr);
         }
         break;
       case 'working-days':

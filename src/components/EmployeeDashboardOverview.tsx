@@ -379,7 +379,7 @@ export function EmployeeDashboardOverview({
         ) : (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
             {cell("total-days", "Total days", String(m.totalDaysInRecords), "Days with rows")}
-            {cell("holidays", "Holidays", String(m.holidaysInRecords), "Sun + company holiday dates")}
+            {cell("holidays", "Holidays", String(m.holidaysInRecords), "Week off (Sun) + company holidays")}
             {cell("working-days", "Working days", String(m.workingDaysInRecords), "Excl. sun / holiday / week-off")}
             {cell("present", "Present", String(m.totalPresent))}
             {cell("half-days", "Half days", String(m.totalHalfDay))}
