@@ -7,6 +7,8 @@ interface InvalidRecord {
   checkout: string;
   issue: 'missing-checkin' | 'missing-checkout';
   monthYear: string;
+  notificationCount?: number;
+  lastNotifiedAt?: string;
 }
 
 interface EmployeeWithInvalidRecords {
@@ -17,7 +19,7 @@ interface EmployeeWithInvalidRecords {
   workingUnderPartner: string;
   attendanceEmail: string;
   invalidRecords: InvalidRecord[];
-  notificationSent?: boolean;
+  notificationCount?: number;
   lastNotifiedAt?: string;
 }
 
@@ -89,12 +91,21 @@ export const InvalidAttendanceSection: React.FC<InvalidAttendanceSectionProps> =
       const result = await response.json();
       if (result.success) {
         setSuccessMessage(`Notification sent successfully`);
-        // Update local state to show notification was sent
-        setEmployees(prev => prev.map(emp =>
-          emp.userId === employeeId
-            ? { ...emp, notificationSent: true, lastNotifiedAt: new Date().toISOString() }
-            : emp
-        ));
+        const now = new Date().toISOString();
+        setEmployees(prev => prev.map(emp => {
+          if (emp.userId !== employeeId) return emp;
+          const recordCount = emp.invalidRecords.length;
+          return {
+            ...emp,
+            notificationCount: (emp.notificationCount || 0) + recordCount,
+            lastNotifiedAt: now,
+            invalidRecords: emp.invalidRecords.map(rec => ({
+              ...rec,
+              notificationCount: (rec.notificationCount || 0) + 1,
+              lastNotifiedAt: now,
+            })),
+          };
+        }));
       } else {
         setError(result.error || 'Failed to send notification');
       }
@@ -124,12 +135,21 @@ export const InvalidAttendanceSection: React.FC<InvalidAttendanceSectionProps> =
       const result = await response.json();
       if (result.success) {
         setSuccessMessage(`Notifications sent to ${result.sentCount} employees`);
-        // Update local state
-        setEmployees(prev => prev.map(emp =>
-          employeeIds.includes(emp.userId)
-            ? { ...emp, notificationSent: true, lastNotifiedAt: new Date().toISOString() }
-            : emp
-        ));
+        const now = new Date().toISOString();
+        setEmployees(prev => prev.map(emp => {
+          if (!employeeIds.includes(emp.userId)) return emp;
+          const recordCount = emp.invalidRecords.length;
+          return {
+            ...emp,
+            notificationCount: (emp.notificationCount || 0) + recordCount,
+            lastNotifiedAt: now,
+            invalidRecords: emp.invalidRecords.map(rec => ({
+              ...rec,
+              notificationCount: (rec.notificationCount || 0) + 1,
+              lastNotifiedAt: now,
+            })),
+          };
+        }));
       } else {
         setError(result.error || 'Failed to send notifications');
       }
@@ -312,9 +332,9 @@ export const InvalidAttendanceSection: React.FC<InvalidAttendanceSectionProps> =
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm">
                 <div className="text-2xl font-bold tabular-nums text-emerald-800">
-                  {filteredEmployees.filter((emp) => emp.notificationSent).length}
+                  {filteredEmployees.filter((emp) => (emp.notificationCount || 0) > 0).length}
                 </div>
-                <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Notified</div>
+                <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Notified employees</div>
               </div>
             </div>
 
@@ -355,9 +375,16 @@ export const InvalidAttendanceSection: React.FC<InvalidAttendanceSectionProps> =
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                      {employee.notificationSent && (
-                        <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-900">
-                          Notified
+                      {(employee.notificationCount || 0) > 0 && (
+                        <span
+                          className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-900"
+                          title={
+                            employee.lastNotifiedAt
+                              ? `Last notified ${new Date(employee.lastNotifiedAt).toLocaleString()}`
+                              : undefined
+                          }
+                        >
+                          Notified · {employee.notificationCount}×
                         </span>
                       )}
                       <span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-sm font-medium text-amber-900">
@@ -420,11 +447,25 @@ export const InvalidAttendanceSection: React.FC<InvalidAttendanceSectionProps> =
                                 </span>
                               </div>
                             </div>
-                            <span
-                              className={`shrink-0 rounded-md border px-2 py-1 text-xs font-medium ${getIssueColor(record.issue)}`}
-                            >
-                              {getIssueLabel(record.issue)}
-                            </span>
+                            <div className="flex shrink-0 flex-wrap items-center gap-2">
+                              <span
+                                className={`rounded-md border px-2 py-1 text-xs font-medium ${getIssueColor(record.issue)}`}
+                              >
+                                {getIssueLabel(record.issue)}
+                              </span>
+                              {(record.notificationCount || 0) > 0 && (
+                                <span
+                                  className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-900"
+                                  title={
+                                    record.lastNotifiedAt
+                                      ? `Last notified ${new Date(record.lastNotifiedAt).toLocaleString()}`
+                                      : undefined
+                                  }
+                                >
+                                  Notified · {record.notificationCount}×
+                                </span>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </div>

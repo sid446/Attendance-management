@@ -532,10 +532,44 @@ function hasPendingExtraWorkRequest(
   );
 }
 
+type EmployeeDashboardTab =
+  | 'dashboard'
+  | 'attendance'
+  | 'clientPunch'
+  | 'employees'
+  | 'manageApprovers'
+  | 'manageExcessHours';
+
+const EMPLOYEE_DASHBOARD_TABS = new Set<EmployeeDashboardTab>([
+  'dashboard',
+  'attendance',
+  'clientPunch',
+  'employees',
+  'manageApprovers',
+  'manageExcessHours',
+]);
+
+function parseEmployeeDashboardUrlParams(): { tab?: EmployeeDashboardTab; monthYear?: string } {
+  if (typeof window === 'undefined') return {};
+  const params = new URLSearchParams(window.location.search);
+  const tabParam = params.get('tab');
+  const monthParam = params.get('monthYear');
+  const tab =
+    tabParam && EMPLOYEE_DASHBOARD_TABS.has(tabParam as EmployeeDashboardTab)
+      ? (tabParam as EmployeeDashboardTab)
+      : undefined;
+  const monthYear = monthParam && /^\d{4}-\d{2}$/.test(monthParam) ? monthParam : undefined;
+  return { tab, monthYear };
+}
+
+function getEmployeeLoginRedirectPath(): string {
+  if (typeof window === 'undefined') return '/employee/login';
+  const destination = `${window.location.pathname}${window.location.search}`;
+  return `/employee/login?next=${encodeURIComponent(destination)}`;
+}
+
 export default function EmployeeDashboard() {
-  const [activeTab, setActiveTab] = useState<
-    'dashboard' | 'attendance' | 'clientPunch' | 'employees' | 'manageApprovers' | 'manageExcessHours'
-  >('dashboard');
+  const [activeTab, setActiveTab] = useState<EmployeeDashboardTab>('dashboard');
   // Mobile drawer open
   const [sidebarOpen, setSidebarOpen] = useState(false);
   /** Desktop: narrow icon rail vs full labels */
@@ -720,7 +754,7 @@ export default function EmployeeDashboard() {
   const [summary, setSummary] = useState<AttendanceSummaryView | null>(null);
   const [employeeDays, setEmployeeDays] = useState<AttendanceRecord[]>([]);
   const [monthYear, setMonthYear] = useState<string>(
-    new Date().toISOString().substring(0, 7) // YYYY-MM
+    new Date().toISOString().substring(0, 7)
   );
   const [fetchLoading, setFetchLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -905,6 +939,11 @@ export default function EmployeeDashboard() {
 
   useEffect(() => {
     void (async () => {
+      const { tab, monthYear: urlMonth } = parseEmployeeDashboardUrlParams();
+      if (tab) setActiveTab(tab);
+      const effectiveMonth = urlMonth ?? monthYear;
+      if (urlMonth) setMonthYear(urlMonth);
+
       let userData: Record<string, unknown> | null = null;
       try {
         const res = await fetch('/api/auth/employee-session', employeeCredentialsInit());
@@ -921,7 +960,7 @@ export default function EmployeeDashboard() {
 
       if (!userData) {
         localStorage.removeItem('employeeUser');
-        router.push('/employee/login');
+        router.push(getEmployeeLoginRedirectPath());
         return;
       }
 
@@ -931,7 +970,7 @@ export default function EmployeeDashboard() {
       void fetchRequestWindow(u._id);
 
       // Own attendance loads in parallel; reveal shell once team list (if any) is known.
-      fetchAttendance(u._id, monthYear, u);
+      fetchAttendance(u._id, effectiveMonth, u);
 
       setSubordinatesListLoading(true);
       try {

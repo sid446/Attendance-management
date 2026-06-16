@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Attendance from '@/models/Attendance';
 import User from '@/models/User';
+import InvalidAttendanceNotification from '@/models/InvalidAttendanceNotification';
 import { getWorkingUnderPartnerForDate, lastDayOfMonthYear } from '@/lib/userFieldHistory';
 
 interface InvalidRecord {
@@ -10,6 +11,8 @@ interface InvalidRecord {
   checkout: string;
   issue: 'missing-checkin' | 'missing-checkout';
   monthYear: string;
+  notificationCount?: number;
+  lastNotifiedAt?: string;
 }
 
 interface EmployeeWithInvalidRecords {
@@ -20,6 +23,8 @@ interface EmployeeWithInvalidRecords {
   workingUnderPartner: string;
   attendanceEmail: string;
   invalidRecords: InvalidRecord[];
+  notificationCount?: number;
+  lastNotifiedAt?: string;
 }
 
 export async function GET(request: NextRequest) {
@@ -45,6 +50,22 @@ export async function GET(request: NextRequest) {
       .lean();
 
     const partnerAsOf = lastDayOfMonthYear(monthYear);
+
+    const notificationLogs = await InvalidAttendanceNotification.find({ monthYear }).lean();
+    const notificationByUserDate = new Map<string, { count: number; lastNotifiedAt: Date }>();
+    for (const log of notificationLogs) {
+      const key = `${String(log.userId)}:${log.date}`;
+      const existing = notificationByUserDate.get(key);
+      const sentAt = new Date(log.sentAt);
+      if (!existing) {
+        notificationByUserDate.set(key, { count: 1, lastNotifiedAt: sentAt });
+      } else {
+        existing.count += 1;
+        if (sentAt > existing.lastNotifiedAt) {
+          existing.lastNotifiedAt = sentAt;
+        }
+      }
+    }
 
     const employeesWithInvalidRecords: EmployeeWithInvalidRecords[] = [];
 
@@ -126,14 +147,38 @@ export async function GET(request: NextRequest) {
         // Sort records by date
         invalidRecords.sort((a, b) => a.date.localeCompare(b.date));
 
+        const userIdStr = String(user._id);
+        let employeeNotificationCount = 0;
+
+        const recordsWithNotifications = invalidRecords.map((rec) => {
+          const notif = notificationByUserDate.get(`${userIdStr}:${rec.date}`);
+          if (notif) {
+            employeeNotificationCount += notif.count;
+            return {
+              ...rec,
+              notificationCount: notif.count,
+              lastNotifiedAt: notif.lastNotifiedAt.toISOString(),
+            };
+          }
+          return rec;
+        });
+
+        const employeeLastNotifiedAt = recordsWithNotifications.reduce<Date | null>((latest, rec) => {
+          if (!rec.lastNotifiedAt) return latest;
+          const sentAt = new Date(rec.lastNotifiedAt);
+          return !latest || sentAt > latest ? sentAt : latest;
+        }, null);
+
         employeesWithInvalidRecords.push({
-          userId: String(user._id),
+          userId: userIdStr,
           name: user.name || 'Unknown',
           email: user.email || '',
           designation: user.designation || '',
           workingUnderPartner: getWorkingUnderPartnerForDate(user, partnerAsOf),
           attendanceEmail: user.attendanceEmail || '',
-          invalidRecords
+          invalidRecords: recordsWithNotifications,
+          notificationCount: employeeNotificationCount > 0 ? employeeNotificationCount : undefined,
+          lastNotifiedAt: employeeLastNotifiedAt?.toISOString(),
         });
       }
     }

@@ -12,6 +12,15 @@ import { employeeCredentialsInit } from '@/lib/employeeCredentialsInit';
 
 const RESEND_COOLDOWN_SECONDS = 180;
 
+function getSafeEmployeeRedirect(): string {
+  if (typeof window === 'undefined') return '/employee/dashboard';
+  const next = new URLSearchParams(window.location.search).get('next');
+  if (next && next.startsWith('/employee/') && !next.startsWith('//')) {
+    return next;
+  }
+  return '/employee/dashboard';
+}
+
 export default function EmployeeLoginPage() {
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
@@ -38,7 +47,7 @@ export default function EmployeeLoginPage() {
           const json = await res.json();
           if (json.success && json.data) {
             localStorage.setItem('employeeUser', JSON.stringify(json.data));
-            router.replace('/employee/dashboard');
+            router.replace(getSafeEmployeeRedirect());
           }
         }
       } catch {
@@ -166,7 +175,7 @@ export default function EmployeeLoginPage() {
 
       if (json.success) {
         localStorage.setItem('employeeUser', JSON.stringify(json.data));
-        router.push('/employee/dashboard');
+        router.push(getSafeEmployeeRedirect());
       } else {
         setError(json.error || 'OTP verification failed');
       }

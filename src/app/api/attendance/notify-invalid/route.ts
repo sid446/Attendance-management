@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Attendance from '@/models/Attendance';
 import User from '@/models/User';
+import InvalidAttendanceNotification from '@/models/InvalidAttendanceNotification';
 import { transporter, mailOptions } from '@/lib/mailer';
+
+function buildEmployeeAttendanceLink(baseUrl: string, monthYear: string): string {
+  const destination = `/employee/dashboard?tab=attendance&monthYear=${encodeURIComponent(monthYear)}`;
+  return `${baseUrl}/employee/login?next=${encodeURIComponent(destination)}`;
+}
 
 interface InvalidRecord {
   date: string;
@@ -109,8 +115,7 @@ export async function POST(request: NextRequest) {
         // Sort by date
         invalidRecords.sort((a, b) => a.date.localeCompare(b.date));
 
-        // Generate fix link
-        const fixLink = `${baseUrl}/employee/fix-attendance?userId=${employeeId}&monthYear=${monthYear}`;
+        const fixLink = buildEmployeeAttendanceLink(baseUrl, monthYear);
 
         // Build email content
         const getIssueLabel = (issue: InvalidRecord['issue']) => {
@@ -239,7 +244,7 @@ export async function POST(request: NextRequest) {
         <!-- CTA Button -->
         <div style="text-align: center; margin-top: 32px;">
           <a href="${fixLink}" style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3);">
-            Fix My Attendance
+            View My Attendance
           </a>
         </div>
 
@@ -261,6 +266,16 @@ export async function POST(request: NextRequest) {
 </html>
           `,
         });
+
+        const sentAt = new Date();
+        await InvalidAttendanceNotification.insertMany(
+          invalidRecords.map((rec) => ({
+            userId: employeeId,
+            monthYear,
+            date: rec.date,
+            sentAt,
+          }))
+        );
 
         sentCount++;
       } catch (emailError) {
