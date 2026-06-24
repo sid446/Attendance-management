@@ -125,8 +125,31 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // For employee role, check User collection
+      // For employee role: OTP only for first-time password setup (no password yet)
       if (role === 'employee') {
+        await dbConnect();
+        const user = await User.findOne({ email: rawEmail })
+          .select('_id isActive employeePasswordHash')
+          .lean();
+
+        if (!user) {
+          return NextResponse.json({ success: false, error: 'User not found with this email' }, { status: 404 });
+        }
+
+        if (user.isActive === false) {
+          return NextResponse.json({ success: false, error: 'User account is inactive' }, { status: 403 });
+        }
+
+        if (user.employeePasswordHash) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: 'Password is already set. Sign in with your email and password.',
+            },
+            { status: 400 }
+          );
+        }
+
         const result = await issueEmployeeLoginOtp(rawEmail);
         if (!result.ok) {
           return NextResponse.json({ success: false, error: result.error }, { status: result.status });
@@ -137,7 +160,8 @@ export async function POST(request: NextRequest) {
           data: {
             sessionId: result.sessionId,
             expiresAt: result.expiresAt.toISOString(),
-            message: 'OTP sent to your email',
+            purpose: 'setup',
+            message: 'OTP sent to your email to set your password',
           },
         });
       }

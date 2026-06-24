@@ -34,6 +34,7 @@ import {
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { useExcessAllowanceMaps } from '@/hooks/useExcessAllowanceMaps';
 import { SummaryAlignedMetricsStrip } from '@/components/SummaryAlignedMetricsStrip';
+import { buildAttendanceRequestDayMap } from '@/lib/attendanceRequestDayDisplay';
 interface ApprovedRequest {
   _id: string;
   date: string;
@@ -492,10 +493,10 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
     return { inTime: schedule.inTime, outTime: schedule.outTime };
   };
 
-  // Statuses that should NOT ask for manual in/out times and instead use schedule
+  // Statuses that auto-fill from schedule and lock in/out time fields
   const STATUS_USE_SCHEDULE = new Set<string>([
     'WFH - weekdays', 'WFH - weekoff', 'Half Day - weekdays', 'Half Day - weekoff',
-    'Present - outstation', 'Present - client place'
+    'Present - client place',
   ]);
 
   const applyStatusAutoFill = (status: string, dateStr?: string) => {
@@ -518,7 +519,18 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
       return;
     }
 
-    // Use schedule for defined statuses
+    // Outstation: default value 1.2; pre-fill schedule as a starting point but HR can edit times
+    if (status.toLowerCase().includes('outstation')) {
+      setFormValue(1.2);
+      if (dateStr) {
+        const sch = getScheduledTimesForDate(dateStr);
+        if (sch.inTime) setFormStartTime(sch.inTime);
+        if (sch.outTime) setFormEndTime(sch.outTime);
+      }
+      return;
+    }
+
+    // Use schedule for defined statuses (locked fields)
     if (STATUS_USE_SCHEDULE.has(status)) {
       setFormValue(1);
       if (dateStr) {
@@ -557,16 +569,8 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
       }
     }
 
-    // Map approved requests to days
-    const approvedRequestMap = new Map<number, ApprovedRequest>();
-    for (const req of approvedRequests) {
-      // Handle both YYYY-MM-DD format and ISO date strings
-      const dateStr = req.date.split('T')[0]; // Get just YYYY-MM-DD part
-      const d = new Date(dateStr + 'T00:00:00'); // Create date at midnight to avoid timezone issues
-      if (!Number.isNaN(d.getTime()) && d.getFullYear() === year && d.getMonth() + 1 === month) {
-        approvedRequestMap.set(d.getDate(), req);
-      }
-    }
+    // One request per day — prefer Approved/Pending over superseded Rejected entries
+    const approvedRequestMap = buildAttendanceRequestDayMap(approvedRequests, year, month);
 
     return { daysInMonth, startWeekday, dayRecordMap, approvedRequestMap };
   })();
@@ -1251,18 +1255,32 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                               // populate form with existing values
                               const dateStr = `${selectedYear}-${String(selectedMonth).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
                               setEditDate(dateStr);
-                              // prefer edited values if present
                               const existingStart = rec?.editedCheckin || rec?.checkin || rec?.inTime || '';
                               const existingEnd = rec?.editedCheckout || rec?.checkout || rec?.outTime || '';
-                              setFormStartTime(existingStart || '');
-                              setFormEndTime(existingEnd || '');
                               const chosenStatus = (rec && (rec.typeOfPresence || rec.status)) || 'Present';
+                              const hasExistingTimes = !!(existingStart || existingEnd);
+
                               setFormStatus(chosenStatus);
-                              // Autofill times/value depending on status (this will override only for statuses that require it)
-                              applyStatusAutoFill(chosenStatus, dateStr);
-                              setFormValue(typeof rec?.value === 'number' ? rec.value : undefined);
                               setFormRemarks(rec?.remarks || '');
                               setEditError(null);
+
+                              if (hasExistingTimes) {
+                                setFormStartTime(existingStart || '');
+                                setFormEndTime(existingEnd || '');
+                                setFormValue(
+                                  typeof rec?.value === 'number'
+                                    ? rec.value
+                                    : chosenStatus.toLowerCase().includes('outstation')
+                                      ? 1.2
+                                      : undefined
+                                );
+                              } else {
+                                setFormStartTime('');
+                                setFormEndTime('');
+                                setFormValue(undefined);
+                                applyStatusAutoFill(chosenStatus, dateStr);
+                              }
+
                               setEditModalOpen(true);
                             }}
                             title="Edit day"

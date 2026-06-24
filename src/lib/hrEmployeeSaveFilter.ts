@@ -18,13 +18,29 @@ type HistoryCompareEntry = {
   effectiveTo: string | null;
 };
 
+function normalizeHistoryDate(value: unknown): string {
+  if (value == null || value === '') return '';
+  if (typeof value === 'string') {
+    const t = value.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+    const lead = t.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (lead) return lead[1];
+  }
+  const d = value instanceof Date ? value : new Date(value as string);
+  if (Number.isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${mo}-${day}`;
+}
+
 function toHistoryCompareKey(entries: unknown): string {
   if (!Array.isArray(entries)) return '[]';
   const normalized: HistoryCompareEntry[] = entries.map((entry) => {
     const row = entry as { value?: unknown; effectiveFrom?: unknown; effectiveTo?: unknown };
     const effectiveTo =
-      row.effectiveTo == null || row.effectiveTo === '' ? null : String(row.effectiveTo).slice(0, 10);
-    const effectiveFrom = row.effectiveFrom == null ? '' : String(row.effectiveFrom).slice(0, 10);
+      row.effectiveTo == null || row.effectiveTo === '' ? null : normalizeHistoryDate(row.effectiveTo);
+    const effectiveFrom = normalizeHistoryDate(row.effectiveFrom);
     return {
       value: normalizeManagedFieldValue(row.value),
       effectiveFrom,

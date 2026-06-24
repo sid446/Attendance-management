@@ -24,6 +24,7 @@ import {
   MANAGED_EFFECTIVE_FIELDS,
   normalizeManagedFieldValue,
   syncUserFieldsFromFieldHistories,
+  getActiveFieldHistoryEntry,
 } from '@/lib/userFieldHistory';
 
 interface RouteParams {
@@ -360,6 +361,20 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         const incomingHistory = (fieldHistories as Record<string, unknown>)[field];
         if (!Array.isArray(incomingHistory)) continue;
 
+        const bodyFieldValue = Object.prototype.hasOwnProperty.call(body, field)
+          ? normalizeManagedFieldValue((body as Record<string, unknown>)[field])
+          : null;
+        const incomingActive = getActiveFieldHistoryEntry(
+          incomingHistory as Parameters<typeof getActiveFieldHistoryEntry>[0]
+        );
+        const incomingActiveValue = normalizeManagedFieldValue(incomingActive?.value);
+        const staleHistory =
+          bodyFieldValue !== null && bodyFieldValue !== incomingActiveValue;
+
+        if (staleHistory) {
+          continue;
+        }
+
         (currentUser.fieldHistories as any)[field] = incomingHistory.map((entry: any) => ({
           value: entry?.value != null ? String(entry.value) : '',
           effectiveFrom: parseAnyDate(entry?.effectiveFrom) || entry?.effectiveFrom,
@@ -390,6 +405,18 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     if (Object.keys(managedEffectiveIncoming).length > 0) {
       currentUser.markModified('fieldHistories');
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(managedEffectiveIncoming, 'workingUnderPartner') ||
+      workingUnderPartner !== undefined
+    ) {
+      const syncedPartner = normalizeManagedFieldValue(currentUser.workingUnderPartner);
+      if (syncedPartner) {
+        currentUser.team = syncedPartner;
+      } else if (team !== undefined) {
+        currentUser.team = team;
+      }
     }
 
     const user = await currentUser.save();

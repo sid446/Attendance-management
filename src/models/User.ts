@@ -146,6 +146,8 @@ export interface IUser extends Document {
   scheduleInOutTimeMonth?: IScheduleTime; // Monthly/alternate schedule
 
   isActive: boolean;
+  /** Bcrypt hash for employee portal password login (optional until first-time setup). */
+  employeePasswordHash?: string;
   /** First calendar day the employee is inactive; attendance/summaries exclude this day onward. */
   inactiveAsOf?: Date | null;
   createdAt: Date;
@@ -553,6 +555,10 @@ const UserSchema = new Schema(
     isActive: {
       type: Boolean,
       default: true,
+    },
+    employeePasswordHash: {
+      type: String,
+      select: false,
     },
     inactiveAsOf: {
       type: Date,

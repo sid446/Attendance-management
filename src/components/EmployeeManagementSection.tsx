@@ -390,6 +390,22 @@ export const EmployeeManagementSection: React.FC<{
     const list = users.map(u => u.team || u.workingUnderPartner).filter(Boolean);
     return Array.from(new Set(list)).sort() as string[];
   }, [users]);
+
+  /** Work partner dropdown: predefined teams + partners already used in the org + current form value. */
+  const workPartnerSelectOptions = useMemo(() => {
+    const options = new Set<string>();
+    for (const value of predefinedValues.teams) {
+      const trimmed = String(value || '').trim();
+      if (trimmed) options.add(trimmed);
+    }
+    for (const value of uniqueTeams) {
+      const trimmed = String(value || '').trim();
+      if (trimmed) options.add(trimmed);
+    }
+    const current = String(formData.workingUnderPartner || formData.team || '').trim();
+    if (current) options.add(current);
+    return Array.from(options).sort((a, b) => a.localeCompare(b));
+  }, [predefinedValues.teams, uniqueTeams, formData.workingUnderPartner, formData.team]);
   // Unique User Names
   const uniqueUserNames = useMemo(() => {
     return users.map(u => u.name).filter(Boolean).sort();
@@ -446,11 +462,17 @@ export const EmployeeManagementSection: React.FC<{
   }, []);
 
   const applyUserToEditForm = useCallback((user: User) => {
+    const activePartner = getActiveFieldHistoryEntry((user as any).fieldHistories?.workingUnderPartner);
+    const resolvedPartner = String(
+      activePartner?.value || user.workingUnderPartner || user.team || ''
+    ).trim();
+
     const formDataCopy: Partial<User> = {
       ...user,
       joiningDate: toDateInputValue(user.joiningDate),
       inactiveAsOf: toDateInputValue(user.inactiveAsOf) || undefined,
-      team: user.workingUnderPartner || user.team || '',
+      workingUnderPartner: resolvedPartner || user.workingUnderPartner,
+      team: resolvedPartner || user.workingUnderPartner || user.team || '',
     };
     if (formDataCopy.schedules && Array.isArray(formDataCopy.schedules)) {
       formDataCopy.schedules = (formDataCopy.schedules as any[]).map((entry: any) => ({
@@ -1256,8 +1278,12 @@ export const EmployeeManagementSection: React.FC<{
     setError(null);
 
     try {
-      const prepared = prepareFormDataForSave(formData) as Record<string, unknown>;
-      stripStaleManagedFieldHistories(prepared, (editingUser as User).fieldHistories);
+      const rawPrepared = { ...formData } as Record<string, unknown>;
+      if (rawPrepared.workingUnderPartner !== undefined) {
+        rawPrepared.team = rawPrepared.workingUnderPartner;
+      }
+      stripStaleManagedFieldHistories(rawPrepared, (editingUser as User).fieldHistories);
+      const prepared = prepareFormDataForSave(rawPrepared) as Record<string, unknown>;
       const payload = pickEditableUserPutBody(prepared, tabAccess, {
         changedBy: 'HR Admin',
         changeReason: changeReason || 'Employee information update',
@@ -2284,11 +2310,28 @@ export const EmployeeManagementSection: React.FC<{
   };
 
   const applyFieldRevisionValue = (field: FieldHistoryKey, value: string) => {
+    if (denyEdits) return;
+
     if (field === 'workingUnderPartner') {
-      handleInputChange('workingUnderPartner', value);
-      handleInputChange('team', value);
+      setFormData((prev) => {
+        const newData: Partial<User> = { ...prev, workingUnderPartner: value, team: value };
+        if (value) {
+          const partnerName = value.trim().toLowerCase();
+          const partnerUser = users.find(
+            (u) =>
+              u.name?.toLowerCase().trim() === partnerName ||
+              u.name?.toLowerCase().trim().replace(/\s+/g, '.') === partnerName ||
+              u.name?.toLowerCase().trim().replace(/\./g, ' ') === partnerName
+          );
+          if (partnerUser) {
+            newData.attendanceEmail = partnerUser.attendanceEmail || partnerUser.email || '';
+          }
+        }
+        return newData;
+      });
       return;
     }
+
     handleInputChange(field as keyof User, value);
   };
 
@@ -2353,6 +2396,15 @@ export const EmployeeManagementSection: React.FC<{
     const historyOpen = Boolean(fieldHistoryExpanded[field]);
     const currentValue = String((formData as any)[field] || '');
     const historyCount = histAll.length;
+    const resolvedSelectOptions =
+      inputType === 'select'
+        ? Array.from(
+            new Set([
+              ...selectOptions,
+              ...(currentValue.trim() ? [currentValue.trim()] : []),
+            ])
+          ).sort((a, b) => a.localeCompare(b))
+        : selectOptions;
 
     return (
       <div key={field}>
@@ -2405,7 +2457,7 @@ export const EmployeeManagementSection: React.FC<{
                             className={inputCls}
                           >
                             <option value="">{selectEmptyLabel}</option>
-                            {selectOptions.map((opt) => (
+                            {resolvedSelectOptions.map((opt) => (
                               <option key={opt} value={opt}>
                                 {opt}
                               </option>
@@ -2516,10 +2568,11 @@ export const EmployeeManagementSection: React.FC<{
           <select
             value={currentValue}
             onChange={(e) => applyFieldRevisionValue(field, e.target.value)}
-            className={inputCls}
+            disabled={denyEdits}
+            className={`${inputCls} ${denyEdits ? 'cursor-not-allowed opacity-60' : ''}`}
           >
             <option value="">{selectEmptyLabel}</option>
-            {selectOptions.map((opt) => (
+            {resolvedSelectOptions.map((opt) => (
               <option key={opt} value={opt}>
                 {opt}
               </option>
@@ -2530,7 +2583,8 @@ export const EmployeeManagementSection: React.FC<{
             type="text"
             value={currentValue}
             onChange={(e) => handleInputChange(field as keyof User, e.target.value)}
-            className={inputCls}
+            disabled={denyEdits}
+            className={`${inputCls} ${denyEdits ? 'cursor-not-allowed opacity-60' : ''}`}
           />
         )}
         {hasManagedFieldValue(field as ManagedFieldKey) && (
@@ -2566,10 +2620,11 @@ export const EmployeeManagementSection: React.FC<{
                 onChange={(e) =>
                   setFieldRevisionPanel((p) => (p && p.field === field ? { ...p, value: e.target.value } : p))
                 }
-                className={inputCls}
+                disabled={denyEdits}
+                className={`${inputCls} ${denyEdits ? 'cursor-not-allowed opacity-60' : ''}`}
               >
                 <option value="">{selectEmptyLabel}</option>
-                {selectOptions.map((opt) => (
+                {resolvedSelectOptions.map((opt) => (
                   <option key={opt} value={opt}>
                     {opt}
                   </option>
@@ -2855,12 +2910,12 @@ export const EmployeeManagementSection: React.FC<{
                   revisionHint: 'New work partner (applies to the form; save employee to persist)',
                   theme: 'basic',
                   inputType: 'select',
-                  selectOptions: predefinedValues.teams,
+                  selectOptions: workPartnerSelectOptions,
                   selectEmptyLabel: 'Select work partner',
                 })}
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Team <span className="text-slate-500">(auto-filled from Work Partner)</span></label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Team <span className="text-slate-500">(matches Work Partner)</span></label>
                   <input
                     type="text"
                     value={formData.team || ''}
@@ -4516,12 +4571,12 @@ export const EmployeeManagementSection: React.FC<{
                   revisionHint: 'New work partner (applies to the form; save employee to persist)',
                   theme: 'basic',
                   inputType: 'select',
-                  selectOptions: predefinedValues.teams,
+                  selectOptions: workPartnerSelectOptions,
                   selectEmptyLabel: 'Select work partner',
                 })}
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">Team <span className="text-slate-500">(auto-filled from Work Partner)</span></label>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Team <span className="text-slate-500">(matches Work Partner)</span></label>
                   <input
                     type="text"
                     value={formData.team || ''}

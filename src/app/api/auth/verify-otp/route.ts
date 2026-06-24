@@ -88,8 +88,20 @@ export async function POST(request: NextRequest) {
       return res;
     }
 
-    // Employee/Partner OTP verification
-    if (role === 'employee' || role === 'partner') {
+    // Employee OTP verification — password must be set via /api/auth/employee/set-password
+    if (role === 'employee') {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            'Employee OTP sign-in is no longer supported. Use password login, or verify OTP when setting or resetting your password.',
+        },
+        { status: 400 }
+      );
+    }
+
+    // Partner OTP verification
+    if (role === 'partner') {
       await dbConnect();
 
       const sid = String(sessionId || '').trim();
