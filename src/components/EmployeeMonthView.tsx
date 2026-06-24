@@ -34,7 +34,12 @@ import {
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { useExcessAllowanceMaps } from '@/hooks/useExcessAllowanceMaps';
 import { SummaryAlignedMetricsStrip } from '@/components/SummaryAlignedMetricsStrip';
-import { buildAttendanceRequestDayMap } from '@/lib/attendanceRequestDayDisplay';
+import {
+  attendanceRecordReflectsApprovedRequest,
+  buildAttendanceRequestDayMap,
+  buildDisplayRecordFromApprovedRequest,
+  isHrModifiedAttendanceRecord,
+} from '@/lib/attendanceRequestDayDisplay';
 interface ApprovedRequest {
   _id: string;
   date: string;
@@ -63,8 +68,7 @@ function isHrModifiedAttendance(
   if (approvedReq?.status === 'Approved' && String(approvedReq.approvedBy || '').toUpperCase() === 'HR') {
     return true;
   }
-  const remarks = String(rec?.remarks ?? '');
-  return /updated\s+by\s+hr/i.test(remarks);
+  return isHrModifiedAttendanceRecord(rec);
 }
 
 /** Distinct calendar cell colours by `status`, `typeOfPresence`, and `halfDay`. */
@@ -1050,11 +1054,28 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
               ))}
               {Array.from({ length: calendarData.daysInMonth }).map((_, idx) => {
                 const day = idx + 1;
-                const rec = calendarData.dayRecordMap.get(day) || null;
-                            // {debugScheduledIn && (
-                            //   <div className="text-[10px] text-amber-400 mt-0.5">Sch: {debugScheduledIn} | In: {debugActualIn}</div>
-                            // )}
+                const storedRec = calendarData.dayRecordMap.get(day) || null;
                 const approvedReq = approvedRequests.length > 0 ? calendarData.approvedRequestMap.get(day) : null;
+                const dateObj = new Date(selectedYear, selectedMonth - 1, day);
+                const currentDateStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+                let rec = storedRec;
+                if (
+                  approvedReq?.status === 'Approved' &&
+                  approvedReq.requestedStatus &&
+                  !attendanceRecordReflectsApprovedRequest(storedRec, approvedReq)
+                ) {
+                  rec = buildDisplayRecordFromApprovedRequest(
+                    storedRec,
+                    approvedReq,
+                    currentDateStr,
+                    {
+                      id: String(scheduleUser?._id || ''),
+                      name: scheduleUser?.name || '',
+                    }
+                  );
+                }
+
                 let status: any = rec?.status;
                 const type = rec?.typeOfPresence;
 
@@ -1082,8 +1103,6 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                     }
                 }
                 
-                const dateObj = new Date(selectedYear, selectedMonth - 1, day);
-                const currentDateStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                 const isHalftimeDay = scheduleUser
                   ? isHalftimeEmploymentType(getEmploymentTypeForDate(scheduleUser, dateObj))
                   : false;
@@ -1255,21 +1274,21 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                               // populate form with existing values
                               const dateStr = `${selectedYear}-${String(selectedMonth).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
                               setEditDate(dateStr);
-                              const existingStart = rec?.editedCheckin || rec?.checkin || rec?.inTime || '';
-                              const existingEnd = rec?.editedCheckout || rec?.checkout || rec?.outTime || '';
-                              const chosenStatus = (rec && (rec.typeOfPresence || rec.status)) || 'Present';
+                              const existingStart = storedRec?.editedCheckin || storedRec?.checkin || storedRec?.inTime || '';
+                              const existingEnd = storedRec?.editedCheckout || storedRec?.checkout || storedRec?.outTime || '';
+                              const chosenStatus = (storedRec && (storedRec.typeOfPresence || storedRec.status)) || 'Present';
                               const hasExistingTimes = !!(existingStart || existingEnd);
 
                               setFormStatus(chosenStatus);
-                              setFormRemarks(rec?.remarks || '');
+                              setFormRemarks(storedRec?.remarks || '');
                               setEditError(null);
 
                               if (hasExistingTimes) {
                                 setFormStartTime(existingStart || '');
                                 setFormEndTime(existingEnd || '');
                                 setFormValue(
-                                  typeof rec?.value === 'number'
-                                    ? rec.value
+                                  typeof storedRec?.value === 'number'
+                                    ? storedRec.value
                                     : chosenStatus.toLowerCase().includes('outstation')
                                       ? 1.2
                                       : undefined
@@ -1295,7 +1314,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                             LATE
                           </span>
                         )}
-                        {isHrModifiedAttendance(rec, approvedReq) && (
+                        {isHrModifiedAttendance(storedRec, approvedReq) && (
                           <span
                             className="inline-flex items-center rounded border border-fuchsia-200 bg-fuchsia-50 px-1 py-0.5 text-[9px] font-bold text-fuchsia-900"
                             title="Attendance was modified by HR"
@@ -1379,7 +1398,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                             {type}
                           </div>
                         )}
-                        {isHrModifiedAttendance(rec, approvedReq) && (
+                        {isHrModifiedAttendance(storedRec, approvedReq) && (
                           <div className="text-[10px] font-medium text-fuchsia-800">Modified by HR</div>
                         )}
                       </div>

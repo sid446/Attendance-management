@@ -233,6 +233,8 @@ function mapEmployeeDayStatus(
     typeLower.includes('outstation') ||
     typeLower.includes('clientplace') ||
     typeLower.includes('half day') ||
+    typeLower.includes('present - in office') ||
+    typeLower.includes('present in office') ||
     !!value.halfDay;
   const isHalftime = isHalftimeEmploymentType(getEmploymentTypeForDate(userForDay, dateObj));
 

@@ -484,10 +484,15 @@ export async function POST(request: NextRequest) {
                                 }
                                 // Present - in office
                                 else if (isType('Present - in office - weekdays')) {
-                                    rec.totalHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
-                                    rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
-                                    if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
-                                    if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
+                                    if (startTime && endTime && startTime !== '00:00' && endTime !== '00:00') {
+                                        rec.totalHour = calculateDuration(startTime, endTime);
+                                        rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
+                                    } else {
+                                        rec.totalHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
+                                        rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
+                                        if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
+                                        if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
+                                    }
                                 } else if (isType('Present - in office - weekoff')) {
                                     rec.totalHour = 0;
                                     rec.excessHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));

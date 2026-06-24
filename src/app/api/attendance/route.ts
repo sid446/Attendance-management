@@ -19,6 +19,7 @@ import {
 } from '@/lib/attendanceHours';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { reapplyExtraWorkEntriesToRecord } from '@/lib/extraWorkRequest';
+import { reconcileApprovedRequestsForMonth } from '@/lib/applyApprovedAttendanceRequest';
 
 // GET - Fetch attendance records
 export async function GET(request: NextRequest) {
@@ -37,6 +38,10 @@ export async function GET(request: NextRequest) {
 
     if (monthYear) {
       query.monthYear = monthYear;
+    }
+
+    if (userId && monthYear) {
+      await reconcileApprovedRequestsForMonth(userId, monthYear);
     }
 
     const attendanceRecords = await Attendance.find(query)

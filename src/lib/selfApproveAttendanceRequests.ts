@@ -1,6 +1,7 @@
+import AttendanceRequest from '@/models/AttendanceRequest';
+import { applyApprovedRequestToAttendance } from '@/lib/applyApprovedAttendanceRequest';
 import { isAttendanceDatePartnerOnlyIst } from '@/lib/attendanceRequestApprovalWindow';
 import { isAttendanceApproverSameAsEmployee } from '@/lib/employeeMisExceptions';
-import { createPartnerReviewToken } from '@/lib/partnerReviewToken';
 
 export type SelfApproveRequestInput = {
   requestId: string;
@@ -72,43 +73,41 @@ export function filterSelfApprovablePendingRequestIds(
 }
 
 /**
- * Auto-approve self requests via existing bulk-action (same path as review queue).
- * Returns IDs that were submitted for approval.
+ * Auto-approve self requests and apply them directly to attendance records.
+ * Returns IDs that were approved and applied successfully.
  */
 export async function autoApproveSelfRequests(
   items: SelfApproveRequestInput[],
   user: { name?: unknown; email?: unknown; attendanceEmail?: unknown },
-  origin: string
+  _origin?: string
 ): Promise<string[]> {
   const ids = filterSelfApprovableRequestIds(items, user);
   if (ids.length === 0) return [];
 
   const partnerEmail = normalizeEmail(user.email);
   const partnerName = formatPartnerNameForReview(String(user.name || ''));
-  const token = createPartnerReviewToken({ partnerName, partnerEmail });
+  const remark = 'Auto-approved (self)';
+  const approvedIds: string[] = [];
 
-  const base = origin.replace(/\/$/, '');
+  for (const id of ids) {
+    try {
+      const reqRecord = await AttendanceRequest.findById(id);
+      if (!reqRecord || reqRecord.status !== 'Pending') continue;
 
-  try {
-    const res = await fetch(`${base}/api/partner/bulk-action`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'approve',
-        ids,
-        remark: 'Auto-approved (self)',
-        accessToken: token,
-      }),
-    });
+      reqRecord.status = 'Approved';
+      reqRecord.approvedBy = partnerName;
+      reqRecord.approvedByEmail = partnerEmail;
+      reqRecord.approvedAt = new Date();
+      reqRecord.partnerRemarks = remark;
+      reqRecord.partnerProposedValue = '1';
+      await reqRecord.save();
 
-    if (!res.ok) {
-      console.error('Auto-approve (self) failed:', await res.text());
-      return [];
+      await applyApprovedRequestToAttendance(reqRecord, { attendanceValue: 1 });
+      approvedIds.push(id);
+    } catch (error) {
+      console.error('Auto-approve (self) failed for request', id, error);
     }
-
-    return ids;
-  } catch (error) {
-    console.error('Auto-approve (self) failed:', error);
-    return [];
   }
+
+  return approvedIds;
 }

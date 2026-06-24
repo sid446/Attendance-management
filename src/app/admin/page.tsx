@@ -15,6 +15,10 @@ import { ArticleCreditsManager } from '@/components/ArticleCreditsManager';
 import { UploadSection } from '@/components/UploadSection';
 import { SummarySection } from '@/components/SummarySection';
 import { EmployeeMonthView } from '@/components/EmployeeMonthView';
+import {
+  attendanceRecordReflectsApprovedRequest,
+  buildDisplayRecordFromApprovedRequest,
+} from '@/lib/attendanceRequestDayDisplay';
 import { EmployeeManagementSection } from '@/components/EmployeeManagementSection';
 import { EmployeeMasterUploadSection } from '@/components/EmployeeMasterUploadSection';
 import { TeamAttendanceAccessSection } from '@/components/TeamAttendanceAccessSection';
@@ -1477,8 +1481,9 @@ export default function AttendanceUpload() {
       const requestsResult = await requestsResponse.json();
 
       // Process requests - filter by month and approved status
+      let filteredRequests: any[] = [];
       if (requestsResult.success && requestsResult.data) {
-        const filteredRequests = requestsResult.data.filter((req: any) => {
+        filteredRequests = requestsResult.data.filter((req: any) => {
           const reqMonthYear = req.monthYear || (req.date ? req.date.substring(0, 7) : '');
           return reqMonthYear === monthYear && req.status === 'Approved';
         });
@@ -1490,13 +1495,12 @@ export default function AttendanceUpload() {
       }
 
       const docs: any[] = Array.isArray(attendanceResult.data) ? attendanceResult.data : [];
-      if (!docs.length) {
-        setEmployeeDays([]);
-        return;
-      }
-
       const doc = docs[0];
-      const recordsObj = doc.records || {};
+      const recordsObj = doc?.records || {};
+      const userDefaults = {
+        id: doc?.userId?._id ? String(doc.userId._id) : userId,
+        name: doc?.userId?.name ?? 'Unknown',
+      };
 
       const days: AttendanceRecord[] = Object.entries(recordsObj).map(([dateKey, value]: [string, any]) => {
         // Use edited times for display if available, otherwise use original times
@@ -1524,8 +1528,8 @@ export default function AttendanceUpload() {
 
         // Ensure AttendanceRecord structure
         return {
-          id: doc.userId?._id ? String(doc.userId._id) : '',
-          name: doc.userId?.name ?? 'Unknown',
+          id: userDefaults.id,
+          name: userDefaults.name,
           date: dateKey,
           inTime: effectiveCheckin ?? '',
           outTime: effectiveCheckout ?? '',
@@ -1542,6 +1546,25 @@ export default function AttendanceUpload() {
           ...(value.halfDay !== undefined ? { halfDay: value.halfDay } : {}),
         } satisfies AttendanceRecord;
       });
+
+      for (const req of filteredRequests) {
+        if (!req?.date || !req?.requestedStatus) continue;
+        const existingIdx = days.findIndex((d) => d.date === req.date);
+        const existingDay = existingIdx >= 0 ? days[existingIdx] : null;
+        if (attendanceRecordReflectsApprovedRequest(existingDay, req)) continue;
+
+        const merged = buildDisplayRecordFromApprovedRequest(
+          existingDay,
+          req,
+          req.date,
+          userDefaults
+        );
+        if (existingIdx >= 0) {
+          days[existingIdx] = merged;
+        } else {
+          days.push(merged);
+        }
+      }
 
       days.sort((a, b) => {
         const aTime = new Date(a.date).getTime();
