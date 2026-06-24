@@ -300,6 +300,23 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
       return daywiseWFHTypeExact.has(t);
     };
 
+    const isDaywiseLeaveRecord = (rec: any) => {
+      const t = String(rec?.typeOfPresence || rec?.status || '').trim().toLowerCase();
+      if (t === 'on leave' || t === 'leave') return true;
+      return t.includes('leave') && !t.includes('present');
+    };
+
+    const isDaywiseExplicitAbsentRecord = (rec: any) => {
+      const t = String(rec?.typeOfPresence || rec?.status || '').trim().toLowerCase();
+      return t === 'absent';
+    };
+
+    const zeroDaywiseScheduledFields = () => ({
+      scheduledInTime: '00:00',
+      scheduledOutTime: '00:00',
+      scheduledTime: '0:00',
+    });
+
     /**
      * Weekday WFH Ã¢â€ â€™ "WFH". DB week-off WFH types, or weekday/legacy WFH on API holiday or Sunday Ã¢â€ â€™ "WO-WFH".
      */
@@ -583,6 +600,14 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
           presentAbsent = 'Present';
         } else if (inTime === '00:00' && outTime === '00:00') {
           presentAbsent = 'Absent';
+        }
+
+        if (
+          isDaywiseLeaveRecord(record) ||
+          isDaywiseExplicitAbsentRecord(record) ||
+          presentAbsent === 'Absent'
+        ) {
+          ({ scheduledInTime, scheduledOutTime, scheduledTime } = zeroDaywiseScheduledFields());
         }
 
         // --- Excess/Short calculation for the day ---
