@@ -10,12 +10,16 @@ const REQUEST_STATUS_PRIORITY: Record<AttendanceRequestStatus, number> = {
 export type AttendanceRequestForDisplay = {
   date: string;
   status: AttendanceRequestStatus;
-  updatedAt?: string;
-  approvedAt?: string;
-  createdAt?: string;
+  updatedAt?: string | Date;
+  approvedAt?: string | Date;
+  createdAt?: string | Date;
 };
 
-function requestTimestamp(req: AttendanceRequestForDisplay): number {
+function requestTimestamp(req: {
+  updatedAt?: string | Date;
+  approvedAt?: string | Date;
+  createdAt?: string | Date;
+}): number {
   for (const field of [req.updatedAt, req.approvedAt, req.createdAt]) {
     if (!field) continue;
     const t = new Date(field).getTime();
