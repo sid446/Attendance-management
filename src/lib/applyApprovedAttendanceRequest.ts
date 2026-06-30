@@ -6,6 +6,9 @@ import User from '@/models/User';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { calculateLeaveUsage, updateLeaveBalanceOnApproval } from '@/lib/leaveManagement';
 import { calculateTotalHours as calculateDuration } from '@/lib/attendanceHours';
+import { calculateSummary, type AttendanceRecordForSummary } from '@/lib/attendanceSummaryCalculation';
+import { applyDayExcessToRecord } from '@/lib/calculateDayExcessHour';
+import { getDefaultNumericValueForType } from '@/lib/attendanceRequestValues';
 
 type DayRecord = Record<string, unknown>;
 type RecordsMap = Map<string, DayRecord> | Record<string, DayRecord> | any;
@@ -85,54 +88,6 @@ export function approvedRequestNeedsAttendanceApply(
   return false;
 }
 
-function calculateSummary(records: RecordsMap) {
-  let totalHour = 0;
-  let excessHour = 0;
-  let totalHalfDay = 0;
-  let totalPresent = 0;
-  let totalAbsent = 0;
-  let totalLeave = 0;
-
-  const iterate = (fn: (rec: DayRecord) => void) => {
-    if (records && typeof records.forEach === 'function') {
-      records.forEach((rec: DayRecord) => fn(rec));
-      return;
-    }
-    Object.values(records as Record<string, DayRecord>).forEach(fn);
-  };
-
-  iterate((record: DayRecord) => {
-    totalHour += Number(record.totalHour || 0);
-    excessHour += Number(record.excessHour || 0);
-    if (record.halfDay) totalHalfDay++;
-
-    const inTime = effectivePunchIn(record);
-    const outTime = effectivePunchOut(record);
-    const hasPunch = (inTime && inTime !== '00:00') || (outTime && outTime !== '00:00');
-    const type = String(record.typeOfPresence || '');
-
-    if (type === 'On leave' || type === 'Leave') {
-      totalLeave++;
-    } else if (type === 'Holiday' || type === 'Sunday' || type === 'Weekoff') {
-      // skip
-    } else if (record.halfDay || hasPunch || Number(record.value || 0) > 0) {
-      totalPresent++;
-    } else {
-      totalAbsent++;
-    }
-  });
-
-  return {
-    totalHour,
-    totalLateArrival: 0,
-    excessHour,
-    totalHalfDay,
-    totalPresent,
-    totalAbsent,
-    totalLeave,
-  };
-}
-
 /**
  * Apply an approved attendance request onto the user's monthly attendance record.
  * Returns true when the attendance document was modified and saved.
@@ -190,6 +145,8 @@ export async function applyApprovedRequestToAttendance(
 
   rec.typeOfPresence = requestedStatus;
 
+  const userObj = await User.findById(userObjectId);
+
   if (requestedStatus.includes('Half Day')) {
     rec.value = 0.5;
     rec.halfDay = true;
@@ -203,15 +160,11 @@ export async function applyApprovedRequestToAttendance(
   } else if (requestedStatus === 'Holiday' || requestedStatus === 'Weekoff - special allowance') {
     rec.value = 0;
     rec.halfDay = false;
-  } else if (requestedStatus.toLowerCase().includes('outstation')) {
-    rec.value = 1.2;
-    rec.halfDay = false;
   } else {
-    rec.value = 1;
+    rec.value = getDefaultNumericValueForType(requestedStatus, { employee: userObj }) ?? 1;
     rec.halfDay = false;
   }
 
-  const userObj = await User.findById(userObjectId);
   let scheduledInTime = '';
   let scheduledOutTime = '';
   let scheduledMinutes = 0;
@@ -294,7 +247,13 @@ export async function applyApprovedRequestToAttendance(
         scheduledIn: effectiveScheduledInTime,
         scheduledOut: effectiveScheduledOutTime,
       });
-      rec.excessHour = Number((Number(rec.totalHour) - effectiveScheduledMinutes / 60).toFixed(2));
+      applyDayExcessToRecord(
+        rec,
+        userObj,
+        date,
+        effectiveScheduledInTime,
+        effectiveScheduledOutTime
+      );
     } else {
       rec.totalHour = Number((Number(rec.value) * (effectiveScheduledMinutes / 60)).toFixed(2));
       rec.excessHour = Number((Number(rec.totalHour) - effectiveScheduledMinutes / 60).toFixed(2));
@@ -306,7 +265,13 @@ export async function applyApprovedRequestToAttendance(
       scheduledIn: effectiveScheduledInTime,
       scheduledOut: effectiveScheduledOutTime,
     });
-    rec.excessHour = Number((Number(rec.totalHour) - effectiveScheduledMinutes / 60).toFixed(2));
+    applyDayExcessToRecord(
+      rec,
+      userObj,
+      date,
+      effectiveScheduledInTime,
+      effectiveScheduledOutTime
+    );
   }
 
   const isSundayDate = new Date(`${date}T12:00:00`).getDay() === 0;
@@ -322,7 +287,14 @@ export async function applyApprovedRequestToAttendance(
   }
 
   setDayRecord(attendance, date, rec);
-  attendance.summary = calculateSummary(attendance.records);
+  const recordsMap =
+    attendance.records instanceof Map
+      ? attendance.records
+      : new Map(Object.entries(attendance.records || {}));
+  attendance.summary = calculateSummary(
+    recordsMap as Map<string, AttendanceRecordForSummary>,
+    userObj
+  );
   await attendance.save();
 
   if (requestedStatus === 'On leave' || requestedStatus === 'Absent') {

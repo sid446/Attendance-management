@@ -11,6 +11,10 @@ import {
   hhmmStringToExcelTime,
 } from './exportExcelDuration';
 import { downloadWorkbook } from './downloadWorkbook';
+import {
+  calculateArticleDayExcessMinutes,
+  isArticleEmployee,
+} from '@/lib/isArticleEmployee';
 
 
 export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promise<void> {
@@ -632,24 +636,21 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
           let isArticle = false;
           if (allUsers && item.userId) {
             const user = allUsers.find(u => u._id === item.userId);
-            const empType = getEmploymentTypeForDate(user, d);
-            if (user && (user.designation?.toLowerCase() === 'article' || empType === 'article')) {
-              isArticle = true;
+            if (user) {
+              isArticle = isArticleEmployee(user);
             }
           }
           if (actualMinutes < scheduledMinutes) {
             daySeconds = -(scheduledMinutes - actualMinutes) * 60;
           } else if (actualMinutes > scheduledMinutes) {
             if (isArticle) {
-              let excess = 0;
-              if (actInH * 60 + actInM < schInH * 60 + schInM) {
-                excess += (schInH * 60 + schInM) - (actInH * 60 + actInM);
-              }
-              if (actOutH * 60 + actOutM > schOutH * 60 + schOutM) {
-                const late = (actOutH * 60 + actOutM) - (schOutH * 60 + schOutM);
-                if (late > 30) excess += late;
-              }
-              daySeconds = excess * 60;
+              const excessMinutes = calculateArticleDayExcessMinutes(
+                scheduledInTime,
+                scheduledOutTime,
+                inTime,
+                outTime
+              );
+              daySeconds = excessMinutes * 60;
             } else {
               daySeconds = (actualMinutes - scheduledMinutes) * 60;
             }

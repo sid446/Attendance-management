@@ -44,6 +44,19 @@ export async function exportRequestsToExcel({
     return item.userId?.designation || 'Employee';
   };
 
+  const getApproveContext = (item: DateRangeGroup | AttendanceRequest) => {
+    if ('dates' in item) {
+      return {
+        employee: {
+          designation: item.designation,
+          employmentType: item.employmentType,
+          category: item.category,
+        },
+      };
+    }
+    return { employee: item.userId };
+  };
+
   const addRequestRow = (item: DateRangeGroup | AttendanceRequest) => {
     const isRange = 'dates' in item;
     worksheet.addRow({
@@ -54,7 +67,9 @@ export async function exportRequestsToExcel({
       endDate: new Date(isRange ? item.endDate : item.date).toLocaleDateString('en-GB'),
       days: isRange ? item.dates.length : 1,
       requestedStatus: item.requestedStatus,
-      defaultApproveValue: isLeaveRequestType(item.requestedStatus) ? '' : getDefaultValueForType(item.requestedStatus),
+      defaultApproveValue: isLeaveRequestType(item.requestedStatus)
+        ? ''
+        : getDefaultValueForType(item.requestedStatus, getApproveContext(item)),
       startTime: item.startTime || '',
       endTime: item.endTime || '',
       reason: item.reason || '',

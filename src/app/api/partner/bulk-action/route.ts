@@ -50,6 +50,11 @@ import {
   isAuthorizedPartnerForRequest,
   resolveViewerUserIdFromPartnerEmail,
 } from '@/lib/teamRequestAuthorization';
+import {
+  calculateArticleDayExcessMinutes,
+  isArticleEmployee,
+} from '@/lib/isArticleEmployee';
+import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
 
 function normalizePartnerName(name: string): string {
     return String(name || '').replace(/[.\s]/g, '').toLowerCase();
@@ -61,46 +66,6 @@ function calculateDuration(start: string, end: string): number {
     const [h2, m2] = end.split(':').map(Number);
     const totalMinutes = (h2 * 60 + m2) - (h1 * 60 + m1);
     return Math.max(0, Math.round((totalMinutes / 60) * 100) / 100);
-}
-
-// Helper function to calculate summary (copied from request-action/route.ts)
-function calculateSummary(records: Map<string, any>, user?: any) {
-    let totalHour = 0;
-    let totalLateArrival = 0;
-    let excessHour = 0;
-    let totalHalfDay = 0;
-    let totalPresent = 0;
-    let totalAbsent = 0;
-    let totalLeave = 0;
-
-    records.forEach((record) => {
-        totalHour += record.totalHour || 0;
-        excessHour += record.excessHour || 0;
-
-        if (record.halfDay) totalHalfDay++;
-        
-        switch (record.typeOfPresence) {
-            case 'On leave': totalLeave++; break;
-            case 'Holiday': break;
-            case 'ThumbMachine':
-            case 'Manual':
-            case 'Remote':
-            case 'Weekly Off - Present (WO-Present)':
-            case 'Half Day (HD)':
-            case 'Work From Home (WFH)':
-            case 'Weekly Off - Work From Home (WO-WFH)':
-            case 'Onsite Presence (OS-P)':
-                if (record.totalHour > 0 || record.halfDay || (record.checkin && record.checkin !== '00:00')) totalPresent++;
-                else totalAbsent++;
-                break;
-            default:
-                // Only count as absent if not a half-day and no checkin
-                if (!record.halfDay && (!record.checkin || record.checkin === '00:00')) totalAbsent++;
-                else totalPresent++;
-        }
-    });
-
-    return { totalHour, totalLateArrival, excessHour, totalHalfDay, totalPresent, totalAbsent, totalLeave };
 }
 
 export async function POST(request: NextRequest) {
@@ -265,7 +230,7 @@ export async function POST(request: NextRequest) {
                         if (userForLeave && userForLeave.isActive) {
                             const designationLower = (userForLeave.designation || '').toLowerCase();
                             const employmentTypeLower = (userForLeave.employmentType || '').toLowerCase();
-                            const isArticle = employmentTypeLower.includes('article') || designationLower.includes('article');
+      const isArticle = employmentTypeLower.includes('article') || designationLower.includes('article');
                             
                             if (!isArticle) {
                                 const currentEarned = userForLeave.leaveBalance?.earned || 0;
@@ -544,8 +509,20 @@ export async function POST(request: NextRequest) {
                                                 const actualMinutes = actOutMin - actInMin >= 0 ? actOutMin - actInMin : (24 * 60 + actOutMin - actInMin);
                                                 if (actualMinutes < scheduledMinutes) {
                                                         dayExcess = -(scheduledMinutes - actualMinutes) / 60;
+                                                } else if (actualMinutes > scheduledMinutes) {
+                                                        if (isArticleEmployee(userObj)) {
+                                                                const excessMinutes = calculateArticleDayExcessMinutes(
+                                                                        scheduledInTime,
+                                                                        scheduledOutTime,
+                                                                        inTime,
+                                                                        outTime
+                                                                );
+                                                                dayExcess = excessMinutes > 0 ? excessMinutes / 60 : 0;
+                                                        } else {
+                                                                dayExcess = (actualMinutes - scheduledMinutes) / 60;
+                                                        }
                                                 } else {
-                                                        dayExcess = (actualMinutes - scheduledMinutes) / 60;
+                                                        dayExcess = 0;
                                                 }
                                         }
                                         rec.excessHour = Number(dayExcess.toFixed(2));
@@ -561,7 +538,7 @@ export async function POST(request: NextRequest) {
                                         // 3. For others: half-day if arrive after 1 PM AND less than 6 hours worked
                                         const checkinTime = startTime;
                                         const checkoutTime = endTime;
-                                        const isArticleship = userObj && userObj.designation && userObj.designation.toLowerCase() === 'article';
+                                        const isArticleship = isArticleEmployee(userObj);
                                         
                                         if (checkinTime === '00:00' && checkoutTime !== '00:00' && checkoutTime !== '' && rec.totalHour > 0) {
                                           // Missing check-in but has valid checkout

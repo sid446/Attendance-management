@@ -8,6 +8,13 @@ import {
   isExtraWorkRequest,
   normalizeExtraWorkSlotsFromRequest,
 } from '@/lib/extraWorkRequest';
+import {
+  getDefaultValueForType,
+  isFixedValueType,
+  isLeaveRequestType,
+  resolveApproveValueNumber,
+  type ApproveValueContext,
+} from '@/lib/attendanceRequestValues';
 
 interface Request {
   _id: string;
@@ -21,6 +28,7 @@ interface Request {
   originalCheckin?: string;
   originalCheckout?: string;
   extraWorkSlots?: { startTime: string; endTime: string; reason: string }[];
+  isArticleEmployee?: boolean;
 }
 
 interface RequestGroup {
@@ -33,6 +41,15 @@ interface RequestGroup {
   timeRange: string;
   originalTimeRange: string;
   requestIds: string[];
+  isArticleEmployee?: boolean;
+}
+
+function getGroupApproveContext(group: RequestGroup): ApproveValueContext | undefined {
+  return group.isArticleEmployee != null ? { isArticle: group.isArticleEmployee } : undefined;
+}
+
+function resolveApproveValueForGroup(group: RequestGroup, raw: string | undefined): number | undefined {
+  return resolveApproveValueNumber(group.requestedStatus, raw, getGroupApproveContext(group));
 }
 
 function ReviewAllPageContent() {
@@ -55,63 +72,6 @@ function ReviewAllPageContent() {
   const APPROVE_CHIPS = ['Done', 'Missed Entry', 'Client Visit', 'Emergency', 'Approved'];
   const REJECT_CHIPS = ['Insufficient Hours', 'Incorrect Date', 'Incorrect Entry', 'Not Discussed', 'Proof Required'];
 
-  // Align caps with HR dashboard (AttendanceRequestsSection): WFH 0.75, OS/outstation/client/onsite 1.2, else 1; half 0.5; leave none.
-  const getMaxValueForType = (requestedStatus: string): number | null => {
-    const status = requestedStatus.toLowerCase();
-    if (status.includes('half')) return 0.5;
-    if (status.includes('leave') || requestedStatus === 'On leave') return null;
-    if (status.includes('wfh')) return 0.75;
-    if (
-      status.includes('outstation') ||
-      status.includes('client place') ||
-      status.includes('clientplace') ||
-      status.includes('onsite') ||
-      status.includes('os-p')
-    ) {
-      return 1.2;
-    }
-    return 1;
-  };
-
-  const getDefaultValueForType = (requestedStatus: string): string => {
-    const status = requestedStatus.toLowerCase();
-    if (status.includes('half')) return '0.5';
-    if (status.includes('leave') || requestedStatus === 'On leave') return '';
-    if (status.includes('wfh')) return '0.75';
-    if (
-      status.includes('outstation') ||
-      status.includes('client place') ||
-      status.includes('clientplace') ||
-      status.includes('onsite') ||
-      status.includes('os-p')
-    ) {
-      return '1.2';
-    }
-    return '1';
-  };
-
-  const resolveApproveValueForGroup = (group: RequestGroup, raw: string | undefined): number | undefined => {
-    if (isLeaveRequestType(group.requestedStatus)) return undefined;
-    const trimmed = String(raw ?? '').trim().replace(',', '.');
-    const defStr = getDefaultValueForType(group.requestedStatus);
-    let n = trimmed === '' ? NaN : parseFloat(trimmed);
-    if (!Number.isFinite(n)) n = defStr === '' ? NaN : parseFloat(defStr);
-    if (!Number.isFinite(n)) return undefined;
-    const max = getMaxValueForType(group.requestedStatus);
-    if (max != null) n = Math.min(Math.max(0, n), max);
-    return n;
-  };
-
-  const isFixedValueType = (requestedStatus: string): boolean => {
-    const status = requestedStatus.toLowerCase();
-    return status.includes('half') || status.includes('leave') || requestedStatus === 'On leave';
-  };
-
-  const isLeaveRequestType = (requestedStatus: string): boolean => {
-    const status = requestedStatus.toLowerCase();
-    return status.includes('leave') || requestedStatus === 'On leave';
-  };
-
   useEffect(() => {
     if (!accessToken) {
       setError('Secure partner access token not provided');
@@ -129,7 +89,10 @@ function ReviewAllPageContent() {
           const initialValues: { [key: string]: string } = {};
           groups.forEach((g, index) => {
             initialRemarks[index.toString()] = 'Done';
-            initialValues[index.toString()] = getDefaultValueForType(g.requestedStatus);
+            initialValues[index.toString()] = getDefaultValueForType(
+              g.requestedStatus,
+              getGroupApproveContext(g)
+            );
           });
           setRemarks(initialRemarks);
           setValues(initialValues);
@@ -167,7 +130,8 @@ function ReviewAllPageContent() {
         originalTimeRange: (req.originalCheckin || req.originalCheckout) 
           ? `${req.originalCheckin || '??:??'} - ${req.originalCheckout || '??:??'}` 
           : '-',
-        requestIds: requests.map(r => r._id)
+        requestIds: requests.map(r => r._id),
+        isArticleEmployee: req.isArticleEmployee,
       };
     });
   };
@@ -264,7 +228,7 @@ function ReviewAllPageContent() {
       });
 
       filtered.forEach((g) => {
-        const defStr = getDefaultValueForType(g.requestedStatus);
+        const defStr = getDefaultValueForType(g.requestedStatus, getGroupApproveContext(g));
         let approvalNum: number | undefined = undefined;
         if (!isLeaveRequestType(g.requestedStatus) && defStr !== '') {
           const n = parseFloat(defStr);
@@ -401,7 +365,8 @@ function ReviewAllPageContent() {
       const results = await Promise.all(groupIds.map(async (id) => {
         const group = requestGroups[parseInt(id)];
         const remark = remarks[id] || 'Done';
-        const valueRaw = values[id] ?? getDefaultValueForType(group.requestedStatus);
+        const valueRaw =
+          values[id] ?? getDefaultValueForType(group.requestedStatus, getGroupApproveContext(group));
         const value =
           action === 'approve' ? resolveApproveValueForGroup(group, valueRaw) : undefined;
 
@@ -649,7 +614,7 @@ function ReviewAllPageContent() {
                                 <input
                                   type="number"
                                   step="0.01"
-                                  value={values[idx] ?? getDefaultValueForType(group.requestedStatus)}
+                                  value={values[idx] ?? getDefaultValueForType(group.requestedStatus, getGroupApproveContext(group))}
                                   onChange={(e) => setValues({ ...values, [idx]: e.target.value })}
                                   className="w-20 h-9 bg-background border border-border rounded-lg text-center text-xs font-bold text-emerald-700 focus:border-emerald-500 outline-none"
                                 />
@@ -797,7 +762,7 @@ function ReviewAllPageContent() {
                                     <input 
                                       type="number" 
                                       step="0.01" 
-                                      value={values[idx] ?? getDefaultValueForType(group.requestedStatus)} 
+                                      value={values[idx] ?? getDefaultValueForType(group.requestedStatus, getGroupApproveContext(group))} 
                                       onChange={(e) => setValues({...values, [idx]: e.target.value})} 
                                       className="w-14 h-9 bg-background border border-border rounded-lg text-center text-xs font-bold text-emerald-700 focus:border-emerald-500 outline-none" 
                                     />

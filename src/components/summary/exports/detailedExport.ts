@@ -8,6 +8,7 @@ import {
 import { sortRecordDetailsEntries } from '../utils/summaryDateUtils';
 import type { SummaryExportContext } from './exportTypes';
 import { downloadWorkbook } from './downloadWorkbook';
+import { isArticleEmployee } from '@/lib/isArticleEmployee';
 
 
 export async function exportDetailedAttendance(ctx: SummaryExportContext): Promise<void> {
@@ -346,9 +347,16 @@ export async function exportDetailedAttendance(ctx: SummaryExportContext): Promi
         periodEndForItem
       );
       const designation = (designationAtPeriod || item.designation || '').toString().toLowerCase();
-      // Treat as article if employmentType==='article' OR designation mentions 'article'
-      if (employmentType === 'article' || designation.includes('article')) articleSummaries.push(item);
-      else employeeSummaries.push(item);
+      // Treat as article if employmentType, designation, or category mentions 'article'
+      if (
+        isArticleEmployee({
+          employmentType,
+          designation: designationAtPeriod || item.designation,
+          category: user?.category,
+        })
+      ) {
+        articleSummaries.push(item);
+      } else employeeSummaries.push(item);
     });
 
     // Process a single summary and add a row; if `isArticle` blanks certain columns
@@ -633,7 +641,7 @@ export async function exportDetailedAttendance(ctx: SummaryExportContext): Promi
       // If employmentType is 'article', use staffWeekdaysWorking only.
       // Else, sum staffWeekdaysWorking + leavesConsumed + staffWeekoffWorking + staffOvertimeDays
       let netStaffWorking = 0;
-      if (employmentType === 'article') {
+      if (isArticle) {
         netStaffWorking = staffWeekdaysWorking;
       } else {
         netStaffWorking = Number((staffWeekdaysWorking + leavesConsumed + staffWeekoffWorking + staffOvertimeDays).toFixed(3));

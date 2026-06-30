@@ -55,6 +55,8 @@ export const groupRequestsIntoRanges = (
           userName: firstRequest.userName,
           userId: firstRequest.userId._id,
           designation: firstRequest.userId.designation,
+          employmentType: firstRequest.userId.employmentType,
+          category: firstRequest.userId.category,
           partnerName: firstRequest.partnerName,
           requestedStatus: firstRequest.requestedStatus,
           reason: firstRequest.reason,

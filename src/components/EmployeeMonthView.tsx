@@ -12,7 +12,7 @@ import {
   Calendar,
   Search,
   Edit3,
-  FileCheck,
+  Info,
   Loader2,
   Home,
   Building2,
@@ -40,6 +40,8 @@ import {
   buildDisplayRecordFromApprovedRequest,
   isHrModifiedAttendanceRecord,
 } from '@/lib/attendanceRequestDayDisplay';
+import { isArticleEmployee } from '@/lib/isArticleEmployee';
+import { getDefaultNumericValueForType } from '@/lib/attendanceRequestValues';
 interface ApprovedRequest {
   _id: string;
   date: string;
@@ -56,6 +58,22 @@ interface ApprovedRequest {
   partnerProposedValue?: string;
   hrRemarks?: string;
   hrValue?: string;
+  requestSource?: 'employee' | 'hr_direct';
+  hrEditHistory?: {
+    editedAt?: string;
+    editedBy?: string;
+    editedByEmail?: string;
+    previousStatus?: string;
+    previousStartTime?: string;
+    previousEndTime?: string;
+    previousValue?: string;
+    newStatus?: string;
+    newStartTime?: string;
+    newEndTime?: string;
+    newValue?: string;
+    remarks?: string;
+    changeSummary?: string;
+  }[];
   approvedBy?: string;
   approvedByEmail?: string;
   approvedAt?: string;
@@ -75,15 +93,335 @@ type CellStyleResult = {
   statusLabel?: string;
 };
 
-/** True when HR directly edited attendance or gave final approval on a correction. */
-function isHrModifiedAttendance(
-  rec: AttendanceRecord | null,
-  approvedReq?: ApprovedRequest | null
+type DayActivityModalData = {
+  date: string;
+  request: ApprovedRequest | null;
+  record: AttendanceRecord | null;
+};
+
+function hasDayActivityUpdates(
+  request: ApprovedRequest | null | undefined,
+  record: AttendanceRecord | null | undefined
 ): boolean {
-  if (approvedReq?.status === 'Approved' && String(approvedReq.approvedBy || '').toUpperCase() === 'HR') {
-    return true;
-  }
-  return isHrModifiedAttendanceRecord(rec);
+  return !!(request || isHrModifiedAttendanceRecord(record));
+}
+
+function getDayUpdatesButtonLabel(
+  request: ApprovedRequest | null | undefined,
+  record: AttendanceRecord | null | undefined
+): string {
+  const hrDirectEdit = isHrModifiedAttendanceRecord(record);
+  if (request && hrDirectEdit) return 'Details';
+  if (request?.status === 'Pending') return 'Pending';
+  if (request?.status === 'PendingHr') return 'HR review';
+  if (request?.status === 'Rejected') return 'Rejected';
+  if (request?.status === 'Approved') return 'Approved';
+  if (hrDirectEdit) return 'HR edit';
+  return 'Details';
+}
+
+function formatDayActivityDate(dateStr: string): string {
+  const d = new Date(`${dateStr}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function DayActivityModalPanel({
+  data,
+  onClose,
+}: {
+  data: DayActivityModalData;
+  onClose: () => void;
+}) {
+  const { date, request, record } = data;
+  const hrEditEntries = request?.hrEditHistory ?? [];
+  const showHrEditFromRecord =
+    isHrModifiedAttendanceRecord(record) && hrEditEntries.length === 0;
+  const recordIn = record?.editedCheckin || record?.checkin || record?.inTime || '';
+  const recordOut = record?.editedCheckout || record?.checkout || record?.outTime || '';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div
+        className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+        onClick={onClose}
+        aria-hidden
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="day-activity-title"
+        className="relative max-h-[min(85vh,640px)] w-[min(440px,95%)] overflow-y-auto rounded-xl border border-blue-200/65 bg-panel p-4 text-sm text-slate-900 shadow-xl"
+      >
+        <h3 id="day-activity-title" className="mb-1 font-semibold text-slate-900">
+          Day details
+        </h3>
+        <p className="mb-4 text-xs text-slate-500">{formatDayActivityDate(date)}</p>
+
+        <div className="space-y-4">
+          {request && (
+            <section className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                {request.requestSource === 'hr_direct' ? 'HR calendar edit' : 'Correction request'}
+              </h4>
+              <dl className="space-y-2 text-xs">
+                {request.requestSource === 'hr_direct' && (
+                  <div className="flex justify-between gap-4">
+                    <dt className="shrink-0 text-slate-600">Source</dt>
+                    <dd className="text-right text-slate-900">HR direct edit</dd>
+                  </div>
+                )}
+                <div className="flex justify-between gap-4">
+                  <dt className="shrink-0 text-slate-600">Status</dt>
+                  <dd className="text-right font-medium text-slate-900">{request.status || 'Unknown'}</dd>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <dt className="shrink-0 text-slate-600">Requested</dt>
+                  <dd className="break-words text-right text-slate-900">
+                    {request.requestedStatus || 'Unknown'}
+                  </dd>
+                </div>
+                {request.originalStatus && (
+                  <div className="flex justify-between gap-4">
+                    <dt className="shrink-0 text-slate-600">Original</dt>
+                    <dd className="break-words text-right text-slate-900">{request.originalStatus}</dd>
+                  </div>
+                )}
+                {request.reason && (
+                  <div className="flex justify-between gap-4">
+                    <dt className="shrink-0 text-slate-600">Reason</dt>
+                    <dd className="break-words text-right text-slate-900">{request.reason}</dd>
+                  </div>
+                )}
+                {(request.startTime || request.endTime) && (
+                  <div className="flex justify-between gap-4">
+                    <dt className="shrink-0 text-slate-600">Requested time</dt>
+                    <dd className="text-right text-slate-900">
+                      {[request.startTime, request.endTime].filter(Boolean).join(' – ') || '—'}
+                    </dd>
+                  </div>
+                )}
+                {request.createdAt && (
+                  <div className="flex justify-between gap-4">
+                    <dt className="shrink-0 text-slate-600">Raised on</dt>
+                    <dd className="text-right text-slate-900">
+                      {new Date(request.createdAt).toLocaleString('en-IN')}
+                    </dd>
+                  </div>
+                )}
+                {request.status === 'Approved' && (
+                  <>
+                    <div className="flex justify-between gap-4">
+                      <dt className="shrink-0 text-slate-600">Approved by</dt>
+                      <dd className="text-right text-slate-900">{request.approvedBy || 'Unknown'}</dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="shrink-0 text-slate-600">Approver email</dt>
+                      <dd className="break-all text-right text-slate-900">{request.approvedByEmail || '—'}</dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="shrink-0 text-slate-600">Approved on</dt>
+                      <dd className="text-right text-slate-900">
+                        {request.approvedAt
+                          ? new Date(request.approvedAt).toLocaleString('en-IN')
+                          : 'N/A'}
+                      </dd>
+                    </div>
+                    {request.partnerRemarks && (
+                      <div className="flex justify-between gap-4">
+                        <dt className="shrink-0 text-slate-600">Partner remark</dt>
+                        <dd className="break-words text-right text-slate-900">{request.partnerRemarks}</dd>
+                      </div>
+                    )}
+                    {request.hrRemarks && (
+                      <div className="flex justify-between gap-4">
+                        <dt className="shrink-0 text-slate-600">HR remark</dt>
+                        <dd className="break-words text-right text-slate-900">{request.hrRemarks}</dd>
+                      </div>
+                    )}
+                    {request.hrValue && (
+                      <div className="flex justify-between gap-4">
+                        <dt className="shrink-0 text-slate-600">Approved value</dt>
+                        <dd className="text-right text-slate-900">{request.hrValue}</dd>
+                      </div>
+                    )}
+                  </>
+                )}
+                {request.status === 'Pending' && (
+                  <p className="pt-1 text-slate-600">Awaiting approval from your partner.</p>
+                )}
+                {request.status === 'PendingHr' && (
+                  <>
+                    <p className="pt-1 text-rose-800">
+                      Partner approved. <strong>HR final approval</strong> is required before your
+                      attendance is updated.
+                    </p>
+                    {request.partnerRemarks && (
+                      <div className="flex justify-between gap-4">
+                        <dt className="shrink-0 text-slate-600">Partner remark</dt>
+                        <dd className="break-words text-right text-slate-900">{request.partnerRemarks}</dd>
+                      </div>
+                    )}
+                    {request.partnerApprovedAt && (
+                      <div className="flex justify-between gap-4">
+                        <dt className="shrink-0 text-slate-600">Partner approved on</dt>
+                        <dd className="text-right text-slate-900">
+                          {new Date(request.partnerApprovedAt).toLocaleString('en-IN')}
+                        </dd>
+                      </div>
+                    )}
+                  </>
+                )}
+                {request.status === 'Rejected' && (
+                  <>
+                    <div className="flex justify-between gap-4">
+                      <dt className="shrink-0 text-slate-600">Rejected by</dt>
+                      <dd className="text-right text-slate-900">{request.rejectedBy || 'Unknown'}</dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="shrink-0 text-slate-600">Rejecter email</dt>
+                      <dd className="break-all text-right text-slate-900">{request.rejectedByEmail || '—'}</dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="shrink-0 text-slate-600">Rejected on</dt>
+                      <dd className="text-right text-slate-900">
+                        {request.rejectedAt
+                          ? new Date(request.rejectedAt).toLocaleString('en-IN')
+                          : 'N/A'}
+                      </dd>
+                    </div>
+                    {request.partnerRemarks && (
+                      <div className="flex justify-between gap-4">
+                        <dt className="shrink-0 text-slate-600">Remark</dt>
+                        <dd className="break-words text-right text-slate-900">{request.partnerRemarks}</dd>
+                      </div>
+                    )}
+                  </>
+                )}
+              </dl>
+            </section>
+          )}
+
+          {hrEditEntries.length > 0 && (
+            <section className="rounded-lg border border-fuchsia-200 bg-fuchsia-50/60 p-3">
+              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-fuchsia-800">
+                HR edit history
+              </h4>
+              <div className="space-y-3">
+                {[...hrEditEntries].reverse().map((entry, index) => (
+                  <div
+                    key={`${entry.editedAt || index}-${entry.editedByEmail || index}`}
+                    className="rounded-md border border-fuchsia-100 bg-white/80 p-2.5 text-xs"
+                  >
+                    <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-medium text-fuchsia-900">
+                        {entry.editedByEmail || entry.editedBy || 'HR'}
+                      </span>
+                      {entry.editedAt && (
+                        <span className="text-[10px] text-slate-500">
+                          {new Date(entry.editedAt).toLocaleString('en-IN')}
+                        </span>
+                      )}
+                    </div>
+                    {entry.changeSummary && (
+                      <p className="mb-1.5 font-medium text-slate-800">{entry.changeSummary}</p>
+                    )}
+                    <dl className="space-y-1 text-[11px] text-slate-600">
+                      {(entry.previousStatus || entry.newStatus) && (
+                        <div className="flex justify-between gap-3">
+                          <dt>Status</dt>
+                          <dd className="text-right text-slate-800">
+                            {entry.previousStatus || '—'} → {entry.newStatus || '—'}
+                          </dd>
+                        </div>
+                      )}
+                      {(entry.previousStartTime ||
+                        entry.previousEndTime ||
+                        entry.newStartTime ||
+                        entry.newEndTime) && (
+                        <div className="flex justify-between gap-3">
+                          <dt>Time</dt>
+                          <dd className="text-right text-slate-800">
+                            {[entry.previousStartTime, entry.previousEndTime]
+                              .filter(Boolean)
+                              .join(' – ') || '—'}{' '}
+                            →{' '}
+                            {[entry.newStartTime, entry.newEndTime].filter(Boolean).join(' – ') || '—'}
+                          </dd>
+                        </div>
+                      )}
+                      {(entry.previousValue || entry.newValue) && (
+                        <div className="flex justify-between gap-3">
+                          <dt>Value</dt>
+                          <dd className="text-right text-slate-800">
+                            {entry.previousValue || '—'} → {entry.newValue || '—'}
+                          </dd>
+                        </div>
+                      )}
+                    </dl>
+                    {entry.remarks && (
+                      <p className="mt-1.5 text-[11px] text-slate-700">
+                        <span className="text-slate-500">Remark: </span>
+                        {entry.remarks}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {showHrEditFromRecord && (
+            <section className="rounded-lg border border-fuchsia-200 bg-fuchsia-50/60 p-3">
+              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-fuchsia-800">
+                HR attendance edit
+              </h4>
+              <dl className="space-y-2 text-xs">
+                {record?.typeOfPresence && (
+                  <div className="flex justify-between gap-4">
+                    <dt className="shrink-0 text-slate-600">Status on record</dt>
+                    <dd className="break-words text-right text-slate-900">{record.typeOfPresence}</dd>
+                  </div>
+                )}
+                {(recordIn || recordOut) && (
+                  <div className="flex justify-between gap-4">
+                    <dt className="shrink-0 text-slate-600">Times on record</dt>
+                    <dd className="text-right text-slate-900">
+                      {recordIn || '--:--'} → {recordOut || '--:--'}
+                    </dd>
+                  </div>
+                )}
+                {typeof record?.value === 'number' && (
+                  <div className="flex justify-between gap-4">
+                    <dt className="shrink-0 text-slate-600">Day value</dt>
+                    <dd className="text-right text-slate-900">{record.value}</dd>
+                  </div>
+                )}
+                {record?.remarks && (
+                  <div className="flex flex-col gap-1">
+                    <dt className="text-slate-600">HR note</dt>
+                    <dd className="break-words rounded-md border border-fuchsia-100 bg-white/80 px-2 py-1.5 text-slate-900">
+                      {record.remarks}
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            </section>
+          )}
+        </div>
+
+        <div className="mt-4 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-blue-200/65 bg-panel px-3 py-1.5 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /** Distinct calendar cell colours by `status`, `typeOfPresence`, and `halfDay`. */
@@ -358,16 +696,16 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
   const [formRemarks, setFormRemarks] = React.useState<string>('');
   const [savingEdit, setSavingEdit] = React.useState(false);
   const [editError, setEditError] = React.useState<string | null>(null);
-  const [requestDetailModal, setRequestDetailModal] = React.useState<ApprovedRequest | null>(null);
+  const [dayActivityModal, setDayActivityModal] = React.useState<DayActivityModalData | null>(null);
 
   React.useEffect(() => {
-    if (!requestDetailModal) return;
+    if (!dayActivityModal) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setRequestDetailModal(null);
+      if (e.key === 'Escape') setDayActivityModal(null);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [requestDetailModal]);
+  }, [dayActivityModal]);
 
   // Try to find user details from the 'users' list first, otherwise fallback to summaries
   const userFromList = users.find(u => u._id === selectedEmployeeId);
@@ -538,9 +876,11 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
       return;
     }
 
-    // Outstation: default value 1.2; pre-fill schedule as a starting point but HR can edit times
+    // Outstation: article 1.2, staff 1; pre-fill schedule as a starting point but HR can edit times
     if (status.toLowerCase().includes('outstation')) {
-      setFormValue(1.2);
+      setFormValue(
+        getDefaultNumericValueForType(status, { employee: scheduleUser ?? undefined }) ?? 1
+      );
       if (dateStr) {
         const sch = getScheduledTimesForDate(dateStr);
         if (sch.inTime) setFormStartTime(sch.inTime);
@@ -727,12 +1067,12 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                                   endTime: formEndTime || undefined,
                                   attendanceValue: formValue,
                                   remarks: formRemarks,
-                                  updatedBy: 'HR'
                                 };
 
                                 const res = await fetch('/api/attendance/admin-update', {
                                   method: 'POST',
                                   headers: { 'Content-Type': 'application/json' },
+                                  credentials: 'include',
                                   body: JSON.stringify(body),
                                 });
                                 const result = await res.json();
@@ -762,160 +1102,11 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                     </div>
                   )}
 
-                  {requestDetailModal && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                      <div
-                        className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
-                        onClick={() => setRequestDetailModal(null)}
-                        aria-hidden
-                      />
-                      <div
-                        role="dialog"
-                        aria-modal="true"
-                        aria-labelledby="request-detail-title"
-                        className="relative w-[min(420px,95%)] rounded-xl border border-blue-200/65 bg-panel p-4 text-sm text-slate-900 shadow-xl"
-                      >
-                        <h3 id="request-detail-title" className="mb-3 font-semibold text-slate-900">
-                          Request details
-                        </h3>
-                        <dl className="space-y-2 text-xs">
-                          <div className="flex justify-between gap-4">
-                            <dt className="shrink-0 text-slate-600">Status</dt>
-                            <dd className="text-right text-slate-900">{requestDetailModal.status || 'Unknown'}</dd>
-                          </div>
-                          <div className="flex justify-between gap-4">
-                            <dt className="shrink-0 text-slate-600">Requested</dt>
-                            <dd className="break-words text-right text-slate-900">
-                              {requestDetailModal.requestedStatus || 'Unknown'}
-                            </dd>
-                          </div>
-                          {requestDetailModal.originalStatus && (
-                            <div className="flex justify-between gap-4">
-                              <dt className="shrink-0 text-slate-600">Original</dt>
-                              <dd className="break-words text-right text-slate-900">
-                                {requestDetailModal.originalStatus}
-                              </dd>
-                            </div>
-                          )}
-                          {requestDetailModal.reason && (
-                            <div className="flex justify-between gap-4">
-                              <dt className="shrink-0 text-slate-600">Reason</dt>
-                              <dd className="break-words text-right text-slate-900">{requestDetailModal.reason}</dd>
-                            </div>
-                          )}
-                          {(requestDetailModal.startTime || requestDetailModal.endTime) && (
-                            <div className="flex justify-between gap-4">
-                              <dt className="shrink-0 text-slate-600">Requested time</dt>
-                              <dd className="text-right text-slate-900">
-                                {[requestDetailModal.startTime, requestDetailModal.endTime]
-                                  .filter(Boolean)
-                                  .join(' – ') || '—'}
-                              </dd>
-                            </div>
-                          )}
-                          {requestDetailModal.createdAt && (
-                            <div className="flex justify-between gap-4">
-                              <dt className="shrink-0 text-slate-600">Raised on</dt>
-                              <dd className="text-right text-slate-900">
-                                {new Date(requestDetailModal.createdAt).toLocaleString('en-IN')}
-                              </dd>
-                            </div>
-                          )}
-                          {requestDetailModal.status === 'Approved' && (
-                            <>
-                              <div className="flex justify-between gap-4">
-                                <dt className="shrink-0 text-slate-600">Approved by</dt>
-                                <dd className="text-right text-slate-900">{requestDetailModal.approvedBy || 'Unknown'}</dd>
-                              </div>
-                              <div className="flex justify-between gap-4">
-                                <dt className="shrink-0 text-slate-600">Approver email</dt>
-                                <dd className="break-all text-right text-slate-900">{requestDetailModal.approvedByEmail || '—'}</dd>
-                              </div>
-                              <div className="flex justify-between gap-4">
-                                <dt className="shrink-0 text-slate-600">Approved on</dt>
-                                <dd className="text-right text-slate-900">
-                                  {requestDetailModal.approvedAt
-                                    ? new Date(requestDetailModal.approvedAt).toLocaleString('en-IN')
-                                    : 'N/A'}
-                                </dd>
-                              </div>
-                              {requestDetailModal.partnerRemarks && (
-                                <div className="flex justify-between gap-4">
-                                  <dt className="shrink-0 text-slate-600">Partner remark</dt>
-                                  <dd className="break-words text-right text-slate-900">{requestDetailModal.partnerRemarks}</dd>
-                                </div>
-                              )}
-                              {requestDetailModal.hrRemarks && (
-                                <div className="flex justify-between gap-4">
-                                  <dt className="shrink-0 text-slate-600">HR remark</dt>
-                                  <dd className="break-words text-right text-slate-900">{requestDetailModal.hrRemarks}</dd>
-                                </div>
-                              )}
-                            </>
-                          )}
-                          {requestDetailModal.status === 'Pending' && (
-                            <p className="pt-1 text-slate-600">Awaiting approval from your partner.</p>
-                          )}
-                          {requestDetailModal.status === 'PendingHr' && (
-                            <>
-                              <p className="pt-1 text-rose-800">
-                                Partner approved. <strong>HR final approval</strong> is required before your attendance is
-                                updated.
-                              </p>
-                              {requestDetailModal.partnerRemarks && (
-                                <div className="flex justify-between gap-4">
-                                  <dt className="shrink-0 text-slate-600">Partner remark</dt>
-                                  <dd className="break-words text-right text-slate-900">{requestDetailModal.partnerRemarks}</dd>
-                                </div>
-                              )}
-                              {requestDetailModal.partnerApprovedAt && (
-                                <div className="flex justify-between gap-4">
-                                  <dt className="shrink-0 text-slate-600">Partner approved on</dt>
-                                  <dd className="text-right text-slate-900">
-                                    {new Date(requestDetailModal.partnerApprovedAt).toLocaleString('en-IN')}
-                                  </dd>
-                                </div>
-                              )}
-                            </>
-                          )}
-                          {requestDetailModal.status === 'Rejected' && (
-                            <>
-                              <div className="flex justify-between gap-4">
-                                <dt className="shrink-0 text-slate-600">Rejected by</dt>
-                                <dd className="text-right text-slate-900">{requestDetailModal.rejectedBy || 'Unknown'}</dd>
-                              </div>
-                              <div className="flex justify-between gap-4">
-                                <dt className="shrink-0 text-slate-600">Rejecter email</dt>
-                                <dd className="break-all text-right text-slate-900">{requestDetailModal.rejectedByEmail || '—'}</dd>
-                              </div>
-                              <div className="flex justify-between gap-4">
-                                <dt className="shrink-0 text-slate-600">Rejected on</dt>
-                                <dd className="text-right text-slate-900">
-                                  {requestDetailModal.rejectedAt
-                                    ? new Date(requestDetailModal.rejectedAt).toLocaleString('en-IN')
-                                    : 'N/A'}
-                                </dd>
-                              </div>
-                              {requestDetailModal.partnerRemarks && (
-                                <div className="flex justify-between gap-4">
-                                  <dt className="shrink-0 text-slate-600">Remark</dt>
-                                  <dd className="break-words text-right text-slate-900">{requestDetailModal.partnerRemarks}</dd>
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </dl>
-                        <div className="mt-4 flex justify-end">
-                          <button
-                            type="button"
-                            onClick={() => setRequestDetailModal(null)}
-                            className="rounded-lg border border-blue-200/65 bg-panel px-3 py-1.5 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
-                          >
-                            Close
-                          </button>
-                        </div>
-                      </div>
-                    </div>
+                  {dayActivityModal && (
+                    <DayActivityModalPanel
+                      data={dayActivityModal}
+                      onClose={() => setDayActivityModal(null)}
+                    />
                   )}
       {/* Navigation Controls */}
       <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3 shadow-sm sm:p-4">
@@ -1163,6 +1354,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                     {
                       id: String(scheduleUser?._id || ''),
                       name: scheduleUser?.name || '',
+                      isArticle: scheduleUser ? isArticleEmployee(scheduleUser) : undefined,
                     }
                   );
                 }
@@ -1316,46 +1508,25 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                         </span>
                       </div>
                       <div className="flex items-center gap-1">
-                        {/* Request status indicator - shows Pending, Approved, or Rejected */}
-                        {approvedReq && (
-                          <span 
-                            className={`inline-flex cursor-pointer items-center rounded px-1 py-0.5 text-[9px] font-bold ${
-                              isCustomRequestType
-                                ? approvedReq.status === 'Pending'
-                                  ? 'border border-teal-200 bg-teal-50 text-teal-900 hover:bg-teal-100'
-                                  : approvedReq.status === 'PendingHr'
-                                    ? 'border border-rose-300 bg-rose-50 text-rose-900 hover:bg-rose-100'
-                                  : approvedReq.status === 'Rejected'
-                                    ? 'border border-rose-200 bg-rose-50 text-rose-900 hover:bg-rose-100'
-                                    : 'border border-teal-200 bg-teal-50 text-teal-900 hover:bg-teal-100'
-                                : approvedReq.status === 'Pending'
-                                  ? 'border border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100'
-                                  : approvedReq.status === 'PendingHr'
-                                    ? 'border border-rose-300 bg-rose-50 text-rose-900 hover:bg-rose-100'
-                                  : approvedReq.status === 'Rejected'
-                                    ? 'border border-rose-200 bg-rose-50 text-rose-900 hover:bg-rose-100'
-                                    : 'border border-violet-200 bg-violet-50 text-violet-900 hover:bg-violet-100'
-                            }`}
-                            title={`Request: ${approvedReq.status}${isCustomRequestType ? ` (${approvedReq.requestedStatus})` : ''}${approvedReq.status === 'Approved' ? ` by ${approvedReq.approvedBy || 'Unknown'}` : ''}${approvedReq.approvedByEmail ? ` (${approvedReq.approvedByEmail})` : ''}${approvedReq.approvedAt ? ` on ${new Date(approvedReq.approvedAt).toLocaleDateString('en-GB')}` : ''}`}
+                        {hasDayActivityUpdates(approvedReq, storedRec) && (
+                          <button
+                            type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setRequestDetailModal(approvedReq);
+                              setDayActivityModal({
+                                date: currentDateStr,
+                                request: approvedReq ?? null,
+                                record: storedRec,
+                              });
                             }}
+                            className="inline-flex max-w-[5.5rem] items-center gap-0.5 rounded border border-slate-300/90 bg-white/95 px-1 py-0.5 text-[9px] font-semibold leading-none text-slate-700 shadow-sm hover:bg-slate-50 sm:max-w-none"
+                            title="View request and HR edit details"
                           >
-                            <FileCheck className="w-2.5 h-2.5 sm:mr-0.5" />
-                            <span className="hidden sm:inline">
-                              {isCustomRequestType 
-                                ? approvedReq.requestedStatus.toUpperCase().slice(0, 8)
-                                : approvedReq.status === 'Pending'
-                                  ? 'PENDING'
-                                  : approvedReq.status === 'PendingHr'
-                                    ? 'HR REVIEW'
-                                    : approvedReq.status === 'Rejected'
-                                      ? 'REJECTED'
-                                      : 'APPROVED'
-                              }
+                            <Info className="h-2.5 w-2.5 shrink-0" aria-hidden />
+                            <span className="truncate">
+                              {getDayUpdatesButtonLabel(approvedReq, storedRec)}
                             </span>
-                          </span>
+                          </button>
                         )}
                         {/* Admin Edit Button */}
                         {showEmployeeSelector && (
@@ -1381,7 +1552,9 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                                   typeof storedRec?.value === 'number'
                                     ? storedRec.value
                                     : chosenStatus.toLowerCase().includes('outstation')
-                                      ? 1.2
+                                      ? getDefaultNumericValueForType(chosenStatus, {
+                                          employee: scheduleUser ?? undefined,
+                                        }) ?? 1
                                       : undefined
                                 );
                               } else {
@@ -1403,15 +1576,6 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                         {isLate && (
                           <span className="inline-flex items-center rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-900">
                             LATE
-                          </span>
-                        )}
-                        {isHrModifiedAttendance(storedRec, approvedReq) && (
-                          <span
-                            className="inline-flex items-center rounded border border-fuchsia-200 bg-fuchsia-50 px-1 py-0.5 text-[9px] font-bold text-fuchsia-900"
-                            title="Attendance was modified by HR"
-                          >
-                            <span className="hidden sm:inline">Modified by HR</span>
-                            <span className="sm:hidden">HR</span>
                           </span>
                         )}
                       </div>
@@ -1488,9 +1652,6 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                           <div className="truncate text-[10px] text-slate-500" title={type}>
                             {type}
                           </div>
-                        )}
-                        {isHrModifiedAttendance(storedRec, approvedReq) && (
-                          <div className="text-[10px] font-medium text-fuchsia-800">Modified by HR</div>
                         )}
                       </div>
                     )}
@@ -1572,39 +1733,19 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
           </div>
           <div className="flex items-center gap-2">
             <div className="h-4 w-4 rounded border border-fuchsia-300 bg-fuchsia-100" />
-            <span className="text-slate-700">Modified by HR</span>
+            <span className="text-slate-700">HR edit on record</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="h-4 w-4 rounded border border-indigo-300 bg-indigo-100" />
             <span className="text-slate-700">Other / unmapped type</span>
           </div>
           {approvedRequests.length > 0 && (
-            <>
-              <div className="flex items-center gap-2">
-                <div className="flex h-4 w-4 items-center justify-center rounded border border-amber-300 bg-amber-100">
-                  <FileCheck className="h-2.5 w-2.5 text-amber-800" aria-hidden />
-                </div>
-                <span className="text-slate-700">Pending request</span>
+            <div className="flex items-center gap-2">
+              <div className="flex h-4 w-4 items-center justify-center rounded border border-slate-300 bg-white">
+                <Info className="h-2.5 w-2.5 text-slate-600" aria-hidden />
               </div>
-              <div className="flex items-center gap-2">
-                <div className="flex h-4 w-4 items-center justify-center rounded border border-violet-300 bg-violet-100">
-                  <FileCheck className="h-2.5 w-2.5 text-violet-800" aria-hidden />
-                </div>
-                <span className="text-slate-700">Approved</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex h-4 w-4 items-center justify-center rounded border border-rose-300 bg-rose-100">
-                  <FileCheck className="h-2.5 w-2.5 text-rose-800" aria-hidden />
-                </div>
-                <span className="text-slate-700">Rejected</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex h-4 w-4 items-center justify-center rounded border border-teal-300 bg-teal-100">
-                  <FileCheck className="h-2.5 w-2.5 text-teal-800" aria-hidden />
-                </div>
-                <span className="text-slate-700">Custom / other</span>
-              </div>
-            </>
+              <span className="text-slate-700">Details — request / approval / HR edit</span>
+            </div>
           )}
         </div>
       </div>

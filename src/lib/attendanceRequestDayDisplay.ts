@@ -152,7 +152,7 @@ export function buildDisplayRecordFromApprovedRequest<T extends AttendanceDayLik
   existing: T | null | undefined,
   req: ApprovedRequestLike,
   date: string,
-  defaults?: { id?: string; name?: string }
+  defaults?: { id?: string; name?: string; isArticle?: boolean }
 ): T {
   const requestedStatus = String(req.requestedStatus || 'Present').trim();
   const reqIn = String(req.startTime || '').trim();
@@ -174,7 +174,11 @@ export function buildDisplayRecordFromApprovedRequest<T extends AttendanceDayLik
 
   const value =
     existing?.value ??
-    (reqLower.includes('outstation') ? 1.2 : reqLower.includes('half day') ? 0.5 : 1);
+    (reqLower.includes('outstation')
+      ? (defaults?.isArticle ? 1.2 : 1)
+      : reqLower.includes('half day')
+        ? 0.5
+        : 1);
 
   return {
     ...(existing || ({} as T)),

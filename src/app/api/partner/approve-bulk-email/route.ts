@@ -10,6 +10,7 @@ import {
   isExtraWorkRequest,
   normalizeExtraWorkSlotsFromRequest,
 } from '@/lib/extraWorkRequest';
+import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
 
 function calculateDuration(start: string, end: string): number {
     if (!start || !end) return 0;
@@ -17,47 +18,6 @@ function calculateDuration(start: string, end: string): number {
     const [h2, m2] = end.split(':').map(Number);
     const totalMinutes = (h2 * 60 + m2) - (h1 * 60 + m1);
     return Math.max(0, Math.round((totalMinutes / 60) * 100) / 100);
-}
-
-// Helper function to calculate summary (copied from request-action/route.ts to avoid circular deps or complex imports for now)
-function calculateSummary(records: Map<string, any>, user?: any) {
-    let totalHour = 0;
-    let totalLateArrival = 0;
-    let excessHour = 0;
-    let totalHalfDay = 0;
-    let totalPresent = 0;
-    let totalAbsent = 0;
-    let totalLeave = 0;
-
-    records.forEach((record) => {
-        totalHour += record.totalHour || 0;
-        excessHour += record.excessHour || 0;
-
-        // Simplified summary logic for bulk update
-        if (record.halfDay) totalHalfDay++;
-        
-        switch (record.typeOfPresence) {
-            case 'On leave': totalLeave++; break;
-            case 'Holiday': break;
-            case 'ThumbMachine':
-            case 'Manual':
-            case 'Remote':
-            case 'Weekly Off - Present (WO-Present)':
-            case 'Half Day (HD)':
-            case 'Work From Home (WFH)':
-            case 'Weekly Off - Work From Home (WO-WFH)':
-            case 'Onsite Presence (OS-P)':
-                if (record.totalHour > 0 || record.halfDay || (record.checkin && record.checkin !== '00:00')) totalPresent++;
-                else totalAbsent++;
-                break;
-            default:
-                // Only count as absent if not a half-day and no checkin
-                if (!record.halfDay && (!record.checkin || record.checkin === '00:00')) totalAbsent++;
-                else totalPresent++;
-        }
-    });
-
-    return { totalHour, totalLateArrival, excessHour, totalHalfDay, totalPresent, totalAbsent, totalLeave };
 }
 
 export async function POST(request: NextRequest) {

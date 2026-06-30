@@ -22,7 +22,9 @@
     "reconcile:leave:apply": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/reconcile-leave-from-attendance.ts --apply",
     "fix:partial-punch-hours:dry": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/fix-partial-punch-hours.ts --dry-run",
     "fix:partial-punch-hours": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/fix-partial-punch-hours.ts",
-    "reconcile:approved-attendance": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/reconcile-approved-attendance.ts"
+    "reconcile:approved-attendance": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/reconcile-approved-attendance.ts",
+    "fix:article-excess:dry": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/recalculate-article-attendance-excess.ts --dry-run",
+    "fix:article-excess": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/recalculate-article-attendance-excess.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

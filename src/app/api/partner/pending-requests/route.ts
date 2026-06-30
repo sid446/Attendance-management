@@ -14,6 +14,7 @@ import {
   resolveViewerUserIdFromPartnerEmail,
 } from '@/lib/teamRequestAuthorization';
 import { enrichAttendanceRequestsWithOriginalTimes } from '@/lib/enrichAttendanceRequests';
+import { isArticleEmployee } from '@/lib/isArticleEmployee';
 
 export async function GET(request: NextRequest) {
   try {
@@ -154,6 +155,9 @@ export async function GET(request: NextRequest) {
         extraWorkSlots: req.extraWorkSlots,
         originalCheckin: req.originalCheckin,
         originalCheckout: req.originalCheckout,
+        isArticleEmployee: isArticleEmployee(
+          req.userId as { employmentType?: unknown; designation?: unknown; category?: unknown }
+        ),
       })),
     });
   } catch (error) {

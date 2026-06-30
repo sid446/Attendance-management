@@ -73,7 +73,8 @@ export const RequestsApprovalModal: React.FC<RequestsApprovalModalProps> = ({
       );
     }
 
-    const maxVal = getMaxValueForType(req.requestedStatus);
+    const approveCtx = { employee: req.userId };
+    const maxVal = getMaxValueForType(req.requestedStatus, approveCtx);
 
     return (
       <div>

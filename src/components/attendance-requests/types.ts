@@ -5,6 +5,8 @@ export interface AttendanceRequest {
     name: string;
     email: string;
     designation?: string;
+    employmentType?: string;
+    category?: string;
   };
   userName: string;
   partnerName: string;
@@ -27,6 +29,22 @@ export interface AttendanceRequest {
   rejectedAt?: string;
   hrRemarks?: string;
   hrValue?: string;
+  requestSource?: 'employee' | 'hr_direct';
+  hrEditHistory?: {
+    editedAt?: string;
+    editedBy?: string;
+    editedByEmail?: string;
+    previousStatus?: string;
+    previousStartTime?: string;
+    previousEndTime?: string;
+    previousValue?: string;
+    newStatus?: string;
+    newStartTime?: string;
+    newEndTime?: string;
+    newValue?: string;
+    remarks?: string;
+    changeSummary?: string;
+  }[];
   createdAt: string;
   updatedAt: string;
 }
@@ -35,6 +53,8 @@ export interface DateRangeGroup {
   userName: string;
   userId: string;
   designation?: string;
+  employmentType?: string;
+  category?: string;
   partnerName: string;
   requestedStatus: string;
   reason?: string;
@@ -60,6 +80,15 @@ export interface DateRangeGroup {
 }
 
 export type RequestStatusFilter = 'all' | 'Pending' | 'Approved' | 'Rejected';
+
+export type RequestSortOption =
+  | 'date_desc'
+  | 'date_asc'
+  | 'employee_asc'
+  | 'employee_desc'
+  | 'status'
+  | 'type_asc'
+  | 'submitted_desc';
 
 export type RequestDisplayRow =
   | { type: 'range'; item: DateRangeGroup }

@@ -13,6 +13,7 @@ import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
 import { confirmMajorAction } from '@/lib/confirmMajorAction';
 import { getActiveFieldHistoryEntry } from '@/lib/userFieldHistory';
 import { createDefaultDailySchedule, cloneDailySchedule } from '@/lib/defaultDailySchedule';
+import { isArticleEmployee } from '@/lib/isArticleEmployee';
 import { ScheduleTemplateToolbar } from '@/components/ScheduleTemplateToolbar';
 import { ScheduleTemplateModal, type ScheduleTemplateRecord } from '@/components/ScheduleTemplateModal';
 
@@ -1606,14 +1607,10 @@ export const EmployeeManagementSection: React.FC<{
           let bf = Number(bfRaw);
           if (isNaN(bf) || bfRaw === '' || bfRaw === null) bf = 0;
           // Determine if article for monthlyEarned using values from columns
-          let isArticle = false;
-          const designationVal = getVal(idx.designation);
-          const employmentTypeVal = getVal(idx.employmentType);
-          if (designationVal && typeof designationVal === 'string' && designationVal.toLowerCase() === 'article') {
-            isArticle = true;
-          } else if (employmentTypeVal && typeof employmentTypeVal === 'string' && employmentTypeVal.toLowerCase() === 'article') {
-            isArticle = true;
-          }
+          const isArticle = isArticleEmployee({
+            designation: getVal(idx.designation),
+            employmentType: getVal(idx.employmentType),
+          });
           leaveBalance = {
             balanceAsOfJan26: bf,
             earned: 0,

@@ -58,6 +58,24 @@ export interface IAttendanceRequest extends Document {
   partnerProposedValue?: string;
   hrRemarks?: string; // HR remarks when approved by HR
   hrValue?: string; // HR value when approved by HR
+  /** employee = raised by staff; hr_direct = created only from HR calendar edit */
+  requestSource?: 'employee' | 'hr_direct';
+  /** Audit trail when HR edits attendance from the admin calendar */
+  hrEditHistory?: {
+    editedAt: Date;
+    editedBy?: string;
+    editedByEmail: string;
+    previousStatus?: string;
+    previousStartTime?: string;
+    previousEndTime?: string;
+    previousValue?: string;
+    newStatus?: string;
+    newStartTime?: string;
+    newEndTime?: string;
+    newValue?: string;
+    remarks?: string;
+    changeSummary?: string;
+  }[];
   approvedBy?: string; // 'HR' or partner name
   approvedByEmail?: string; // Email of the person who approved (for historical tracking)
   approvedAt?: Date;
@@ -113,6 +131,27 @@ const AttendanceRequestSchema: Schema = new Schema(
     partnerProposedValue: { type: String },
     hrRemarks: { type: String },
     hrValue: { type: String },
+    requestSource: { type: String, enum: ['employee', 'hr_direct'] },
+    hrEditHistory: {
+      type: [
+        {
+          editedAt: { type: Date, required: true },
+          editedBy: { type: String },
+          editedByEmail: { type: String, required: true },
+          previousStatus: { type: String },
+          previousStartTime: { type: String },
+          previousEndTime: { type: String },
+          previousValue: { type: String },
+          newStatus: { type: String },
+          newStartTime: { type: String },
+          newEndTime: { type: String },
+          newValue: { type: String },
+          remarks: { type: String },
+          changeSummary: { type: String },
+        },
+      ],
+      default: undefined,
+    },
     approvedBy: { type: String },
     approvedByEmail: { type: String },
     approvedAt: { type: Date },

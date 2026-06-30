@@ -193,6 +193,24 @@ async function fetchEmployeeRequestsForMonth(
         partnerProposedValue: req.partnerProposedValue ? String(req.partnerProposedValue) : undefined,
         hrRemarks: req.hrRemarks ? String(req.hrRemarks) : undefined,
         hrValue: req.hrValue ? String(req.hrValue) : undefined,
+        requestSource: req.requestSource as EmployeeAttendanceRequest['requestSource'],
+        hrEditHistory: Array.isArray(req.hrEditHistory)
+          ? req.hrEditHistory.map((entry: Record<string, unknown>) => ({
+              editedAt: entry.editedAt ? String(entry.editedAt) : undefined,
+              editedBy: entry.editedBy ? String(entry.editedBy) : undefined,
+              editedByEmail: entry.editedByEmail ? String(entry.editedByEmail) : undefined,
+              previousStatus: entry.previousStatus ? String(entry.previousStatus) : undefined,
+              previousStartTime: entry.previousStartTime ? String(entry.previousStartTime) : undefined,
+              previousEndTime: entry.previousEndTime ? String(entry.previousEndTime) : undefined,
+              previousValue: entry.previousValue ? String(entry.previousValue) : undefined,
+              newStatus: entry.newStatus ? String(entry.newStatus) : undefined,
+              newStartTime: entry.newStartTime ? String(entry.newStartTime) : undefined,
+              newEndTime: entry.newEndTime ? String(entry.newEndTime) : undefined,
+              newValue: entry.newValue ? String(entry.newValue) : undefined,
+              remarks: entry.remarks ? String(entry.remarks) : undefined,
+              changeSummary: entry.changeSummary ? String(entry.changeSummary) : undefined,
+            }))
+          : undefined,
         approvedBy: req.approvedBy ? String(req.approvedBy) : undefined,
         approvedByEmail: req.approvedByEmail ? String(req.approvedByEmail) : undefined,
         approvedAt: req.approvedAt ? String(req.approvedAt) : undefined,
@@ -512,6 +530,25 @@ function isTimeRangeValid(startTime: string, endTime: string): boolean {
   const startMinutes = parseTimeToMinutes(startTime);
   const endMinutes = parseTimeToMinutes(endTime);
   return startMinutes !== null && endMinutes !== null && startMinutes < endMinutes;
+}
+
+/** e.g. "Wednesday, 1 Jul 2026" for request / approval date labels */
+function formatRequestDateWithDay(dateStr: string): string {
+  const iso = String(dateStr || '').split('T')[0];
+  const d = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('en-IN', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function formatRequestDateRangeWithDay(start: string, end: string): string {
+  if (!start) return '';
+  if (!end || start === end) return formatRequestDateWithDay(start);
+  return `${formatRequestDateWithDay(start)} → ${formatRequestDateWithDay(end)}`;
 }
 
 function getCorrectionTimeDraft(dayRecord?: AttendanceRecord | null) {
@@ -2086,8 +2123,8 @@ export default function EmployeeDashboard() {
                 className="min-w-0 flex-1 truncate rounded-md bg-emerald-700 px-3 py-2 text-left text-xs font-medium text-white hover:bg-emerald-600"
               >
                 {futureStartDate === futureEndDate
-                  ? `Continue request · ${futureStartDate}`
-                  : `${futureStartDate} → ${futureEndDate}`}
+                  ? `Continue request · ${formatRequestDateWithDay(futureStartDate)}`
+                  : formatRequestDateRangeWithDay(futureStartDate, futureEndDate)}
               </button>
               <button
                 type="button"
@@ -2703,7 +2740,8 @@ export default function EmployeeDashboard() {
               {requestModalTab === 'extra_work' ? (
                 <>
                   <div className="p-3 bg-background border-2 border-amber-500 rounded-lg text-foreground text-sm">
-                    Report additional hours worked on <strong>{selectedDate}</strong> (outside your regular punch).
+                    Report additional hours worked on{' '}
+                    <strong>{formatRequestDateWithDay(selectedDate)}</strong> (outside your regular punch).
                     Your partner will review this as <strong>{EXTRA_WORK_REQUEST_STATUS}</strong>.
                   </div>
 
@@ -2837,7 +2875,8 @@ export default function EmployeeDashboard() {
               ) : (
                 <>
                   <div className="p-3 bg-background border-2 border-emerald-500 rounded-lg text-foreground text-sm">
-                    Requesting attendance correction for <strong>{selectedDate}</strong>
+                    Requesting attendance correction for{' '}
+                    <strong>{formatRequestDateWithDay(selectedDate)}</strong>
                   </div>
 
                   <div className="space-y-2">
@@ -2929,9 +2968,8 @@ export default function EmployeeDashboard() {
             <div className="p-4 sm:p-6 space-y-4">
               <div className="p-3 bg-indigo-900/20 border border-indigo-500/30 rounded-lg text-indigo-200 text-sm">
                 {futureStartDate === futureEndDate
-                  ? `Selected date: ${futureStartDate}`
-                  : `Selected range: ${futureStartDate} to ${futureEndDate}`
-                }
+                  ? `Selected date: ${formatRequestDateWithDay(futureStartDate)}`
+                  : `Selected range: ${formatRequestDateRangeWithDay(futureStartDate, futureEndDate)}`}
                 <div className="mt-2 text-xs text-indigo-300">
                   📅 Dates selected from calendar. Click another date to change range, or proceed with request.
                 </div>

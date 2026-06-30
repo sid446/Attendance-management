@@ -15,6 +15,22 @@ export type EmployeeAttendanceRequest = {
   partnerProposedValue?: string;
   hrRemarks?: string;
   hrValue?: string;
+  requestSource?: 'employee' | 'hr_direct';
+  hrEditHistory?: {
+    editedAt?: string;
+    editedBy?: string;
+    editedByEmail?: string;
+    previousStatus?: string;
+    previousStartTime?: string;
+    previousEndTime?: string;
+    previousValue?: string;
+    newStatus?: string;
+    newStartTime?: string;
+    newEndTime?: string;
+    newValue?: string;
+    remarks?: string;
+    changeSummary?: string;
+  }[];
   approvedBy?: string;
   approvedByEmail?: string;
   approvedAt?: string;

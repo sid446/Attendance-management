@@ -18,8 +18,9 @@ import {
   isValidPunchTime,
 } from '@/lib/attendanceHours';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
-import { reapplyExtraWorkEntriesToRecord } from '@/lib/extraWorkRequest';
 import { reconcileApprovedRequestsForMonth } from '@/lib/applyApprovedAttendanceRequest';
+import { isArticleEmployee } from '@/lib/isArticleEmployee';
+import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
 
 // GET - Fetch attendance records
 export async function GET(request: NextRequest) {
@@ -446,9 +447,8 @@ export async function POST(request: NextRequest) {
             }
           }
           // Special handling for Article employees (case-insensitive employmentType)
-          const empTypeStr = String(user?.employmentType || '').toLowerCase();
-          const isArticleEmployee = user && (empTypeStr === 'article' || user.designation?.toLowerCase() === 'article');
-          if (!isFixedDataUpload && isArticleEmployee) {
+          const isArticleEmployeeFlag = isArticleEmployee(user);
+          if (!isFixedDataUpload && isArticleEmployeeFlag) {
             if (finalTotalHour === 0 && typeOfPresence !== 'Holiday') {
               finalValue = 0;
               typeOfPresence = 'ThumbMachine';
@@ -462,6 +462,7 @@ export async function POST(request: NextRequest) {
 
           // Special handling for halftime employees (accept case variants like 'half', 'half-time')
           // Also exempting Partners from half-day/late marking
+          const empTypeStr = String(user?.employmentType || '').toLowerCase();
           const isPartner = user && (user.category === 'Partner' || (user.designation && user.designation.toLowerCase().includes('partner')));
           const isHalftimeEmployee = user && (empTypeStr === 'halftime' || empTypeStr.includes('half') || isPartner);
           if (isHalftimeEmployee) {
@@ -917,11 +918,7 @@ export async function POST(request: NextRequest) {
           const user = await User.findById(userId);
           if (!user || !user.isActive) continue;
           
-          // Skip leave balance increment for articles - check both employmentType and designation
-          const designationLower = (user.designation || '').toLowerCase();
-          const employmentTypeLower = (user.employmentType || '').toLowerCase();
-          const isArticle = employmentTypeLower.includes('article') || designationLower.includes('article');
-          if (isArticle) continue;
+          if (isArticleEmployee(user)) continue;
           
           const currentEarned = user.leaveBalance?.earned || 0;
           const currentUsed = user.leaveBalance?.used || 0;
@@ -1113,245 +1110,6 @@ function getPresenceValueByType(typeOfPresence: string): number {
   if (typeOfPresence === 'Half Day - weekdays' || typeOfPresence === 'Half Day - weekoff' || typeOfPresence === 'Half Day (HD)') return 0.5;
   if (typeOfPresence === 'On leave' || typeOfPresence === 'Leave') return 0;
   return 1;
-}
-
-function shouldExcludeFromSummaryHours(typeOfPresence: string, dateStr: string): boolean {
-  const day = new Date(dateStr).getDay();
-  if (day === 0) return true;
-
-  const excluded = new Set<string>([
-    'Holiday',
-    'Sunday',
-    'Weekoff',
-    'Absent',
-    'On leave',
-    'Leave',
-    'WFH - weekdays',
-    'WFH - weekoff',
-    'Work From Home (WFH)',
-    'Weekly Off - Work From Home (WO-WFH)',
-    'Onsite Presence (OS-P)',
-    'Present - ClientPlace (Weekdays)',
-    'Present - ClientPlace (Weekoff)',
-    'Present - client place',
-    'Present - outstation',
-    'Present - Outstation (Weekdays)',
-    'Present - Outstation (Weekoff)',
-    'Present - in office - weekoff',
-    'Present - weekoff',
-    'Weekly Off - Present (WO-Present)',
-    'Half Day - weekoff',
-    'Weekoff - special allowance',
-  ]);
-
-  return excluded.has(typeOfPresence);
-}
-
-function calculateSummary(
-  records: Map<string, {
-    checkin: string;
-    checkout: string;
-    editedCheckin?: string;
-    editedCheckout?: string;
-    totalHour: number;
-    excessHour: number;
-    typeOfPresence: string;
-    halfDay: boolean;
-    value?: number;
-    remarks?: string;
-  }>,
-  user?: IUser | null
-) {
-  let totalHour = 0;
-  let totalLateArrival = 0;
-  let excessHour = 0;
-  let totalScheduledHour = 0;
-  let totalHalfDay = 0;
-  let totalPresent = 0;
-  let totalAbsent = 0;
-  let totalLeave = 0;
-
-  records.forEach((record, dateStr) => {
-    // Attach scheduled times for this day
-    let scheduledInTime = '';
-    let scheduledOutTime = '';
-    let isHoliday = false;
-    let isHalfDay = false;
-    if (user) {
-      const schedule = getScheduledTimes(user, dateStr);
-      scheduledInTime = schedule.inTime;
-      scheduledOutTime = schedule.outTime;
-      isHoliday = schedule.isHoliday;
-      isHalfDay = schedule.isHalfDay;
-    }
-    // Calculate excess/short for the day (same as daywise/export logic)
-    let presentAbsent = 'Absent';
-    const inTime = String(record.editedCheckin ?? record.checkin ?? '').trim();
-    const outTime = String(record.editedCheckout ?? record.checkout ?? '').trim();
-    if (
-      (record.typeOfPresence === 'Present - outstation') ||
-      (record.typeOfPresence === 'WFH - weekdays') ||
-      (record.typeOfPresence === 'WFH - weekoff') ||
-      (inTime !== '00:00' && outTime !== '00:00')
-    ) {
-      presentAbsent = 'Present';
-    }
-    let dayExcess = 0;
-    let dayScheduledHours = 0;
-    if (scheduledInTime && scheduledOutTime && scheduledInTime !== '00:00' && scheduledOutTime !== '00:00') {
-      const [schInH, schInM] = scheduledInTime.split(':').map(Number);
-      const [schOutH, schOutM] = scheduledOutTime.split(':').map(Number);
-      const schInMin = schInH * 60 + schInM;
-      const schOutMin = schOutH * 60 + schOutM;
-      const scheduledMinutes = schOutMin - schInMin >= 0 ? schOutMin - schInMin : (24 * 60 + schOutMin - schInMin);
-      dayScheduledHours = Number((scheduledMinutes / 60).toFixed(2));
-    }
-    const recordDateObj = new Date(dateStr);
-    const isSundayDate = recordDateObj.getDay() === 0;
-    const isNonWorkingDayRecord =
-      record.typeOfPresence === 'Holiday' ||
-      record.typeOfPresence === 'Sunday' ||
-      record.typeOfPresence === 'Weekoff' ||
-      record.typeOfPresence === 'Weekoff - special allowance' ||
-      isSundayDate;
-    // Set excess = 0 for non-working days (Sunday/Holiday/Weekoff)
-    if (isNonWorkingDayRecord) {
-      dayExcess = 0;
-    } else if (presentAbsent === 'Absent' && scheduledInTime && scheduledOutTime && scheduledInTime !== '00:00' && scheduledOutTime !== '00:00') {
-      const [schInH, schInM] = scheduledInTime.split(':').map(Number);
-      const [schOutH, schOutM] = scheduledOutTime.split(':').map(Number);
-      const schInMin = schInH * 60 + schInM;
-      const schOutMin = schOutH * 60 + schOutM;
-      const scheduledMinutes = schOutMin - schInMin >= 0 ? schOutMin - schInMin : (24 * 60 + schOutMin - schInMin);
-      dayExcess = -scheduledMinutes / 60;
-    } else if (scheduledInTime && scheduledOutTime && scheduledInTime !== '00:00' && scheduledOutTime !== '00:00' && inTime && outTime && inTime !== '00:00' && outTime !== '00:00') {
-      const [schInH, schInM] = scheduledInTime.split(':').map(Number);
-      const [schOutH, schOutM] = scheduledOutTime.split(':').map(Number);
-      const [actInH, actInM] = inTime.split(':').map(Number);
-      const [actOutH, actOutM] = outTime.split(':').map(Number);
-      const schInMin = schInH * 60 + schInM;
-      const schOutMin = schOutH * 60 + schOutM;
-      const actInMin = actInH * 60 + actInM;
-      const actOutMin = actOutH * 60 + actOutM;
-      const scheduledMinutes = schOutMin - schInMin >= 0 ? schOutMin - schInMin : (24 * 60 + schOutMin - schInMin);
-      const actualMinutes = actOutMin - actInMin >= 0 ? actOutMin - actInMin : (24 * 60 + actOutMin - actInMin);
-      let isArticle = false;
-      if (user && user.designation && user.designation.toLowerCase() === 'article') {
-        isArticle = true;
-      }
-      if (actualMinutes < scheduledMinutes) {
-        dayExcess = -(scheduledMinutes - actualMinutes) / 60;
-      } else if (actualMinutes > scheduledMinutes) {
-        if (isArticle) {
-          let excess = 0;
-          if (actInH * 60 + actInM < schInH * 60 + schInM) {
-            excess += (schInH * 60 + schInM) - (actInH * 60 + actInM);
-          }
-          if (actOutH * 60 + actOutM > schOutH * 60 + schOutM) {
-            const late = (actOutH * 60 + actOutM) - (schOutH * 60 + schOutM);
-            if (late > 30) excess += late;
-          }
-          dayExcess = excess > 0 ? excess / 60 : 0;
-        } else {
-          dayExcess = (actualMinutes - scheduledMinutes) / 60;
-        }
-      } else {
-        dayExcess = 0;
-      }
-    } else {
-      dayExcess = 0;
-    }
-    // Update record's totalHour (single punch = half of scheduled shift)
-    record.totalHour = calculateTotalHours(inTime, outTime, {
-      scheduledIn: scheduledInTime,
-      scheduledOut: scheduledOutTime,
-    });
-    if (isSinglePunch(inTime, outTime) && dayScheduledHours > 0) {
-      dayExcess = Number((record.totalHour - dayScheduledHours).toFixed(2));
-    }
-    // Update record's excessHour
-    record.excessHour = Number(dayExcess.toFixed(2));
-    reapplyExtraWorkEntriesToRecord(record);
-    const includeInHoursSummary = !shouldExcludeFromSummaryHours(record.typeOfPresence, dateStr);
-    if (includeInHoursSummary) {
-      totalHour += record.totalHour;
-      totalScheduledHour += dayScheduledHours;
-    }
-    // ...existing halfday/late/present/absent/leave logic...
-    // Ensure holidays and Sundays are NOT treated as half-days (some uploads set halfDay=true when totalHour=0)
-    if (isNonWorkingDayRecord) {
-      // Force clear any half-day flag for holidays or Sundays
-      record.halfDay = false;
-    }
-
-    // Determine half-day based on employmentType (only for summary calculation, don't override individual record flags)
-    const employmentType = String(user?.employmentType || 'fulltime').toLowerCase();
-    const designation = user?.designation?.toLowerCase();
-    const isPartner = user && (user.category === 'Partner' || (user.designation && user.designation.toLowerCase().includes('partner')));
-    const isHalftime = employmentType === 'halftime' || employmentType.includes('half') || isPartner;
-
-    let calculatedHalfDay = record.halfDay || false; // Use existing halfDay flag if already set
-    
-    // Halftime employees are never marked as half-day
-    if (isHalftime) {
-      calculatedHalfDay = false;
-    } else if (!record.halfDay && !isNonWorkingDayRecord) { // Only recalculate if not already set
-      if (isSinglePunch(inTime, outTime)) {
-        calculatedHalfDay = true;
-      } else if ((inTime === '00:00' && outTime === '00:00') ||
-          (record.editedCheckin === '' && record.editedCheckout === '')) {
-        calculatedHalfDay = false;
-      } else {
-        const isArticle = employmentType === 'article' || designation === 'article';
-        const isAfter1PM = inTime ? inTime >= '13:00' : false;
-        if (employmentType === 'fulltime' && !isArticle) {
-          // For non-articles, half day depends only on 6-hour threshold.
-          calculatedHalfDay = record.totalHour < 6;
-        } else if (isArticle) {
-          // Half day if arrive after 1:00 PM or spent less than 3:30 hours
-          calculatedHalfDay = isAfter1PM || record.totalHour < 3.5;
-        }
-      }
-    }
-    
-    // Update the record's halfDay flag
-    record.halfDay = calculatedHalfDay;
-    if (calculatedHalfDay) {
-      totalHalfDay++;
-    }
-    // Late arrival: if inTime > scheduled in
-    const userEmpType = String(user?.employmentType || '').toLowerCase();
-    if (inTime && scheduledInTime && inTime > scheduledInTime && !(userEmpType === 'halftime' || userEmpType.includes('half'))) {
-      totalLateArrival++;
-    }
-    const t = String(record.typeOfPresence || '').toLowerCase();
-    if (t === 'leave' || t === 'on leave') {
-      totalLeave++;
-    } else if (t === 'holiday' || t === 'sunday' || t.includes('weekoff')) {
-      // Holidays/Weekoffs don't count as present/absent for the 1.0/0.5 metrics
-    } else if (t === 'absent') {
-      totalAbsent++;
-    } else {
-      // Everything else is treated as presence if there's any duration or value, else absent
-      if (record.totalHour > 0 || (record.value && record.value > 0)) {
-        totalPresent++;
-      } else {
-        totalAbsent++;
-      }
-    }
-  });
-
-  excessHour = Number((totalHour - totalScheduledHour).toFixed(2));
-
-  return {
-    totalHour,
-    totalLateArrival,
-    excessHour,
-    totalHalfDay,
-    totalPresent,
-    totalAbsent,
-    totalLeave,
-  };
 }
 
 // Convert Excel page date formats to ISO strings used by Attendance model

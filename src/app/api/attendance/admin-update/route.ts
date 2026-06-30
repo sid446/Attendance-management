@@ -4,7 +4,14 @@ import Attendance from '@/models/Attendance';
 import User from '@/models/User';
 import { calculateLeaveUsage, updateLeaveBalanceOnApproval } from '@/lib/leaveManagement';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
-import { reapplyExtraWorkEntriesToRecord } from '@/lib/extraWorkRequest';
+import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
+import { applyDayExcessToRecord } from '@/lib/calculateDayExcessHour';
+import { requireEmployeeOrHrSession } from '@/lib/employeeRouteAuth';
+import { getDefaultNumericValueForType } from '@/lib/attendanceRequestValues';
+import {
+  captureAttendanceSnapshot,
+  recordHrAttendanceEditRequest,
+} from '@/lib/recordHrAttendanceEditRequest';
 
 function calculateDuration(start: string, end: string): number {
     if (!start || !end) return 0;
@@ -14,119 +21,19 @@ function calculateDuration(start: string, end: string): number {
     return Math.max(0, Math.round((totalMinutes / 60) * 100) / 100);
 }
 
-// Lightweight summary calculation re-used from approval flow
-function calculateSummary(
-  records: Map<string, any> | Record<string, any>,
-  user?: any | null
-) {
-  // Convert to Map if plain object
-  const map = records instanceof Map ? records : new Map(Object.entries(records));
-
-  let totalHour = 0;
-  let totalLateArrival = 0;
-  let excessHour = 0;
-  let totalHalfDay = 0;
-  let totalPresent = 0;
-  let totalAbsent = 0;
-  let totalLeave = 0;
-
-  map.forEach((record: any, dateStr: string) => {
-    // get scheduled times
-    let scheduledInTime = '';
-    let scheduledOutTime = '';
-    if (user) {
-      const s = getScheduledTimes(user, dateStr);
-      scheduledInTime = s.inTime;
-      scheduledOutTime = s.outTime;
-    }
-
-    const inTime = String(record.editedCheckin ?? record.checkin ?? '').trim();
-    const outTime = String(record.editedCheckout ?? record.checkout ?? '').trim();
-    const isSundayDate = new Date(dateStr).getDay() === 0;
-    const isNonWorkingDayRecord =
-      record.typeOfPresence === 'Holiday' ||
-      record.typeOfPresence === 'Sunday' ||
-      record.typeOfPresence === 'Weekoff' ||
-      record.typeOfPresence === 'Weekoff - special allowance' ||
-      isSundayDate;
-
-    // compute totalHour and default present/absent
-    record.totalHour = calculateDuration(inTime, outTime);
-
-    // compute dayExcess similar to existing logic (simplified)
-    let dayExcess = 0;
-    if (isNonWorkingDayRecord) {
-      dayExcess = 0;
-    } else if (scheduledInTime && scheduledOutTime && inTime && outTime && inTime !== '00:00' && outTime !== '00:00') {
-      const [schInH, schInM] = scheduledInTime.split(':').map(Number);
-      const [schOutH, schOutM] = scheduledOutTime.split(':').map(Number);
-      const [actInH, actInM] = inTime.split(':').map(Number);
-      const [actOutH, actOutM] = outTime.split(':').map(Number);
-      const schInMin = schInH * 60 + schInM;
-      const schOutMin = schOutH * 60 + schOutM;
-      const actInMin = actInH * 60 + actInM;
-      const actOutMin = actOutH * 60 + actOutM;
-      const scheduledMinutes = schOutMin - schInMin >= 0 ? schOutMin - schInMin : (24 * 60 + schOutMin - schInMin);
-      const actualMinutes = actOutMin - actInMin >= 0 ? actOutMin - actInMin : (24 * 60 + actOutMin - actInMin);
-      if (actualMinutes < scheduledMinutes) {
-        dayExcess = -(scheduledMinutes - actualMinutes) / 60;
-      } else {
-        dayExcess = (actualMinutes - scheduledMinutes) / 60;
-      }
-    } else {
-      dayExcess = 0;
-    }
-
-    record.excessHour = Number(dayExcess.toFixed(2));
-
-    totalHour += record.totalHour || 0;
-    excessHour += record.excessHour || 0;
-
-    // half day and present/absent/leave counting (simplified to match existing rules)
-    const isSunday = new Date(dateStr).getDay() === 0;
-    let calculatedHalf = record.halfDay || false;
-    if (!calculatedHalf && !isNonWorkingDayRecord) {
-      if ((inTime === '00:00' && outTime !== '00:00' && record.totalHour > 0)) {
-        calculatedHalf = true;
-      } else {
-        const isArticle = user && user.designation && String(user.designation).toLowerCase() === 'article';
-        if (isArticle) {
-          const isAfter1PM = inTime ? inTime >= '13:00' : false;
-          calculatedHalf = isAfter1PM || record.totalHour < 3.5;
-        } else {
-          // Non-article employees can come anytime; half-day only depends on total hours.
-          calculatedHalf = record.totalHour > 0 && record.totalHour < 6;
-        }
-      }
-    }
-    if (isNonWorkingDayRecord) {
-      calculatedHalf = false;
-      record.excessHour = 0;
-    }
-    reapplyExtraWorkEntriesToRecord(record);
-
-    if (calculatedHalf) totalHalfDay++;
-
-    if (['On leave', 'Leave'].includes(record.typeOfPresence)) {
-      totalLeave++;
-    } else if (record.typeOfPresence === 'Holiday' || record.typeOfPresence === 'Sunday' || record.typeOfPresence === 'Weekoff' || isSunday) {
-      // ignore
-    } else if (record.totalHour > 0 || (record.excessHour && record.excessHour > 0)) {
-      totalPresent++;
-    } else {
-      totalAbsent++;
-    }
-  });
-
-  return { totalHour, totalLateArrival, excessHour, totalHalfDay, totalPresent, totalAbsent, totalLeave };
-}
-
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireEmployeeOrHrSession(request);
+    if (auth instanceof NextResponse) return auth;
+    if (auth.type !== 'hr') {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    }
+    const editorEmail = auth.email;
+
     await dbConnect();
 
     const body = await request.json();
-    const { userId, date, monthYear, requestedStatus, startTime, endTime, attendanceValue, remarks, updatedBy, updatedByEmail } = body;
+    const { userId, date, monthYear, requestedStatus, startTime, endTime, attendanceValue, remarks } = body;
 
     if (!userId || !date || !monthYear || !requestedStatus) {
       return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
@@ -140,12 +47,17 @@ export async function POST(request: NextRequest) {
 
     // Get or create record for date
     let rec = attendance.records.get(date);
+    const beforeSnapshot = captureAttendanceSnapshot(
+      (rec ?? null) as Record<string, unknown> | null
+    );
     if (!rec) {
       rec = { checkin: '', checkout: '', editedCheckin: '', editedCheckout: '', totalHour: 0, excessHour: 0, typeOfPresence: 'Absent', halfDay: false, value: 0, remarks: '' };
     }
 
     // Update presence type
     rec.typeOfPresence = requestedStatus;
+
+    const userObj = await User.findById(userId);
 
     // Set attendance value
     if (typeof requestedStatus === 'string' && requestedStatus.includes('Half Day')) {
@@ -163,7 +75,7 @@ export async function POST(request: NextRequest) {
         rec.value = 0;
         rec.halfDay = false;
       } else if (typeof requestedStatus === 'string' && requestedStatus.toLowerCase().includes('outstation')) {
-        rec.value = 1.2;
+        rec.value = getDefaultNumericValueForType(requestedStatus, { employee: userObj }) ?? 1;
         rec.halfDay = false;
       } else {
         rec.value = 1;
@@ -172,7 +84,6 @@ export async function POST(request: NextRequest) {
     }
 
     // Fetch user schedule for the day
-    const userObj = await User.findById(userId);
     let scheduledInTime = '';
     let scheduledOutTime = '';
     let scheduledMinutes = 0;
@@ -238,7 +149,13 @@ export async function POST(request: NextRequest) {
     } else if (isType('Present - Outstation (Weekdays)') || isType('Present - Outstation')) {
       if (startTime && endTime && startTime !== '00:00' && endTime !== '00:00') {
         rec.totalHour = calculateDuration(startTime, endTime);
-        rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
+        applyDayExcessToRecord(
+          rec,
+          userObj,
+          date,
+          effectiveScheduledInTime,
+          effectiveScheduledOutTime
+        );
       } else {
         rec.totalHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
         rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
@@ -255,7 +172,13 @@ export async function POST(request: NextRequest) {
       if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
     } else if (startTime && endTime && startTime !== '00:00' && endTime !== '00:00') {
       rec.totalHour = calculateDuration(startTime, endTime);
-      rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
+      applyDayExcessToRecord(
+        rec,
+        userObj,
+        date,
+        effectiveScheduledInTime,
+        effectiveScheduledOutTime
+      );
     }
 
     const isSundayDate = new Date(date).getDay() === 0;
@@ -270,15 +193,35 @@ export async function POST(request: NextRequest) {
       rec.excessHour = 0;
     }
 
-    // Add HR remark
-    const hrRemark = `Updated by HR${updatedBy ? `: ${updatedBy}` : ''}${remarks ? ` - ${remarks}` : ''}`;
+    // Add HR remark on attendance record (short stamp; full audit lives on AttendanceRequest)
+    const hrRemark = `Updated by HR: ${editorEmail}${remarks ? ` - ${remarks}` : ''}`;
     rec.remarks = rec.remarks ? `${rec.remarks} | ${hrRemark}` : hrRemark;
 
     attendance.records.set(date, rec);
 
+    const afterSnapshot = {
+      status: requestedStatus,
+      startTime: startTime && startTime !== '00:00' ? startTime : rec.editedCheckin || rec.checkin || '',
+      endTime: endTime && endTime !== '00:00' ? endTime : rec.editedCheckout || rec.checkout || '',
+      value: typeof rec.value === 'number' ? rec.value : undefined,
+    };
+
+    try {
+      await recordHrAttendanceEditRequest({
+        userId,
+        date,
+        monthYear,
+        before: beforeSnapshot,
+        after: afterSnapshot,
+        editorEmail,
+        remarks,
+      });
+    } catch (auditErr) {
+      console.error('Failed to record HR edit on AttendanceRequest:', auditErr);
+    }
+
     // Recalculate monthly summary
-    const user = await User.findById(userId);
-    attendance.summary = calculateSummary(attendance.records, user);
+    attendance.summary = calculateSummary(attendance.records, userObj);
     await attendance.save();
 
     // Update leave balance if On leave or Absent and is paid leave

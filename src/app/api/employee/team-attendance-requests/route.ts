@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
 
     const requests = await AttendanceRequest.find(query)
       .sort({ createdAt: -1 })
-      .populate('userId', 'name email designation employeeCode odId')
+      .populate('userId', 'name email designation employeeCode odId employmentType category')
       .lean();
 
     const enriched = await enrichAttendanceRequestsWithOriginalTimes(

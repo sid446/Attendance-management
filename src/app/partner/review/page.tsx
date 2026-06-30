@@ -9,6 +9,12 @@ import {
   normalizeExtraWorkSlotsFromRequest,
   sumExtraWorkSlotHours,
 } from '@/lib/extraWorkRequest';
+import {
+  getDefaultValueForType,
+  isFixedValueType,
+  isLeaveRequestType,
+  resolveApproveValueNumber,
+} from '@/lib/attendanceRequestValues';
 
 interface AttendanceRequest {
   _id: string;
@@ -23,6 +29,7 @@ interface AttendanceRequest {
   endTime?: string;
   extraWorkSlots?: { startTime: string; endTime: string; reason: string }[];
   status: string;
+  isArticleEmployee?: boolean;
 }
 
 const APPROVE_CHIPS = ['Done', 'Missed Entry', 'Client Visit', 'Emergency', 'Approved'];
@@ -33,62 +40,6 @@ function formatDate(dateStr: string): string {
   const day = date.getDate();
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   return `${day} ${months[date.getMonth()]} ${date.getFullYear()}`;
-}
-
-function getMaxValueForType(requestedStatus: string): number | null {
-  const status = requestedStatus.toLowerCase();
-  if (status.includes('half')) return 0.5;
-  if (status.includes('leave') || requestedStatus === 'On leave') return null;
-  if (status.includes('wfh')) return 0.75;
-  if (
-    status.includes('outstation') ||
-    status.includes('client place') ||
-    status.includes('clientplace') ||
-    status.includes('onsite') ||
-    status.includes('os-p')
-  ) {
-    return 1.2;
-  }
-  return 1;
-}
-
-function getDefaultValueForType(requestedStatus: string): string {
-  const status = requestedStatus.toLowerCase();
-  if (status.includes('half')) return '0.5';
-  if (status.includes('leave') || requestedStatus === 'On leave') return '';
-  if (status.includes('wfh')) return '0.75';
-  if (
-    status.includes('outstation') ||
-    status.includes('client place') ||
-    status.includes('clientplace') ||
-    status.includes('onsite') ||
-    status.includes('os-p')
-  ) {
-    return '1.2';
-  }
-  return '1';
-}
-
-function isFixedValueType(requestedStatus: string): boolean {
-  const status = requestedStatus.toLowerCase();
-  return status.includes('half') || status.includes('leave') || requestedStatus === 'On leave';
-}
-
-function isLeaveRequestType(requestedStatus: string): boolean {
-  const status = requestedStatus.toLowerCase();
-  return status.includes('leave') || requestedStatus === 'On leave';
-}
-
-function resolveApproveValue(requestedStatus: string, raw: string | undefined): number | undefined {
-  if (isLeaveRequestType(requestedStatus)) return undefined;
-  const trimmed = String(raw ?? '').trim().replace(',', '.');
-  const defStr = getDefaultValueForType(requestedStatus);
-  let n = trimmed === '' ? NaN : parseFloat(trimmed);
-  if (!Number.isFinite(n)) n = defStr === '' ? NaN : parseFloat(defStr);
-  if (!Number.isFinite(n)) return undefined;
-  const max = getMaxValueForType(requestedStatus);
-  if (max != null) n = Math.min(Math.max(0, n), max);
-  return n;
 }
 
 function PartnerReviewContent() {
@@ -128,7 +79,9 @@ function PartnerReviewContent() {
         }
         setRequest(data);
         setRemarks('Done');
-        setAttendanceValue(getDefaultValueForType(data.requestedStatus));
+        const approveCtx =
+          data.isArticleEmployee != null ? { isArticle: data.isArticleEmployee } : undefined;
+        setAttendanceValue(getDefaultValueForType(data.requestedStatus, approveCtx));
       } else {
         setError(result.error || 'Failed to load request');
       }
@@ -145,6 +98,8 @@ function PartnerReviewContent() {
     setProcessing(true);
     setError('');
     try {
+      const approveCtx =
+        request.isArticleEmployee != null ? { isArticle: request.isArticleEmployee } : undefined;
       const response = await fetch('/api/attendance/request-action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -153,7 +108,9 @@ function PartnerReviewContent() {
           action,
           remarks: remarks.trim() || 'Done',
           attendanceValue:
-            action === 'approve' ? resolveApproveValue(request.requestedStatus, attendanceValue) : undefined,
+            action === 'approve'
+              ? resolveApproveValueNumber(request.requestedStatus, attendanceValue, approveCtx)
+              : undefined,
         }),
       });
 

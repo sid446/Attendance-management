@@ -4,6 +4,7 @@ import Holiday from '@/models/Holiday';
 import Attendance, { type IDailyRecord } from '@/models/Attendance';
 import User, { IUser } from '@/models/User';
 import { reapplyExtraWorkEntriesToRecord } from '@/lib/extraWorkRequest';
+import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
 
 // GET /api/holidays - Get all holidays, optionally filtered by year
 export async function GET(request: NextRequest) {
@@ -339,145 +340,6 @@ function calculateTotalHours(checkin: string, checkout: string): number {
   return Number(hours.toFixed(2));
 }
 
-function calculateSummary(
-  records: Map<string, {
-    checkin: string;
-    checkout: string;
-    editedCheckin?: string;
-    editedCheckout?: string;
-    totalHour: number;
-    excessHour: number;
-    typeOfPresence: string;
-    halfDay: boolean;
-    remarks?: string;
-  }>,
-  user?: IUser | null
-) {
-  let totalHour = 0;
-  let totalLateArrival = 0;
-  let excessHour = 0;
-  let totalHalfDay = 0;
-  let totalPresent = 0;
-  let totalAbsent = 0;
-  let totalLeave = 0;
-
-  records.forEach((record, dateStr) => {
-    // Recalculate totalHour and excessHour using edited times if available
-    const scheduled = getScheduledTimes(user, dateStr);
-    const checkin = record.editedCheckin || record.checkin;
-    const checkout = record.editedCheckout || record.checkout;
-
-    let calculatedTotalHour = calculateTotalHours(checkin, checkout);
-    let calculatedExcessHour = 0;
-
-    // Update record's totalHour
-    record.totalHour = calculatedTotalHour;
-
-    // Calculate excess for articles
-    const isArticleEmployee = user && user.designation?.toLowerCase() === 'article';
-    if (isArticleEmployee && checkin && checkout && checkin !== '00:00' && checkout !== '00:00' && scheduled.inTime && scheduled.outTime) {
-      // Early arrival
-      if (checkin < scheduled.inTime) {
-        const earlyMinutes = timeToMinutes(scheduled.inTime) - timeToMinutes(checkin);
-        calculatedExcessHour += earlyMinutes / 60;
-      }
-      // Late leaving: excess if more than 30 min beyond scheduled out
-      if (checkout > scheduled.outTime) {
-        const lateMinutes = timeToMinutes(checkout) - timeToMinutes(scheduled.outTime);
-        if (lateMinutes > 30) {
-          calculatedExcessHour += (lateMinutes - 30) / 60;
-        }
-      }
-    }
-
-    // Update record's excessHour
-    record.excessHour = Number(calculatedExcessHour.toFixed(2));
-    reapplyExtraWorkEntriesToRecord(record);
-
-    totalHour += record.totalHour;
-    excessHour += record.excessHour;
-
-    // Determine half-day based on employmentType (only for summary calculation, don't override individual record flags)
-    let isHalfDay = record.halfDay || false; // Use existing halfDay flag if already set
-    if (!record.halfDay) { // Only recalculate if not already set
-      // Special case: if checkin is 00:00 but checkout is valid, mark as half day
-      if (checkin === '00:00' && checkout !== '00:00' && checkout !== '' && record.totalHour > 0) {
-        isHalfDay = true;
-      } else if ((checkin === '00:00' && checkout === '00:00') ||
-          (record.editedCheckin === '' && record.editedCheckout === '')) {
-        isHalfDay = false;
-      } else {
-        const employmentType = user?.employmentType || 'fulltime';
-        const designation = user?.designation?.toLowerCase();
-        const isArticle = employmentType === 'article' || designation === 'article';
-        const isAfter1PM = checkin ? checkin >= '13:00' : false;
-
-        if (employmentType === 'fulltime' && !isArticle) {
-          // Half day if arrive after 1:30 PM or spent less than 6.5 hours
-          isHalfDay = isAfter1PM || record.totalHour < 6.5;
-        } else if (employmentType === 'halftime') {
-          // Can come anytime, half day if spent less than 60% of scheduled time
-          const scheduledHours = scheduled.inTime && scheduled.outTime ? calculateTotalHours(scheduled.inTime, scheduled.outTime) : 0;
-          const requiredHours = scheduledHours * 0.6;
-          isHalfDay = record.totalHour < requiredHours;
-        } else if (isArticle) {
-          // Half day if arrive after 1:00 PM or spent less than 3:30 hours
-          isHalfDay = isAfter1PM || record.totalHour < 3.5;
-        }
-      }
-
-      // Update the record's halfDay flag only if it wasn't already set
-      record.halfDay = isHalfDay;
-    }
-
-    if (isHalfDay) {
-      totalHalfDay++;
-    }
-
-    // Late arrival: if checkin > scheduled in
-    if (checkin && scheduled.inTime && checkin > scheduled.inTime) {
-      totalLateArrival++;
-    }
-
-    switch (record.typeOfPresence) {
-      case 'ThumbMachine':
-      case 'Manual':
-      case 'Remote':
-      case 'Weekly Off - Present (WO-Present)':
-      case 'Half Day (HD)':
-      case 'Work From Home (WFH)':
-      case 'Weekly Off - Work From Home (WO-WFH)':
-      case 'Onsite Presence (OS-P)':
-        // If hours are > 0, they are present. If 0, they are Absent (but source was Machine/Manual)
-        if (record.totalHour > 0) {
-           totalPresent++;
-        } else {
-           totalAbsent++;
-        }
-        break;
-      case 'On leave':
-      case 'Leave':
-        totalLeave++;
-        break;
-      case 'Holiday':
-        // Holidays don't count as present/absent
-        break;
-      default:
-        totalAbsent++;
-    }
-  });
-
-  return {
-    totalHour,
-    totalLateArrival,
-    excessHour,
-    totalHalfDay,
-    totalPresent,
-    totalAbsent,
-    totalLeave,
-  };
-}
-
 function hasValidPunch(checkin?: string, checkout?: string): boolean {
   const inT = (checkin || '').trim();
   const outT = (checkout || '').trim();
@@ -550,7 +412,10 @@ async function updateAttendanceForDate(date: string, typeOfPresence: string | nu
       }
     }
 
-    attendance.summary = calculateSummary(attendance.records, attendance.userId as unknown as IUser);
+    attendance.summary = calculateSummary(
+      attendance.records,
+      attendance.userId as unknown as IUser
+    );
     await attendance.save();
   }
 }

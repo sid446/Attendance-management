@@ -4,6 +4,7 @@ import Attendance from '@/models/Attendance';
 import AttendanceRequest from '@/models/AttendanceRequest';
 import LeaveTransaction from '@/models/LeaveTransaction';
 import LeaveSnapshot from '@/models/LeaveSnapshot';
+import { isArticleEmployee } from '@/lib/isArticleEmployee';
 
 export interface LeaveBalance {
   balanceAsOfJan26: number;
@@ -117,10 +118,7 @@ export async function incrementMonthlyLeave(monthYear?: string): Promise<void> {
       if (!user || !user.isActive) continue;
 
       // Skip leave balance increment for articles
-      const designationLower = (user.designation || '').toLowerCase();
-      const employmentTypeLower = (user.employmentType || '').toLowerCase();
-      const isArticle = employmentTypeLower.includes('article') || designationLower.includes('article');
-      if (isArticle) continue;
+      if (isArticleEmployee(user)) continue;
 
       const monthlyEarned = user.leaveBalance?.monthlyEarned || 2;
 
@@ -200,7 +198,7 @@ export async function calculateLeaveUsageForMultipleDays(
     }
 
     // Check if user is an article - articles have no paid leave concept
-    const isArticle = user.employmentType?.toLowerCase() === 'article';
+    const isArticle = isArticleEmployee(user);
     if (isArticle) {
       // Articles always get value 0 for leave (no paid leave)
       const leaveDetails = dates.map(date => ({
@@ -284,7 +282,7 @@ export async function calculateLeaveUsage(
     }
 
     // Check if user is an article - articles have no paid leave concept
-    const isArticle = user.employmentType?.toLowerCase() === 'article';
+    const isArticle = isArticleEmployee(user);
     if (isArticle) {
       // Articles always get value 0 for leave (no paid leave)
       return { isPaidLeave: false, value: 0 };

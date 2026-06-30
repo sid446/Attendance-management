@@ -1,9 +1,10 @@
 'use client';
 
 import React, { RefObject } from 'react';
-import { Download, LayoutGrid, Table, Upload } from 'lucide-react';
+import { Download, LayoutGrid, Search, Table, Upload, X } from 'lucide-react';
 import { REQUESTS_WORKFLOW_STEPS, SELECT_INPUT_CLASS } from '../constants';
-import type { AttendanceRequest, RequestStatusFilter } from '../types';
+import type { AttendanceRequest, RequestSortOption, RequestStatusFilter } from '../types';
+import { REQUEST_SORT_OPTIONS } from '../utils/requestSorting';
 
 export interface RequestsHeaderProps {
   isEmployeeView?: boolean;
@@ -15,8 +16,19 @@ export interface RequestsHeaderProps {
   onMonthFilterChange: (value: string) => void;
   leaveTypeFilter: string;
   onLeaveTypeFilterChange: (value: string) => void;
+  partnerFilter: string;
+  onPartnerFilterChange: (value: string) => void;
+  uniquePartners: string[];
   statusFilter: RequestStatusFilter;
   onStatusFilterChange: (value: RequestStatusFilter) => void;
+  searchQuery: string;
+  onSearchQueryChange: (value: string) => void;
+  sortBy: RequestSortOption;
+  onSortByChange: (value: RequestSortOption) => void;
+  filteredCount: number;
+  totalRowCount: number;
+  hasActiveFilters: boolean;
+  onClearFilters: () => void;
   onExport: () => void;
   excelUploading: boolean;
   uploadInputRef: RefObject<HTMLInputElement | null>;
@@ -33,8 +45,19 @@ export const RequestsHeader: React.FC<RequestsHeaderProps> = ({
   onMonthFilterChange,
   leaveTypeFilter,
   onLeaveTypeFilterChange,
+  partnerFilter,
+  onPartnerFilterChange,
+  uniquePartners,
   statusFilter,
   onStatusFilterChange,
+  searchQuery,
+  onSearchQueryChange,
+  sortBy,
+  onSortByChange,
+  filteredCount,
+  totalRowCount,
+  hasActiveFilters,
+  onClearFilters,
   onExport,
   excelUploading,
   uploadInputRef,
@@ -98,54 +121,6 @@ export const RequestsHeader: React.FC<RequestsHeaderProps> = ({
             <Table className="h-4 w-4" aria-hidden />
           </button>
         </div>
-        <select
-          value={monthFilter}
-          onChange={(e) => onMonthFilterChange(e.target.value)}
-          className={SELECT_INPUT_CLASS}
-          aria-label="Filter by month"
-        >
-          <option value="all">All Months</option>
-          {Array.from(new Set(requests.map((r) => r.monthYear)))
-            .sort()
-            .reverse()
-            .map((monthYear) => {
-              const [year, month] = monthYear.split('-');
-              const monthName = new Date(parseInt(year), parseInt(month) - 1).toLocaleString('default', {
-                month: 'long',
-              });
-              return (
-                <option key={monthYear} value={monthYear}>
-                  {monthName} {year}
-                </option>
-              );
-            })}
-        </select>
-        <select
-          value={leaveTypeFilter}
-          onChange={(e) => onLeaveTypeFilterChange(e.target.value)}
-          className={SELECT_INPUT_CLASS}
-          aria-label="Filter by request type"
-        >
-          <option value="all">All Leave Types</option>
-          {Array.from(new Set(requests.map((r) => r.requestedStatus)))
-            .sort()
-            .map((leaveType) => (
-              <option key={leaveType} value={leaveType}>
-                {leaveType}
-              </option>
-            ))}
-        </select>
-        <select
-          value={statusFilter}
-          onChange={(e) => onStatusFilterChange(e.target.value as RequestStatusFilter)}
-          className={SELECT_INPUT_CLASS}
-          aria-label="Filter by status"
-        >
-          <option value="all">All Status</option>
-          <option value="Pending">Pending</option>
-          <option value="Approved">Approved</option>
-          <option value="Rejected">Rejected</option>
-        </select>
         <button
           type="button"
           onClick={onExport}
@@ -179,6 +154,124 @@ export const RequestsHeader: React.FC<RequestsHeaderProps> = ({
             </button>
           </>
         )}
+      </div>
+    </div>
+
+    <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="relative min-w-0 flex-1">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+            aria-hidden
+          />
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => onSearchQueryChange(e.target.value)}
+            placeholder={
+              isEmployeeView
+                ? 'Search by date, status, type, reason…'
+                : 'Search employee, partner, date, status, reason, email…'
+            }
+            className="w-full rounded-md border border-blue-200/65 bg-panel py-2 pl-9 pr-3 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+            aria-label="Search requests"
+          />
+        </div>
+        {hasActiveFilters && (
+          <button
+            type="button"
+            onClick={onClearFilters}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            <X className="h-3.5 w-3.5" aria-hidden />
+            Clear filters
+          </button>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={monthFilter}
+            onChange={(e) => onMonthFilterChange(e.target.value)}
+            className={SELECT_INPUT_CLASS}
+            aria-label="Filter by month"
+          >
+            <option value="all">All months</option>
+            {Array.from(new Set(requests.map((r) => r.monthYear)))
+              .sort()
+              .reverse()
+              .map((monthYear) => {
+                const [year, month] = monthYear.split('-');
+                const monthName = new Date(parseInt(year), parseInt(month) - 1).toLocaleString('default', {
+                  month: 'long',
+                });
+                return (
+                  <option key={monthYear} value={monthYear}>
+                    {monthName} {year}
+                  </option>
+                );
+              })}
+          </select>
+          <select
+            value={statusFilter}
+            onChange={(e) => onStatusFilterChange(e.target.value as RequestStatusFilter)}
+            className={SELECT_INPUT_CLASS}
+            aria-label="Filter by status"
+          >
+            <option value="all">All status</option>
+            <option value="Pending">Pending / HR review</option>
+            <option value="Approved">Approved</option>
+            <option value="Rejected">Rejected</option>
+          </select>
+          <select
+            value={leaveTypeFilter}
+            onChange={(e) => onLeaveTypeFilterChange(e.target.value)}
+            className={SELECT_INPUT_CLASS}
+            aria-label="Filter by request type"
+          >
+            <option value="all">All request types</option>
+            {Array.from(new Set(requests.map((r) => r.requestedStatus)))
+              .sort()
+              .map((leaveType) => (
+                <option key={leaveType} value={leaveType}>
+                  {leaveType}
+                </option>
+              ))}
+          </select>
+          {!isEmployeeView && uniquePartners.length > 1 && (
+            <select
+              value={partnerFilter}
+              onChange={(e) => onPartnerFilterChange(e.target.value)}
+              className={SELECT_INPUT_CLASS}
+              aria-label="Filter by partner"
+            >
+              <option value="all">All partners</option>
+              {uniquePartners.map((partner) => (
+                <option key={partner} value={partner}>
+                  {partner}
+                </option>
+              ))}
+            </select>
+          )}
+          <select
+            value={sortBy}
+            onChange={(e) => onSortByChange(e.target.value as RequestSortOption)}
+            className={SELECT_INPUT_CLASS}
+            aria-label="Sort requests"
+          >
+            {REQUEST_SORT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                Sort: {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <p className="text-xs text-slate-600 lg:text-right">
+          Showing <span className="font-semibold text-slate-900">{filteredCount}</span> of{' '}
+          <span className="font-semibold text-slate-900">{totalRowCount}</span> request
+          {totalRowCount === 1 ? '' : 's'}
+        </p>
       </div>
     </div>
   </header>

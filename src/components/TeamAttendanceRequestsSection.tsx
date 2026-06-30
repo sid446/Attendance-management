@@ -4,11 +4,20 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Check, Loader2, RefreshCw, X } from 'lucide-react';
 import { employeeCredentialsInit } from '@/lib/employeeCredentialsInit';
 import type { EmployeeAttendanceRequest } from '@/types/employeeAttendanceRequest';
+import {
+  getDefaultValueForType,
+  resolveApproveValueNumber,
+  type ApproveValueContext,
+} from '@/lib/attendanceRequestValues';
 
 type TeamRequestRow = EmployeeAttendanceRequest & {
   userName?: string;
   originalCheckin?: string;
   originalCheckout?: string;
+  employeeEmploymentType?: string;
+  employeeCategory?: string;
+  employeeDesignation?: string;
+  isArticleEmployee?: boolean;
 };
 
 interface TeamAttendanceRequestsSectionProps {
@@ -23,33 +32,23 @@ function formatDateTime(value?: string | Date): string {
   return d.toLocaleString('en-IN');
 }
 
-function getDefaultApproveValue(requestedStatus: string): string {
-  const status = requestedStatus.toLowerCase();
-  if (status.includes('half')) return '0.5';
-  if (status.includes('leave') || requestedStatus === 'On leave') return '';
-  if (status.includes('wfh')) return '0.75';
-  if (
-    status.includes('outstation') ||
-    status.includes('client place') ||
-    status.includes('clientplace') ||
-    status.includes('onsite') ||
-    status.includes('os-p')
-  ) {
-    return '1.2';
-  }
-  return '1';
+function getApproveContext(row: TeamRequestRow): ApproveValueContext {
+  if (row.isArticleEmployee != null) return { isArticle: row.isArticleEmployee };
+  return {
+    employee: {
+      employmentType: row.employeeEmploymentType,
+      designation: row.employeeDesignation,
+      category: row.employeeCategory,
+    },
+  };
 }
 
-function resolveApproveValue(requestedStatus: string, raw: string): number | undefined {
-  const status = requestedStatus.toLowerCase();
-  if (status.includes('leave') || requestedStatus === 'On leave') return undefined;
-  const trimmed = raw.trim().replace(',', '.');
-  let n = trimmed === '' ? NaN : parseFloat(trimmed);
-  if (!Number.isFinite(n)) {
-    const def = getDefaultApproveValue(requestedStatus);
-    n = def === '' ? NaN : parseFloat(def);
-  }
-  return Number.isFinite(n) ? n : undefined;
+function getDefaultApproveValue(row: TeamRequestRow): string {
+  return getDefaultValueForType(row.requestedStatus, getApproveContext(row));
+}
+
+function resolveApproveValue(row: TeamRequestRow, raw: string): number | undefined {
+  return resolveApproveValueNumber(row.requestedStatus, raw, getApproveContext(row));
 }
 
 export function TeamAttendanceRequestsSection({
@@ -83,7 +82,12 @@ export function TeamAttendanceRequestsSection({
       if (!historyJson.success) throw new Error(historyJson.error || 'Failed to load request history');
 
       const mapRow = (row: Record<string, unknown>): TeamRequestRow => {
-        const userRef = row.userId as { name?: string } | undefined;
+        const userRef = row.userId as {
+          name?: string;
+          employmentType?: string;
+          category?: string;
+          designation?: string;
+        } | undefined;
         return {
           _id: String(row._id || ''),
           date: String(row.date || ''),
@@ -111,6 +115,9 @@ export function TeamAttendanceRequestsSection({
           userName: row.userName ? String(row.userName) : userRef?.name,
           originalCheckin: row.originalCheckin ? String(row.originalCheckin) : undefined,
           originalCheckout: row.originalCheckout ? String(row.originalCheckout) : undefined,
+          employeeEmploymentType: userRef?.employmentType ? String(userRef.employmentType) : undefined,
+          employeeCategory: userRef?.category ? String(userRef.category) : undefined,
+          employeeDesignation: userRef?.designation ? String(userRef.designation) : undefined,
         };
       };
 
@@ -123,7 +130,7 @@ export function TeamAttendanceRequestsSection({
       const nextValues: Record<string, string> = {};
       pendingRows.forEach((row: TeamRequestRow) => {
         nextRemarks[row._id] = 'Done';
-        nextValues[row._id] = getDefaultApproveValue(row.requestedStatus);
+        nextValues[row._id] = getDefaultApproveValue(row);
       });
       setRemarks(nextRemarks);
       setValues(nextValues);
@@ -167,7 +174,7 @@ export function TeamAttendanceRequestsSection({
             remark: remarks[row._id] || (action === 'approve' ? 'Approved' : 'Rejected'),
             value:
               action === 'approve'
-                ? resolveApproveValue(row.requestedStatus, values[row._id] || getDefaultApproveValue(row.requestedStatus))
+                ? resolveApproveValue(row, values[row._id] || getDefaultApproveValue(row))
                 : undefined,
           }),
         })

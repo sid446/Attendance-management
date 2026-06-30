@@ -14,6 +14,9 @@ import {
   isExtraWorkRequest,
   normalizeExtraWorkSlotsFromRequest,
 } from '@/lib/extraWorkRequest';
+import { isArticleEmployee } from '@/lib/isArticleEmployee';
+import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
+import { applyDayExcessToRecord } from '@/lib/calculateDayExcessHour';
 
 export async function POST(request: NextRequest) {
   try {
@@ -425,23 +428,14 @@ export async function POST(request: NextRequest) {
         let diffMinutes = outMin - inMin;
         if (diffMinutes < 0) diffMinutes += 24 * 60;
         rec.totalHour = Math.max(0, diffMinutes / 60);
-        
-        // Calculate excessHour
-        let dayExcess = 0;
-        if (scheduledInTime && scheduledOutTime && attendanceRequest.startTime !== '00:00' && attendanceRequest.endTime !== '00:00') {
-          const [schInH, schInM] = scheduledInTime.split(':').map(Number);
-          const [schOutH, schOutM] = scheduledOutTime.split(':').map(Number);
-          const schInMin = schInH * 60 + schInM;
-          const schOutMin = schOutH * 60 + schOutM;
-          const scheduledMinutes = schOutMin - schInMin >= 0 ? schOutMin - schInMin : (24 * 60 + schOutMin - schInMin);
-          const actualMinutes = outMin - inMin >= 0 ? outMin - inMin : (24 * 60 + outMin - inMin);
-          if (actualMinutes < scheduledMinutes) {
-            dayExcess = -(scheduledMinutes - actualMinutes) / 60;
-          } else {
-            dayExcess = (actualMinutes - scheduledMinutes) / 60;
-          }
-        }
-        rec.excessHour = Number(dayExcess.toFixed(2));
+
+        applyDayExcessToRecord(
+          rec,
+          userObj,
+          attendanceRequest.date,
+          effectiveScheduledInTime,
+          effectiveScheduledOutTime
+        );
         
         // Recalculate halfDay based on corrected times
         // Default to false, but set true if rules are violated
@@ -454,7 +448,7 @@ export async function POST(request: NextRequest) {
         // 3. For others: half-day if arrive after 1 PM AND less than 6 hours worked
         const checkinTime = attendanceRequest.startTime;
         const checkoutTime = attendanceRequest.endTime;
-        const isArticleship = userObj && userObj.designation && userObj.designation.toLowerCase() === 'article';
+        const isArticleship = isArticleEmployee(userObj);
         
         if (checkinTime === '00:00' && checkoutTime !== '00:00' && checkoutTime !== '' && rec.totalHour > 0) {
           // Missing check-in but has valid checkout
@@ -515,8 +509,7 @@ export async function POST(request: NextRequest) {
               const u = await User.findById(attendanceRequest.userId);
               if (u) {
                 // Skip adjustment for article trainees
-                const isArticle = (u.employmentType && String(u.employmentType).toLowerCase() === 'article') ||
-                  (u.designation && String(u.designation).toLowerCase().includes('article'));
+                const isArticle = isArticleEmployee(u);
                 if (isArticle) {
                   // Do not modify leave balance for articles
                 } else {
@@ -720,122 +713,4 @@ export async function POST(request: NextRequest) {
       error: 'Failed to process request'
     }, { status: 500 });
   }
-}
-
-function calculateSummary(
-  records: Map<string, {
-    checkin: string;
-    checkout: string;
-    totalHour: number;
-    excessHour: number;
-    typeOfPresence: string;
-    halfDay: boolean;
-    remarks?: string;
-  }>,
-  user?: any
-) {
-  let totalHour = 0;
-  let totalLateArrival = 0;
-  let excessHour = 0;
-  let totalHalfDay = 0;
-  let totalPresent = 0;
-  let totalAbsent = 0;
-  let totalLeave = 0;
-
-  records.forEach((record, dateStr) => {
-    totalHour += record.totalHour || 0;
-    excessHour += record.excessHour || 0;
-
-    // Determine if this is an articleship employee
-    const isArticleship = user && user.designation && user.designation.toLowerCase() === 'article';
-
-    // Determine half-day based on user type and check-in time
-    let isHalfDay = false;
-    
-    // Special case: if checkin is 00:00 but checkout is valid, mark as half day
-    if (record.checkin === '00:00' && record.checkout !== '00:00' && record.checkout !== '' && record.totalHour > 0) {
-      isHalfDay = true;
-    } else if (record.checkin) {
-      const checkinTime = record.checkin;
-      const isAfter1PM = checkinTime >= '13:00';
-      
-      if (isArticleship) {
-        // For articleship: half-day if arrive after 1 PM
-        isHalfDay = isAfter1PM;
-      } else {
-        // For others: half-day if arrive after 1 PM AND less than 6 hours worked
-        isHalfDay = isAfter1PM && (record.totalHour < 6);
-      }
-    }
-
-    // Update the record's halfDay flag
-    record.halfDay = isHalfDay;
-
-    if (isHalfDay) {
-      totalHalfDay++;
-    }
-
-    // Determine scheduled in-time for this specific date
-    let scheduledIn = '10:00'; // Default fallback
-    
-    if (user) {
-      const dateDate = new Date(dateStr);
-      // JS getDay(): 0=Sun, 1=Mon, ..., 6=Sat
-      const dayOfWeek = dateDate.getDay(); 
-      const month = dateDate.getMonth() + 1; // 1-12
-
-      // "Sch-Out (Dec- Jan)" logic: Special schedule for Dec (12) and Jan (1)
-      if (month === 12 || month === 1) {
-         scheduledIn = user.scheduleInOutTimeMonth?.inTime || '09:00';
-      } else if (dayOfWeek === 6) { // Saturday
-         scheduledIn = user.scheduleInOutTimeSat?.inTime || '09:00';
-      } else if (dayOfWeek !== 0) { // Regular (Mon-Fri)
-         scheduledIn = user.scheduleInOutTime?.inTime || '09:00';
-      }
-      // Sunday (0) usually doesn't have late arrival, but if record exists, use regular or ignore?
-      // Assuming no late arrival calc for Sunday usually, but let's stick to Regular if present
-      if (dayOfWeek === 0) scheduledIn = user.scheduleInOutTime?.inTime || '09:00';
-    }
-
-    if (record.checkin && record.checkin > scheduledIn) {
-      totalLateArrival++;
-    }
-
-    switch (record.typeOfPresence) {
-      case 'ThumbMachine':
-      case 'Manual':
-      case 'Remote':
-      case 'Weekly Off - Present (WO-Present)':
-      case 'Half Day (HD)':
-      case 'Work From Home (WFH)':
-      case 'Weekly Off - Work From Home (WO-WFH)':
-      case 'Onsite Presence (OS-P)':
-        // If hours are > 0, they are present. If 0, they are Absent (but source was Machine/Manual)
-        if (record.totalHour > 0) {
-           totalPresent++;
-        } else {
-           totalAbsent++;
-        }
-        break;
-      case 'On leave':
-      case 'Leave':
-        totalLeave++;
-        break;
-      case 'Holiday':
-        // Holidays don't count as present/absent
-        break;
-      default:
-        totalAbsent++;
-    }
-  });
-
-  return {
-    totalHour,
-    totalLateArrival,
-    excessHour,
-    totalHalfDay,
-    totalPresent,
-    totalAbsent,
-    totalLeave,
-  };
 }

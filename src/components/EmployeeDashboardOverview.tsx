@@ -27,7 +27,7 @@ function formatRequestDate(dateStr: string): string {
   const d = new Date(iso + "T12:00:00");
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleDateString("en-IN", {
-    weekday: "short",
+    weekday: "long",
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -473,9 +473,6 @@ export function EmployeeDashboardOverview({
                         <div>
                           <p className="text-sm font-medium text-foreground">
                             {formatRequestDate(req.date)}
-                          </p>
-                          <p className="font-mono text-[10px] text-muted-foreground">
-                            {req.date.split("T")[0]}
                           </p>
                         </div>
                         <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900">

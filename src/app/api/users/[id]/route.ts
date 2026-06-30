@@ -18,6 +18,10 @@ import {
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { reapplyExtraWorkEntriesToRecord } from '@/lib/extraWorkRequest';
 import {
+  calculateArticleDayExcessMinutes,
+  isArticleEmployee,
+} from '@/lib/isArticleEmployee';
+import {
   applyManagedEffectiveHistories,
   ManagedEffectiveField,
   LEGACY_BASELINE_EFFECTIVE_FROM,
@@ -668,7 +672,38 @@ async function recalculateAttendanceFromDate(userId: string, fromDate: Date) {
       } else if (!isValidPunchTime(inTime) && !isValidPunchTime(outTime)) {
         dayExcess = dayScheduledHours > 0 ? -dayScheduledHours : 0;
       } else if (isSinglePunch(inTime, outTime)) {
-        dayExcess = dayScheduledHours > 0 ? -dayScheduledHours : 0;
+        dayExcess = dayScheduledHours > 0 ? Number((record.totalHour - dayScheduledHours).toFixed(2)) : 0;
+      } else if (
+        isValidPunchTime(inTime) &&
+        isValidPunchTime(outTime) &&
+        scheduledIn &&
+        scheduledOut &&
+        scheduledIn !== '00:00' &&
+        scheduledOut !== '00:00'
+      ) {
+        const [schInH, schInM] = scheduledIn.split(':').map(Number);
+        const [schOutH, schOutM] = scheduledOut.split(':').map(Number);
+        const [actInH, actInM] = inTime.split(':').map(Number);
+        const [actOutH, actOutM] = outTime.split(':').map(Number);
+        const schInMin = schInH * 60 + schInM;
+        const schOutMin = schOutH * 60 + schOutM;
+        const actInMin = actInH * 60 + actInM;
+        const actOutMin = actOutH * 60 + actOutM;
+        const scheduledMinutes = schOutMin - schInMin >= 0 ? schOutMin - schInMin : 24 * 60 + schOutMin - schInMin;
+        const actualMinutes = actOutMin - actInMin >= 0 ? actOutMin - actInMin : 24 * 60 + actOutMin - actInMin;
+        if (actualMinutes < scheduledMinutes) {
+          dayExcess = -(scheduledMinutes - actualMinutes) / 60;
+        } else if (isArticleEmployee(user)) {
+          const excessMinutes = calculateArticleDayExcessMinutes(
+            scheduledIn,
+            scheduledOut,
+            inTime,
+            outTime
+          );
+          dayExcess = excessMinutes > 0 ? excessMinutes / 60 : 0;
+        } else {
+          dayExcess = Number((record.totalHour - dayScheduledHours).toFixed(2));
+        }
       } else {
         dayExcess = Number((record.totalHour - dayScheduledHours).toFixed(2));
       }
@@ -687,8 +722,7 @@ async function recalculateAttendanceFromDate(userId: string, fromDate: Date) {
         record.halfDay = false;
       } else {
         const employmentType = (user as any).employmentType || 'fulltime';
-        const designation = String((user as any).designation || '').toLowerCase();
-        const isArticle = employmentType === 'article' || designation === 'article';
+        const isArticle = isArticleEmployee(user);
         const isAfter1PM = inTime ? inTime >= '13:00' : false;
         if ((inTime === '00:00' && outTime === '00:00') || (!inTime && !outTime)) {
           record.halfDay = false;

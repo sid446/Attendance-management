@@ -21,6 +21,7 @@ export {
 export {
   buildSortedRequestRows,
   compareRequestsByDateDesc,
+  REQUEST_SORT_OPTIONS,
   sortIndividualRequestsByDate,
   sortRangeGroupsByDate,
 } from './requestSorting';

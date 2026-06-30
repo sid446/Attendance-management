@@ -94,10 +94,11 @@ export function useRequestApproval({
     if (action === 'approve') {
       const reqIds = Array.isArray(requestId) ? requestId : [requestId];
       const req = requests.find((r) => r._id === reqIds[0]);
+      const approveCtx = req ? { employee: req.userId } : undefined;
       if (req?.status === 'PendingHr' && req.partnerProposedValue) {
         setApprovalValue(req.partnerProposedValue);
       } else if (req) {
-        setApprovalValue(getDefaultValueForType(req.requestedStatus));
+        setApprovalValue(getDefaultValueForType(req.requestedStatus, approveCtx));
       } else {
         setApprovalValue('');
       }
@@ -123,10 +124,11 @@ export function useRequestApproval({
     if (approvalAction === 'approve') {
       const reqIds = Array.isArray(selectedRequestId) ? selectedRequestId : [selectedRequestId];
       const req = requests.find((r) => r._id === reqIds[0]);
+      const approveCtx = req ? { employee: req.userId } : undefined;
       if (req && !isLeaveRequestType(req.requestedStatus) && !req.requestedStatus.toLowerCase().includes('half')) {
-        const maxVal = getMaxValueForType(req.requestedStatus);
+        const maxVal = getMaxValueForType(req.requestedStatus, approveCtx);
         const effectiveRaw =
-          approvalValue.trim() === '' ? getDefaultValueForType(req.requestedStatus) : approvalValue;
+          approvalValue.trim() === '' ? getDefaultValueForType(req.requestedStatus, approveCtx) : approvalValue;
         const valNum = parseFloat(effectiveRaw.replace(',', '.'));
         if (maxVal != null && (!Number.isFinite(valNum) || valNum > maxVal || valNum < 0)) {
           setApprovalValueError(`Value must be between 0 and ${maxVal} for ${req.requestedStatus}`);
@@ -143,12 +145,13 @@ export function useRequestApproval({
       const reqIds = Array.isArray(selectedRequestId) ? selectedRequestId : [selectedRequestId];
       const req = requests.find((r) => r._id === reqIds[0]);
       if (req) {
+        const approveCtx = { employee: req.userId };
         if (req.requestedStatus.toLowerCase().includes('half')) {
           valueToSend = '0.5';
         } else if (isLeaveRequestType(req.requestedStatus)) {
           valueToSend = '';
         } else {
-          const n = resolveApproveValueNumber(req.requestedStatus, approvalValue);
+          const n = resolveApproveValueNumber(req.requestedStatus, approvalValue, approveCtx);
           valueToSend = n !== undefined ? String(n) : '';
         }
       }
