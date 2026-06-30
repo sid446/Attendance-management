@@ -9,9 +9,18 @@ export type EmployeeAttendanceRequest = {
   endTime?: string;
   extraWorkSlots?: { startTime: string; endTime: string; reason: string }[];
   status: 'Pending' | 'PendingHr' | 'Approved' | 'Rejected';
+  partnerName?: string;
+  partnerRemarks?: string;
+  partnerApprovedAt?: string;
+  partnerProposedValue?: string;
+  hrRemarks?: string;
+  hrValue?: string;
   approvedBy?: string;
   approvedByEmail?: string;
   approvedAt?: string;
+  rejectedBy?: string;
+  rejectedByEmail?: string;
+  rejectedAt?: string;
   createdAt?: string;
   updatedAt?: string;
 };

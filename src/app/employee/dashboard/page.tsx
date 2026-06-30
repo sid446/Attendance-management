@@ -174,9 +174,34 @@ async function fetchEmployeeRequestsForMonth(
     );
     const json = await res.json();
     if (!json.success || !Array.isArray(json.data)) return [];
-    return json.data.filter((req: EmployeeAttendanceRequest) =>
-      req.date.split('T')[0].startsWith(monthYear)
-    );
+    return json.data
+      .filter((req: EmployeeAttendanceRequest) => req.date.split('T')[0].startsWith(monthYear))
+      .map((req: Record<string, unknown>) => ({
+        _id: String(req._id || ''),
+        date: String(req.date || ''),
+        requestedStatus: String(req.requestedStatus || ''),
+        requestType: req.requestType as EmployeeAttendanceRequest['requestType'],
+        originalStatus: req.originalStatus ? String(req.originalStatus) : undefined,
+        reason: req.reason ? String(req.reason) : undefined,
+        startTime: req.startTime ? String(req.startTime) : undefined,
+        endTime: req.endTime ? String(req.endTime) : undefined,
+        extraWorkSlots: req.extraWorkSlots as EmployeeAttendanceRequest['extraWorkSlots'],
+        status: req.status as EmployeeAttendanceRequest['status'],
+        partnerName: req.partnerName ? String(req.partnerName) : undefined,
+        partnerRemarks: req.partnerRemarks ? String(req.partnerRemarks) : undefined,
+        partnerApprovedAt: req.partnerApprovedAt ? String(req.partnerApprovedAt) : undefined,
+        partnerProposedValue: req.partnerProposedValue ? String(req.partnerProposedValue) : undefined,
+        hrRemarks: req.hrRemarks ? String(req.hrRemarks) : undefined,
+        hrValue: req.hrValue ? String(req.hrValue) : undefined,
+        approvedBy: req.approvedBy ? String(req.approvedBy) : undefined,
+        approvedByEmail: req.approvedByEmail ? String(req.approvedByEmail) : undefined,
+        approvedAt: req.approvedAt ? String(req.approvedAt) : undefined,
+        rejectedBy: req.rejectedBy ? String(req.rejectedBy) : undefined,
+        rejectedByEmail: req.rejectedByEmail ? String(req.rejectedByEmail) : undefined,
+        rejectedAt: req.rejectedAt ? String(req.rejectedAt) : undefined,
+        createdAt: req.createdAt ? String(req.createdAt) : undefined,
+        updatedAt: req.updatedAt ? String(req.updatedAt) : undefined,
+      }));
   } catch {
     return [];
   }
@@ -643,14 +668,10 @@ export default function EmployeeDashboard() {
       return;
     }
 
-    const token = await fetchPartnerReviewAccessToken();
-    if (!token) {
-      setPartnerPendingReviewCount(0);
-      return;
-    }
     try {
       const res = await fetch(
-        `/api/partner/pending-requests?token=${encodeURIComponent(token)}`
+        '/api/employee/team-attendance-requests?status=Pending',
+        employeeCredentialsInit({ cache: 'no-store' })
       );
       const json = await res.json();
       partnerPendingCountFetchedAtRef.current = Date.now();
@@ -662,7 +683,7 @@ export default function EmployeeDashboard() {
     } catch {
       setPartnerPendingReviewCount(0);
     }
-  }, [fetchPartnerReviewAccessToken]);
+  }, []);
 
   const fetchTeamDailyUpdatesCount = useCallback(async () => {
     if (!user?._id || subordinates.length === 0) {

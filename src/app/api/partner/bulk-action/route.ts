@@ -44,6 +44,12 @@ import {
   resolvePartnerNotificationEmail,
   sendPartnerRequestDecisionEmail,
 } from '@/lib/attendanceRequestNotifications';
+import { getEmployeeUserIdFromRequest } from '@/lib/employeeAuthServer';
+import { formatPartnerNameForReview } from '@/lib/selfApproveAttendanceRequests';
+import {
+  isAuthorizedPartnerForRequest,
+  resolveViewerUserIdFromPartnerEmail,
+} from '@/lib/teamRequestAuthorization';
 
 function normalizePartnerName(name: string): string {
     return String(name || '').replace(/[.\s]/g, '').toLowerCase();
@@ -120,6 +126,7 @@ export async function POST(request: NextRequest) {
 
         let secureApprovedBy: string | null = null;
         let secureApprovedByEmail: string | null = null;
+        let viewerUserId = '';
 
         if (typeof accessToken === 'string' && accessToken.trim()) {
             const tokenCheck = verifyPartnerReviewToken(accessToken.trim());
@@ -128,11 +135,26 @@ export async function POST(request: NextRequest) {
             }
             secureApprovedBy = tokenCheck.claims.partnerName;
             secureApprovedByEmail = tokenCheck.claims.partnerEmail;
-        } else if (process.env.NODE_ENV === 'production') {
-            return NextResponse.json(
-                { success: false, error: 'Secure token is required for partner actions' },
-                { status: 401 }
-            );
+            viewerUserId =
+                tokenCheck.claims.viewerUserId ||
+                (await resolveViewerUserIdFromPartnerEmail(tokenCheck.claims.partnerEmail)) ||
+                '';
+        } else {
+            const sessionUserId = await getEmployeeUserIdFromRequest(request);
+            if (sessionUserId) {
+                const sessionUser = await User.findById(sessionUserId).select('name email').lean();
+                if (!sessionUser) {
+                    return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
+                }
+                secureApprovedBy = formatPartnerNameForReview(String(sessionUser.name || ''));
+                secureApprovedByEmail = String(sessionUser.email || '').trim().toLowerCase();
+                viewerUserId = sessionUserId;
+            } else if (process.env.NODE_ENV === 'production') {
+                return NextResponse.json(
+                    { success: false, error: 'Secure token is required for partner actions' },
+                    { status: 401 }
+                );
+            }
         }
 
         const appliedRemark = remark || (action === 'approve' ? 'Bulk Approved' : 'Bulk Rejected');
@@ -168,16 +190,15 @@ export async function POST(request: NextRequest) {
             }
 
             let isAuthorized = false;
-            
+
             if (!secureApprovedBy) {
-                isAuthorized = true; // No token provided or not required
-            } else if (normalizePartnerName(reqRecord.partnerName) === normalizePartnerName(secureApprovedBy)) {
                 isAuthorized = true;
-            } else if (secureApprovedByEmail) {
-                const requestUser = await User.findById(reqRecord.userId);
-                if (requestUser && requestUser.attendanceEmail && secureApprovedByEmail.toLowerCase() === requestUser.attendanceEmail.toLowerCase()) {
-                    isAuthorized = true;
-                }
+            } else if (viewerUserId && secureApprovedByEmail) {
+                isAuthorized = await isAuthorizedPartnerForRequest(
+                    viewerUserId,
+                    { partnerName: secureApprovedBy, partnerEmail: secureApprovedByEmail },
+                    reqRecord
+                );
             }
 
             if (!isAuthorized) {

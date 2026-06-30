@@ -44,10 +44,25 @@ interface ApprovedRequest {
   _id: string;
   date: string;
   requestedStatus: string;
+  requestType?: 'correction' | 'extra_work';
+  originalStatus?: string;
+  reason?: string;
+  startTime?: string;
+  endTime?: string;
   status: 'Pending' | 'PendingHr' | 'Approved' | 'Rejected';
+  partnerName?: string;
+  partnerRemarks?: string;
+  partnerApprovedAt?: string;
+  partnerProposedValue?: string;
+  hrRemarks?: string;
+  hrValue?: string;
   approvedBy?: string;
   approvedByEmail?: string;
   approvedAt?: string;
+  rejectedBy?: string;
+  rejectedByEmail?: string;
+  rejectedAt?: string;
+  createdAt?: string;
   updatedAt?: string;
 }
 
@@ -774,6 +789,38 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                               {requestDetailModal.requestedStatus || 'Unknown'}
                             </dd>
                           </div>
+                          {requestDetailModal.originalStatus && (
+                            <div className="flex justify-between gap-4">
+                              <dt className="shrink-0 text-slate-600">Original</dt>
+                              <dd className="break-words text-right text-slate-900">
+                                {requestDetailModal.originalStatus}
+                              </dd>
+                            </div>
+                          )}
+                          {requestDetailModal.reason && (
+                            <div className="flex justify-between gap-4">
+                              <dt className="shrink-0 text-slate-600">Reason</dt>
+                              <dd className="break-words text-right text-slate-900">{requestDetailModal.reason}</dd>
+                            </div>
+                          )}
+                          {(requestDetailModal.startTime || requestDetailModal.endTime) && (
+                            <div className="flex justify-between gap-4">
+                              <dt className="shrink-0 text-slate-600">Requested time</dt>
+                              <dd className="text-right text-slate-900">
+                                {[requestDetailModal.startTime, requestDetailModal.endTime]
+                                  .filter(Boolean)
+                                  .join(' – ') || '—'}
+                              </dd>
+                            </div>
+                          )}
+                          {requestDetailModal.createdAt && (
+                            <div className="flex justify-between gap-4">
+                              <dt className="shrink-0 text-slate-600">Raised on</dt>
+                              <dd className="text-right text-slate-900">
+                                {new Date(requestDetailModal.createdAt).toLocaleString('en-IN')}
+                              </dd>
+                            </div>
+                          )}
                           {requestDetailModal.status === 'Approved' && (
                             <>
                               <div className="flex justify-between gap-4">
@@ -781,37 +828,81 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                                 <dd className="text-right text-slate-900">{requestDetailModal.approvedBy || 'Unknown'}</dd>
                               </div>
                               <div className="flex justify-between gap-4">
-                                <dt className="shrink-0 text-slate-600">Email</dt>
+                                <dt className="shrink-0 text-slate-600">Approver email</dt>
                                 <dd className="break-all text-right text-slate-900">{requestDetailModal.approvedByEmail || '—'}</dd>
                               </div>
                               <div className="flex justify-between gap-4">
-                                <dt className="shrink-0 text-slate-600">Date</dt>
+                                <dt className="shrink-0 text-slate-600">Approved on</dt>
                                 <dd className="text-right text-slate-900">
                                   {requestDetailModal.approvedAt
-                                    ? new Date(requestDetailModal.approvedAt).toLocaleDateString('en-GB', {
-                                        year: 'numeric',
-                                        month: '2-digit',
-                                        day: '2-digit',
-                                      }) + ' ' + new Date(requestDetailModal.approvedAt).toLocaleTimeString([], {
-                                        hour: '2-digit',
-                                        minute: '2-digit',
-                                      })
+                                    ? new Date(requestDetailModal.approvedAt).toLocaleString('en-IN')
                                     : 'N/A'}
                                 </dd>
                               </div>
+                              {requestDetailModal.partnerRemarks && (
+                                <div className="flex justify-between gap-4">
+                                  <dt className="shrink-0 text-slate-600">Partner remark</dt>
+                                  <dd className="break-words text-right text-slate-900">{requestDetailModal.partnerRemarks}</dd>
+                                </div>
+                              )}
+                              {requestDetailModal.hrRemarks && (
+                                <div className="flex justify-between gap-4">
+                                  <dt className="shrink-0 text-slate-600">HR remark</dt>
+                                  <dd className="break-words text-right text-slate-900">{requestDetailModal.hrRemarks}</dd>
+                                </div>
+                              )}
                             </>
                           )}
                           {requestDetailModal.status === 'Pending' && (
                             <p className="pt-1 text-slate-600">Awaiting approval from your partner.</p>
                           )}
                           {requestDetailModal.status === 'PendingHr' && (
-                            <p className="pt-1 text-rose-800">
-                              Partner approved. <strong>HR final approval</strong> is required before your attendance is
-                              updated.
-                            </p>
+                            <>
+                              <p className="pt-1 text-rose-800">
+                                Partner approved. <strong>HR final approval</strong> is required before your attendance is
+                                updated.
+                              </p>
+                              {requestDetailModal.partnerRemarks && (
+                                <div className="flex justify-between gap-4">
+                                  <dt className="shrink-0 text-slate-600">Partner remark</dt>
+                                  <dd className="break-words text-right text-slate-900">{requestDetailModal.partnerRemarks}</dd>
+                                </div>
+                              )}
+                              {requestDetailModal.partnerApprovedAt && (
+                                <div className="flex justify-between gap-4">
+                                  <dt className="shrink-0 text-slate-600">Partner approved on</dt>
+                                  <dd className="text-right text-slate-900">
+                                    {new Date(requestDetailModal.partnerApprovedAt).toLocaleString('en-IN')}
+                                  </dd>
+                                </div>
+                              )}
+                            </>
                           )}
                           {requestDetailModal.status === 'Rejected' && (
-                            <p className="pt-1 text-slate-600">This request was rejected.</p>
+                            <>
+                              <div className="flex justify-between gap-4">
+                                <dt className="shrink-0 text-slate-600">Rejected by</dt>
+                                <dd className="text-right text-slate-900">{requestDetailModal.rejectedBy || 'Unknown'}</dd>
+                              </div>
+                              <div className="flex justify-between gap-4">
+                                <dt className="shrink-0 text-slate-600">Rejecter email</dt>
+                                <dd className="break-all text-right text-slate-900">{requestDetailModal.rejectedByEmail || '—'}</dd>
+                              </div>
+                              <div className="flex justify-between gap-4">
+                                <dt className="shrink-0 text-slate-600">Rejected on</dt>
+                                <dd className="text-right text-slate-900">
+                                  {requestDetailModal.rejectedAt
+                                    ? new Date(requestDetailModal.rejectedAt).toLocaleString('en-IN')
+                                    : 'N/A'}
+                                </dd>
+                              </div>
+                              {requestDetailModal.partnerRemarks && (
+                                <div className="flex justify-between gap-4">
+                                  <dt className="shrink-0 text-slate-600">Remark</dt>
+                                  <dd className="break-words text-right text-slate-900">{requestDetailModal.partnerRemarks}</dd>
+                                </div>
+                              )}
+                            </>
                           )}
                         </dl>
                         <div className="mt-4 flex justify-end">

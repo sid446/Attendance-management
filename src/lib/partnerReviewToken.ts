@@ -3,6 +3,8 @@ import crypto from 'crypto';
 export interface PartnerReviewClaims {
   partnerName: string;
   partnerEmail: string;
+  /** Employee portal user id — used for Team Attendance Access authorization. */
+  viewerUserId?: string;
   exp: number;
 }
 
@@ -49,13 +51,15 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 export function createPartnerReviewToken(
-  payload: { partnerName: string; partnerEmail: string },
+  payload: { partnerName: string; partnerEmail: string; viewerUserId?: string },
   ttlSeconds: number = DEFAULT_TOKEN_TTL_SECONDS
 ): string {
   const secret = getPartnerReviewSecret();
+  const viewerUserId = String(payload.viewerUserId || '').trim();
   const claims: PartnerReviewClaims = {
     partnerName: payload.partnerName.trim(),
     partnerEmail: payload.partnerEmail.trim().toLowerCase(),
+    ...(viewerUserId ? { viewerUserId } : {}),
     exp: Math.floor(Date.now() / 1000) + ttlSeconds,
   };
 
@@ -98,11 +102,17 @@ export function verifyPartnerReviewToken(token: string): PartnerReviewTokenVerif
       return { valid: false, error: 'Token expired' };
     }
 
+    const viewerUserId =
+      typeof parsed.viewerUserId === 'string' && parsed.viewerUserId.trim()
+        ? parsed.viewerUserId.trim()
+        : undefined;
+
     return {
       valid: true,
       claims: {
         partnerName: parsed.partnerName.trim(),
         partnerEmail: parsed.partnerEmail.trim().toLowerCase(),
+        ...(viewerUserId ? { viewerUserId } : {}),
         exp: parsed.exp,
       },
     };

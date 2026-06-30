@@ -19,6 +19,7 @@ import { forbidUnlessSelf, requireEmployeeOrHrSession, requireEmployeeSession } 
 import { autoApproveSelfRequests } from '@/lib/selfApproveAttendanceRequests';
 import { isExtraWorkRequest } from '@/lib/extraWorkRequest';
 import { requiresAttendanceRequestTimePair } from '@/lib/attendanceRequestTimeRules';
+import { canViewerAccessTeamMember } from '@/lib/teamRequestAuthorization';
 
 const TIME_INPUT_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -43,7 +44,10 @@ export async function GET(request: NextRequest) {
     if (auth.type === 'employee') {
       if (userId) {
         const forbidden = forbidUnlessSelf(auth.userId, userId);
-        if (forbidden) return forbidden;
+        if (forbidden) {
+          const allowed = await canViewerAccessTeamMember(auth.userId, userId);
+          if (!allowed) return forbidden;
+        }
       } else {
         userId = auth.userId;
       }

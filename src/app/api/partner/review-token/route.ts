@@ -35,7 +35,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const token = createPartnerReviewToken({ partnerName, partnerEmail });
+    const token = createPartnerReviewToken({
+      partnerName,
+      partnerEmail,
+      viewerUserId: auth.userId,
+    });
 
     return NextResponse.json({
       success: true,

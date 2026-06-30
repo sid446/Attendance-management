@@ -1,17 +1,19 @@
+import mongoose from 'mongoose';
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import '@/models/User';
 import AttendanceRequest from '@/models/AttendanceRequest';
-import Attendance from '@/models/Attendance';
 import { verifyPartnerReviewToken } from '@/lib/partnerReviewToken';
 import {
   autoApproveSelfRequests,
   filterSelfApprovablePendingRequestIds,
 } from '@/lib/selfApproveAttendanceRequests';
-
-function normalizePartnerName(name: string): string {
-  return String(name || '').replace(/[.\s]/g, '').toLowerCase();
-}
+import {
+  getVisibleTeamMemberIdSet,
+  normalizePartnerName,
+  resolveViewerUserIdFromPartnerEmail,
+} from '@/lib/teamRequestAuthorization';
+import { enrichAttendanceRequestsWithOriginalTimes } from '@/lib/enrichAttendanceRequests';
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,6 +24,7 @@ export async function GET(request: NextRequest) {
     const legacyPartnerName = searchParams.get('partnerName');
     let partnerName = '';
     let partnerEmail: string | null = null;
+    let tokenViewerUserId = '';
 
     if (token) {
       const tokenCheck = verifyPartnerReviewToken(token);
@@ -30,6 +33,7 @@ export async function GET(request: NextRequest) {
       }
       partnerName = tokenCheck.claims.partnerName;
       partnerEmail = tokenCheck.claims.partnerEmail;
+      tokenViewerUserId = tokenCheck.claims.viewerUserId || '';
     } else if (process.env.NODE_ENV !== 'production' && legacyPartnerName) {
       partnerName = legacyPartnerName;
     }
@@ -41,74 +45,73 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Build a case-insensitive exact-match regex for the normalized partner name
+    const resolvedViewerUserId =
+      tokenViewerUserId ||
+      (partnerEmail ? await resolveViewerUserIdFromPartnerEmail(partnerEmail) : '') ||
+      '';
+
+    const visibleIds = resolvedViewerUserId
+      ? Array.from(await getVisibleTeamMemberIdSet(resolvedViewerUserId))
+      : [];
+
     const partnerRegex = new RegExp(
       `^${normalizePartnerName(partnerName).replace(/[.*+?^${}()|[\\]\\]/g, '\\\\$&')}$`,
       'i'
     );
 
-    let requests: any[];
+    const orConditions: Record<string, unknown>[] = [{ partnerName: { $regex: partnerRegex } }];
 
     if (partnerEmail) {
-      // If we have a partnerEmail (from token), return pending requests that either
-      // - have partnerName matching the partner, OR
-      // - belong to a user whose attendanceEmail equals the partnerEmail.
-      // Use aggregation to join the user document for the attendanceEmail check and to
-      // return a populated `userId` field (so downstream code can use req.userId.name/email).
-      const emailRegex = new RegExp(`^${String(partnerEmail).trim().replace(/[.*+?^${}()|[\\]\\]/g, '\\\\$&')}$`, 'i');
-
-      requests = await AttendanceRequest.aggregate([
-        { $match: { status: 'Pending' } },
-        {
-          $lookup: {
-            from: 'users',
-            localField: 'userId',
-            foreignField: '_id',
-            as: 'userDoc',
-          },
-        },
-        { $unwind: { path: '$userDoc', preserveNullAndEmptyArrays: true } },
-        {
-          $match: {
-            $or: [
-              { partnerName: { $regex: partnerRegex } },
-              { 'userDoc.attendanceEmail': { $regex: emailRegex } },
-            ],
-          },
-        },
-        { $sort: { createdAt: 1 } },
-        {
-          $project: {
-            _id: 1,
-            userId: '$userDoc',
-            userName: 1,
-            date: 1,
-            monthYear: 1,
-            requestedStatus: 1,
-            reason: 1,
-            startTime: 1,
-            endTime: 1,
-            createdAt: 1,
-            partnerName: 1,
-            status: 1,
-          },
-        },
-      ]).exec();
-    } else {
-      // Fallback: match by partnerName only (legacy behavior)
-      requests = await AttendanceRequest.find({
-        partnerName: { $regex: partnerRegex },
-        status: 'Pending',
-      })
-        .sort({ createdAt: 1 })
-        .populate('userId', 'name email designation')
-        .lean();
+      const emailRegex = new RegExp(
+        `^${String(partnerEmail).trim().replace(/[.*+?^${}()|[\\]\\]/g, '\\\\$&')}$`,
+        'i'
+      );
+      orConditions.push({ 'userDoc.attendanceEmail': { $regex: emailRegex } });
     }
 
-    // Auto-approve "self" requests for attendance heads:
-    // If the token's partnerEmail equals the user's attendanceEmail AND the user's own email,
-    // then the partner is approving their own attendance; approve automatically and keep audit fields
-    // consistent by reusing the existing bulk-action logic.
+    if (visibleIds.length > 0) {
+      orConditions.push({
+        userId: {
+          $in: visibleIds
+            .filter((id) => mongoose.Types.ObjectId.isValid(id))
+            .map((id) => new mongoose.Types.ObjectId(id)),
+        },
+      });
+    }
+
+    let requests = await AttendanceRequest.aggregate([
+      { $match: { status: 'Pending' } },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userId',
+          foreignField: '_id',
+          as: 'userDoc',
+        },
+      },
+      { $unwind: { path: '$userDoc', preserveNullAndEmptyArrays: true } },
+      { $match: { $or: orConditions } },
+      { $sort: { createdAt: 1 } },
+      {
+        $project: {
+          _id: 1,
+          userId: '$userDoc',
+          userName: 1,
+          date: 1,
+          monthYear: 1,
+          requestedStatus: 1,
+          requestType: 1,
+          reason: 1,
+          startTime: 1,
+          endTime: 1,
+          extraWorkSlots: 1,
+          createdAt: 1,
+          partnerName: 1,
+          status: 1,
+        },
+      },
+    ]).exec();
+
     if (partnerEmail && token && Array.isArray(requests) && requests.length > 0) {
       const tokenEmail = String(partnerEmail).trim().toLowerCase();
       const selfIds = filterSelfApprovablePendingRequestIds(requests, tokenEmail);
@@ -125,52 +128,13 @@ export async function GET(request: NextRequest) {
         );
 
         const selfIdSet = new Set(approvedIds);
-        requests = requests.filter((r: any) => !selfIdSet.has(String(r._id)));
+        requests = requests.filter((r: { _id: unknown }) => !selfIdSet.has(String(r._id)));
       }
     }
 
-    // Fetch original attendance data for each request
-    const enrichedRequests = await Promise.all(requests.map(async (req: any) => {
-      let originalCheckin = '-';
-      let originalCheckout = '-';
-      
-      // Get the original attendance record
-      const effectiveMonthYear = req.monthYear || (req.date ? req.date.substring(0, 7) : null);
-      
-      if (req.userId && effectiveMonthYear && req.date) {
-        const attendance = await Attendance.findOne({
-          userId: req.userId._id || req.userId,
-          monthYear: effectiveMonthYear
-        }).lean();
-        
-        if (attendance && attendance.records) {
-          // If using lean(), Map might become a plain object
-          let record = null;
-          if (attendance.records instanceof Map) {
-            record = attendance.records.get(req.date);
-          } else {
-            record = (attendance.records as any)[req.date];
-          }
-          
-          if (record) {
-            originalCheckin = record.checkin || '-';
-            originalCheckout = record.checkout || '-';
-          }
-        }
-      }
-      
-      return {
-        _id: req._id,
-        userName: req.userName,
-        date: req.date,
-        requestedStatus: req.requestedStatus,
-        reason: req.reason,
-        startTime: req.startTime,
-        endTime: req.endTime,
-        originalCheckin,
-        originalCheckout
-      };
-    }));
+    const enrichedRequests = await enrichAttendanceRequestsWithOriginalTimes(
+      requests as Array<Record<string, unknown>>
+    );
 
     return NextResponse.json({
       success: true,
@@ -178,7 +142,19 @@ export async function GET(request: NextRequest) {
         partnerName,
         partnerEmail,
       },
-      data: enrichedRequests
+      data: enrichedRequests.map((req) => ({
+        _id: req._id,
+        userName: req.userName,
+        date: req.date,
+        requestedStatus: req.requestedStatus,
+        requestType: req.requestType,
+        reason: req.reason,
+        startTime: req.startTime,
+        endTime: req.endTime,
+        extraWorkSlots: req.extraWorkSlots,
+        originalCheckin: req.originalCheckin,
+        originalCheckout: req.originalCheckout,
+      })),
     });
   } catch (error) {
     console.error('Fetch Pending Requests Error:', error);
