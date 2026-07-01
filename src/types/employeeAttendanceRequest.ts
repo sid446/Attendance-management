@@ -8,7 +8,7 @@ export type EmployeeAttendanceRequest = {
   startTime?: string;
   endTime?: string;
   extraWorkSlots?: { startTime: string; endTime: string; reason: string }[];
-  status: 'Pending' | 'PendingHr' | 'Approved' | 'Rejected';
+  status: 'Pending' | 'PendingHr' | 'Approved' | 'Rejected' | 'Invalidated';
   partnerName?: string;
   partnerRemarks?: string;
   partnerApprovedAt?: string;

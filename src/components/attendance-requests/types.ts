@@ -18,7 +18,7 @@ export interface AttendanceRequest {
   partnerRemarks?: string;
   partnerApprovedAt?: string;
   partnerProposedValue?: string;
-  status: 'Pending' | 'PendingHr' | 'Approved' | 'Rejected';
+  status: 'Pending' | 'PendingHr' | 'Approved' | 'Rejected' | 'Invalidated';
   startTime?: string;
   endTime?: string;
   approvedBy?: string;
@@ -61,7 +61,7 @@ export interface DateRangeGroup {
   partnerRemarks?: string;
   partnerApprovedAt?: string;
   partnerProposedValue?: string;
-  status: 'Pending' | 'PendingHr' | 'Approved' | 'Rejected';
+  status: 'Pending' | 'PendingHr' | 'Approved' | 'Rejected' | 'Invalidated';
   dates: string[];
   startDate: string;
   endDate: string;
@@ -79,7 +79,7 @@ export interface DateRangeGroup {
   ids: string[];
 }
 
-export type RequestStatusFilter = 'all' | 'Pending' | 'Approved' | 'Rejected';
+export type RequestStatusFilter = 'all' | 'Pending' | 'Approved' | 'Rejected' | 'Invalidated';
 
 export type RequestSortOption =
   | 'date_desc'

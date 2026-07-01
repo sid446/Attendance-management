@@ -39,9 +39,11 @@ import {
   buildAttendanceRequestDayMap,
   buildDisplayRecordFromApprovedRequest,
   isHrModifiedAttendanceRecord,
+  shouldOverlayApprovedRequestOnAttendance,
 } from '@/lib/attendanceRequestDayDisplay';
 import { isArticleEmployee } from '@/lib/isArticleEmployee';
-import { getDefaultNumericValueForType } from '@/lib/attendanceRequestValues';
+import { getDefaultNumericValueForType, isLeaveRequestType } from '@/lib/attendanceRequestValues';
+import { hasPhysicalAttendancePresence } from '@/lib/attendancePhysicalPresence';
 interface ApprovedRequest {
   _id: string;
   date: string;
@@ -51,7 +53,7 @@ interface ApprovedRequest {
   reason?: string;
   startTime?: string;
   endTime?: string;
-  status: 'Pending' | 'PendingHr' | 'Approved' | 'Rejected';
+  status: 'Pending' | 'PendingHr' | 'Approved' | 'Rejected' | 'Invalidated';
   partnerName?: string;
   partnerRemarks?: string;
   partnerApprovedAt?: string;
@@ -115,6 +117,7 @@ function getDayUpdatesButtonLabel(
   if (request?.status === 'Pending') return 'Pending';
   if (request?.status === 'PendingHr') return 'HR review';
   if (request?.status === 'Rejected') return 'Rejected';
+  if (request?.status === 'Invalidated') return 'Invalidated';
   if (request?.status === 'Approved') return 'Approved';
   if (hrDirectEdit) return 'HR edit';
   return 'Details';
@@ -1343,9 +1346,8 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
 
                 let rec = storedRec;
                 if (
-                  approvedReq?.status === 'Approved' &&
-                  approvedReq.requestedStatus &&
-                  !attendanceRecordReflectsApprovedRequest(storedRec, approvedReq)
+                  approvedReq &&
+                  shouldOverlayApprovedRequestOnAttendance(storedRec, approvedReq)
                 ) {
                   rec = buildDisplayRecordFromApprovedRequest(
                     storedRec,
@@ -1357,6 +1359,18 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                       isArticle: scheduleUser ? isArticleEmployee(scheduleUser) : undefined,
                     }
                   );
+                }
+
+                if (
+                  rec &&
+                  isLeaveRequestType(String(rec.typeOfPresence || '')) &&
+                  hasPhysicalAttendancePresence(rec)
+                ) {
+                  rec = {
+                    ...rec,
+                    typeOfPresence: 'Present - in office - weekdays',
+                    status: 'Present',
+                  };
                 }
 
                 let status: any = rec?.status;

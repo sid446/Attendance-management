@@ -8,7 +8,9 @@ import { calculateLeaveUsage, updateLeaveBalanceOnApproval } from '@/lib/leaveMa
 import { calculateTotalHours as calculateDuration } from '@/lib/attendanceHours';
 import { calculateSummary, type AttendanceRecordForSummary } from '@/lib/attendanceSummaryCalculation';
 import { applyDayExcessToRecord } from '@/lib/calculateDayExcessHour';
-import { getDefaultNumericValueForType } from '@/lib/attendanceRequestValues';
+import { getDefaultNumericValueForType, isLeaveRequestType } from '@/lib/attendanceRequestValues';
+import { hasPhysicalAttendancePresence } from '@/lib/attendancePhysicalPresence';
+import { invalidateApprovedLeaveIfSuperseded, invalidateSupersededLeaveRequest } from '@/lib/invalidateSupersededLeaveRequest';
 
 type DayRecord = Record<string, unknown>;
 type RecordsMap = Map<string, DayRecord> | Record<string, DayRecord> | any;
@@ -61,6 +63,10 @@ export function approvedRequestNeedsAttendanceApply(
 
   // HR admin edit is authoritative — do not overwrite with an approved request on reconcile.
   if (isHrModifiedAttendanceRecord(rec as { remarks?: string })) {
+    return false;
+  }
+
+  if (isLeaveRequestType(requestedStatus) && hasPhysicalAttendancePresence(rec)) {
     return false;
   }
 
@@ -141,6 +147,11 @@ export async function applyApprovedRequestToAttendance(
     };
   } else {
     rec = cloneDayRecord(rec);
+  }
+
+  if (isLeaveRequestType(requestedStatus) && hasPhysicalAttendancePresence(rec)) {
+    await invalidateApprovedLeaveIfSuperseded(userObjectId, date);
+    return false;
   }
 
   rec.typeOfPresence = requestedStatus;
@@ -328,6 +339,15 @@ export async function reconcileApprovedRequestsForMonth(
     try {
       const attendance = await Attendance.findOne({ userId: userObjectId, monthYear });
       const rec = attendance ? getDayRecord(attendance.records, req.date) : undefined;
+
+      if (
+        isLeaveRequestType(String(req.requestedStatus || '')) &&
+        hasPhysicalAttendancePresence(rec)
+      ) {
+        await invalidateSupersededLeaveRequest(req._id);
+        continue;
+      }
+
       if (!approvedRequestNeedsAttendanceApply(rec, req)) continue;
 
       const valueRaw = req.hrValue ?? req.partnerProposedValue;

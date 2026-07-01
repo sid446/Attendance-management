@@ -18,6 +18,7 @@ import { EmployeeMonthView } from '@/components/EmployeeMonthView';
 import {
   attendanceRecordReflectsApprovedRequest,
   buildDisplayRecordFromApprovedRequest,
+  shouldOverlayApprovedRequestOnAttendance,
 } from '@/lib/attendanceRequestDayDisplay';
 import { EmployeeManagementSection } from '@/components/EmployeeManagementSection';
 import { EmployeeMasterUploadSection } from '@/components/EmployeeMasterUploadSection';
@@ -1551,7 +1552,7 @@ export default function AttendanceUpload() {
         if (!req?.date || !req?.requestedStatus) continue;
         const existingIdx = days.findIndex((d) => d.date === req.date);
         const existingDay = existingIdx >= 0 ? days[existingIdx] : null;
-        if (attendanceRecordReflectsApprovedRequest(existingDay, req)) continue;
+        if (!shouldOverlayApprovedRequestOnAttendance(existingDay, req)) continue;
 
         const merged = buildDisplayRecordFromApprovedRequest(
           existingDay,

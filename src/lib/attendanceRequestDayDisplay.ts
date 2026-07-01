@@ -1,10 +1,14 @@
-export type AttendanceRequestStatus = 'Pending' | 'PendingHr' | 'Approved' | 'Rejected';
+import { isLeaveRequestType } from '@/lib/attendanceRequestValues';
+import { hasPhysicalAttendancePresence } from '@/lib/attendancePhysicalPresence';
+
+export type AttendanceRequestStatus = 'Pending' | 'PendingHr' | 'Approved' | 'Rejected' | 'Invalidated';
 
 const REQUEST_STATUS_PRIORITY: Record<AttendanceRequestStatus, number> = {
   Approved: 4,
   PendingHr: 3,
   Pending: 2,
   Rejected: 1,
+  Invalidated: 0,
 };
 
 export type AttendanceRequestForDisplay = {
@@ -145,6 +149,25 @@ export function attendanceRecordReflectsApprovedRequest(
   }
 
   return true;
+}
+
+/** Approved leave must not replace calendar row when employee actually punched in. */
+export function leaveRequestSupersededByAttendance(
+  rec: AttendanceDayLike | null | undefined,
+  req: ApprovedRequestLike
+): boolean {
+  if (!isLeaveRequestType(String(req.requestedStatus || ''))) return false;
+  return hasPhysicalAttendancePresence(rec);
+}
+
+/** Whether an approved request should overlay stored attendance on the calendar. */
+export function shouldOverlayApprovedRequestOnAttendance(
+  rec: AttendanceDayLike | null | undefined,
+  req: ApprovedRequestLike & { status?: string }
+): boolean {
+  if (String(req.status || '') !== 'Approved') return false;
+  if (leaveRequestSupersededByAttendance(rec, req)) return false;
+  return !attendanceRecordReflectsApprovedRequest(rec, req);
 }
 
 /** Build a calendar row from an approved request when attendance is missing or stale. */

@@ -282,7 +282,15 @@ function mapEmployeeDayStatus(
   const isHalftime = isHalftimeEmploymentType(getEmploymentTypeForDate(userForDay, dateObj));
 
   let status: AttendanceRecord['status'] = 'Present';
-  if (value.typeOfPresence === 'Leave' || value.typeOfPresence === 'On leave') {
+  const hasPunch =
+    (!!effectiveCheckin && effectiveCheckin !== '00:00') ||
+    (!!effectiveCheckout && effectiveCheckout !== '00:00');
+  if (
+    (value.typeOfPresence === 'Leave' || value.typeOfPresence === 'On leave') &&
+    hasPunch
+  ) {
+    status = 'Present';
+  } else if (value.typeOfPresence === 'Leave' || value.typeOfPresence === 'On leave') {
     status = 'On leave';
   } else if (value.typeOfPresence === 'Holiday') {
     status = 'Holiday';

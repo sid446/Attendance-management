@@ -21,6 +21,8 @@ import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { reconcileApprovedRequestsForMonth } from '@/lib/applyApprovedAttendanceRequest';
 import { isArticleEmployee } from '@/lib/isArticleEmployee';
 import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
+import { hasPhysicalAttendancePresence } from '@/lib/attendancePhysicalPresence';
+import { invalidateSupersededLeaveRequest } from '@/lib/invalidateSupersededLeaveRequest';
 
 // GET - Fetch attendance records
 export async function GET(request: NextRequest) {
@@ -515,7 +517,7 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          // Approved request wins last — article/halftime/no-punch logic must not override leave.
+          // Approved request wins last — unless machine punch proves physical attendance on a leave day.
           let appliedApprovedLeaveOverride = false;
           if (!isFixedDataUpload && approvedRequest) {
             let requestTotalHour = 0;
@@ -528,10 +530,36 @@ export async function POST(request: NextRequest) {
               }
             }
 
-            if (totalHour > requestTotalHour) {
+            const machinePresence = hasPhysicalAttendancePresence({
+              checkin: finalCheckin,
+              checkout: finalCheckout,
+              editedCheckin: finalEditedCheckin,
+              editedCheckout: finalEditedCheckout,
+              totalHour: Math.max(totalHour, finalTotalHour),
+            });
+            const approvedLeave = isLeaveRequestStatus(approvedRequest.requestedStatus);
+
+            if (approvedLeave && machinePresence) {
+              const recordDate = new Date(isoDate);
+              const isSunday = recordDate.getDay() === 0;
+              const sched = user ? getScheduledTimes(user as IUser, isoDate) : null;
+              const useWeekoff = isSunday || !!sched?.isHoliday;
+              typeOfPresence = useWeekoff
+                ? 'Present - in office - weekoff'
+                : 'Present - in office - weekdays';
+              finalValue = 1;
+              finalHalfDay = false;
+              remarksStr +=
+                (remarksStr ? ' | ' : '') +
+                'Present (machine punch supersedes approved leave)';
+              await invalidateSupersededLeaveRequest(approvedRequest);
+            } else if (totalHour > requestTotalHour) {
               typeOfPresence = 'Present';
               remarksStr += (remarksStr ? ' | ' : '') + `Present (Machine ${totalHour}h > Request ${requestTotalHour}h)`;
               finalValue = 1;
+              if (approvedLeave) {
+                await invalidateSupersededLeaveRequest(approvedRequest);
+              }
             } else {
               typeOfPresence = approvedRequest.requestedStatus;
               remarksStr += (remarksStr ? ' | ' : '') + `Overridden by Approved Request: ${approvedRequest.requestedStatus}`;

@@ -44,7 +44,7 @@ export interface IAttendanceRequest extends Document {
   requestedStatus: TypeOfPresence | string;
   originalStatus: TypeOfPresence | string;
   reason?: string;
-  status: 'Pending' | 'PendingHr' | 'Approved' | 'Rejected';
+  status: 'Pending' | 'PendingHr' | 'Approved' | 'Rejected' | 'Invalidated';
   startTime?: string;
   endTime?: string;
   /** Distinguishes attendance correction from extra-work hour claims. */
@@ -106,7 +106,7 @@ const AttendanceRequestSchema: Schema = new Schema(
     reason: { type: String },
     status: { 
         type: String, 
-        enum: ['Pending', 'PendingHr', 'Approved', 'Rejected'], 
+        enum: ['Pending', 'PendingHr', 'Approved', 'Rejected', 'Invalidated'], 
         default: 'Pending' 
     },
     startTime: { type: String },
