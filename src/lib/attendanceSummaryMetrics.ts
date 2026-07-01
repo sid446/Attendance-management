@@ -6,7 +6,9 @@ import type { AttendanceSummaryView, DailySchedule, ScheduleEntry, ScheduleTime,
 import { isSinglePunch } from './attendanceHours';
 import { getScheduledTimes } from './scheduleUtils';
 
-import { applyExcessHourAllowance, lookupExcessAllowance, lookupExcessDisplay, type ExcessAllowanceLookup, type ExcessDayAllowanceLookup, type ExcessDisplayLookup } from './excessHourAllowance';
+import { calculateDayExcessHour } from './calculateDayExcessHour';
+import { applyDayAllowanceToRawExcess, applyExcessHourAllowance, lookupExcessAllowance, lookupExcessDisplay, type ExcessAllowanceLookup, type ExcessDayAllowanceLookup, type ExcessDisplayLookup } from './excessHourAllowance';
+import { isArticleEmployee } from './isArticleEmployee';
 
 /** True when the ISO date (YYYY-MM-DD) falls on a Sunday. */
 export function isSundayDate(dateStr: string): boolean {
@@ -930,12 +932,155 @@ export function getScheduledHoursNoLunchForMonth(
   return total;
 }
 
+/** Sum per-day article excess (early in / late out >30m) for dates in the period. */
+function resolveArticleDayExcessHour(
+  user: User,
+  dateStr: string,
+  rec: NonNullable<AttendanceSummaryView['recordDetails']>[string],
+  scheduledInTime: string,
+  scheduledOutTime: string
+): number {
+  const stored =
+    typeof rec.excessHour === 'number' && Number.isFinite(rec.excessHour)
+      ? rec.excessHour
+      : null;
+  return stored !== null
+    ? stored
+    : calculateDayExcessHour(user, dateStr, rec, scheduledInTime, scheduledOutTime);
+}
+
+function formatPunchTime(value: string | undefined): string {
+  const t = String(value ?? '').trim();
+  if (!t || t === '00:00') return '—';
+  return t;
+}
+
+export function getArticleExcessSumForPeriod(
+  item: AttendanceSummaryView,
+  user: User,
+  dateList: string[]
+): number {
+  let total = 0;
+  dateList.forEach((dateStr) => {
+    const rec = item.recordDetails?.[dateStr];
+    if (!rec) return;
+
+    const schedule = getScheduledTimes(user, new Date(dateStr));
+    total += resolveArticleDayExcessHour(
+      user,
+      dateStr,
+      rec,
+      schedule.inTime || '',
+      schedule.outTime || ''
+    );
+  });
+  return Number(total.toFixed(2));
+}
+
+/** Date-wise article excess rows for summary detail modal (in/out + schedule + daily excess). */
+export function getArticleExcessBreakdownForPeriod(
+  item: AttendanceSummaryView,
+  user: User,
+  dateList: string[],
+  options?: {
+    displayTotal?: number;
+    dayAllowanceMap?: ExcessDayAllowanceLookup | null;
+  }
+): { date: string; info: string; subInfo?: string }[] {
+  const userId = String(item.userId || '');
+  const breakdown: { date: string; info: string; subInfo?: string }[] = [
+    {
+      date: 'Article rule',
+      info: 'Early check-in counts as excess. Late check-out counts only when more than 30 minutes after scheduled out.',
+    },
+  ];
+
+  const datedRows: { date: string; info: string; subInfo?: string }[] = [];
+
+  dateList.forEach((dateStr) => {
+    const rec = item.recordDetails?.[dateStr];
+    if (!rec) return;
+
+    const schedule = getScheduledTimes(user, new Date(dateStr));
+    const scheduledInTime = schedule.inTime || '';
+    const scheduledOutTime = schedule.outTime || '';
+    const inTime = formatPunchTime(rec.editedCheckin ?? rec.checkin);
+    const outTime = formatPunchTime(rec.editedCheckout ?? rec.checkout);
+    const schIn = formatPunchTime(scheduledInTime);
+    const schOut = formatPunchTime(scheduledOutTime);
+
+    const rawDayExcess = resolveArticleDayExcessHour(
+      user,
+      dateStr,
+      rec,
+      scheduledInTime,
+      scheduledOutTime
+    );
+    const dayExcess = applyDayAllowanceToRawExcess(
+      rawDayExcess,
+      userId,
+      dateStr,
+      options?.dayAllowanceMap
+    );
+    const sign = dayExcess > 0 ? '+' : dayExcess < 0 ? '-' : '';
+    const dateObj = new Date(dateStr);
+    const weekday = Number.isNaN(dateObj.getTime())
+      ? ''
+      : dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+
+    let info = `In ${inTime} / Out ${outTime} · Sch ${schIn}–${schOut}`;
+    if (dayExcess !== rawDayExcess) {
+      const rawSign = rawDayExcess > 0 ? '+' : rawDayExcess < 0 ? '-' : '';
+      info += ` · Raw ${rawSign}${formatHoursMinutes(Math.abs(rawDayExcess))}`;
+    }
+
+    datedRows.push({
+      date: dateStr,
+      info,
+      subInfo: `${weekday ? `${weekday} · ` : ''}${sign}${formatHoursMinutes(Math.abs(dayExcess))}`,
+    });
+  });
+
+  datedRows.sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+  );
+  breakdown.push(...datedRows);
+
+  const rawTotal = getArticleExcessSumForPeriod(item, user, dateList);
+  const displayTotal =
+    options?.displayTotal != null && Number.isFinite(options.displayTotal)
+      ? Number(Number(options.displayTotal).toFixed(2))
+      : rawTotal;
+
+  if (displayTotal !== rawTotal) {
+    breakdown.push({
+      date: 'Calculated total',
+      info: `${rawTotal > 0 ? '+' : rawTotal < 0 ? '-' : ''}${formatHoursMinutes(Math.abs(rawTotal))}`,
+      subInfo: 'Before partner allowance',
+    });
+  }
+
+  breakdown.push({
+    date: 'Period total',
+    info: `${displayTotal > 0 ? '+' : displayTotal < 0 ? '-' : ''}${formatHoursMinutes(Math.abs(displayTotal))}`,
+    subInfo:
+      displayTotal !== rawTotal
+        ? 'Matches summary (+ partner allowance applied)'
+        : `${datedRows.length} day(s) with attendance records`,
+  });
+
+  return breakdown;
+}
+
 export function getExcessDeficitLikeSummary(
   item: AttendanceSummaryView,
   user: User | undefined,
   dateList: string[],
   workedHours?: number
 ): number {
+  if (user && isArticleEmployee(user)) {
+    return getArticleExcessSumForPeriod(item, user, dateList);
+  }
   const w = workedHours !== undefined ? workedHours : getTotalHourLikeAdminSummary(item, user, dateList);
   const scheduledHours = Number(getScheduledHoursNoLunchForMonth(item, user, dateList) || 0);
   return Number((w - scheduledHours).toFixed(2));

@@ -3,6 +3,7 @@
 import React from 'react';
 import { X } from 'lucide-react';
 import type { SummaryDetailRow } from '../../types';
+import { formatSummaryDetailDateLabel } from '../../utils/summaryDateUtils';
 
 export interface SummaryDetailModalProps {
   isOpen: boolean;
@@ -20,7 +21,7 @@ export const SummaryDetailModal: React.FC<SummaryDetailModalProps> = ({ isOpen, 
       role="presentation"
     >
       <div
-        className="flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-blue-200/65 bg-panel shadow-xl"
+        className="flex max-h-[80vh] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-blue-200/65 bg-panel shadow-xl"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -51,10 +52,10 @@ export const SummaryDetailModal: React.FC<SummaryDetailModalProps> = ({ isOpen, 
                 >
                   <div className="flex shrink-0 items-center gap-2">
                     <div className="whitespace-nowrap rounded border border-blue-200/65 bg-panel px-2 py-0.5 font-mono text-xs text-slate-800">
-                      {/^\d{4}-\d{2}-\d{2}$/.test(d.date) ? d.date.split('-').reverse().join('/') : new Date(d.date).toLocaleDateString('en-GB')}
+                      {formatSummaryDetailDateLabel(d.date)}
                     </div>
                     {d.subInfo && (
-                      <span className="whitespace-nowrap rounded border border-slate-200 px-1.5 py-0.5 text-[11px] text-slate-600">
+                      <span className="rounded border border-slate-200 px-1.5 py-0.5 text-[11px] text-slate-600 wrap-break-word">
                         {d.subInfo}
                       </span>
                     )}

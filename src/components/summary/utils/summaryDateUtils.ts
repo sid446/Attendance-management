@@ -1,3 +1,18 @@
+/** Label in summary detail modal: ISO keys → dd/mm/yyyy; parseable dates localized; else plain text. */
+export function formatSummaryDetailDateLabel(date: string): string {
+  const t = String(date || '').trim();
+  if (!t) return '—';
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(t);
+  if (iso) {
+    return `${iso[3]}/${iso[2]}/${iso[1]}`;
+  }
+  const ms = Date.parse(t);
+  if (!Number.isNaN(ms)) {
+    return new Date(ms).toLocaleDateString('en-GB');
+  }
+  return t;
+}
+
 /** Sort key for `YYYY-MM-DD` — integer compare avoids any timezone parsing. */
 export function isoCalendarKeyToSortNumber(iso: string): number | null {
   const t = iso.trim();

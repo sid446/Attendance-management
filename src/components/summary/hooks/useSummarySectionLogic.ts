@@ -8,8 +8,11 @@ import {
   getEmploymentTypeForDate,
   isExcessEligibleRecord,
   getWorkedHoursMatchingScheduledDays,
+  getExcessDeficitLikeSummary,
+  getArticleExcessBreakdownForPeriod,
   isDayIncludedInScheduledCalc,
 } from '@/lib/attendanceSummaryMetrics';
+import { isArticleEmployee } from '@/lib/isArticleEmployee';
 import {
   getDesignationForDate,
   getDesignationForSummary,
@@ -1155,21 +1158,49 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
   };
 
   const getExcessResultForItem = (item: AttendanceSummaryView) => {
+    const enriched = item as EnrichedSummary;
     const user = allUsers?.find(u => u._id === item.userId || u.odId === item.userId);
     const dateList = getExcessDateListForCurrentPeriod();
     const workedHours = user
       ? getWorkedHoursMatchingScheduledDays(item, user, dateList)
       : Number(item.summary?.totalHour || 0);
     const scheduledHours = Number(calculateScheduledHoursNoLunch(item) || 0);
-    const total = Number((workedHours - scheduledHours).toFixed(2));
+    const rawTotal = user
+      ? getExcessDeficitLikeSummary(item, user, dateList, workedHours)
+      : Number((workedHours - scheduledHours).toFixed(2));
+    const displayTotal =
+      typeof enriched.calcExcessDeficit === 'number'
+        ? enriched.calcExcessDeficit
+        : resolveDisplayExcess(
+            rawTotal,
+            item.userId,
+            item.monthYear,
+            excessAllowanceMap,
+            excessDisplayMap
+          );
+
+    if (user && isArticleEmployee(user)) {
+      return {
+        total: displayTotal,
+        breakdown: getArticleExcessBreakdownForPeriod(item, user, dateList, {
+          displayTotal,
+          dayAllowanceMap: excessDayAllowanceMap,
+        }),
+      };
+    }
 
     const breakdown: { date: string; info: string; subInfo?: string }[] = [
       { date: 'Worked Hours', info: formatHoursMinutes(workedHours) },
       { date: 'Scheduled Hours', info: formatHoursMinutes(scheduledHours) },
-      { date: 'Excess (Worked - Scheduled)', info: `${total >= 0 ? '+' : '-'}${formatHoursMinutes(Math.abs(total))}` },
+      {
+        date: 'Excess (Worked - Scheduled)',
+        info: `${displayTotal >= 0 ? '+' : '-'}${formatHoursMinutes(Math.abs(displayTotal))}`,
+        subInfo:
+          displayTotal !== rawTotal ? `Calculated ${formatHoursMinutes(rawTotal)} before allowance` : undefined,
+      },
     ];
 
-    return { total, breakdown };
+    return { total: displayTotal, breakdown };
   };
 
   const filteredSummaries = useMemo(() => {
@@ -1254,8 +1285,10 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
             };
           });
         }
-        // Excess / Sched. use same scheduled-day set for worked and sched.
-        const rawExcessDeficit = Number((workedTotal - sched).toFixed(2));
+        // Employees: worked − scheduled on the same day set. Articles: per-day article excess sum.
+        const rawExcessDeficit = user
+          ? getExcessDeficitLikeSummary(item, user, periodDateList, workedTotal)
+          : Number((workedTotal - sched).toFixed(2));
         const calcExcessDeficit = resolveDisplayExcess(
           rawExcessDeficit,
           item.userId,
