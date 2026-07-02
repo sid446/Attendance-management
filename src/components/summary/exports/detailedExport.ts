@@ -5,10 +5,24 @@ import {
   getSummaryPeriodEndDate,
   getWorkingUnderPartnerForDate,
 } from '@/lib/userFieldHistory';
+import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
 import { sortRecordDetailsEntries } from '../utils/summaryDateUtils';
 import type { SummaryExportContext } from './exportTypes';
 import { downloadWorkbook } from './downloadWorkbook';
 import { isArticleEmployee } from '@/lib/isArticleEmployee';
+
+const INACTIVE_ROW_FILL = 'FFFDBA74';
+
+function isUserMarkedInactive(user: User | undefined): boolean {
+  if (!user) return false;
+  if (user.isActive === false) return true;
+  const raw: unknown = user.isActive;
+  return typeof raw === 'string' && raw.toLowerCase() === 'false';
+}
+
+function summaryHasExportData(item: AttendanceSummaryView): boolean {
+  return Object.keys(item.recordDetails || {}).length > 0;
+}
 
 
 export async function exportDetailedAttendance(ctx: SummaryExportContext): Promise<void> {
@@ -334,11 +348,32 @@ export async function exportDetailedAttendance(ctx: SummaryExportContext): Promi
       }
     }
 
-    // Partition summaries into employees and articles so export has two sections
-    const employeeSummaries: AttendanceSummaryView[] = [];
-    const articleSummaries: AttendanceSummaryView[] = [];
-    filteredSummaries.forEach(item => {
-      const user = allUsers?.find(u => u._id === item.userId || u.odId === item.userId);
+    const usersById = new Map<string, User>();
+    for (const u of allUsers ?? []) {
+      usersById.set(u._id, u);
+    }
+    const inactiveUserIds = new Set<string>();
+    try {
+      const usersRes = await fetch('/api/users?listOnly=1&includeInactive=1', hrCredentialsInit());
+      if (usersRes.ok) {
+        const usersJson = await usersRes.json();
+        if (usersJson?.success && Array.isArray(usersJson.data)) {
+          for (const u of usersJson.data as User[]) {
+            usersById.set(u._id, u);
+            if (isUserMarkedInactive(u)) inactiveUserIds.add(u._id);
+          }
+        }
+      }
+    } catch {
+      // Fall back to active users from export context.
+    }
+
+    const resolveUser = (item: AttendanceSummaryView) =>
+      usersById.get(item.userId) ??
+      allUsers?.find((u) => u._id === item.userId || u.odId === item.userId);
+
+    const classifySummary = (item: AttendanceSummaryView) => {
+      const user = resolveUser(item);
       const periodEndForItem = getSummaryPeriodEndDate({ ...summaryPeriodBase, monthYear: item.monthYear });
       const employmentType =
         user?.employmentType || getEmploymentTypeForDate(user as any, periodEndForItem);
@@ -346,22 +381,38 @@ export async function exportDetailedAttendance(ctx: SummaryExportContext): Promi
         user as Parameters<typeof getDesignationForDate>[0],
         periodEndForItem
       );
-      const designation = (designationAtPeriod || item.designation || '').toString().toLowerCase();
-      // Treat as article if employmentType, designation, or category mentions 'article'
-      if (
-        isArticleEmployee({
-          employmentType,
-          designation: designationAtPeriod || item.designation,
-          category: user?.category,
-        })
-      ) {
-        articleSummaries.push(item);
-      } else employeeSummaries.push(item);
+      const isArticle = isArticleEmployee({
+        employmentType,
+        designation: designationAtPeriod || item.designation,
+        category: user?.category,
+      });
+      const isInactive = inactiveUserIds.has(item.userId) || isUserMarkedInactive(user);
+      return { isArticle, isInactive };
+    };
+
+    // Active first, inactive last (each split into employees vs articles).
+    const activeEmployeeSummaries: AttendanceSummaryView[] = [];
+    const activeArticleSummaries: AttendanceSummaryView[] = [];
+    const inactiveEmployeeSummaries: AttendanceSummaryView[] = [];
+    const inactiveArticleSummaries: AttendanceSummaryView[] = [];
+    filteredSummaries.forEach((item) => {
+      if (!summaryHasExportData(item)) return;
+      const { isArticle, isInactive } = classifySummary(item);
+      if (isInactive) {
+        if (isArticle) inactiveArticleSummaries.push(item);
+        else inactiveEmployeeSummaries.push(item);
+      } else if (isArticle) {
+        activeArticleSummaries.push(item);
+      } else {
+        activeEmployeeSummaries.push(item);
+      }
     });
 
+    const inactiveRowNumbers = new Set<number>();
+
     // Process a single summary and add a row; if `isArticle` blanks certain columns
-    const processItem = (item: AttendanceSummaryView, isArticle = false) => {
-      const user = allUsers?.find(u => u._id === item.userId || u.odId === item.userId);
+    const processItem = (item: AttendanceSummaryView, isArticle = false, markInactive = false) => {
+      const user = resolveUser(item);
       const periodEnd = getSummaryPeriodEndDate({ ...summaryPeriodBase, monthYear: item.monthYear });
       const workPartnerAtPeriod = getWorkingUnderPartnerForDate(
         user as Parameters<typeof getWorkingUnderPartnerForDate>[0],
@@ -694,18 +745,32 @@ export async function exportDetailedAttendance(ctx: SummaryExportContext): Promi
       }
 
       worksheet.addRow(rowData);
+      if (markInactive) {
+        inactiveRowNumbers.add(worksheet.lastRow?.number ?? worksheet.rowCount);
+      }
     };
 
-    // Write employee summaries first
-    employeeSummaries.forEach(i => processItem(i, false));
+    const addSectionSeparator = () => {
+      worksheet.addRow([]);
+      worksheet.addRow([]);
+      worksheet.addRow([]);
+    };
 
-    // If any articles exist, insert a few blank rows as separator then write article rows
-    if (articleSummaries.length > 0) {
-      worksheet.addRow([]);
-      worksheet.addRow([]);
-      worksheet.addRow([]);
-      // leave a small visual gap; no explicit 'Articles' header required per request
-      articleSummaries.forEach(i => processItem(i, true));
+    // Write active employees, then active articles.
+    activeEmployeeSummaries.forEach((i) => processItem(i, false));
+    if (activeArticleSummaries.length > 0) {
+      addSectionSeparator();
+      activeArticleSummaries.forEach((i) => processItem(i, true));
+    }
+
+    // Inactive people with period data appear last, whole row highlighted orange.
+    if (inactiveEmployeeSummaries.length > 0 || inactiveArticleSummaries.length > 0) {
+      addSectionSeparator();
+      inactiveEmployeeSummaries.forEach((i) => processItem(i, false, true));
+      if (inactiveArticleSummaries.length > 0) {
+        addSectionSeparator();
+        inactiveArticleSummaries.forEach((i) => processItem(i, true, true));
+      }
     }
 
     // Style numbering row and header row (numbering = row 1, header = row 2)
@@ -767,6 +832,7 @@ export async function exportDetailedAttendance(ctx: SummaryExportContext): Promi
     // Style data rows and apply role-based fills
     worksheet.eachRow((row, rowNumber) => {
       if (rowNumber <= 2) return; // skip numbering + header
+      const isInactiveRow = inactiveRowNumbers.has(rowNumber);
       const isEvenRow = rowNumber % 2 === 0;
       row.eachCell((cell, colNumber) => {
         const colKey = worksheet.columns[colNumber - 1]?.key as string | undefined;
@@ -778,6 +844,11 @@ export async function exportDetailedAttendance(ctx: SummaryExportContext): Promi
         // Base font/alignment
         cell.font = { size: 10 };
         cell.alignment = { vertical: 'middle', horizontal: colNumber === 2 ? 'left' : 'center' };
+
+        if (isInactiveRow) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INACTIVE_ROW_FILL } };
+          return;
+        }
 
         // If highlighted column, apply special data fill
         if (colKey && highlightKeys.has(colKey)) {

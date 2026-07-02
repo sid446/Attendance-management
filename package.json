@@ -24,7 +24,9 @@
     "fix:partial-punch-hours": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/fix-partial-punch-hours.ts",
     "reconcile:approved-attendance": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/reconcile-approved-attendance.ts",
     "fix:article-excess:dry": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/recalculate-article-attendance-excess.ts --dry-run",
-    "fix:article-excess": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/recalculate-article-attendance-excess.ts"
+    "fix:article-excess": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/recalculate-article-attendance-excess.ts",
+    "backfill:late-checkin-rules:dry": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/backfill-late-checkin-rules.ts --dry-run",
+    "backfill:late-checkin-rules": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/backfill-late-checkin-rules.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

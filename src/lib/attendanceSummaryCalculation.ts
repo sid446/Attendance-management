@@ -7,6 +7,7 @@ import {
   calculateDayExcessHour,
   isNonWorkingDayRecord,
 } from '@/lib/calculateDayExcessHour';
+import { applyLateCheckinAbsentRule, applyLateCheckinHalfDayRule } from '@/lib/lateCheckinAbsentRule';
 
 export type AttendanceRecordForSummary = {
   checkin: string;
@@ -70,6 +71,11 @@ export function calculateSummary(
   let totalLeave = 0;
 
   records.forEach((record, dateStr) => {
+    if (applyLateCheckinAbsentRule(record, user, dateStr)) {
+      totalAbsent++;
+      return;
+    }
+
     let scheduledInTime = '';
     let scheduledOutTime = '';
     if (user) {
@@ -164,7 +170,8 @@ export function calculateSummary(
     }
 
     record.halfDay = calculatedHalfDay;
-    if (calculatedHalfDay) {
+    applyLateCheckinHalfDayRule(record, user, dateStr);
+    if (record.halfDay) {
       totalHalfDay++;
     }
 

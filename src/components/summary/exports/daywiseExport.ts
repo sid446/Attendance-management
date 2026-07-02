@@ -1,7 +1,7 @@
 import type { User } from '@/types/ui';
 import { applyDayAllowanceToRawExcess } from '@/lib/excessHourAllowance';
 import { getEmploymentTypeForDate } from '@/lib/attendanceSummaryMetrics';
-import { getDesignationForDate } from '@/lib/userFieldHistory';
+import { getDesignationForDate, getWorkingUnderPartnerForDate } from '@/lib/userFieldHistory';
 import { formatIsoKeyAsDdMmYyyy, sortRecordDetailsEntries } from '../utils/summaryDateUtils';
 import { calendarDateFromIsoKey } from '../utils/summaryDateUtils';
 import type { SummaryExportContext } from './exportTypes';
@@ -79,12 +79,14 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
 
     // Column keys + widths (no `header` here Ã¢â‚¬â€ we insert a real header row so row 1 is not overwritten by data)
     worksheet.columns = [
+      { key: 'employeeCode', width: 14 },
       { key: 'weekType', width: 12 },
       { key: 'source', width: 22 },
       { key: 'date', width: 12 },
       { key: 'day', width: 11 },
       { key: 'employeeName', width: 22 },
       { key: 'designation', width: 16 },
+      { key: 'verticalHead', width: 22 },
       { key: 'presentAbsent', width: 14 },
       { key: 'actualInTimeOriginal', width: 14 },
       { key: 'actualOutTimeOriginal', width: 14 },
@@ -108,12 +110,14 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
     ];
 
     const daywiseHeaderLabels = [
+      'Employee Code',
       'Weekday / weekoff',
       'Source',
       'Date',
       'Day',
       'Employee name',
       'Designation',
+      'Vertical Head',
       'Present / absent',
       'Actual in (original)',
       'Actual out (original)',
@@ -693,6 +697,7 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
         }
 
         worksheet.addRow({
+          employeeCode: daywiseUser?.employeeCode || item.employeeCode || item.odId || item.userId || '-',
           weekType,
           source: getSource(record),
           date: formatIsoKeyAsDdMmYyyy(date),
@@ -701,6 +706,12 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
           designation: daywiseUser
             ? getDesignationForDate(daywiseUser as Parameters<typeof getDesignationForDate>[0], date)
             : item.designation || '',
+          verticalHead: daywiseUser
+            ? getWorkingUnderPartnerForDate(
+                daywiseUser as Parameters<typeof getWorkingUnderPartnerForDate>[0],
+                date
+              )
+            : resolveWorkPartnerForItem(daywiseUser, item.monthYear) || item.team || '-',
           presentAbsent,
           actualInTimeOriginal: hhmmStringToExcelTime(String(actualInTimeOriginal)),
           actualOutTimeOriginal: hhmmStringToExcelTime(String(actualOutTimeOriginal)),
@@ -756,7 +767,7 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
       };
     });
 
-    const daywiseLeftAlignKeys = new Set(['source', 'employeeName', 'designation']);
+    const daywiseLeftAlignKeys = new Set(['source', 'employeeName', 'designation', 'verticalHead']);
 
     const daywiseNumericColumnFmt: Record<string, string> = {
       date: '@',

@@ -21,6 +21,7 @@ import {
   calculateArticleDayExcessMinutes,
   isArticleEmployee,
 } from '@/lib/isArticleEmployee';
+import { applyLateCheckinAbsentRule, applyLateCheckinHalfDayRule } from '@/lib/lateCheckinAbsentRule';
 import {
   applyManagedEffectiveHistories,
   ManagedEffectiveField,
@@ -649,6 +650,13 @@ async function recalculateAttendanceFromDate(userId: string, fromDate: Date) {
     let totalScheduledHour = 0;
 
     attendance.records.forEach((record: any, dateStr: string) => {
+      if (applyLateCheckinAbsentRule(record, user, dateStr)) {
+        summary.totalAbsent++;
+        return;
+      }
+
+      applyLateCheckinHalfDayRule(record, user, dateStr);
+
       const inTime = String(record.editedCheckin || record.checkin || '').trim();
       const outTime = String(record.editedCheckout || record.checkout || '').trim();
 

@@ -3,6 +3,8 @@ import connectDB from '@/lib/mongodb';
 import LocationAttendance from '@/models/LocationAttendance';
 import ClientPlace from '@/models/ClientPlace';
 import Attendance from '@/models/Attendance';
+import User from '@/models/User';
+import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
 import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAuth';
 
 // Haversine formula to calculate distance between two coordinates in meters
@@ -285,7 +287,12 @@ async function updateMainAttendanceRecord(
       excessHour: 0,
       remarks: `Location verified at: ${clientPlaceName}`
     });
-    
+
+    const user = await User.findById(userId);
+    if (user) {
+      attendance.summary = calculateSummary(attendance.records, user);
+    }
+
     await attendance.save();
   } catch (error) {
     console.error('Error updating main attendance record:', error);

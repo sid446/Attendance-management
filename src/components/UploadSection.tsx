@@ -633,7 +633,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
           </p>
           <p className="mt-1 text-[11px] text-slate-500">
             Date format: DD-MM-YYYY (example: 02-01-2026). Presence codes supported: Present, WO-Present, HD, OS-P,
-            WO-HD, WFH, WO-WFH, Sun, A, Weekoff, OHD-P, OHD.
+            WO-HD, WFH, WO-WFH, Sun, A, Weekoff, OHD-P, OHD. Check-in 1:00–2:59 PM is half day; 3:00 PM or later is absent (half-time employees exempt).
           </p>
         </div>
 

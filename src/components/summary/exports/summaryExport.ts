@@ -1,4 +1,5 @@
 import type { User } from '@/types/ui';
+import { formatHoursMinutes } from '@/lib/attendanceSummaryMetrics';
 import { getDesignationForDate } from '@/lib/userFieldHistory';
 import { sortRecordDetailsEntries } from '../utils/summaryDateUtils';
 import type { SummaryExportContext } from './exportTypes';
@@ -9,8 +10,19 @@ const summaryDurationColumnKeys = new Set([
   'scheduled',
   'definedSchedule',
   'workHours',
-  'excess',
 ]);
+
+const summaryLeftAlignColumnKeys = new Set(['employeeName']);
+
+function formatExportDate(value?: string | Date | null): string {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${dd}-${mm}-${yyyy}`;
+}
 
 
 export async function exportSummaryAttendance(ctx: SummaryExportContext): Promise<void> {
@@ -61,13 +73,15 @@ export async function exportSummaryAttendance(ctx: SummaryExportContext): Promis
     }
     // Now add the header row (row 1)
     worksheet.columns = [
+      { key: 'employeeCode', header: 'Employee Code', width: 15 },
       { key: 'paidFrom', header: 'Paid From', width: 12 },
       { key: 'employeeName', header: 'Employee Name', width: 25 },
       { key: 'category', header: 'Category', width: 12 },
       { key: 'verticalHead', header: 'Authorised Vertical Head', width: 25 },
-      { key: 'employeeCode', header: 'Employee Code', width: 15 },
       { key: 'team', header: 'Team', width: 12 },
       { key: 'designation', header: 'Designation', width: 15 },
+      { key: 'joiningDate', header: 'Date of Joining', width: 14 },
+      { key: 'dateOfLeave', header: 'Date of Leave', width: 14 },
       { key: 'totalDays', header: 'Total Days', width: 10 },
       { key: 'holidays', header: 'Holidays', width: 10 },
       { key: 'workingDays', header: 'Working Days', width: 12 },
@@ -78,7 +92,7 @@ export async function exportSummaryAttendance(ctx: SummaryExportContext): Promis
       { key: 'scheduled', header: 'Scheduled', width: 12 },
       { key: 'definedSchedule', header: 'Defined Work Hour', width: 15 },
       { key: 'workHours', header: 'Work Hours', width: 12 },
-      { key: 'excess', header: 'Excess', width: 10 },
+      { key: 'excess', header: 'Excess', width: 12 },
 
     ];
 
@@ -98,13 +112,15 @@ export async function exportSummaryAttendance(ctx: SummaryExportContext): Promis
         ? resolveDesignationForItem(user, item.monthYear)
         : item.designation || '';
       worksheet.addRow({
+        employeeCode: user?.employeeCode || item.employeeCode || item.odId || item.userId || '-',
         paidFrom: user?.paidFrom || 'N/A',
         employeeName: user?.name || item.userName,
         category: user?.category || 'N/A',
         verticalHead: workPartnerAtPeriod || 'N/A',
-        employeeCode: item.employeeCode || item.odId || item.userId || '-',
         team: workPartnerAtPeriod || item.team || '-',
         designation: designationAtPeriod || '-',
+        joiningDate: formatExportDate(user?.joiningDate),
+        dateOfLeave: formatExportDate(user?.inactiveAsOf),
         totalDays: Object.keys(item.recordDetails || {}).length,
         holidays: (() => {
           const records = item.recordDetails || {};
@@ -135,7 +151,7 @@ export async function exportSummaryAttendance(ctx: SummaryExportContext): Promis
         scheduled: decimalHoursToExcelDuration(item.calcScheduled || 0),
         definedSchedule: decimalHoursToExcelDuration(item.calcDefinedSchedule || 0),
         workHours: decimalHoursToExcelDuration(item.summary.totalHour),
-        excess: decimalHoursToExcelDuration(item.calcExcessDeficit ?? 0),
+        excess: formatHoursMinutes(item.calcExcessDeficit ?? 0),
       });
     });
 
@@ -173,10 +189,12 @@ export async function exportSummaryAttendance(ctx: SummaryExportContext): Promis
         };
         cell.alignment = {
           vertical: 'middle',
-          horizontal: colNumber === 2 ? 'left' : 'center'
+          horizontal: colKey && summaryLeftAlignColumnKeys.has(colKey) ? 'left' : 'center'
         };
         if (colKey && summaryDurationColumnKeys.has(colKey)) {
           cell.numFmt = EXCEL_DURATION_NUM_FMT;
+        } else if (colKey === 'excess' || colKey === 'joiningDate' || colKey === 'dateOfLeave') {
+          cell.numFmt = '@';
         }
         cell.border = {
           top: { style: 'thin', color: { argb: 'FFE0E0E0' } },

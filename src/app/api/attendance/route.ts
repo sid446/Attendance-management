@@ -16,6 +16,7 @@ import {
   calculateTotalHours,
   isSinglePunch,
   isValidPunchTime,
+  normalizeTimeToHHmm,
 } from '@/lib/attendanceHours';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { reconcileApprovedRequestsForMonth } from '@/lib/applyApprovedAttendanceRequest';
@@ -1165,18 +1166,5 @@ function normalizeExcelDate(rawDate: string): { isoDate: string; isoMonthYear: s
     isoDate: `${yyyy}-${mm}-${dd}`,
     isoMonthYear: `${yyyy}-${mm}`,
   };
-}
-
-// Normalize times like "HH:mm:ss" or "HH:mm" to "HH:mm"
-function normalizeTimeToHHmm(rawTime: string | null | undefined): string {
-  if (!rawTime) return '';
-
-  const str = String(rawTime).trim();
-  const match = str.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  if (!match) return '';
-
-  const hours = match[1].padStart(2, '0');
-  const minutes = match[2];
-  return `${hours}:${minutes}`;
 }
 

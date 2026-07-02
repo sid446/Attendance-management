@@ -4,6 +4,24 @@ export function isValidPunchTime(time?: string | null): boolean {
   return t !== '' && t !== '00:00';
 }
 
+/** Normalize HH:mm, HH:mm:ss, or trailing time in a datetime string to HH:mm. */
+export function normalizeTimeToHHmm(rawTime: string | null | undefined): string {
+  if (!rawTime) return '';
+
+  const str = String(rawTime).trim();
+  const simple = str.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (simple) {
+    return `${simple[1].padStart(2, '0')}:${simple[2]}`;
+  }
+
+  const datetime = str.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*$/);
+  if (datetime) {
+    return `${datetime[1].padStart(2, '0')}:${datetime[2]}`;
+  }
+
+  return '';
+}
+
 function minutesBetween(start: string, end: string): number | null {
   if (!isValidPunchTime(start) || !isValidPunchTime(end)) return null;
 
