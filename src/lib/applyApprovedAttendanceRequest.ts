@@ -14,6 +14,7 @@ import { invalidateApprovedLeaveIfSuperseded, invalidateSupersededLeaveRequest }
 import {
   EXTRA_WORK_REQUEST_STATUS,
   applyExtraWorkSlotsToRecord,
+  type ExtraWorkEntry,
   extraWorkRequestAppliedToRecord,
   isExtraWorkRequest,
   normalizeExtraWorkSlotsFromRequest,
@@ -98,7 +99,8 @@ function extraWorkNeedsApplyOrRepair(
   req: ApprovedRequestLike
 ): boolean {
   if (!rec) return false;
-  if (!extraWorkRequestAppliedToRecord(rec as { extraWorkEntries?: unknown[] }, req._id)) {
+  const requestId = req._id != null ? String(req._id) : undefined;
+  if (!extraWorkRequestAppliedToRecord(rec as { extraWorkEntries?: ExtraWorkEntry[] | null }, requestId)) {
     return true;
   }
   const type = String(rec.typeOfPresence || '').trim();
@@ -183,7 +185,7 @@ export async function applyApprovedExtraWorkRequestToAttendance(
   const rec = cloneDayRecord(existingRec);
   let changed = repairCorruptedExtraWorkAttendanceFields(rec, reqRecord);
 
-  if (!extraWorkRequestAppliedToRecord(rec as { extraWorkEntries?: unknown[] }, requestId)) {
+  if (!extraWorkRequestAppliedToRecord(rec as { extraWorkEntries?: ExtraWorkEntry[] | null }, requestId)) {
     const slots = normalizeExtraWorkSlotsFromRequest(reqRecord);
     if (slots.length === 0) return changed;
 
