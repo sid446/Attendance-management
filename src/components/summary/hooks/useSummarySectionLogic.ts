@@ -6,12 +6,20 @@ import { getScheduledTimes } from '@/lib/scheduleUtils';
 import {
   formatHoursMinutes,
   getEmploymentTypeForDate,
+  getExtraWorkHoursTotalForPeriod,
   isExcessEligibleRecord,
   getWorkedHoursMatchingScheduledDays,
   getExcessDeficitLikeSummary,
   getArticleExcessBreakdownForPeriod,
   isDayIncludedInScheduledCalc,
 } from '@/lib/attendanceSummaryMetrics';
+import {
+  formatExtraWorkEntriesTimeSummary,
+  formatRecordPunchTimeRange,
+  getRecordPunchHours,
+  getRecordPunchTimeRange,
+  sumExtraWorkEntryHours,
+} from '@/lib/extraWorkRequest';
 import { isArticleEmployee } from '@/lib/isArticleEmployee';
 import {
   getDesignationForDate,
@@ -395,15 +403,52 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
       const user = allUsers?.find(u => u._id === item.userId || u.odId === item.userId);
       const dateList = getExcessDateListForCurrentPeriod();
       const dates: { date: string; info: string; subInfo?: string }[] = [];
+      let punchTotal = 0;
+      let extraTotal = 0;
+
       dateList.forEach((date) => {
           const rec = records[date];
           if (!user || !isDayIncludedInScheduledCalc(user, date, rec)) return;
-          const effectiveCheckin = rec?.editedCheckin || rec?.checkin;
-          if (rec && Number(rec.totalHour || 0) > 0) {
-               dates.push({ date, info: `${formatHoursMinutes(rec.totalHour)}`, subInfo: effectiveCheckin ? `In: ${effectiveCheckin}` : undefined });
+          if (!rec || Number(rec.totalHour || 0) <= 0) return;
+
+          const extraHours = sumExtraWorkEntryHours(
+            (rec as { extraWorkEntries?: Array<{ hours?: number; startTime?: string; endTime?: string }> })
+              .extraWorkEntries
+          );
+          const punchHours = getRecordPunchHours(rec);
+          punchTotal += punchHours;
+          extraTotal += extraHours;
+
+          const punchRange = formatRecordPunchTimeRange(rec);
+          const extraTimes = formatExtraWorkEntriesTimeSummary(
+            (rec as { extraWorkEntries?: Array<{ startTime?: string; endTime?: string }> }).extraWorkEntries
+          );
+
+          let info = `Punch ${formatHoursMinutes(punchHours)}`;
+          if (extraHours > 0) {
+            info += ` + Extra ${formatHoursMinutes(extraHours)} = ${formatHoursMinutes(rec.totalHour)}`;
+          } else {
+            info = formatHoursMinutes(rec.totalHour);
           }
+
+          const subParts = [`In/out: ${punchRange}`];
+          if (extraTimes) subParts.push(`Extra: ${extraTimes}`);
+          dates.push({ date, info, subInfo: subParts.join(' · ') });
       });
-      return dates.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      if (extraTotal > 0) {
+        dates.unshift({
+          date: 'Period split',
+          info: `Punch ${formatHoursMinutes(punchTotal)} + Extra ${formatHoursMinutes(extraTotal)}`,
+          subInfo: `Total ${formatHoursMinutes(punchTotal + extraTotal)}`,
+        });
+      }
+
+      return dates.sort((a,b) => {
+        if (a.date === 'Period split') return -1;
+        if (b.date === 'Period split') return 1;
+        return new Date(a.date).getTime() - new Date(b.date).getTime();
+      });
   };
 
   const getScheduledHoursDetails = (item: AttendanceSummaryView) => {
@@ -1192,13 +1237,56 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
     const breakdown: { date: string; info: string; subInfo?: string }[] = [
       { date: 'Worked Hours', info: formatHoursMinutes(workedHours) },
       { date: 'Scheduled Hours', info: formatHoursMinutes(scheduledHours) },
-      {
-        date: 'Excess (Worked - Scheduled)',
-        info: `${displayTotal >= 0 ? '+' : '-'}${formatHoursMinutes(Math.abs(displayTotal))}`,
-        subInfo:
-          displayTotal !== rawTotal ? `Calculated ${formatHoursMinutes(rawTotal)} before allowance` : undefined,
-      },
     ];
+
+    const extraWorkTotal = getExtraWorkHoursTotalForPeriod(item, dateList);
+    if (extraWorkTotal > 0) {
+      const punchWorked = Number((workedHours - extraWorkTotal).toFixed(2));
+      breakdown.splice(1, 0, {
+        date: 'Punch hours',
+        info: formatHoursMinutes(punchWorked),
+        subInfo: 'From check-in / check-out only',
+      });
+      breakdown.splice(2, 0, {
+        date: 'Extra work hours',
+        info: `+${formatHoursMinutes(extraWorkTotal)}`,
+        subInfo: 'Approved extra-work slots',
+      });
+    }
+
+    dateList.forEach((dateStr) => {
+      const rec = item.recordDetails?.[dateStr];
+      if (!user || !isDayIncludedInScheduledCalc(user, dateStr, rec)) return;
+      const extraHours = sumExtraWorkEntryHours(
+        (rec as { extraWorkEntries?: Array<{ hours?: number; startTime?: string; endTime?: string }> } | undefined)
+          ?.extraWorkEntries
+      );
+      if (extraHours <= 0 && !getRecordPunchTimeRange(rec).inTime) return;
+
+      const punchRange = formatRecordPunchTimeRange(rec);
+      const extraTimes = formatExtraWorkEntriesTimeSummary(
+        (rec as { extraWorkEntries?: Array<{ startTime?: string; endTime?: string }> } | undefined)
+          ?.extraWorkEntries
+      );
+      const punchHours = getRecordPunchHours(rec);
+      let info = `Punch ${punchRange}`;
+      if (extraHours > 0) {
+        info += ` · Extra +${formatHoursMinutes(extraHours)}`;
+        if (extraTimes) info += ` (${extraTimes})`;
+      }
+      breakdown.push({
+        date: dateStr,
+        info,
+        subInfo: `Worked ${formatHoursMinutes(Number(rec?.totalHour || 0))}`,
+      });
+    });
+
+    breakdown.push({
+      date: 'Excess (Worked - Scheduled)',
+      info: `${displayTotal >= 0 ? '+' : '-'}${formatHoursMinutes(Math.abs(displayTotal))}`,
+      subInfo:
+        displayTotal !== rawTotal ? `Calculated ${formatHoursMinutes(rawTotal)} before allowance` : undefined,
+    });
 
     return { total: displayTotal, breakdown };
   };

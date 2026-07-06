@@ -1,6 +1,11 @@
 import type { User } from '@/types/ui';
 import { applyDayAllowanceToRawExcess } from '@/lib/excessHourAllowance';
 import { getEmploymentTypeForDate } from '@/lib/attendanceSummaryMetrics';
+import {
+  formatExtraWorkEntriesTimeSummary,
+  getRecordPunchHours,
+  sumExtraWorkEntryHours,
+} from '@/lib/extraWorkRequest';
 import { getDesignationForDate, getWorkingUnderPartnerForDate } from '@/lib/userFieldHistory';
 import { formatIsoKeyAsDdMmYyyy, sortRecordDetailsEntries } from '../utils/summaryDateUtils';
 import { calendarDateFromIsoKey } from '../utils/summaryDateUtils';
@@ -92,6 +97,9 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
       { key: 'actualOutTimeOriginal', width: 14 },
       { key: 'actualInTimeEditable', width: 14 },
       { key: 'actualOutTimeEditable', width: 14 },
+      { key: 'extraWorkTimes', width: 22 },
+      { key: 'punchWorkingHrs', width: 14 },
+      { key: 'extraWorkHrs', width: 12 },
       { key: 'trueFalseInTime', width: 12 },
       { key: 'trueFalseOutTime', width: 12 },
       { key: 'scheduledInTime', width: 12 },
@@ -123,6 +131,9 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
       'Actual out (original)',
       'Actual in (edited)',
       'Actual out (edited)',
+      'Extra work (times)',
+      'Working hrs (punch)',
+      'Extra work hrs',
       'In time unchanged',
       'Out time unchanged',
       'Scheduled in',
@@ -497,12 +508,15 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
           // Always pad to two digits
           return `${h.padStart(2, '0')}:${m.padStart(2, '0')}`;
         };
-        // Always use edited times for calculations and display
-        const actualInTimeEditable = formatTime(record.editedCheckin ?? record.inTime ?? '');
-        const actualOutTimeEditable = formatTime(record.editedCheckout ?? record.outTime ?? '');
+        // Punch times only — never extra-work slot times
+        const actualInTimeEditable = formatTime(record.editedCheckin ?? record.checkin ?? record.inTime ?? '');
+        const actualOutTimeEditable = formatTime(record.editedCheckout ?? record.checkout ?? record.outTime ?? '');
         // For display, keep original for reference
         const actualInTimeOriginal = formatTime(record.originalInTime ?? record.checkin ?? '');
         const actualOutTimeOriginal = formatTime(record.originalOutTime ?? record.checkout ?? '');
+        const extraWorkTimes = formatExtraWorkEntriesTimeSummary(record.extraWorkEntries);
+        const extraWorkHrs = sumExtraWorkEntryHours(record.extraWorkEntries);
+        const punchWorkingHrs = getRecordPunchHours(record);
         // Get scheduled in/out from user schedule for this day
         let scheduledInTime = '';
         let scheduledOutTime = '';
@@ -565,7 +579,7 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
         let actualWFH = '';
         let maxOutstation = '';
         let actualOutstation = '';
-        // Default working hours
+        // Total working hours (punch + approved extra work)
         const workingHrs = record.workingHours ?? record.workingHour ?? record.totalHour ?? '';
         // Mark halfday as true for Saturday
         let isHalfDay = false;
@@ -686,6 +700,11 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
           workingHrsExport = dec === '' ? '' : decimalHoursToExcelDuration(dec);
         }
 
+        const punchWorkingHrsExport =
+          punchWorkingHrs > 0 ? decimalHoursToExcelDuration(punchWorkingHrs) : '';
+        const extraWorkHrsExport =
+          extraWorkHrs > 0 ? decimalHoursToExcelDuration(extraWorkHrs) : '';
+
         let scheduledTimeExport: number | '' = '';
         if (scheduledTime === '') {
           scheduledTimeExport = '';
@@ -717,6 +736,9 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
           actualOutTimeOriginal: hhmmStringToExcelTime(String(actualOutTimeOriginal)),
           actualInTimeEditable: hhmmStringToExcelTime(String(actualInTimeEditable)),
           actualOutTimeEditable: hhmmStringToExcelTime(String(actualOutTimeEditable)),
+          extraWorkTimes: extraWorkTimes || '',
+          punchWorkingHrs: punchWorkingHrsExport,
+          extraWorkHrs: extraWorkHrsExport,
           trueFalseInTime: String(actualInTimeOriginal) === String(actualInTimeEditable) ? 'True' : 'False',
           trueFalseOutTime: String(actualOutTimeOriginal) === String(actualOutTimeEditable) ? 'True' : 'False',
           scheduledInTime: hhmmStringToExcelTime(formatTime(scheduledInTime)),
@@ -767,7 +789,7 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
       };
     });
 
-    const daywiseLeftAlignKeys = new Set(['source', 'employeeName', 'designation', 'verticalHead']);
+    const daywiseLeftAlignKeys = new Set(['source', 'employeeName', 'designation', 'verticalHead', 'extraWorkTimes']);
 
     const daywiseNumericColumnFmt: Record<string, string> = {
       date: '@',
@@ -782,6 +804,8 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
       actualWFH: '0.00',
       actualOutstation: '0.00',
       workingHrs: EXCEL_DURATION_NUM_FMT,
+      punchWorkingHrs: EXCEL_DURATION_NUM_FMT,
+      extraWorkHrs: EXCEL_DURATION_NUM_FMT,
       scheduledTime: EXCEL_DURATION_NUM_FMT,
       scheduledHrsMonth: EXCEL_DURATION_NUM_FMT,
       workingHrsMonth: EXCEL_DURATION_NUM_FMT,

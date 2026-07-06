@@ -11,6 +11,13 @@ import { applyDayExcessToRecord } from '@/lib/calculateDayExcessHour';
 import { getDefaultNumericValueForType, isLeaveRequestType } from '@/lib/attendanceRequestValues';
 import { hasPhysicalAttendancePresence } from '@/lib/attendancePhysicalPresence';
 import { invalidateApprovedLeaveIfSuperseded, invalidateSupersededLeaveRequest } from '@/lib/invalidateSupersededLeaveRequest';
+import {
+  EXTRA_WORK_REQUEST_STATUS,
+  applyExtraWorkSlotsToRecord,
+  extraWorkRequestAppliedToRecord,
+  isExtraWorkRequest,
+  normalizeExtraWorkSlotsFromRequest,
+} from '@/lib/extraWorkRequest';
 
 type DayRecord = Record<string, unknown>;
 type RecordsMap = Map<string, DayRecord> | Record<string, DayRecord> | any;
@@ -51,13 +58,69 @@ function effectivePunchOut(rec: DayRecord | undefined): string {
   return String(rec?.editedCheckout || rec?.checkout || '').trim();
 }
 
+type ApprovedRequestLike = {
+  _id?: unknown;
+  requestedStatus?: string;
+  requestType?: string;
+  startTime?: string;
+  endTime?: string;
+  originalStatus?: string;
+  extraWorkSlots?: { startTime: string; endTime: string; reason: string }[];
+};
+
+/** Undo mistaken correction-style apply that overwrote punch fields for extra work. */
+function repairCorruptedExtraWorkAttendanceFields(
+  rec: DayRecord,
+  req: ApprovedRequestLike
+): boolean {
+  let changed = false;
+  const type = String(rec.typeOfPresence || '').trim();
+  if (type === EXTRA_WORK_REQUEST_STATUS && req.originalStatus) {
+    rec.typeOfPresence = req.originalStatus;
+    changed = true;
+  }
+
+  const reqIn = String(req.startTime || '').trim();
+  const reqOut = String(req.endTime || '').trim();
+  const editedIn = String(rec.editedCheckin || '').trim();
+  const editedOut = String(rec.editedCheckout || '').trim();
+  if (reqIn && reqOut && editedIn === reqIn && editedOut === reqOut) {
+    rec.editedCheckin = '';
+    rec.editedCheckout = '';
+    changed = true;
+  }
+
+  return changed;
+}
+
+function extraWorkNeedsApplyOrRepair(
+  rec: DayRecord | undefined,
+  req: ApprovedRequestLike
+): boolean {
+  if (!rec) return false;
+  if (!extraWorkRequestAppliedToRecord(rec as { extraWorkEntries?: unknown[] }, req._id)) {
+    return true;
+  }
+  const type = String(rec.typeOfPresence || '').trim();
+  if (type === EXTRA_WORK_REQUEST_STATUS && req.originalStatus) return true;
+  const reqIn = String(req.startTime || '').trim();
+  const reqOut = String(req.endTime || '').trim();
+  const editedIn = String(rec.editedCheckin || '').trim();
+  const editedOut = String(rec.editedCheckout || '').trim();
+  return !!(reqIn && reqOut && editedIn === reqIn && editedOut === reqOut);
+}
+
 /** True when an approved request is not yet reflected on the attendance day record. */
 export function approvedRequestNeedsAttendanceApply(
   rec: DayRecord | undefined,
-  req: { requestedStatus?: string; startTime?: string; endTime?: string }
+  req: ApprovedRequestLike
 ): boolean {
   const requestedStatus = String(req.requestedStatus || '').trim();
   if (!requestedStatus) return false;
+
+  if (isExtraWorkRequest(req)) {
+    return extraWorkNeedsApplyOrRepair(rec, req);
+  }
 
   if (!rec) return true;
 
@@ -95,11 +158,61 @@ export function approvedRequestNeedsAttendanceApply(
 }
 
 /**
+ * Apply an approved extra-work request — additive only; punch in/out are not changed.
+ */
+export async function applyApprovedExtraWorkRequestToAttendance(
+  reqRecord: ApprovedRequestLike & {
+    userId: mongoose.Types.ObjectId | string;
+    date: string;
+    monthYear: string;
+  }
+): Promise<boolean> {
+  const { userId, date, monthYear } = reqRecord;
+  const requestId = reqRecord._id != null ? String(reqRecord._id) : undefined;
+  const userObjectId =
+    userId instanceof mongoose.Types.ObjectId
+      ? userId
+      : new mongoose.Types.ObjectId(String(userId));
+
+  const attendance = await Attendance.findOne({ userId: userObjectId, monthYear });
+  if (!attendance) return false;
+
+  const existingRec = getDayRecord(attendance.records, date);
+  if (!existingRec) return false;
+
+  const rec = cloneDayRecord(existingRec);
+  let changed = repairCorruptedExtraWorkAttendanceFields(rec, reqRecord);
+
+  if (!extraWorkRequestAppliedToRecord(rec as { extraWorkEntries?: unknown[] }, requestId)) {
+    const slots = normalizeExtraWorkSlotsFromRequest(reqRecord);
+    if (slots.length === 0) return changed;
+
+    applyExtraWorkSlotsToRecord(rec, slots, requestId);
+    changed = true;
+  }
+
+  if (!changed) return false;
+
+  setDayRecord(attendance, date, rec);
+  const userObj = await User.findById(userObjectId);
+  const recordsMap =
+    attendance.records instanceof Map
+      ? attendance.records
+      : new Map(Object.entries(attendance.records || {}));
+  attendance.summary = calculateSummary(
+    recordsMap as Map<string, AttendanceRecordForSummary>,
+    userObj
+  );
+  await attendance.save();
+  return true;
+}
+
+/**
  * Apply an approved attendance request onto the user's monthly attendance record.
  * Returns true when the attendance document was modified and saved.
  */
 export async function applyApprovedRequestToAttendance(
-  reqRecord: {
+  reqRecord: ApprovedRequestLike & {
     userId: mongoose.Types.ObjectId | string;
     date: string;
     monthYear: string;
@@ -109,6 +222,10 @@ export async function applyApprovedRequestToAttendance(
   },
   options?: { attendanceValue?: number }
 ): Promise<boolean> {
+  if (isExtraWorkRequest(reqRecord)) {
+    return applyApprovedExtraWorkRequestToAttendance(reqRecord);
+  }
+
   const { userId, date, monthYear, requestedStatus, startTime, endTime } = reqRecord;
   const attendanceValue = options?.attendanceValue;
   const userObjectId =
@@ -356,10 +473,10 @@ export async function reconcileApprovedRequestsForMonth(
           ? parseFloat(String(valueRaw))
           : undefined;
 
-      await applyApprovedRequestToAttendance(req, {
+      const applied = await applyApprovedRequestToAttendance(req, {
         attendanceValue: Number.isNaN(attendanceValue as number) ? undefined : attendanceValue,
       });
-      repaired++;
+      if (applied) repaired++;
     } catch (error) {
       console.error(
         `[reconcileApprovedRequestsForMonth] Failed user=${userId} date=${req.date} request=${req._id}:`,

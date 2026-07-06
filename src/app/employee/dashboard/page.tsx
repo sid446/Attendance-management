@@ -462,6 +462,7 @@ function buildSubordinateAttendancePack(
       checkout: value.checkout ?? '',
       editedCheckin: value.editedCheckin ?? '',
       editedCheckout: value.editedCheckout ?? '',
+      extraWorkEntries: Array.isArray(value.extraWorkEntries) ? value.extraWorkEntries : [],
     };
   });
 
@@ -1209,6 +1210,7 @@ export default function EmployeeDashboard() {
               checkout: value.checkout ?? '',
               editedCheckin: value.editedCheckin ?? '',
               editedCheckout: value.editedCheckout ?? '',
+              extraWorkEntries: Array.isArray(value.extraWorkEntries) ? value.extraWorkEntries : [],
             };
           })
         );

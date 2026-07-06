@@ -101,7 +101,9 @@ export function validateExtraWorkSlots(
   return { ok: true, slots: validated };
 }
 
-export function sumExtraWorkEntryHours(entries?: ExtraWorkEntry[] | null): number {
+export function sumExtraWorkEntryHours(
+  entries?: Array<{ hours?: number; startTime?: string; endTime?: string }> | null
+): number {
   if (!Array.isArray(entries) || entries.length === 0) return 0;
   return sumExtraWorkSlotHours(entries);
 }
@@ -170,6 +172,18 @@ export function applyExtraWorkToRecord(
   return applyExtraWorkSlotsToRecord(rec, [params], params.requestId);
 }
 
+/** True when this request's slots are already stored on the day record. */
+export function extraWorkRequestAppliedToRecord(
+  rec: { extraWorkEntries?: ExtraWorkEntry[] | null } | null | undefined,
+  requestId?: string | null
+): boolean {
+  if (!rec || !requestId) return false;
+  const entries = rec.extraWorkEntries;
+  if (!Array.isArray(entries) || entries.length === 0) return false;
+  const id = String(requestId);
+  return entries.some((entry) => String(entry.requestId || '') === id);
+}
+
 export function applyExtraWorkSlotsToRecord(
   rec: ExtraWorkRecordTarget,
   slots: Array<{ startTime: string; endTime: string; reason?: string }>,
@@ -211,4 +225,55 @@ export function formatExtraWorkHoursLabel(hours: number): string {
   const h = Math.floor(hours);
   const m = Math.round((hours % 1) * 60);
   return `${h}:${m.toString().padStart(2, '0')}`;
+}
+
+/** Punch in/out from a day record (edited times preferred). */
+export function getRecordPunchTimeRange(rec: {
+  editedCheckin?: string;
+  checkin?: string;
+  inTime?: string;
+  editedCheckout?: string;
+  checkout?: string;
+  outTime?: string;
+} | null | undefined): { inTime: string; outTime: string } {
+  return {
+    inTime: String(rec?.editedCheckin || rec?.checkin || rec?.inTime || '').trim(),
+    outTime: String(rec?.editedCheckout || rec?.checkout || rec?.outTime || '').trim(),
+  };
+}
+
+export function formatRecordPunchTimeRange(
+  rec: Parameters<typeof getRecordPunchTimeRange>[0],
+  empty = '—'
+): string {
+  const { inTime, outTime } = getRecordPunchTimeRange(rec);
+  const inLabel = inTime && inTime !== '00:00' ? inTime : empty;
+  const outLabel = outTime && outTime !== '00:00' ? outTime : empty;
+  return `${inLabel} → ${outLabel}`;
+}
+
+/** Comma-separated extra-work slot ranges, e.g. "19:00–21:00, 22:00–23:00". */
+export function formatExtraWorkEntriesTimeSummary(
+  entries?: Array<{ startTime?: string; endTime?: string }> | null
+): string {
+  if (!Array.isArray(entries) || entries.length === 0) return '';
+  return entries
+    .map((entry) => {
+      const start = String(entry.startTime || '').trim();
+      const end = String(entry.endTime || '').trim();
+      if (!start && !end) return '';
+      return `${start || '--:--'}–${end || '--:--'}`;
+    })
+    .filter(Boolean)
+    .join(', ');
+}
+
+/** Hours worked from punch only (totalHour minus approved extra work). */
+export function getRecordPunchHours(rec: {
+  totalHour?: number;
+  extraWorkEntries?: Array<{ hours?: number; startTime?: string; endTime?: string }> | null;
+} | null | undefined): number {
+  const total = Number(rec?.totalHour || 0);
+  const extra = sumExtraWorkEntryHours(rec?.extraWorkEntries);
+  return Number(Math.max(0, total - extra).toFixed(2));
 }

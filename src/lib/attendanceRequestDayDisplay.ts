@@ -1,5 +1,6 @@
 import { isLeaveRequestType } from '@/lib/attendanceRequestValues';
 import { hasPhysicalAttendancePresence } from '@/lib/attendancePhysicalPresence';
+import { isExtraWorkRequest } from '@/lib/extraWorkRequest';
 
 export type AttendanceRequestStatus = 'Pending' | 'PendingHr' | 'Approved' | 'Rejected' | 'Invalidated';
 
@@ -163,9 +164,11 @@ export function leaveRequestSupersededByAttendance(
 /** Whether an approved request should overlay stored attendance on the calendar. */
 export function shouldOverlayApprovedRequestOnAttendance(
   rec: AttendanceDayLike | null | undefined,
-  req: ApprovedRequestLike & { status?: string }
+  req: ApprovedRequestLike & { status?: string; requestType?: string }
 ): boolean {
   if (String(req.status || '') !== 'Approved') return false;
+  // Extra work is additive — punch times stay on the record; show slots separately.
+  if (isExtraWorkRequest(req)) return false;
   if (leaveRequestSupersededByAttendance(rec, req)) return false;
   return !attendanceRecordReflectsApprovedRequest(rec, req);
 }

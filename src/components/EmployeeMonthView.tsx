@@ -44,6 +44,10 @@ import {
 import { isArticleEmployee } from '@/lib/isArticleEmployee';
 import { getDefaultNumericValueForType, isLeaveRequestType } from '@/lib/attendanceRequestValues';
 import { hasPhysicalAttendancePresence } from '@/lib/attendancePhysicalPresence';
+import {
+  isExtraWorkRequest,
+  normalizeExtraWorkSlotsFromRequest,
+} from '@/lib/extraWorkRequest';
 interface ApprovedRequest {
   _id: string;
   date: string;
@@ -53,6 +57,7 @@ interface ApprovedRequest {
   reason?: string;
   startTime?: string;
   endTime?: string;
+  extraWorkSlots?: { startTime: string; endTime: string; reason: string }[];
   status: 'Pending' | 'PendingHr' | 'Approved' | 'Rejected' | 'Invalidated';
   partnerName?: string;
   partnerRemarks?: string;
@@ -129,6 +134,42 @@ function formatDayActivityDate(dateStr: string): string {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+function formatPunchTimeRange(rec: AttendanceRecord | null | undefined): string {
+  if (!rec) return '--:-- → --:--';
+  const inTime = String(rec.editedCheckin || rec.checkin || rec.inTime || '').trim();
+  const outTime = String(rec.editedCheckout || rec.checkout || rec.outTime || '').trim();
+  return `${inTime || '--:--'} → ${outTime || '--:--'}`;
+}
+
+type ExtraWorkTimeLine = { startTime: string; endTime: string; pending?: boolean };
+
+function resolveExtraWorkTimeLines(
+  storedRec: AttendanceRecord | null | undefined,
+  approvedReq: ApprovedRequest | null | undefined
+): ExtraWorkTimeLine[] {
+  const fromRecord = storedRec?.extraWorkEntries;
+  if (Array.isArray(fromRecord) && fromRecord.length > 0) {
+    return fromRecord.map((entry) => ({
+      startTime: String(entry.startTime || '').trim(),
+      endTime: String(entry.endTime || '').trim(),
+    }));
+  }
+
+  if (
+    approvedReq &&
+    isExtraWorkRequest(approvedReq) &&
+    (approvedReq.status === 'Pending' || approvedReq.status === 'PendingHr')
+  ) {
+    return normalizeExtraWorkSlotsFromRequest(approvedReq).map((slot) => ({
+      startTime: slot.startTime,
+      endTime: slot.endTime,
+      pending: true,
+    }));
+  }
+
+  return [];
+}
+
 function DayActivityModalPanel({
   data,
   onClose,
@@ -142,6 +183,8 @@ function DayActivityModalPanel({
     isHrModifiedAttendanceRecord(record) && hrEditEntries.length === 0;
   const recordIn = record?.editedCheckin || record?.checkin || record?.inTime || '';
   const recordOut = record?.editedCheckout || record?.checkout || record?.outTime || '';
+  const isExtraWork = request ? isExtraWorkRequest(request) : false;
+  const extraWorkLines = resolveExtraWorkTimeLines(record, request);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -162,10 +205,51 @@ function DayActivityModalPanel({
         <p className="mb-4 text-xs text-slate-500">{formatDayActivityDate(date)}</p>
 
         <div className="space-y-4">
+          {(recordIn || recordOut) && (
+            <section className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                Attendance punch
+              </h4>
+              <dl className="space-y-2 text-xs">
+                <div className="flex justify-between gap-4">
+                  <dt className="shrink-0 text-slate-600">In → out</dt>
+                  <dd className="font-mono text-right text-slate-900">
+                    {recordIn || '--:--'} → {recordOut || '--:--'}
+                  </dd>
+                </div>
+              </dl>
+            </section>
+          )}
+
+          {extraWorkLines.length > 0 && (
+            <section className="rounded-lg border border-amber-200 bg-amber-50/70 p-3">
+              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-900">
+                Extra work
+              </h4>
+              <div className="space-y-2 text-xs">
+                {extraWorkLines.map((line, index) => (
+                  <div key={`${line.startTime}-${line.endTime}-${index}`} className="flex justify-between gap-4">
+                    <dt className="shrink-0 text-amber-800">
+                      Slot {index + 1}
+                      {line.pending ? ' (pending)' : ''}
+                    </dt>
+                    <dd className="font-mono text-right text-amber-950">
+                      {line.startTime || '--:--'} → {line.endTime || '--:--'}
+                    </dd>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
           {request && (
             <section className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
               <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                {request.requestSource === 'hr_direct' ? 'HR calendar edit' : 'Correction request'}
+                {request.requestSource === 'hr_direct'
+                  ? 'HR calendar edit'
+                  : isExtraWork
+                    ? 'Extra work request'
+                    : 'Correction request'}
               </h4>
               <dl className="space-y-2 text-xs">
                 {request.requestSource === 'hr_direct' && (
@@ -196,7 +280,7 @@ function DayActivityModalPanel({
                     <dd className="break-words text-right text-slate-900">{request.reason}</dd>
                   </div>
                 )}
-                {(request.startTime || request.endTime) && (
+                {(request.startTime || request.endTime) && !isExtraWork && (
                   <div className="flex justify-between gap-4">
                     <dt className="shrink-0 text-slate-600">Requested time</dt>
                     <dd className="text-right text-slate-900">
@@ -1637,18 +1721,47 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                       </span>
                     )}
                     
-                    {/* Time info */}
-                    {rec && (
-                      <div className="mt-auto space-y-0 text-[11px] text-slate-600">
-                        {status !== 'Leave' &&
-                          status !== 'On leave' &&
-                          status !== 'Unpaid Leave' &&
-                          status !== 'Holiday' &&
-                          status !== 'Week Off' && (
+                    {/* Time info — punch times from stored record; extra work shown separately */}
+                    {rec && (() => {
+                      const punchRec = storedRec ?? rec;
+                      const extraWorkLines = resolveExtraWorkTimeLines(storedRec, approvedReq);
+                      const showPunchTimes =
+                        status !== 'Leave' &&
+                        status !== 'On leave' &&
+                        status !== 'Unpaid Leave' &&
+                        status !== 'Holiday' &&
+                        status !== 'Week Off';
+
+                      return (
+                      <div className="mt-auto space-y-0.5 text-[11px] text-slate-600">
+                        {showPunchTimes && (
                           <div className="flex items-center gap-2">
                             <span className={isLate ? 'font-medium text-amber-800' : 'text-slate-600'}>
-                              {rec.inTime || '--:--'} → {rec.outTime || '--:--'}
+                              {formatPunchTimeRange(punchRec)}
                             </span>
+                          </div>
+                        )}
+                        {extraWorkLines.length > 0 && (
+                          <div className="space-y-0.5">
+                            {extraWorkLines.map((line, lineIdx) => (
+                              <div
+                                key={`${line.startTime}-${line.endTime}-${lineIdx}`}
+                                className={`font-mono text-[10px] leading-tight ${
+                                  line.pending ? 'text-amber-800' : 'text-amber-900'
+                                }`}
+                                title={
+                                  line.pending
+                                    ? 'Extra work (pending approval)'
+                                    : 'Approved extra work'
+                                }
+                              >
+                                <span className="font-sans font-medium">+ </span>
+                                {line.startTime || '--:--'} → {line.endTime || '--:--'}
+                                {line.pending ? (
+                                  <span className="ml-0.5 font-sans text-[9px] font-medium">(pending)</span>
+                                ) : null}
+                              </div>
+                            ))}
                           </div>
                         )}
                         {/* Show type if different from status */}
@@ -1668,7 +1781,8 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                           </div>
                         )}
                       </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 );
               })}
@@ -1752,6 +1866,10 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
           <div className="flex items-center gap-2">
             <div className="h-4 w-4 rounded border border-indigo-300 bg-indigo-100" />
             <span className="text-slate-700">Other / unmapped type</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-4 w-4 rounded border border-amber-300 bg-amber-50" />
+            <span className="text-slate-700">Extra work (below punch)</span>
           </div>
           {approvedRequests.length > 0 && (
             <div className="flex items-center gap-2">

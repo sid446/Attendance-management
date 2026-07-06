@@ -1,5 +1,10 @@
 import type { User } from '@/types/ui';
-import { formatHoursMinutes } from '@/lib/attendanceSummaryMetrics';
+import { formatHoursMinutes, getExtraWorkHoursTotalForPeriod } from '@/lib/attendanceSummaryMetrics';
+import {
+  formatExtraWorkEntriesTimeSummary,
+  getRecordPunchHours,
+  sumExtraWorkEntryHours,
+} from '@/lib/extraWorkRequest';
 import { getDesignationForDate } from '@/lib/userFieldHistory';
 import { sortRecordDetailsEntries } from '../utils/summaryDateUtils';
 import type { SummaryExportContext } from './exportTypes';
@@ -10,6 +15,8 @@ const summaryDurationColumnKeys = new Set([
   'scheduled',
   'definedSchedule',
   'workHours',
+  'punchWorkHours',
+  'extraWorkHours',
 ]);
 
 const summaryLeftAlignColumnKeys = new Set(['employeeName']);
@@ -92,6 +99,8 @@ export async function exportSummaryAttendance(ctx: SummaryExportContext): Promis
       { key: 'scheduled', header: 'Scheduled', width: 12 },
       { key: 'definedSchedule', header: 'Defined Work Hour', width: 15 },
       { key: 'workHours', header: 'Work Hours', width: 12 },
+      { key: 'punchWorkHours', header: 'Punch Hours', width: 12 },
+      { key: 'extraWorkHours', header: 'Extra Work', width: 12 },
       { key: 'excess', header: 'Excess', width: 12 },
 
     ];
@@ -111,6 +120,15 @@ export async function exportSummaryAttendance(ctx: SummaryExportContext): Promis
       const designationAtPeriod = user
         ? resolveDesignationForItem(user, item.monthYear)
         : item.designation || '';
+      const periodDateList = Object.keys(item.recordDetails || {}).filter((dateStr) => {
+        const records = item.recordDetails || {};
+        return dateStr in records;
+      });
+      const extraWorkHoursTotal = getExtraWorkHoursTotalForPeriod(item, periodDateList);
+      const punchWorkHoursTotal = Number(
+        Math.max(0, (item.summary.totalHour || 0) - extraWorkHoursTotal).toFixed(2)
+      );
+
       worksheet.addRow({
         employeeCode: user?.employeeCode || item.employeeCode || item.odId || item.userId || '-',
         paidFrom: user?.paidFrom || 'N/A',
@@ -151,6 +169,11 @@ export async function exportSummaryAttendance(ctx: SummaryExportContext): Promis
         scheduled: decimalHoursToExcelDuration(item.calcScheduled || 0),
         definedSchedule: decimalHoursToExcelDuration(item.calcDefinedSchedule || 0),
         workHours: decimalHoursToExcelDuration(item.summary.totalHour),
+        punchWorkHours: decimalHoursToExcelDuration(punchWorkHoursTotal),
+        extraWorkHours:
+          extraWorkHoursTotal > 0
+            ? decimalHoursToExcelDuration(extraWorkHoursTotal)
+            : decimalHoursToExcelDuration(0),
         excess: formatHoursMinutes(item.calcExcessDeficit ?? 0),
       });
     });

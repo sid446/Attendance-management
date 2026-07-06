@@ -8,6 +8,13 @@ import { getScheduledTimes } from './scheduleUtils';
 
 import { calculateDayExcessHour } from './calculateDayExcessHour';
 import { applyDayAllowanceToRawExcess, applyExcessHourAllowance, lookupExcessAllowance, lookupExcessDisplay, type ExcessAllowanceLookup, type ExcessDayAllowanceLookup, type ExcessDisplayLookup } from './excessHourAllowance';
+import {
+  formatExtraWorkEntriesTimeSummary,
+  formatRecordPunchTimeRange,
+  getRecordPunchHours,
+  getRecordPunchTimeRange,
+  sumExtraWorkEntryHours,
+} from './extraWorkRequest';
 import { isArticleEmployee } from './isArticleEmployee';
 
 /** True when the ISO date (YYYY-MM-DD) falls on a Sunday. */
@@ -671,6 +678,22 @@ export function getDailyWorkedHoursSeries(
   return rows;
 }
 
+/** Sum approved extra-work hours across dates in a period. */
+export function getExtraWorkHoursTotalForPeriod(
+  item: AttendanceSummaryView,
+  dateList: string[]
+): number {
+  let total = 0;
+  for (const dateStr of dateList) {
+    const rec = item.recordDetails?.[dateStr];
+    total += sumExtraWorkEntryHours(
+      (rec as { extraWorkEntries?: Array<{ hours?: number; startTime?: string; endTime?: string }> } | undefined)
+        ?.extraWorkEntries
+    );
+  }
+  return Number(total.toFixed(2));
+}
+
 export function getTotalDaysInRecords(item: AttendanceSummaryView): number {
   return Object.keys(item.recordDetails || {}).length;
 }
@@ -1004,10 +1027,17 @@ export function getArticleExcessBreakdownForPeriod(
     const schedule = getScheduledTimes(user, new Date(dateStr));
     const scheduledInTime = schedule.inTime || '';
     const scheduledOutTime = schedule.outTime || '';
-    const inTime = formatPunchTime(rec.editedCheckin ?? rec.checkin);
-    const outTime = formatPunchTime(rec.editedCheckout ?? rec.checkout);
+    const inTime = formatPunchTime(getRecordPunchTimeRange(rec).inTime);
+    const outTime = formatPunchTime(getRecordPunchTimeRange(rec).outTime);
     const schIn = formatPunchTime(scheduledInTime);
     const schOut = formatPunchTime(scheduledOutTime);
+    const extraHours = sumExtraWorkEntryHours(
+      (rec as { extraWorkEntries?: Array<{ hours?: number; startTime?: string; endTime?: string }> })
+        .extraWorkEntries
+    );
+    const extraTimes = formatExtraWorkEntriesTimeSummary(
+      (rec as { extraWorkEntries?: Array<{ startTime?: string; endTime?: string }> }).extraWorkEntries
+    );
 
     const rawDayExcess = resolveArticleDayExcessHour(
       user,
@@ -1028,7 +1058,11 @@ export function getArticleExcessBreakdownForPeriod(
       ? ''
       : dateObj.toLocaleDateString('en-US', { weekday: 'short' });
 
-    let info = `In ${inTime} / Out ${outTime} · Sch ${schIn}–${schOut}`;
+    let info = `Punch ${inTime} → ${outTime} · Sch ${schIn}–${schOut}`;
+    if (extraHours > 0) {
+      info += ` · Extra +${formatHoursMinutes(extraHours)}`;
+      if (extraTimes) info += ` (${extraTimes})`;
+    }
     if (dayExcess !== rawDayExcess) {
       const rawSign = rawDayExcess > 0 ? '+' : rawDayExcess < 0 ? '-' : '';
       info += ` · Raw ${rawSign}${formatHoursMinutes(Math.abs(rawDayExcess))}`;

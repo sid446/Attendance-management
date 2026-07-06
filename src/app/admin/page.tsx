@@ -1543,6 +1543,7 @@ export default function AttendanceUpload() {
           editedCheckin: value.editedCheckin ?? '',
           editedCheckout: value.editedCheckout ?? '',
           schedule: undefined,
+          extraWorkEntries: Array.isArray(value.extraWorkEntries) ? value.extraWorkEntries : [],
           ...(value.totalHour !== undefined ? { totalHour: value.totalHour } : {}),
           ...(value.halfDay !== undefined ? { halfDay: value.halfDay } : {}),
         } satisfies AttendanceRecord;
