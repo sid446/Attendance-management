@@ -14,6 +14,7 @@ import {
   decimalHoursToExcelDuration,
   EXCEL_DURATION_NUM_FMT,
   hhmmStringToExcelTime,
+  splitExcessAndDeficitLabels,
 } from './exportExcelDuration';
 import { downloadWorkbook } from './downloadWorkbook';
 import {
@@ -112,8 +113,10 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
       { key: 'scheduledTime', width: 12 },
       { key: 'scheduledHrsMonth', width: 16 },
       { key: 'workingHrsMonth', width: 16 },
-      { key: 'excessShortHrsMonth', width: 16 },
-      { key: 'excessShortHrsDay', width: 16 },
+      { key: 'excessHrsMonth', width: 14 },
+      { key: 'deficitHrsMonth', width: 14 },
+      { key: 'excessHrsDay', width: 14 },
+      { key: 'deficitHrsDay', width: 14 },
       { key: 'halfDays', width: 9 },
     ];
 
@@ -146,8 +149,10 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
       'Scheduled (day)',
       'Scheduled hrs (month)',
       'Working hrs (month)',
-      'Excess/short (month)',
-      'Excess/short (day)',
+      'Excess (month)',
+      'Deficit (month)',
+      'Excess (day)',
+      'Deficit (day)',
       'Half day',
     ];
     worksheet.insertRow(1, daywiseHeaderLabels);
@@ -320,14 +325,27 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
     };
 
     const isDaywiseLeaveRecord = (rec: any) => {
-      const t = String(rec?.typeOfPresence || rec?.status || '').trim().toLowerCase();
-      if (t === 'on leave' || t === 'leave') return true;
-      return t.includes('leave') && !t.includes('present');
+      const type = String(rec?.typeOfPresence || '').trim().toLowerCase();
+      const status = String(rec?.status || '').trim().toLowerCase();
+      if (type === 'on leave' || type === 'leave') return true;
+      if (status === 'on leave' || status === 'leave') return true;
+      if (type.includes('leave') && !type.includes('present')) return true;
+      if (status.includes('leave') && !status.includes('present')) return true;
+      return false;
     };
 
     const isDaywiseExplicitAbsentRecord = (rec: any) => {
       const t = String(rec?.typeOfPresence || rec?.status || '').trim().toLowerCase();
       return t === 'absent';
+    };
+
+    const isDaywiseHalfDayRecord = (rec: any, bothPunchesZero: boolean) => {
+      if (isDaywiseLeaveRecord(rec) || isDaywiseExplicitAbsentRecord(rec)) return false;
+      const type = String(rec?.typeOfPresence || '').trim().toLowerCase();
+      const status = String(rec?.status || '').trim().toLowerCase();
+      if (type.includes('half day') || status.includes('half day')) return true;
+      if (rec?.halfDay && !bothPunchesZero) return true;
+      return false;
     };
 
     const zeroDaywiseScheduledFields = () => ({
@@ -478,22 +496,6 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
         }
       }
 
-      // Monthly excess: prefer partner-capped calcExcessDeficit from summary enrichment
-      const enrichedExcess =
-        typeof (item as { calcExcessDeficit?: number }).calcExcessDeficit === 'number'
-          ? (item as { calcExcessDeficit: number }).calcExcessDeficit
-          : typeof item.summary?.excessHour === 'number'
-            ? item.summary.excessHour
-            : null;
-      let excessShortHrsMonth = '';
-      if (enrichedExcess !== null) {
-        const val = enrichedExcess;
-        const sign = val < 0 ? '-' : '';
-        const abs = Math.abs(val);
-        const h = Math.floor(abs);
-        const m = Math.round((abs % 1) * 60);
-        excessShortHrsMonth = `${sign}${h}:${m.toString().padStart(2, '0')}`;
-      }
       const records = item.recordDetails || {};
       sortRecordDetailsEntries(records).forEach(([date, record]: [string, any]) => {
         if (!includeDaywiseIsoDate(date)) return;
@@ -613,9 +615,16 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
           (daywiseIsPIO(record) && (isHoliday || isSunday))
         ) {
           presentAbsent = 'WO-PIO';
+        } else if (isDaywiseLeaveRecord(record)) {
+          presentAbsent = 'On leave';
+        } else if (isDaywiseExplicitAbsentRecord(record)) {
+          presentAbsent = 'Absent';
         } else if (isHoliday || isSunday) {
           presentAbsent = 'Holiday';
+        } else if (isDaywiseHalfDayRecord(record, inTime === '00:00' && outTime === '00:00')) {
+          presentAbsent = 'HD';
         } else if (
+          (typeOfPresence && String(typeOfPresence).toLowerCase().includes('present')) ||
           (record.status && record.status.toLowerCase().includes('present')) ||
           (inTime !== '00:00' && outTime !== '00:00')
         ) {
@@ -635,7 +644,8 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
         // --- Excess/Short calculation for the day ---
         // Always output Ã‚Â±HH:MM:SS
         let daySeconds = 0;
-        const isAbsent = presentAbsent === 'Absent';
+        const isAbsent =
+          presentAbsent === 'Absent' || presentAbsent === 'On leave';
         if (isAbsent && scheduledInTime && scheduledOutTime && scheduledInTime !== '00:00' && scheduledOutTime !== '00:00') {
           const [schInH, schInM] = scheduledInTime.split(':').map(Number);
           const [schOutH, schOutM] = scheduledOutTime.split(':').map(Number);
@@ -690,6 +700,7 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
         );
         daySeconds = adjustedDayHours * 3600;
         dailyExcessShortSeconds.push(daySeconds);
+        const dayExcessDeficitSplit = splitExcessAndDeficitLabels(adjustedDayHours);
 
         let workingHrsExport: number | '' = '';
         if (typeof workingHrs === 'number' && !Number.isNaN(workingHrs)) {
@@ -751,21 +762,25 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
           scheduledTime: scheduledTimeExport,
           scheduledHrsMonth: scheduledHrsMonth ? decimalHoursToExcelDuration(scheduledHrsMonth) : '',
           workingHrsMonth: workingHrsMonth ? decimalHoursToExcelDuration(workingHrsMonth) : '',
-          excessShortHrsMonth: '',
-          excessShortHrsDay: decimalHoursToExcelDuration(daySeconds / 3600),
+          excessHrsMonth: '',
+          deficitHrsMonth: '',
+          excessHrsDay: dayExcessDeficitSplit.excess,
+          deficitHrsDay: dayExcessDeficitSplit.deficit,
           halfDays,
         });
         rowIndexes.push(worksheet.rowCount);
       });
-      // After all rows for this user/month, set monthly excess column (partner-capped when available)
+      // After all rows for this user/month, set monthly excess/deficit columns
       if (rowIndexes.length > 0) {
         const monthExcessHours =
           typeof (item as { calcExcessDeficit?: number }).calcExcessDeficit === 'number'
             ? (item as { calcExcessDeficit: number }).calcExcessDeficit
             : dailyExcessShortSeconds.reduce((a, b) => a + b, 0) / 3600;
-        const excessShortHrsMonthFormatted = decimalHoursToExcelDuration(monthExcessHours);
+        const monthSplit = splitExcessAndDeficitLabels(monthExcessHours);
         for (const rowIdx of rowIndexes) {
-          worksheet.getRow(rowIdx).getCell('excessShortHrsMonth').value = excessShortHrsMonthFormatted;
+          const row = worksheet.getRow(rowIdx);
+          row.getCell('excessHrsMonth').value = monthSplit.excess;
+          row.getCell('deficitHrsMonth').value = monthSplit.deficit;
         }
       }
     };
@@ -809,8 +824,10 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
       scheduledTime: EXCEL_DURATION_NUM_FMT,
       scheduledHrsMonth: EXCEL_DURATION_NUM_FMT,
       workingHrsMonth: EXCEL_DURATION_NUM_FMT,
-      excessShortHrsMonth: EXCEL_DURATION_NUM_FMT,
-      excessShortHrsDay: EXCEL_DURATION_NUM_FMT,
+      excessHrsMonth: '@',
+      deficitHrsMonth: '@',
+      excessHrsDay: '@',
+      deficitHrsDay: '@',
     };
 
     worksheet.eachRow((row, rowNumber) => {
@@ -841,12 +858,45 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
 
       const presentAbsentCell = row.getCell('presentAbsent');
       const pa = presentAbsentCell.value;
+      const styleDurationTextCell = (
+        key: 'excessHrsMonth' | 'deficitHrsMonth' | 'excessHrsDay' | 'deficitHrsDay',
+        color: string,
+        fill: string
+      ) => {
+        const cell = row.getCell(key);
+        const v = cell.value;
+        if (v == null || String(v).trim() === '') return;
+        cell.font = { size: 10, name: 'Calibri', color: { argb: color }, bold: true };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: fill },
+        };
+      };
+      styleDurationTextCell('excessHrsMonth', 'FF047857', 'FFECFDF5');
+      styleDurationTextCell('excessHrsDay', 'FF047857', 'FFECFDF5');
+      styleDurationTextCell('deficitHrsMonth', 'FFBE123C', 'FFFFF1F2');
+      styleDurationTextCell('deficitHrsDay', 'FFBE123C', 'FFFFF1F2');
       if (pa === 'Absent') {
         presentAbsentCell.font = { size: 10, name: 'Calibri', color: { argb: 'FFBE123C' }, bold: true };
         presentAbsentCell.fill = {
           type: 'pattern',
           pattern: 'solid',
           fgColor: { argb: 'FFFFF1F2' },
+        };
+      } else if (pa === 'On leave') {
+        presentAbsentCell.font = { size: 10, name: 'Calibri', color: { argb: 'FF0369A1' }, bold: true };
+        presentAbsentCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFE0F2FE' },
+        };
+      } else if (pa === 'HD') {
+        presentAbsentCell.font = { size: 10, name: 'Calibri', color: { argb: 'FFC2410C' }, bold: true };
+        presentAbsentCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFFFEDD5' },
         };
       } else if (pa === 'Holiday') {
         presentAbsentCell.font = { size: 10, name: 'Calibri', color: { argb: 'FFB45309' }, bold: true };

@@ -15,6 +15,29 @@ export function enableExcelNegativeDurations(workbook: {
   workbook.properties = { ...workbook.properties, date1904: true };
 }
 
+/** Decimal hours → `H:MM` label for excess/deficit text columns (always visible in Excel). */
+export function formatSignedHoursAsLabel(hours: number | null | undefined): string {
+  if (hours == null || !Number.isFinite(hours) || Math.abs(hours) < 1e-9) return '';
+  const abs = Math.abs(hours);
+  const h = Math.floor(abs);
+  const m = Math.round((abs % 1) * 60);
+  return `${h}:${m.toString().padStart(2, '0')}`;
+}
+
+/** Split signed hours into separate excess (positive) and deficit (negative as positive label). */
+export function splitExcessAndDeficitLabels(hours: number | null | undefined): {
+  excess: string;
+  deficit: string;
+} {
+  if (hours == null || !Number.isFinite(hours) || Math.abs(hours) < 1e-9) {
+    return { excess: '', deficit: '' };
+  }
+  if (hours > 0) {
+    return { excess: formatSignedHoursAsLabel(hours), deficit: '' };
+  }
+  return { excess: '', deficit: formatSignedHoursAsLabel(hours) };
+}
+
 /** Decimal hours → Excel duration serial (fraction of day). */
 export function decimalHoursToExcelDuration(
   hours: number | '' | null | undefined
