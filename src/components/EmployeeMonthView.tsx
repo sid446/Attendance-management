@@ -31,6 +31,7 @@ import {
   type SummaryMetricsOptions,
   type SummaryAlignedMetrics,
 } from '@/lib/attendanceSummaryMetrics';
+import { isValidPunchTime } from '@/lib/attendanceHours';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { useExcessAllowanceMaps } from '@/hooks/useExcessAllowanceMaps';
 import { SummaryAlignedMetricsStrip } from '@/components/SummaryAlignedMetricsStrip';
@@ -136,8 +137,10 @@ function formatDayActivityDate(dateStr: string): string {
 
 function formatPunchTimeRange(rec: AttendanceRecord | null | undefined): string {
   if (!rec) return '--:-- → --:--';
-  const inTime = String(rec.editedCheckin || rec.checkin || rec.inTime || '').trim();
-  const outTime = String(rec.editedCheckout || rec.checkout || rec.outTime || '').trim();
+  const inRaw = String(rec.editedCheckin || rec.checkin || rec.inTime || '').trim();
+  const outRaw = String(rec.editedCheckout || rec.checkout || rec.outTime || '').trim();
+  const inTime = isValidPunchTime(inRaw) ? inRaw : '';
+  const outTime = isValidPunchTime(outRaw) ? outRaw : '';
   return `${inTime || '--:--'} → ${outTime || '--:--'}`;
 }
 
@@ -1467,15 +1470,16 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                   normalizedType.includes('holiday') ||
                   normalizedType.includes('week off') ||
                   normalizedType.includes('weekoff');
-                const inMarked = !!rec?.inTime && rec.inTime !== '00:00';
-                const outMarked = !!rec?.outTime && rec.outTime !== '00:00';
+                const inMarked = isValidPunchTime(rec?.editedCheckin || rec?.checkin || rec?.inTime);
+                const outMarked = isValidPunchTime(rec?.editedCheckout || rec?.checkout || rec?.outTime);
                 const isPartialPunch = rec ? inMarked !== outMarked : false;
                 if (isPartialPunch && !isNonWorkingType) {
                   status = 'Missed Entry';
                 }
                 
-                // Override status if 00:00 - 00:00 (Absent)
-                if (rec && rec.inTime === '00:00' && rec.outTime === '00:00') {
+                // Override status if both punches missing (Absent)
+                const bothMissing = rec && !inMarked && !outMarked;
+                if (bothMissing) {
                     // Check if there is a specific type like Leave, Holiday, etc.
                     if (type && type !== 'ThumbMachine' && type !== 'Manual' && type !== 'Remote') {
                         status = type; // Use the specific type (e.g. Leave, OHD, WFH)
@@ -1488,7 +1492,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                   ? isHalftimeEmploymentType(getEmploymentTypeForDate(scheduleUser, dateObj))
                   : false;
 
-                if (isHalftimeDay && rec) {
+                if (isHalftimeDay && rec && status !== 'Missed Entry') {
                   const tl = String(rec.typeOfPresence || '').toLowerCase();
                   if (
                     status === 'HalfDay' ||
@@ -1767,11 +1771,16 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                         {/* Show type if different from status */}
                         {type &&
                           type !== status &&
+                          status !== 'Missed Entry' &&
                           status !== 'Leave' &&
                           status !== 'On leave' &&
                           status !== 'Unpaid Leave' &&
                           status !== 'Holiday' &&
                           status !== 'Week Off' &&
+                          !(
+                            isHalftimeDay &&
+                            String(type).toLowerCase().includes('half day')
+                          ) &&
                           !(
                             dateObj.getDay() === 0 &&
                             (type === 'Holiday' || type === 'Sunday')

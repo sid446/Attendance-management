@@ -24,6 +24,10 @@ import { isArticleEmployee } from '@/lib/isArticleEmployee';
 import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
 import { hasPhysicalAttendancePresence } from '@/lib/attendancePhysicalPresence';
 import { invalidateSupersededLeaveRequest } from '@/lib/invalidateSupersededLeaveRequest';
+import {
+  isHalftimeEmployeeForDate,
+  normalizeHalftimeDayRecord,
+} from '@/lib/halftimeAttendance';
 
 // GET - Fetch attendance records
 export async function GET(request: NextRequest) {
@@ -48,9 +52,35 @@ export async function GET(request: NextRequest) {
       await reconcileApprovedRequestsForMonth(userId, monthYear);
     }
 
-    const attendanceRecords = await Attendance.find(query)
-      .populate('userId', 'name employeeId odId employeeCode email department team designation workingUnderPartner paidFrom category employmentType employmentTypeHistory schedules seasonalSchedules scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth')
+    const populateFields =
+      'name employeeId odId employeeCode email department team designation workingUnderPartner paidFrom category employmentType employmentTypeHistory schedules seasonalSchedules scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth';
+
+    let attendanceRecords = await Attendance.find(query)
+      .populate('userId', populateFields)
       .sort({ monthYear: -1 });
+
+    if (userId && monthYear && attendanceRecords.length === 1) {
+      const doc = attendanceRecords[0];
+      const user = doc.userId as unknown as IUser | null;
+      if (user) {
+        let recordsChanged = false;
+        const recordsMap = doc.records as Map<string, unknown>;
+        recordsMap.forEach((record, dateStr) => {
+          if (normalizeHalftimeDayRecord(record as import('@/lib/halftimeAttendance').HalftimeDayRecord, user, dateStr)) {
+            recordsChanged = true;
+          }
+        });
+        if (recordsChanged) {
+          doc.summary = calculateSummary(doc.records as any, user);
+          doc.markModified('records');
+          doc.markModified('summary');
+          await doc.save();
+          attendanceRecords = await Attendance.find(query)
+            .populate('userId', populateFields)
+            .sort({ monthYear: -1 });
+        }
+      }
+    }
 
     // Serialize records to plain JS objects and ensure summary fields are present
     const serialized = attendanceRecords.map((doc: any) => {
@@ -463,31 +493,23 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          // Special handling for halftime employees (accept case variants like 'half', 'half-time')
-          // Also exempting Partners from half-day/late marking
-          const empTypeStr = String(user?.employmentType || '').toLowerCase();
-          const isPartner = user && (user.category === 'Partner' || (user.designation && user.designation.toLowerCase().includes('partner')));
-          const isHalftimeEmployee = user && (empTypeStr === 'halftime' || empTypeStr.includes('half') || isPartner);
-          if (isHalftimeEmployee) {
-            const inMissing = !finalCheckin || finalCheckin === '00:00';
-            const outMissing = !finalCheckout || finalCheckout === '00:00';
-            
-            if (inMissing && outMissing) {
-              // Only mark as Absent if not a holiday/weekly off
-              if (typeOfPresence !== 'Holiday' && typeOfPresence !== 'Sunday' && typeOfPresence !== 'Weekoff' && !typeOfPresence.includes('Present')) {
-                finalValue = 0;
-                finalHalfDay = false;
-                typeOfPresence = 'Absent';
-              }
-            } else {
-              // Halftime employees are full present (value 1) if they have any punch, and never half-day
-              finalValue = 1;
-              finalHalfDay = false;
-              // If current type is a half-day or absent variant, normalize to Present
-              if (!typeOfPresence || typeOfPresence.includes('Half Day') || typeOfPresence === 'Absent' || typeOfPresence === 'ThumbMachine') {
-                typeOfPresence = 'Present';
-              }
-            }
+          // Special handling for halftime employees (history-aware; partners exempt from half-day/late)
+          if (isHalftimeEmployeeForDate(user, isoDate)) {
+            const halftimeRecord = {
+              checkin: finalCheckin,
+              checkout: finalCheckout,
+              editedCheckin: finalEditedCheckin,
+              editedCheckout: finalEditedCheckout,
+              typeOfPresence,
+              halfDay: finalHalfDay,
+              value: finalValue,
+              remarks: remarksStr,
+            };
+            normalizeHalftimeDayRecord(halftimeRecord, user, isoDate);
+            typeOfPresence = halftimeRecord.typeOfPresence || typeOfPresence;
+            finalHalfDay = !!halftimeRecord.halfDay;
+            finalValue = halftimeRecord.value ?? finalValue;
+            remarksStr = String(halftimeRecord.remarks ?? remarksStr);
           }
 
           // Ensure half-day is NOT set when both check-in and check-out are invalid/00:00

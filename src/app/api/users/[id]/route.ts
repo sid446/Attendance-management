@@ -23,6 +23,10 @@ import {
 } from '@/lib/isArticleEmployee';
 import { applyLateCheckinAbsentRule, applyLateCheckinHalfDayRule } from '@/lib/lateCheckinAbsentRule';
 import {
+  isHalftimeEmployeeForDate,
+  normalizeHalftimeDayRecord,
+} from '@/lib/halftimeAttendance';
+import {
   applyManagedEffectiveHistories,
   ManagedEffectiveField,
   LEGACY_BASELINE_EFFECTIVE_FROM,
@@ -656,6 +660,7 @@ async function recalculateAttendanceFromDate(userId: string, fromDate: Date) {
       }
 
       applyLateCheckinHalfDayRule(record, user, dateStr);
+      normalizeHalftimeDayRecord(record, user, dateStr);
 
       const inTime = String(record.editedCheckin || record.checkin || '').trim();
       const outTime = String(record.editedCheckout || record.checkout || '').trim();
@@ -728,6 +733,9 @@ async function recalculateAttendanceFromDate(userId: string, fromDate: Date) {
       const isSunday = new Date(dateStr).getDay() === 0;
       if (record.typeOfPresence === 'Holiday' || isSunday) {
         record.halfDay = false;
+      } else if (isHalftimeEmployeeForDate(user, dateStr)) {
+        record.halfDay = false;
+        normalizeHalftimeDayRecord(record, user, dateStr);
       } else {
         const employmentType = (user as any).employmentType || 'fulltime';
         const isArticle = isArticleEmployee(user);
@@ -738,9 +746,6 @@ async function recalculateAttendanceFromDate(userId: string, fromDate: Date) {
           record.halfDay = true;
         } else if (employmentType === 'fulltime' && !isArticle) {
           record.halfDay = record.totalHour < 6;
-        } else if (employmentType === 'halftime') {
-          const required = dayScheduledHours * 0.6;
-          record.halfDay = dayScheduledHours > 0 ? record.totalHour < required : false;
         } else if (isArticle) {
           record.halfDay = isAfter1PM || record.totalHour < 3.5;
         }

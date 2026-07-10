@@ -8,6 +8,10 @@ import {
   isNonWorkingDayRecord,
 } from '@/lib/calculateDayExcessHour';
 import { applyLateCheckinAbsentRule, applyLateCheckinHalfDayRule } from '@/lib/lateCheckinAbsentRule';
+import {
+  isHalftimeEmployeeForDate,
+  normalizeHalftimeDayRecord,
+} from '@/lib/halftimeAttendance';
 
 export type AttendanceRecordForSummary = {
   checkin: string;
@@ -136,15 +140,7 @@ export function calculateSummary(
     }
 
     const employmentType = String(user?.employmentType || 'fulltime').toLowerCase();
-    const designation = user?.designation?.toLowerCase();
-    const isPartner =
-      user &&
-      (user.category === 'Partner' ||
-        (user.designation && user.designation.toLowerCase().includes('partner')));
-    const isHalftime =
-      employmentType === 'halftime' ||
-      employmentType.includes('half') ||
-      isPartner;
+    const isHalftime = isHalftimeEmployeeForDate(user, dateStr);
 
     let calculatedHalfDay = record.halfDay || false;
 
@@ -171,16 +167,16 @@ export function calculateSummary(
 
     record.halfDay = calculatedHalfDay;
     applyLateCheckinHalfDayRule(record, user, dateStr);
+    normalizeHalftimeDayRecord(record, user, dateStr);
     if (record.halfDay) {
       totalHalfDay++;
     }
 
-    const userEmpType = String(user?.employmentType || '').toLowerCase();
     if (
       inTime &&
       scheduledInTime &&
       inTime > scheduledInTime &&
-      !(userEmpType === 'halftime' || userEmpType.includes('half'))
+      !isHalftime
     ) {
       totalLateArrival++;
     }

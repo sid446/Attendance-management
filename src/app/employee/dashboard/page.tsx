@@ -26,6 +26,7 @@ import {
   getEmploymentTypeForDate,
   isHalftimeEmploymentType,
 } from '@/lib/attendanceSummaryMetrics';
+import { isValidPunchTime } from '@/lib/attendanceHours';
 import {
   requestWindowRejectionMessage,
   istDateString,
@@ -271,6 +272,14 @@ function mapEmployeeDayStatus(
   const effectiveCheckin = value.editedCheckin || value.checkin;
   const effectiveCheckout = value.editedCheckout || value.checkout;
   const typeLower = String(value.typeOfPresence || '').toLowerCase();
+  const hasIn = isValidPunchTime(effectiveCheckin);
+  const hasOut = isValidPunchTime(effectiveCheckout);
+  const isPartialPunch = hasIn !== hasOut;
+  const isNonWorkingType =
+    typeLower.includes('leave') ||
+    typeLower.includes('holiday') ||
+    typeLower.includes('weekoff') ||
+    typeLower.includes('week off');
   const isPresenceType =
     typeLower.includes('wfh') ||
     typeLower.includes('outstation') ||
@@ -281,10 +290,12 @@ function mapEmployeeDayStatus(
     !!value.halfDay;
   const isHalftime = isHalftimeEmploymentType(getEmploymentTypeForDate(userForDay, dateObj));
 
+  if (isPartialPunch && !isNonWorkingType && value.typeOfPresence !== 'Holiday') {
+    return 'Missed Entry' as AttendanceRecord['status'];
+  }
+
   let status: AttendanceRecord['status'] = 'Present';
-  const hasPunch =
-    (!!effectiveCheckin && effectiveCheckin !== '00:00') ||
-    (!!effectiveCheckout && effectiveCheckout !== '00:00');
+  const hasPunch = hasIn || hasOut;
   if (
     (value.typeOfPresence === 'Leave' || value.typeOfPresence === 'On leave') &&
     hasPunch
@@ -304,7 +315,7 @@ function mapEmployeeDayStatus(
   ) {
     status = 'Absent';
   }
-  if (status === 'Present' && !effectiveCheckin && !effectiveCheckout && !isPresenceType) {
+  if (status === 'Present' && !hasIn && !hasOut && !isPresenceType) {
     status = 'Absent';
   }
   return status;
@@ -1379,8 +1390,8 @@ export default function EmployeeDashboard() {
         status === 'Leave' ||
         status === 'On leave' ||
         typeOfPresenceLower.includes('leave');
-      const inMarked = !!inTime && inTime !== '00:00';
-      const outMarked = !!outTime && outTime !== '00:00';
+      const inMarked = isValidPunchTime(inTime);
+      const outMarked = isValidPunchTime(outTime);
       const isPartialPunch = inMarked !== outMarked;
       const isMissingPunch = !inMarked && !outMarked;
       /** Single-sided punch only — not every present day with both times filled. */

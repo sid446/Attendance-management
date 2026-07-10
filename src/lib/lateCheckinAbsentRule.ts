@@ -13,7 +13,8 @@ export const LATE_CHECKIN_HALFDAY_START = '13:00';
 export const LATE_CHECKIN_ABSENT_THRESHOLD = '15:00';
 
 const LATE_CHECKIN_ABSENT_REMARK = 'Marked absent: check-in at or after 3:00 PM';
-const LATE_CHECKIN_HALFDAY_REMARK = 'Marked half day: check-in between 1:00 PM and 2:59 PM';
+export const LATE_CHECKIN_HALFDAY_REMARK =
+  'Marked half day: check-in between 1:00 PM and 2:59 PM';
 
 export type LateCheckinAbsentRecord = {
   checkin?: string;
