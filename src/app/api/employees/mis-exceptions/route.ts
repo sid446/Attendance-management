@@ -6,6 +6,7 @@ import Holiday from '@/models/Holiday';
 import {
   computeMisExceptionsForUser,
   findMissingBiometricDates,
+  findEarlyInLateOutDates,
   MIS_EXCEPTION_LABELS,
   type MisExceptionRow,
   type MisExceptionType,
@@ -19,6 +20,7 @@ import {
 const ALL_EXCEPTION_TYPES: MisExceptionType[] = [
   'missing-attendance',
   'missing-biometric',
+  'early-in-late-out',
   'no-schedule',
   'no-pl-partner',
   'approver-same-as-employee',
@@ -63,29 +65,23 @@ export async function GET(request: NextRequest) {
       )
       .lean();
 
-    const needsMonthAttendance =
-      !exceptionFilter ||
-      exceptionFilter === 'missing-biometric' ||
-      exceptionFilter === 'missing-attendance';
     const recordsByUserId = new Map<string, Record<string, unknown>>();
     const hasAttendanceDocByUserId = new Set<string>();
 
-    if (needsMonthAttendance) {
-      const attendanceDocs = await Attendance.find({ monthYear })
-        .select('userId records')
-        .lean();
+    const attendanceDocs = await Attendance.find({ monthYear })
+      .select('userId records')
+      .lean();
 
-      for (const doc of attendanceDocs) {
-        const uid = String(doc.userId);
-        hasAttendanceDocByUserId.add(uid);
-        let records: Record<string, unknown> = {};
-        if (doc.records instanceof Map) {
-          for (const [k, v] of doc.records.entries()) records[k] = v;
-        } else if (doc.records) {
-          records = doc.records as Record<string, unknown>;
-        }
-        recordsByUserId.set(uid, records);
+    for (const doc of attendanceDocs) {
+      const uid = String(doc.userId);
+      hasAttendanceDocByUserId.add(uid);
+      let records: Record<string, unknown> = {};
+      if (doc.records instanceof Map) {
+        for (const [k, v] of doc.records.entries()) records[k] = v;
+      } else if (doc.records) {
+        records = doc.records as Record<string, unknown>;
       }
+      recordsByUserId.set(uid, records);
     }
 
     const partnerAsOf = lastDayOfMonthYear(monthYear);
@@ -93,6 +89,7 @@ export async function GET(request: NextRequest) {
     const counts: Record<MisExceptionType, number> = {
       'missing-attendance': 0,
       'missing-biometric': 0,
+      'early-in-late-out': 0,
       'no-schedule': 0,
       'no-pl-partner': 0,
       'approver-same-as-employee': 0,
@@ -125,6 +122,10 @@ export async function GET(request: NextRequest) {
           ? findMissingBiometricDates(user, records, holidayDateSet, monthYear, todayYmd)
           : undefined;
 
+      const earlyInLateOutHits = exceptions.includes('early-in-late-out')
+        ? findEarlyInLateOutDates(user, records, monthYear, todayYmd)
+        : undefined;
+
       fullRows.push({
         userId,
         odId: user.odId || '',
@@ -139,6 +140,7 @@ export async function GET(request: NextRequest) {
         attendanceEmail: user.attendanceEmail || '',
         exceptions,
         missingBiometricDates,
+        earlyInLateOutHits,
       });
     }
 
@@ -155,6 +157,8 @@ export async function GET(request: NextRequest) {
             exceptionFilter === 'missing-attendance'
               ? row.missingBiometricDates
               : undefined,
+          earlyInLateOutHits:
+            exceptionFilter === 'early-in-late-out' ? row.earlyInLateOutHits : undefined,
         }));
     }
 

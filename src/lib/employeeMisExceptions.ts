@@ -1,10 +1,12 @@
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { toYmd, isDateOnOrAfterInactive } from '@/lib/attendanceInactiveFilter';
 import { getManagedFieldValueForDate } from '@/lib/userFieldHistory';
+import { isValidPunchTime, normalizeTimeToHHmm } from '@/lib/attendanceHours';
 
 export type MisExceptionType =
   | 'missing-attendance'
   | 'missing-biometric'
+  | 'early-in-late-out'
   | 'no-schedule'
   | 'no-pl-partner'
   | 'approver-same-as-employee'
@@ -13,10 +15,35 @@ export type MisExceptionType =
 export const MIS_EXCEPTION_LABELS: Record<MisExceptionType, string> = {
   'missing-attendance': 'Active — attendance not uploaded for month',
   'missing-biometric': 'Biometric not uploaded (past dates)',
+  'early-in-late-out': 'In time ≤ 8 AM or out time ≥ 8 PM',
   'no-schedule': 'Attendance timing schedule not defined',
   'no-pl-partner': 'PL partner not defined (registered or working under partner missing)',
   'approver-same-as-employee': 'Employee email same as attendance email',
   'non-asija-email': 'Email does not end with @asija.in',
+};
+
+export const MIS_EXCEPTION_TYPES: MisExceptionType[] = [
+  'missing-attendance',
+  'missing-biometric',
+  'early-in-late-out',
+  'no-schedule',
+  'no-pl-partner',
+  'approver-same-as-employee',
+  'non-asija-email',
+];
+
+/** 08:00 — in time at or before this is flagged. */
+const EARLY_IN_CUTOFF_MINUTES = 8 * 60;
+/** 20:00 — out time at or after this is flagged. */
+const LATE_OUT_CUTOFF_MINUTES = 20 * 60;
+
+export type EarlyInLateOutReason = 'early-in' | 'late-out' | 'both';
+
+export type EarlyInLateOutHit = {
+  date: string;
+  inTime?: string;
+  outTime?: string;
+  reason: EarlyInLateOutReason;
 };
 
 export type MisExceptionRow = {
@@ -30,6 +57,7 @@ export type MisExceptionRow = {
   attendanceEmail: string;
   exceptions: MisExceptionType[];
   missingBiometricDates?: string[];
+  earlyInLateOutHits?: EarlyInLateOutHit[];
 };
 
 export type MisBiometricDayEmployee = Pick<
@@ -41,6 +69,84 @@ export type MisBiometricDayRow = {
   date: string;
   employees: MisBiometricDayEmployee[];
 };
+
+export type EarlyInLateOutDayEmployee = MisBiometricDayEmployee & {
+  inTime?: string;
+  outTime?: string;
+  reason: EarlyInLateOutReason;
+};
+
+export type EarlyInLateOutDayRow = {
+  date: string;
+  employees: EarlyInLateOutDayEmployee[];
+};
+
+function punchTimeToMinutes(time: string): number | null {
+  const normalized = normalizeTimeToHHmm(time);
+  if (!isValidPunchTime(normalized)) return null;
+  const [h, m] = normalized.split(':').map(Number);
+  if ([h, m].some((n) => Number.isNaN(n))) return null;
+  return h * 60 + m;
+}
+
+function getEffectivePunchIn(rec: any): string {
+  return normalizeTimeToHHmm(rec?.editedCheckin || rec?.checkin || rec?.inTime);
+}
+
+function getEffectivePunchOut(rec: any): string {
+  return normalizeTimeToHHmm(rec?.editedCheckout || rec?.checkout || rec?.outTime);
+}
+
+/** True when in ≤ 08:00 and/or out ≥ 20:00 on a day record. */
+export function getEarlyInLateOutHit(rec: any | undefined): EarlyInLateOutHit | null {
+  if (!rec) return null;
+
+  const inTime = getEffectivePunchIn(rec);
+  const outTime = getEffectivePunchOut(rec);
+  const inMin = punchTimeToMinutes(inTime);
+  const outMin = punchTimeToMinutes(outTime);
+
+  const earlyIn = inMin !== null && inMin <= EARLY_IN_CUTOFF_MINUTES;
+  const lateOut = outMin !== null && outMin >= LATE_OUT_CUTOFF_MINUTES;
+  if (!earlyIn && !lateOut) return null;
+
+  return {
+    date: '',
+    inTime: inMin !== null ? inTime : undefined,
+    outTime: outMin !== null ? outTime : undefined,
+    reason: earlyIn && lateOut ? 'both' : earlyIn ? 'early-in' : 'late-out',
+  };
+}
+
+/** Group early-in / late-out employees by calendar date (chronological). */
+export function buildEarlyInLateOutByDay(rows: MisExceptionRow[]): EarlyInLateOutDayRow[] {
+  const byDate = new Map<string, EarlyInLateOutDayEmployee[]>();
+
+  for (const row of rows) {
+    if (!row.exceptions.includes('early-in-late-out')) continue;
+    for (const hit of row.earlyInLateOutHits ?? []) {
+      const list = byDate.get(hit.date) ?? [];
+      list.push({
+        userId: row.userId,
+        odId: row.odId,
+        name: row.name,
+        designation: row.designation,
+        workingUnderPartner: row.workingUnderPartner,
+        inTime: hit.inTime,
+        outTime: hit.outTime,
+        reason: hit.reason,
+      });
+      byDate.set(hit.date, list);
+    }
+  }
+
+  return Array.from(byDate.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, employees]) => ({
+      date,
+      employees: employees.sort((a, b) => a.name.localeCompare(b.name)),
+    }));
+}
 
 /** Group missing-biometric employees by calendar date (chronological). */
 export function buildBiometricMissingByDay(rows: MisExceptionRow[]): MisBiometricDayRow[] {
@@ -253,6 +359,27 @@ export function findMissingBiometricDates(
   return missing;
 }
 
+export function findEarlyInLateOutDates(
+  user: any,
+  records: Record<string, any>,
+  monthYear: string,
+  todayYmd: string
+): EarlyInLateOutHit[] {
+  const hits: EarlyInLateOutHit[] = [];
+
+  for (const dateKey of datesInMonthYear(monthYear)) {
+    if (dateKey >= todayYmd) continue;
+    if (!isEmployeeActiveOnDate(user, dateKey)) continue;
+
+    const hit = getEarlyInLateOutHit(records[dateKey]);
+    if (hit) {
+      hits.push({ ...hit, date: dateKey });
+    }
+  }
+
+  return hits;
+}
+
 /** True when no attendance month document exists, or it has zero day records. */
 export function isAttendanceMissingForMonth(
   hasAttendanceDoc: boolean,
@@ -293,6 +420,16 @@ export function computeMisExceptionsForUser(
     types.push('missing-attendance');
   } else if (missingBio.length > 0) {
     types.push('missing-biometric');
+  }
+
+  const earlyInLateOut = findEarlyInLateOutDates(
+    user,
+    opts.records,
+    opts.monthYear,
+    opts.todayYmd
+  );
+  if (earlyInLateOut.length > 0) {
+    types.push('early-in-late-out');
   }
 
   if (!hasAttendanceScheduleDefined(user, opts.partnerAsOf)) types.push('no-schedule');

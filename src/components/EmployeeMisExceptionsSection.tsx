@@ -10,8 +10,13 @@ import {
   ClipboardList,
   Loader2,
 } from 'lucide-react';
-import type { MisExceptionType } from '@/lib/employeeMisExceptions';
-import { buildBiometricMissingByDay } from '@/lib/employeeMisExceptions';
+import type { EarlyInLateOutHit, MisExceptionType } from '@/lib/employeeMisExceptions';
+import {
+  buildBiometricMissingByDay,
+  buildEarlyInLateOutByDay,
+  MIS_EXCEPTION_LABELS,
+  MIS_EXCEPTION_TYPES,
+} from '@/lib/employeeMisExceptions';
 
 type MisRow = {
   userId: string;
@@ -24,6 +29,7 @@ type MisRow = {
   attendanceEmail: string;
   exceptions: MisExceptionType[];
   missingBiometricDates?: string[];
+  earlyInLateOutHits?: EarlyInLateOutHit[];
 };
 
 type MisCounts = Record<MisExceptionType, number>;
@@ -32,6 +38,24 @@ type MisLabels = Record<MisExceptionType, string>;
 
 const FILTER_ALL = 'all' as const;
 type FilterValue = typeof FILTER_ALL | MisExceptionType;
+
+function formatEarlyInLateOutReason(reason: EarlyInLateOutHit['reason']): string {
+  switch (reason) {
+    case 'early-in':
+      return 'In ≤ 8 AM';
+    case 'late-out':
+      return 'Out ≥ 8 PM';
+    case 'both':
+      return 'In ≤ 8 AM and out ≥ 8 PM';
+  }
+}
+
+function formatEarlyInLateOutDetail(hit: EarlyInLateOutHit): string {
+  const parts = [hit.date, formatEarlyInLateOutReason(hit.reason)];
+  if (hit.inTime) parts.push(`in ${hit.inTime}`);
+  if (hit.outTime) parts.push(`out ${hit.outTime}`);
+  return parts.join(' · ');
+}
 
 export const EmployeeMisExceptionsSection: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -53,13 +77,12 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
     setError(null);
     try {
       const params = new URLSearchParams({ monthYear: selectedMonth });
-      if (typeFilter !== FILTER_ALL) params.set('type', typeFilter);
       const response = await fetch(`/api/employees/mis-exceptions?${params}`);
       const result = await response.json();
       if (result.success) {
         setRows(result.data);
         setCounts(result.counts);
-        setLabels(result.labels);
+        setLabels(result.labels ?? MIS_EXCEPTION_LABELS);
       } else {
         setError(result.error || 'Failed to load MIS exceptions');
       }
@@ -68,7 +91,7 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [selectedMonth, typeFilter]);
+  }, [selectedMonth]);
 
   useEffect(() => {
     void fetchData();
@@ -102,15 +125,18 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
   };
 
   const isBiometricDayView = typeFilter === 'missing-biometric';
+  const isEarlyInLateOutDayView = typeFilter === 'early-in-late-out';
+  const isDayGroupedView = isBiometricDayView || isEarlyInLateOutDayView;
 
-  const labelFor = (type: MisExceptionType) => labels?.[type] ?? type;
+  const labelFor = (type: MisExceptionType) => exceptionLabels[type] ?? type;
 
   const monthAffectsList =
     typeFilter === FILTER_ALL ||
     typeFilter === 'missing-biometric' ||
-    typeFilter === 'missing-attendance';
+    typeFilter === 'missing-attendance' ||
+    typeFilter === 'early-in-late-out';
 
-  const filteredRows = useMemo(() => {
+  const searchFilteredRows = useMemo(() => {
     if (!searchTerm) return rows;
     const term = searchTerm.toLowerCase();
     return rows.filter(
@@ -124,14 +150,41 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
     );
   }, [rows, searchTerm]);
 
+  const displayRows = useMemo(() => {
+    if (typeFilter === FILTER_ALL) return searchFilteredRows;
+    return searchFilteredRows
+      .filter((row) => row.exceptions.includes(typeFilter))
+      .map((row) => ({
+        ...row,
+        exceptions: [typeFilter],
+        missingBiometricDates:
+          typeFilter === 'missing-biometric' || typeFilter === 'missing-attendance'
+            ? row.missingBiometricDates
+            : undefined,
+        earlyInLateOutHits:
+          typeFilter === 'early-in-late-out' ? row.earlyInLateOutHits : undefined,
+      }));
+  }, [searchFilteredRows, typeFilter]);
+
+  const exceptionTypes = MIS_EXCEPTION_TYPES;
+  const exceptionLabels = labels ?? MIS_EXCEPTION_LABELS;
+
   const biometricDayRows = useMemo(
-    () => buildBiometricMissingByDay(filteredRows),
-    [filteredRows]
+    () => buildBiometricMissingByDay(displayRows),
+    [displayRows]
+  );
+
+  const earlyInLateOutDayRows = useMemo(
+    () => buildEarlyInLateOutByDay(displayRows),
+    [displayRows]
   );
 
   const emptyMessage = useMemo(() => {
     if (typeFilter === 'missing-biometric') {
       return `No days with missing biometric uploads for ${formatMonthYear(selectedMonth)}.`;
+    }
+    if (typeFilter === 'early-in-late-out') {
+      return `No days with in time ≤ 8 AM or out time ≥ 8 PM for ${formatMonthYear(selectedMonth)}.`;
     }
     if (typeFilter === FILTER_ALL) {
       return `No active employees with MIS exceptions for ${formatMonthYear(selectedMonth)}.`;
@@ -150,6 +203,8 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
         return 'border-red-200 bg-red-50 text-red-950';
       case 'missing-biometric':
         return 'border-rose-200 bg-rose-50 text-rose-900';
+      case 'early-in-late-out':
+        return 'border-indigo-200 bg-indigo-50 text-indigo-950';
       case 'no-schedule':
         return 'border-amber-200 bg-amber-50 text-amber-950';
       case 'no-pl-partner':
@@ -219,9 +274,9 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
           </div>
         </div>
 
-        {counts && labels && (
-          <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-            {(Object.keys(counts) as MisExceptionType[]).map((type) => (
+        {counts && (
+          <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
+            {exceptionTypes.map((type) => (
               <button
                 key={type}
                 type="button"
@@ -232,7 +287,7 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
                     : 'border-slate-200 bg-slate-50 hover:bg-white'
                 }`}
               >
-                <div className="font-medium text-slate-900">{counts[type]}</div>
+                <div className="font-medium text-slate-900">{counts[type] ?? 0}</div>
                 <div className="text-xs text-slate-600">{labelFor(type)}</div>
               </button>
             ))}
@@ -252,7 +307,7 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
               id="mis-search"
               type="search"
               placeholder={
-                isBiometricDayView
+                isDayGroupedView
                   ? 'Search employee name, ID, designation, partner…'
                   : 'Search name, ID, designation, partner…'
               }
@@ -268,7 +323,7 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
             aria-label="Filter by exception type"
           >
             <option value={FILTER_ALL}>All exception types</option>
-            {(Object.keys(labels || {}) as MisExceptionType[]).map((type) => (
+            {exceptionTypes.map((type) => (
               <option key={type} value={type}>
                 {labelFor(type)}
               </option>
@@ -290,6 +345,73 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
             <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
             Loading exceptions…
           </div>
+        ) : isEarlyInLateOutDayView ? (
+          earlyInLateOutDayRows.length === 0 ? (
+            <p className="py-12 text-center text-sm text-slate-600">{emptyMessage}</p>
+          ) : (
+            <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200">
+              {earlyInLateOutDayRows.map((day) => {
+                const expanded = expandedDate === day.date;
+                return (
+                  <li key={day.date}>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedDate(expanded ? null : day.date)}
+                      className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-slate-50"
+                      aria-expanded={expanded}
+                    >
+                      {expanded ? (
+                        <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+                      ) : (
+                        <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-baseline gap-2">
+                          <span className="font-medium text-slate-900">
+                            {formatDateLabel(day.date)}
+                          </span>
+                          <span className="font-mono text-xs text-slate-500">{day.date}</span>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-600">
+                          {day.employees.length} employee
+                          {day.employees.length === 1 ? '' : 's'} with in ≤ 8 AM or out ≥ 8 PM
+                        </p>
+                      </div>
+                    </button>
+                    {expanded && (
+                      <div className="border-t border-slate-100 bg-slate-50/80 px-4 py-3 pl-11">
+                        <ul className="divide-y divide-slate-200 rounded-md border border-slate-200 bg-white">
+                          {day.employees.map((emp) => (
+                            <li
+                              key={emp.userId}
+                              className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-3 py-2 text-sm"
+                            >
+                              <span className="font-medium text-slate-900">{emp.name}</span>
+                              <span className="font-mono text-xs text-slate-500">
+                                {emp.odId || '—'}
+                              </span>
+                              <span className="w-full text-xs text-indigo-900 sm:w-auto">
+                                {formatEarlyInLateOutReason(emp.reason)}
+                                {emp.inTime ? ` · in ${emp.inTime}` : ''}
+                                {emp.outTime ? ` · out ${emp.outTime}` : ''}
+                              </span>
+                              {(emp.designation || emp.workingUnderPartner) && (
+                                <span className="w-full text-xs text-slate-600 sm:w-auto">
+                                  {[emp.designation, emp.workingUnderPartner]
+                                    .filter(Boolean)
+                                    .join(' · ')}
+                                </span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )
         ) : isBiometricDayView ? (
           biometricDayRows.length === 0 ? (
             <p className="py-12 text-center text-sm text-slate-600">{emptyMessage}</p>
@@ -352,11 +474,11 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
               })}
             </ul>
           )
-        ) : filteredRows.length === 0 ? (
+        ) : displayRows.length === 0 ? (
           <p className="py-12 text-center text-sm text-slate-600">{emptyMessage}</p>
         ) : (
           <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200">
-            {filteredRows.map((row) => {
+            {displayRows.map((row) => {
               const expanded = expandedId === row.userId;
               return (
                 <li key={row.userId}>
@@ -458,6 +580,22 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
                           <p className="mt-1 font-mono text-xs leading-relaxed text-slate-800">
                             {row.missingBiometricDates.join(', ')}
                           </p>
+                        </div>
+                      )}
+                      {row.earlyInLateOutHits && row.earlyInLateOutHits.length > 0 && (
+                        <div className="mt-3">
+                          <p className="text-xs font-medium text-slate-500">
+                            In ≤ 8 AM or out ≥ 8 PM ({row.earlyInLateOutHits.length} day
+                            {row.earlyInLateOutHits.length === 1 ? '' : 's'} in{' '}
+                            {formatMonthYear(selectedMonth)})
+                          </p>
+                          <ul className="mt-1 space-y-1 text-xs leading-relaxed text-slate-800">
+                            {row.earlyInLateOutHits.map((hit) => (
+                              <li key={hit.date} className="font-mono">
+                                {formatEarlyInLateOutDetail(hit)}
+                              </li>
+                            ))}
+                          </ul>
                         </div>
                       )}
                     </div>
