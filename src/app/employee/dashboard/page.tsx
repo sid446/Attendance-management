@@ -1370,7 +1370,7 @@ export default function EmployeeDashboard() {
       const timeDraft = getCorrectionTimeDraft(dayRecord);
 
       // Check if correction request is allowed
-      // Allowed when: Absent, Present, Half Day, Holiday/Week Off, or in/out time is missing
+      // Allowed when: Absent, Present, Half Day, Holiday/Week Off, missed entry (partial punch), or in/out time is missing
       const status = dayRecord?.status;
       const inTime = dayRecord?.inTime;
       const outTime = dayRecord?.outTime;
@@ -1400,8 +1400,8 @@ export default function EmployeeDashboard() {
 
       const uploadedAttendance = hasUploadedAttendance(dayRecord);
 
-      if (!isAbsent && !isPresent && !isHalfDay && !isHoliday && !isMissingPunch) {
-        alert('Correction requests are only allowed for days marked as Present, Absent, Half Day, Holiday/Week Off, or when attendance in/out is not marked.');
+      if (!isAbsent && !isPresent && !isHalfDay && !isHoliday && !isMissingPunch && !isMissedEntry) {
+        alert('Correction requests are only allowed for days marked as Present, Absent, Half Day, Holiday/Week Off, Missed Entry, or when attendance in/out is not marked.');
         return;
       }
 
