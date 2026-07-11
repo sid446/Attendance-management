@@ -1,6 +1,11 @@
 import type { User } from '@/types/ui';
 import { applyDayAllowanceToRawExcess } from '@/lib/excessHourAllowance';
-import { getEmploymentTypeForDate } from '@/lib/attendanceSummaryMetrics';
+import {
+  getEmploymentTypeForDate,
+  getScheduledHoursNoLunchForMonth,
+  isDayIncludedInScheduledCalc,
+} from '@/lib/attendanceSummaryMetrics';
+import { getScheduledTimes } from '@/lib/scheduleUtils';
 import {
   formatExtraWorkEntriesTimeSummary,
   getRecordPunchHours,
@@ -354,6 +359,104 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
       scheduledTime: '0:00',
     });
 
+    /** Same scheduled in/out + hours as summary Sched. column (`getScheduledResultForItem`). */
+    const getDaywiseScheduledFieldsForDay = (
+      user: User | undefined,
+      date: string,
+      record: any
+    ) => {
+      if (!user || !isDayIncludedInScheduledCalc(user, date, record)) {
+        return zeroDaywiseScheduledFields();
+      }
+
+      const schedule = getScheduledTimes(user, date);
+      const scheduledInTime = schedule.inTime ?? '';
+      const scheduledOutTime = schedule.outTime ?? '';
+      if (
+        !scheduledInTime ||
+        !scheduledOutTime ||
+        scheduledInTime === '00:00' ||
+        scheduledOutTime === '00:00'
+      ) {
+        return zeroDaywiseScheduledFields();
+      }
+
+      const [inH, inM] = scheduledInTime.split(':').map(Number);
+      const [outH, outM] = scheduledOutTime.split(':').map(Number);
+      let diff = outH * 60 + outM - (inH * 60 + inM);
+      if (diff < 0) diff += 24 * 60;
+
+      return {
+        scheduledInTime,
+        scheduledOutTime,
+        scheduledTime: `${Math.floor(diff / 60)}:${String(diff % 60).padStart(2, '0')}`,
+      };
+    };
+
+    /** Scheduled in/out for absent deficit when day is excluded from Sched. total. */
+    const getDaywiseScheduleTimesForAbsentDeficit = (
+      user: User | undefined,
+      date: string,
+      record: any,
+      presentAbsent: string,
+      isHolidayDate: boolean
+    ) => {
+      if (!user || presentAbsent !== 'Absent') {
+        return { scheduledInTime: '', scheduledOutTime: '' };
+      }
+
+      const d = calendarDateFromIsoKey(date);
+      if (d.getDay() === 0 || isHolidayDate) {
+        return { scheduledInTime: '', scheduledOutTime: '' };
+      }
+
+      const type = String(record?.typeOfPresence || '').trim();
+      const typeLower = type.toLowerCase();
+      if (type === 'Holiday' || type === 'Sunday' || type === 'Weekoff' || typeLower.includes('weekoff')) {
+        return { scheduledInTime: '', scheduledOutTime: '' };
+      }
+
+      const schedule = getScheduledTimes(user, date);
+      if (
+        schedule.isHoliday ||
+        !schedule.inTime ||
+        !schedule.outTime ||
+        schedule.inTime === '00:00' ||
+        schedule.outTime === '00:00'
+      ) {
+        return { scheduledInTime: '', scheduledOutTime: '' };
+      }
+
+      return {
+        scheduledInTime: schedule.inTime,
+        scheduledOutTime: schedule.outTime,
+      };
+    };
+
+    const buildDaywisePeriodDateList = (): string[] => {
+      if (!daywiseIsoRange) return [];
+      const dates: string[] = [];
+      const [y1, m1, d1] = daywiseIsoRange.min.split('-').map(Number);
+      const [y2, m2, d2] = daywiseIsoRange.max.split('-').map(Number);
+      const cursor = new Date(y1, m1 - 1, d1);
+      const end = new Date(y2, m2 - 1, d2);
+      while (cursor <= end) {
+        dates.push(toIsoFromLocalDate(cursor));
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return dates;
+    };
+
+    const resolveDaywiseScheduledHoursMonth = (item: (typeof summariesToExport)[number], user: User | undefined) => {
+      if (typeof item.calcScheduled === 'number' && Number.isFinite(item.calcScheduled)) {
+        return item.calcScheduled;
+      }
+      if (!user) return 0;
+      const periodDates = buildDaywisePeriodDateList();
+      if (periodDates.length === 0) return 0;
+      return getScheduledHoursNoLunchForMonth(item, user, periodDates);
+    };
+
     /**
      * Weekday WFH Ã¢â€ â€™ "WFH". DB week-off WFH types, or weekday/legacy WFH on API holiday or Sunday Ã¢â€ â€™ "WO-WFH".
      */
@@ -443,58 +546,7 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
         }
       }
     });
-      // Calculate scheduled hours for the month for this user, EXCLUDING holidays from API
-      let scheduledHrsMonth = 0;
-      if (allUsers && item.userId) {
-        const user = allUsers.find(u => u._id === item.userId);
-        if (user && item.recordDetails) {
-          for (const [dateStr, rec] of sortRecordDetailsEntries(item.recordDetails)) {
-            if (!includeDaywiseIsoDate(dateStr)) continue;
-            if (holidayDates.has(dateStr)) continue; // skip API holidays
-            if (rec.typeOfPresence === 'Holiday') continue;
-            const dateObj = calendarDateFromIsoKey(dateStr);
-            const dayName = dateObj.toLocaleString('en-US', { weekday: 'long' }).toLowerCase();
-            // Find applicable schedule entry for this date
-            let scheduleEntry;
-            if (user.schedules && Array.isArray(user.schedules)) {
-              scheduleEntry = user.schedules.slice().reverse().find(entry => {
-                const eff = new Date(entry.effectiveFrom);
-                return eff <= dateObj;
-              });
-            }
-            let scheduledIn = '';
-            let scheduledOut = '';
-            let isHoliday = false;
-            if (scheduleEntry && scheduleEntry.daily && scheduleEntry.daily[dayName]) {
-              const sch = scheduleEntry.daily[dayName] as { inTime?: string; outTime?: string; isHoliday?: boolean; isHalfDay?: boolean } | undefined;
-              scheduledIn = sch?.inTime ?? '';
-              scheduledOut = sch?.outTime ?? '';
-              isHoliday = !!sch?.isHoliday;
-            } else if (user.scheduleInOutTime && ['monday','tuesday','wednesday','thursday','friday'].includes(dayName)) {
-              scheduledIn = user.scheduleInOutTime.inTime ?? '';
-              scheduledOut = user.scheduleInOutTime.outTime ?? '';
-              isHoliday = !!user.scheduleInOutTime.isHoliday;
-            } else if (user.scheduleInOutTimeSat && dayName === 'saturday') {
-              scheduledIn = user.scheduleInOutTimeSat.inTime ?? '';
-              scheduledOut = user.scheduleInOutTimeSat.outTime ?? '';
-              isHoliday = !!user.scheduleInOutTimeSat.isHoliday;
-            } else if (user.scheduleInOutTimeMonth && dayName === 'monthly') {
-              scheduledIn = user.scheduleInOutTimeMonth.inTime ?? '';
-              scheduledOut = user.scheduleInOutTimeMonth.outTime ?? '';
-              isHoliday = !!user.scheduleInOutTimeMonth.isHoliday;
-            }
-            // Skip holidays from schedule
-            if (isHoliday) continue;
-            if (scheduledIn && scheduledOut && scheduledIn !== '00:00' && scheduledOut !== '00:00') {
-              const [inH, inM] = scheduledIn.split(':').map(Number);
-              const [outH, outM] = scheduledOut.split(':').map(Number);
-              let diff = (outH * 60 + outM) - (inH * 60 + inM);
-              if (diff < 0) diff += 24 * 60;
-              scheduledHrsMonth += diff / 60;
-            }
-          }
-        }
-      }
+      const scheduledHrsMonth = resolveDaywiseScheduledHoursMonth(item, daywiseUser as User | undefined);
 
       const records = item.recordDetails || {};
       sortRecordDetailsEntries(records).forEach(([date, record]: [string, any]) => {
@@ -519,62 +571,17 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
         const extraWorkTimes = formatExtraWorkEntriesTimeSummary(record.extraWorkEntries);
         const extraWorkHrs = sumExtraWorkEntryHours(record.extraWorkEntries);
         const punchWorkingHrs = getRecordPunchHours(record);
-        // Get scheduled in/out from user schedule for this day
-        let scheduledInTime = '';
-        let scheduledOutTime = '';
-        let scheduledTime = '';
-        // Set scheduled time to zero for holidays and weekoffs
+        const { scheduledInTime, scheduledOutTime, scheduledTime } = getDaywiseScheduledFieldsForDay(
+          daywiseUser as User | undefined,
+          date,
+          record
+        );
+        // Set week type for holidays and weekoffs
         const isHoliday = holidayDates.has(date);
         const isSunday = d.getDay() === 0;
-        const isWeekoff = isSunday || (record && typeof record.status === 'string' && record.status.toLowerCase().includes('weekoff'));
         let weekType = getWeekType(date, record);
         if (isHoliday) {
           weekType = 'Weekoff';
-        }
-        if (isHoliday || isWeekoff) {
-          scheduledTime = '0h 0m';
-          scheduledInTime = '';
-          scheduledOutTime = '';
-        } else if (allUsers && item.userId) {
-          const user = allUsers.find(u => u._id === item.userId);
-          if (user) {
-            // Find applicable schedule entry for this date
-            let scheduleEntry;
-            if (user.schedules && Array.isArray(user.schedules)) {
-              scheduleEntry = user.schedules.slice().reverse().find(entry => {
-                const eff = new Date(entry.effectiveFrom);
-                return eff <= d;
-              });
-            }
-            // Fallback to legacy
-            let dayKey = dayName.toLowerCase();
-            if (scheduleEntry && scheduleEntry.daily && scheduleEntry.daily[dayKey]) {
-              const sch = scheduleEntry.daily[dayKey] as { inTime?: string; outTime?: string } | undefined;
-              scheduledInTime = sch?.inTime ?? '';
-              scheduledOutTime = sch?.outTime ?? '';
-            } else if (user.scheduleInOutTime && ['monday','tuesday','wednesday','thursday','friday'].includes(dayKey)) {
-              scheduledInTime = user.scheduleInOutTime.inTime ?? '';
-              scheduledOutTime = user.scheduleInOutTime.outTime ?? '';
-            } else if (user.scheduleInOutTimeSat && dayKey === 'saturday') {
-              scheduledInTime = user.scheduleInOutTimeSat.inTime ?? '';
-              scheduledOutTime = user.scheduleInOutTimeSat.outTime ?? '';
-            } else if (user.scheduleInOutTimeMonth && dayKey === 'monthly') {
-              scheduledInTime = user.scheduleInOutTimeMonth.inTime ?? '';
-              scheduledOutTime = user.scheduleInOutTimeMonth.outTime ?? '';
-            }
-            // Calculate scheduled time (hours) for this day
-            if (scheduledInTime && scheduledOutTime && scheduledInTime !== '00:00' && scheduledOutTime !== '00:00') {
-              const [inH, inM] = scheduledInTime.split(':').map(Number);
-              const [outH, outM] = scheduledOutTime.split(':').map(Number);
-              let diff = (outH * 60 + outM) - (inH * 60 + inM);
-              if (diff < 0) diff += 24 * 60; // handle overnight
-              const hours = Math.floor(diff / 60);
-              const mins = diff % 60;
-              scheduledTime = `${hours}:${mins.toString().padStart(2, '0')}`;
-            } else {
-              scheduledTime = '';
-            }
-          }
         }
         // --- Custom logic for WFH and Outstation ---
         let maxWFH = '';
@@ -633,65 +640,84 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
           presentAbsent = 'Absent';
         }
 
-        if (
-          isDaywiseLeaveRecord(record) ||
-          isDaywiseExplicitAbsentRecord(record) ||
-          presentAbsent === 'Absent'
-        ) {
-          ({ scheduledInTime, scheduledOutTime, scheduledTime } = zeroDaywiseScheduledFields());
-        }
-
         // --- Excess/Short calculation for the day ---
-        // Always output Ã‚Â±HH:MM:SS
+        // Always output ±HH:MM:SS. Leave days never carry day deficit/excess.
         let daySeconds = 0;
-        const isAbsent =
-          presentAbsent === 'Absent' || presentAbsent === 'On leave';
-        if (isAbsent && scheduledInTime && scheduledOutTime && scheduledInTime !== '00:00' && scheduledOutTime !== '00:00') {
-          const [schInH, schInM] = scheduledInTime.split(':').map(Number);
-          const [schOutH, schOutM] = scheduledOutTime.split(':').map(Number);
-          let scheduledMinutes = schOutH * 60 + schOutM - (schInH * 60 + schInM);
-          if (scheduledMinutes < 0) scheduledMinutes += 24 * 60;
-          daySeconds = -scheduledMinutes * 60;
-        } else if (scheduledInTime && scheduledOutTime && scheduledInTime !== '00:00' && scheduledOutTime !== '00:00' && inTime && outTime && inTime !== '00:00' && outTime !== '00:00') {
-          const [schInH, schInM] = scheduledInTime.split(':').map(Number);
-          const [schOutH, schOutM] = scheduledOutTime.split(':').map(Number);
-          const [actInH, actInM] = inTime.split(':').map(Number);
-          const [actOutH, actOutM] = outTime.split(':').map(Number);
-          let scheduledMinutes = schOutH * 60 + schOutM - (schInH * 60 + schInM);
-          if (scheduledMinutes < 0) scheduledMinutes += 24 * 60;
-          let actualMinutes = actOutH * 60 + actOutM - (actInH * 60 + actInM);
-          if (actualMinutes < 0) actualMinutes += 24 * 60;
-          let isArticle = false;
-          if (allUsers && item.userId) {
-            const user = allUsers.find(u => u._id === item.userId);
-            if (user) {
-              isArticle = isArticleEmployee(user);
+        const isAbsent = presentAbsent === 'Absent';
+        if (presentAbsent !== 'On leave') {
+          let deficitScheduledIn = scheduledInTime;
+          let deficitScheduledOut = scheduledOutTime;
+          if (
+            isAbsent &&
+            (!deficitScheduledIn ||
+              !deficitScheduledOut ||
+              deficitScheduledIn === '00:00' ||
+              deficitScheduledOut === '00:00')
+          ) {
+            const deficitSchedule = getDaywiseScheduleTimesForAbsentDeficit(
+              daywiseUser as User | undefined,
+              date,
+              record,
+              presentAbsent,
+              isHoliday
+            );
+            deficitScheduledIn = deficitSchedule.scheduledInTime;
+            deficitScheduledOut = deficitSchedule.scheduledOutTime;
+          }
+
+          if (
+            isAbsent &&
+            deficitScheduledIn &&
+            deficitScheduledOut &&
+            deficitScheduledIn !== '00:00' &&
+            deficitScheduledOut !== '00:00'
+          ) {
+            const [schInH, schInM] = deficitScheduledIn.split(':').map(Number);
+            const [schOutH, schOutM] = deficitScheduledOut.split(':').map(Number);
+            let scheduledMinutes = schOutH * 60 + schOutM - (schInH * 60 + schInM);
+            if (scheduledMinutes < 0) scheduledMinutes += 24 * 60;
+            daySeconds = -scheduledMinutes * 60;
+          } else if (scheduledInTime && scheduledOutTime && scheduledInTime !== '00:00' && scheduledOutTime !== '00:00' && inTime && outTime && inTime !== '00:00' && outTime !== '00:00') {
+            const [schInH, schInM] = scheduledInTime.split(':').map(Number);
+            const [schOutH, schOutM] = scheduledOutTime.split(':').map(Number);
+            const [actInH, actInM] = inTime.split(':').map(Number);
+            const [actOutH, actOutM] = outTime.split(':').map(Number);
+            let scheduledMinutes = schOutH * 60 + schOutM - (schInH * 60 + schInM);
+            if (scheduledMinutes < 0) scheduledMinutes += 24 * 60;
+            let actualMinutes = actOutH * 60 + actOutM - (actInH * 60 + actInM);
+            if (actualMinutes < 0) actualMinutes += 24 * 60;
+            let isArticle = false;
+            if (allUsers && item.userId) {
+              const user = allUsers.find(u => u._id === item.userId);
+              if (user) {
+                isArticle = isArticleEmployee(user);
+              }
+            }
+            if (actualMinutes < scheduledMinutes) {
+              daySeconds = -(scheduledMinutes - actualMinutes) * 60;
+            } else if (actualMinutes > scheduledMinutes) {
+              if (isArticle) {
+                const excessMinutes = calculateArticleDayExcessMinutes(
+                  scheduledInTime,
+                  scheduledOutTime,
+                  inTime,
+                  outTime
+                );
+                daySeconds = excessMinutes * 60;
+              } else {
+                daySeconds = (actualMinutes - scheduledMinutes) * 60;
+              }
             }
           }
-          if (actualMinutes < scheduledMinutes) {
-            daySeconds = -(scheduledMinutes - actualMinutes) * 60;
-          } else if (actualMinutes > scheduledMinutes) {
-            if (isArticle) {
-              const excessMinutes = calculateArticleDayExcessMinutes(
-                scheduledInTime,
-                scheduledOutTime,
-                inTime,
-                outTime
-              );
-              daySeconds = excessMinutes * 60;
-            } else {
-              daySeconds = (actualMinutes - scheduledMinutes) * 60;
-            }
-          } else {
-            daySeconds = 0;
-          }
-        } else {
-          daySeconds = 0;
         }
         const rawDayHours =
-          typeof record.excessHour === 'number' && Number.isFinite(record.excessHour)
-            ? record.excessHour
-            : daySeconds / 3600;
+          presentAbsent === 'On leave'
+            ? 0
+            : isAbsent && daySeconds < 0
+              ? daySeconds / 3600
+              : typeof record.excessHour === 'number' && Number.isFinite(record.excessHour)
+                ? record.excessHour
+                : daySeconds / 3600;
         const adjustedDayHours = applyDayAllowanceToRawExcess(
           rawDayHours,
           String(item.userId || ''),
