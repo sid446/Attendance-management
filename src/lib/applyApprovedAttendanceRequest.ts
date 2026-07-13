@@ -363,14 +363,40 @@ export async function applyApprovedRequestToAttendance(
     isType('Present - Outstation (Weekdays)') ||
     isType('Present - ClientPlace (Weekdays)')
   ) {
-    rec.totalHour = Number((Number(rec.value) * (effectiveScheduledMinutes / 60)).toFixed(2));
-    rec.excessHour = Number((Number(rec.totalHour) - effectiveScheduledMinutes / 60).toFixed(2));
+    if (hasCustomTimes) {
+      rec.totalHour = calculateDuration(String(startTime), String(endTime), {
+        scheduledIn: effectiveScheduledInTime,
+        scheduledOut: effectiveScheduledOutTime,
+      });
+      applyDayExcessToRecord(
+        rec,
+        userObj,
+        date,
+        effectiveScheduledInTime,
+        effectiveScheduledOutTime
+      );
+    } else {
+      rec.totalHour = Number((Number(rec.value) * (effectiveScheduledMinutes / 60)).toFixed(2));
+      rec.excessHour = Number((Number(rec.totalHour) - effectiveScheduledMinutes / 60).toFixed(2));
+      if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
+      if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
+    }
   } else if (
     isType('Present - Outstation (Weekoff)') ||
     isType('Present - ClientPlace (Weekoff)')
   ) {
     rec.totalHour = 0;
-    rec.excessHour = Number((Number(rec.value) * (effectiveScheduledMinutes / 60)).toFixed(2));
+    if (hasCustomTimes) {
+      applyDayExcessToRecord(
+        rec,
+        userObj,
+        date,
+        effectiveScheduledInTime,
+        effectiveScheduledOutTime
+      );
+    } else {
+      rec.excessHour = Number((Number(rec.value) * (effectiveScheduledMinutes / 60)).toFixed(2));
+    }
   } else if (isType('Present - in office - weekdays') || isType('Present - in office - weekoff')) {
     if (hasCustomTimes) {
       rec.totalHour = calculateDuration(String(startTime), String(endTime), {

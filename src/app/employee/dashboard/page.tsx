@@ -1572,22 +1572,6 @@ export default function EmployeeDashboard() {
         else if (requestStatus.startsWith('Present - client place')) mappedStatus = 'Present - ClientPlace (Weekdays)';
       }
     }
-    // For Present - outstation, use the actual schedule attached to the attendance record for that date if available
-    const dayRecord = employeeDays.find(d => d.date === selectedDate);
-    if (requestStatus.startsWith('Present - outstation')) {
-      if (dayRecord && dayRecord.schedule && !dayRecord.schedule.isHoliday) {
-        finalStartTime = dayRecord.schedule.inTime;
-        finalEndTime = dayRecord.schedule.outTime;
-      } else if (summary?.schedules) {
-        const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-        const dayName = dayNames[dateObj.getDay()];
-        let scheduleToUse = summary?.schedules?.daily?.[dayName];
-        if (scheduleToUse && !scheduleToUse.isHoliday) {
-          finalStartTime = scheduleToUse.inTime;
-          finalEndTime = scheduleToUse.outTime;
-        }
-      }
-    }
     setSendingRequest(true);
     try {
       const res = await fetch('/api/employee/request-correction', employeeCredentialsInit({
@@ -1696,18 +1680,12 @@ export default function EmployeeDashboard() {
       'On leave',
       'Weekoff - special allowance'
     ];
-    const SCHEDULED_TIME_CATEGORIES = [
-      'Present - outstation'
-    ];
     if (isTimed) {
       reqStartTime = futureStartTime;
       reqEndTime = futureEndTime;
     } else if (ZERO_TIME_CATEGORIES.includes(futureType)) {
       reqStartTime = '00:00';
       reqEndTime = '00:00';
-    } else if (SCHEDULED_TIME_CATEGORIES.includes(futureType)) {
-      reqStartTime = undefined;
-      reqEndTime = undefined;
     }
     setSendingFutureRequest(true);
     try {

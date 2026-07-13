@@ -422,6 +422,9 @@ export async function POST(request: NextRequest) {
       if (endTime && endTime !== '00:00') {
         rec.editedCheckout = endTime;
       }
+
+      const hasCustomTimes =
+        startTime && endTime && startTime !== '00:00' && endTime !== '00:00';
       
       // Calculate totalHour and excessHour based on request type
       // WFH
@@ -450,11 +453,32 @@ export async function POST(request: NextRequest) {
       }
       // Present - Outstation
       else if (isType('Present - Outstation (Weekdays)')) {
-        rec.totalHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
-        rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
+        if (hasCustomTimes) {
+          rec.totalHour = calculateDuration(startTime, endTime);
+          applyDayExcessToRecord(
+            rec,
+            userObj,
+            date,
+            effectiveScheduledInTime,
+            effectiveScheduledOutTime
+          );
+        } else {
+          rec.totalHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
+          rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
+        }
       } else if (isType('Present - Outstation (Weekoff)')) {
         rec.totalHour = 0;
-        rec.excessHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
+        if (hasCustomTimes) {
+          applyDayExcessToRecord(
+            rec,
+            userObj,
+            date,
+            effectiveScheduledInTime,
+            effectiveScheduledOutTime
+          );
+        } else {
+          rec.excessHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
+        }
       }
       // Present - ClientPlace
       else if (isType('Present - ClientPlace (Weekdays)')) {

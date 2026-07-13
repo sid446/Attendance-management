@@ -174,27 +174,31 @@ export async function POST(request: NextRequest) {
         // But schema doesn't enforce unique date per user. 
         // We will create a fresh request.
         
-        // Calculate times for Present - outstation requests
         let finalStartTime = startTime;
         let finalEndTime = endTime;
-        
-        if (requestType === 'Present - outstation') {
-            // Determine scheduled times based on day of week and user schedule
-            const dayOfWeek = d.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-            const month = d.getMonth() + 1; // 1-12
-            
+
+        const hasCustomTimes =
+          typeof startTime === 'string' &&
+          typeof endTime === 'string' &&
+          startTime.trim() !== '' &&
+          endTime.trim() !== '' &&
+          startTime !== '00:00' &&
+          endTime !== '00:00';
+
+        const isOutstationType = String(requestType || '').toLowerCase().includes('outstation');
+        if (isOutstationType && !hasCustomTimes) {
+            const dayOfWeek = d.getDay();
+            const month = d.getMonth() + 1;
+
             let scheduleToUse;
             if (month === 12 || month === 1) {
-                // December or January - use monthly schedule
                 scheduleToUse = user.scheduleInOutTimeMonth;
             } else if (dayOfWeek === 6) {
-                // Saturday - use saturday schedule
                 scheduleToUse = user.scheduleInOutTimeSat;
             } else if (dayOfWeek !== 0) {
-                // Monday to Friday - use regular schedule
                 scheduleToUse = user.scheduleInOutTime;
             }
-            
+
             if (scheduleToUse) {
                 finalStartTime = scheduleToUse.inTime;
                 finalEndTime = scheduleToUse.outTime;
