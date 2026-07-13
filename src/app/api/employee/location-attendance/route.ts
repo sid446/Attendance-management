@@ -6,6 +6,7 @@ import Attendance from '@/models/Attendance';
 import User from '@/models/User';
 import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
 import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAuth';
+import { istDateString, istTimeString } from '@/lib/attendanceRequestWindow';
 
 // Haversine formula to calculate distance between two coordinates in meters
 function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -18,11 +19,6 @@ function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: numbe
     Math.sin(dLng / 2) * Math.sin(dLng / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c; // Distance in meters
-}
-
-// Helper to format time as HH:mm
-function formatTime(date: Date): string {
-  return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 // Helper to calculate total hours between two times
@@ -153,8 +149,8 @@ export async function POST(req: NextRequest) {
     }
     
     const now = new Date();
-    const todayDate = now.toISOString().split('T')[0]; // YYYY-MM-DD
-    const currentTime = formatTime(now);
+    const todayDate = istDateString(now);
+    const currentTime = istTimeString(now);
     
     // Find or create today's location attendance record
     let record = await LocationAttendance.findOne({

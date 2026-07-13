@@ -84,6 +84,19 @@ export function istDateString(d: Date = new Date()): string {
   }).format(d);
 }
 
+/** Wall-clock time HH:mm (24h) in IST for `d`. */
+export function istTimeString(d: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: TZ,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(d);
+  const hour = parts.find((p) => p.type === 'hour')?.value ?? '00';
+  const minute = parts.find((p) => p.type === 'minute')?.value ?? '00';
+  return `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
+}
+
 function parseYyyyMmDd(dateStr: string): { y: number; m: number; d: number } | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return null;
   const [y, m, d] = dateStr.split('-').map(Number);

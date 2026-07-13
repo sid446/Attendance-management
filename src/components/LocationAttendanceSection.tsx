@@ -1,6 +1,8 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { MapPin, Clock, Check, X, AlertCircle, Loader2, Navigation, RefreshCw } from 'lucide-react';
+import { istDateString } from '@/lib/attendanceRequestWindow';
+import { employeeCredentialsInit } from '@/lib/employeeCredentialsInit';
 
 interface ClientPlace {
   _id: string;
@@ -62,17 +64,19 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
   const [punchType, setPunchType] = useState<'in' | 'out'>('in');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const todayDate = new Date().toISOString().split('T')[0];
-
   // Fetch assigned client places and today's records
   const fetchData = async () => {
+    const todayDate = istDateString();
     try {
       setLoading(true);
       setError(null);
 
       const [placesRes, recordsRes] = await Promise.all([
-        fetch(`/api/client-places?employeeId=${userId}`),
-        fetch(`/api/employee/location-attendance?userId=${userId}&date=${todayDate}`)
+        fetch(`/api/client-places?employeeId=${userId}`, employeeCredentialsInit()),
+        fetch(
+          `/api/employee/location-attendance?userId=${userId}&date=${todayDate}`,
+          employeeCredentialsInit()
+        ),
       ]);
 
       const placesData = await placesRes.json();
@@ -159,7 +163,7 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
       const location = await getCurrentLocation();
 
       // Mark attendance
-      const response = await fetch('/api/employee/location-attendance', {
+      const response = await fetch('/api/employee/location-attendance', employeeCredentialsInit({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -168,7 +172,7 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
           punchType,
           coordinates: location
         })
-      });
+      }));
 
       const result = await response.json();
 
