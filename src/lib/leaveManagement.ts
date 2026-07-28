@@ -97,7 +97,93 @@ export async function initializeLeaveBalance(userId: mongoose.Types.ObjectId): P
 }
 
 /**
- * Increment monthly earned leave for all active users
+ * Ledger sources that represent the monthly base earn (+monthlyEarned once per month).
+ * Used as the idempotency key so a given user+month is only ever credited once for the
+ * base accrual, regardless of which code path (upload, approve, bulk, monthly job) runs first.
+ * Outstation/client-place extras use a different source ('outstation-earned') and are NOT here.
+ */
+export const MONTHLY_EARNED_SOURCES = [
+  'monthly-earned',
+  'monthly-increment',
+  'attendance-create-increment',
+  'attendance-create-increment-bulk',
+];
+
+/**
+ * Credit the monthly base earned leave (default 2) for a single user+month, exactly once.
+ *
+ * Idempotency is enforced via the LeaveTransaction ledger: if a monthly-base earned
+ * transaction already exists for this user+month, this is a no-op. This is the single
+ * source of truth for monthly accrual and replaces the ad-hoc `earned += 2` blocks that
+ * previously lived in the upload/approve/bulk routes and the monthly job.
+ *
+ * No-ops for pre-2026 months, inactive users, and articles.
+ */
+export async function creditMonthlyEarnedIfNeeded(
+  userId: mongoose.Types.ObjectId | string,
+  monthYear: string,
+  reference?: string
+): Promise<{ credited: boolean; amount: number }> {
+  try {
+    if (!monthYear || monthYear < '2026-01') return { credited: false, amount: 0 };
+
+    const user = await User.findById(userId);
+    if (!user || !user.isActive) return { credited: false, amount: 0 };
+    if (isArticleEmployee(user)) return { credited: false, amount: 0 };
+
+    // Idempotency: skip if a monthly-base earned tx already exists for this user+month.
+    const existing = await LeaveTransaction.findOne({
+      userId: user._id,
+      monthYear,
+      type: 'earned',
+      source: { $in: MONTHLY_EARNED_SOURCES },
+    }).lean();
+    if (existing) return { credited: false, amount: 0 };
+
+    const monthlyEarned = user.leaveBalance?.monthlyEarned || 2;
+    const currentEarned = user.leaveBalance?.earned || 0;
+    const currentBalanceAsOfJan26 = user.leaveBalance?.balanceAsOfJan26 || 0;
+    const currentUsed = user.leaveBalance?.used || 0;
+    const currentUsedAfterJan26 = user.leaveBalance?.usedAfterJan26 || 0;
+
+    const newEarned = Number((currentEarned + monthlyEarned).toFixed(3));
+    // Balance can never go negative; floor at 0.
+    const newRemaining = Math.max(
+      0,
+      Number((currentBalanceAsOfJan26 + newEarned - currentUsed - currentUsedAfterJan26).toFixed(3))
+    );
+
+    await User.findByIdAndUpdate(user._id, {
+      'leaveBalance.earned': newEarned,
+      'leaveBalance.remaining': newRemaining,
+      'leaveBalance.lastUpdated': new Date(),
+      'leaveBalance.monthlyEarned': monthlyEarned,
+    });
+
+    try {
+      await LeaveTransaction.create({
+        userId: user._id,
+        date: new Date().toISOString().split('T')[0],
+        monthYear,
+        type: 'earned',
+        amount: monthlyEarned,
+        source: 'monthly-earned',
+        reference,
+      });
+    } catch (e) {
+      console.error('Failed to write monthly-earned LeaveTransaction for user', String(user._id), e);
+    }
+
+    return { credited: true, amount: monthlyEarned };
+  } catch (error) {
+    console.error('Error crediting monthly earned leave for user', String(userId), monthYear, error);
+    return { credited: false, amount: 0 };
+  }
+}
+
+/**
+ * Increment monthly earned leave for all active users who have attendance for the month.
+ * Delegates to creditMonthlyEarnedIfNeeded, which is idempotent per user+month.
  * @param monthYear Optional month-year string (YYYY-MM) to increment for a specific month
  */
 export async function incrementMonthlyLeave(monthYear?: string): Promise<void> {
@@ -112,56 +198,13 @@ export async function incrementMonthlyLeave(monthYear?: string): Promise<void> {
     const usersWithAttendance = await Attendance.distinct('userId', { monthYear: targetMonth });
     console.log(`Found ${usersWithAttendance.length} users with attendance for ${targetMonth}`);
 
+    let creditedCount = 0;
     for (const userId of usersWithAttendance) {
-      // Get the user
-      const user = await User.findById(userId);
-      if (!user || !user.isActive) continue;
-
-      // Skip leave balance increment for articles
-      if (isArticleEmployee(user)) continue;
-
-      const monthlyEarned = user.leaveBalance?.monthlyEarned || 2;
-
-      // Check if leave was already incremented for this month
-      // Skip only if user has earned leave AND it was updated this month
-      const lastUpdated = user.leaveBalance?.lastUpdated;
-      const currentEarned = user.leaveBalance?.earned || 0;
-      if (lastUpdated && currentEarned > 0) {
-        const lastUpdatedMonth = `${lastUpdated.getFullYear()}-${String(lastUpdated.getMonth() + 1).padStart(2, '0')}`;
-        if (lastUpdatedMonth === targetMonth) {
-          continue; // Already incremented for this month
-        }
-      }
-
-      // Increment earned leave
-      const newEarned = currentEarned + monthlyEarned;
-      const currentBalanceAsOfJan26 = user.leaveBalance?.balanceAsOfJan26 || 0;
-      const currentUsed = user.leaveBalance?.used || 0;
-      const currentUsedAfterJan26 = user.leaveBalance?.usedAfterJan26 || 0;
-      const newRemaining = currentBalanceAsOfJan26 + newEarned - currentUsed - currentUsedAfterJan26; // Can be negative
-
-      await User.findByIdAndUpdate(user._id, {
-        'leaveBalance.earned': newEarned,
-        'leaveBalance.remaining': newRemaining,
-        'leaveBalance.lastUpdated': now,
-      });
-
-      try {
-        // Record ledger transaction for earned increment (phase 1: write ledger alongside existing balances)
-        await LeaveTransaction.create({
-          userId: user._id,
-          date: now.toISOString().split('T')[0],
-          monthYear: targetMonth,
-          type: 'earned',
-          amount: monthlyEarned,
-          source: 'monthly-increment'
-        });
-      } catch (e) {
-        console.error('Failed to write monthly earned LeaveTransaction for user', String(user._id), e);
-      }
+      const res = await creditMonthlyEarnedIfNeeded(userId as mongoose.Types.ObjectId, targetMonth);
+      if (res.credited) creditedCount++;
     }
 
-    console.log(`Monthly leave incremented for ${usersWithAttendance.length} users for month ${targetMonth}`);
+    console.log(`Monthly leave credited for ${creditedCount}/${usersWithAttendance.length} users for month ${targetMonth}`);
   } catch (error) {
     console.error('Error incrementing monthly leave:', error);
     throw error;

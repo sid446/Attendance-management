@@ -15,6 +15,7 @@ import {
   normalizeExtraWorkSlotsFromRequest,
 } from '@/lib/extraWorkRequest';
 import { isArticleEmployee } from '@/lib/isArticleEmployee';
+import { creditMonthlyEarnedIfNeeded } from '@/lib/leaveManagement';
 import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
 import { applyDayExcessToRecord } from '@/lib/calculateDayExcessHour';
 import { calculateTotalHours as calculateDuration } from '@/lib/attendanceHours';
@@ -136,55 +137,17 @@ export async function POST(request: NextRequest) {
         });
         console.log(`[LEAVE DEBUG] Created new attendance record for ${attendanceRequest.monthYear}`);
 
-        // Increment leave balance for non-articles if this is a new attendance record for month >= Jan 2026
-        console.log(`[LEAVE DEBUG] Month check: ${attendanceRequest.monthYear} >= 2026-01: ${attendanceRequest.monthYear >= '2026-01'}`);
-        if (attendanceRequest.monthYear >= '2026-01') {
-          const userForLeave = await User.findById(attendanceRequest.userId);
-          console.log(`[LEAVE DEBUG] User found: ${!!userForLeave}, isActive: ${userForLeave?.isActive}`);
-          if (userForLeave && userForLeave.isActive) {
-            const designationLower = (userForLeave.designation || '').toLowerCase();
-            const employmentTypeLower = (userForLeave.employmentType || '').toLowerCase();
-            const isArticle = employmentTypeLower.includes('article') || designationLower.includes('article');
-            console.log(`[LEAVE DEBUG] Designation: ${userForLeave.designation}, EmploymentType: ${userForLeave.employmentType}, isArticle: ${isArticle}`);
-            
-            if (!isArticle) {
-              const currentEarned = userForLeave.leaveBalance?.earned || 0;
-              const currentUsed = userForLeave.leaveBalance?.used || 0;
-              const currentUsedAfterJan26 = userForLeave.leaveBalance?.usedAfterJan26 || 0;
-              const currentBalanceAsOfJan26 = userForLeave.leaveBalance?.balanceAsOfJan26 || 0;
-              
-              const increment = 2;
-              const newEarned = currentEarned + increment;
-              const newRemaining = currentBalanceAsOfJan26 + newEarned - currentUsed - currentUsedAfterJan26;
-              
-              console.log(`[LEAVE DEBUG] Current earned: ${currentEarned}, New earned: ${newEarned}`);
-              
-              await User.findByIdAndUpdate(userForLeave._id, {
-                'leaveBalance.earned': newEarned,
-                'leaveBalance.remaining': newRemaining,
-                'leaveBalance.lastUpdated': new Date(),
-                'leaveBalance.monthlyEarned': 2,
-              });
-              try {
-                await LeaveTransaction.create({
-                  userId: userForLeave._id,
-                  date: new Date().toISOString().split('T')[0],
-                  monthYear: attendanceRequest.monthYear,
-                  type: 'earned',
-                  amount: increment,
-                  source: 'attendance-create-increment',
-                  reference: attendanceRequest._id?.toString()
-                });
-              } catch (e) {
-                console.error('Failed to write LeaveTransaction for attendance-create increment', e);
-              }
-              console.log(`[LEAVE DEBUG] Leave balance incremented for user ${userForLeave.name} (new attendance record for ${attendanceRequest.monthYear})`);
-            } else {
-              console.log(`[LEAVE DEBUG] Skipped increment - user is an article`);
-            }
-          }
-        } else {
-          console.log(`[LEAVE DEBUG] Skipped increment - month ${attendanceRequest.monthYear} is before 2026-01`);
+        // Credit monthly base earned leave for this new attendance record.
+        // Idempotent per user+month (ledger-based); no-ops for pre-2026, inactive, and articles.
+        try {
+          const res = await creditMonthlyEarnedIfNeeded(
+            attendanceRequest.userId,
+            attendanceRequest.monthYear,
+            attendanceRequest._id?.toString()
+          );
+          console.log(`[LEAVE DEBUG] Monthly earned credit for ${attendanceRequest.monthYear}: credited=${res.credited}, amount=${res.amount}`);
+        } catch (e) {
+          console.error('Failed to credit monthly earned leave on approval', e);
         }
       } else {
         console.log(`[LEAVE DEBUG] Attendance record already exists for ${attendanceRequest.monthYear} - no increment`);

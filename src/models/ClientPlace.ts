@@ -3,7 +3,8 @@ import mongoose, { Schema, Document, Model } from 'mongoose';
 export interface IClientPlace extends Document {
   name: string;
   address: string;
-  googleMapsLink: string;
+  /** Optional; used only when coordinates are not entered directly. */
+  googleMapsLink?: string;
   coordinates: {
     lat: number;
     lng: number;
@@ -18,7 +19,7 @@ export interface IClientPlace extends Document {
 const ClientPlaceSchema = new Schema<IClientPlace>({
   name: { type: String, required: true },
   address: { type: String, required: true },
-  googleMapsLink: { type: String, required: true },
+  googleMapsLink: { type: String, default: '' },
   coordinates: {
     lat: { type: Number, required: true },
     lng: { type: Number, required: true }

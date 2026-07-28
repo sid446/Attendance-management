@@ -7,19 +7,7 @@ import User from '@/models/User';
 import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
 import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAuth';
 import { istDateString, istTimeString } from '@/lib/attendanceRequestWindow';
-
-// Haversine formula to calculate distance between two coordinates in meters
-function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371000; // Earth's radius in meters
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = 
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLng / 2) * Math.sin(dLng / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c; // Distance in meters
-}
+import { geodesicDistanceMeters, isValidCoordinates } from '@/lib/geoDistance';
 
 // Helper to calculate total hours between two times
 function calculateTotalHours(inTime: string, outTime: string): number {
@@ -87,15 +75,22 @@ export async function POST(req: NextRequest) {
     await connectDB();
     
     const body = await req.json();
-    const { userId, clientPlaceId, punchType, coordinates } = body;
+    const { userId, clientPlaceId, punchType, coordinates, accuracyMeters } = body;
 
     const forbidden = forbidUnlessSelf(auth.userId, userId);
     if (forbidden) return forbidden;
     
-    // Validate required fields
-    if (!userId || !clientPlaceId || !punchType || !coordinates?.lat || !coordinates?.lng) {
+    if (!userId || !clientPlaceId || !punchType) {
       return NextResponse.json(
-        { success: false, error: 'Missing required fields: userId, clientPlaceId, punchType, coordinates' },
+        { success: false, error: 'Missing required fields: userId, clientPlaceId, punchType' },
+        { status: 400 }
+      );
+    }
+
+    // Checked by value/range rather than truthiness so that a genuine 0° reading is accepted.
+    if (!isValidCoordinates(coordinates)) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid coordinates. Latitude must be between -90 and 90 and longitude between -180 and 180.' },
         { status: 400 }
       );
     }
@@ -127,8 +122,15 @@ export async function POST(req: NextRequest) {
       );
     }
     
-    // Calculate distance from client place
-    const distance = calculateDistance(
+    if (!isValidCoordinates(clientPlace.coordinates)) {
+      return NextResponse.json(
+        { success: false, error: `${clientPlace.name} has no valid coordinates saved. Ask your administrator to re-save its Google Maps link.` },
+        { status: 409 }
+      );
+    }
+
+    // WGS-84 geodesic distance, unrounded.
+    const distance = geodesicDistanceMeters(
       coordinates.lat,
       coordinates.lng,
       clientPlace.coordinates.lat,
@@ -142,7 +144,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { 
           success: false, 
-          error: `You are ${Math.round(distance)} meters away from ${clientPlace.name}. You must be within ${clientPlace.radiusMeters} meters to mark attendance.`
+          error: `You are ${distance.toFixed(1)} meters away from ${clientPlace.name}. You must be within ${clientPlace.radiusMeters} meters to mark attendance.`
         },
         { status: 403 }
       );
@@ -166,7 +168,11 @@ export async function POST(req: NextRequest) {
         lat: coordinates.lat,
         lng: coordinates.lng
       },
-      distanceFromClient: Math.round(distance),
+      accuracyMeters:
+        typeof accuracyMeters === 'number' && Number.isFinite(accuracyMeters)
+          ? accuracyMeters
+          : undefined,
+      distanceFromClient: distance,
       isWithinRadius: true, // Always true now since we check above
       status: 'approved' as const // Always approved since we check above
     };
@@ -241,7 +247,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       data: record,
-      message: `${punchType === 'in' ? 'In' : 'Out'}-time marked successfully! You are ${Math.round(distance)}m from ${clientPlace.name}.`
+      message: `${punchType === 'in' ? 'In' : 'Out'}-time marked successfully! You are ${distance.toFixed(1)}m from ${clientPlace.name}.`
     });
   } catch (error: any) {
     console.error('Error marking location attendance:', error);

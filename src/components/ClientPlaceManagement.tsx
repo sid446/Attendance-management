@@ -13,12 +13,13 @@ import {
   ExternalLink,
   RefreshCw,
 } from 'lucide-react';
+import { formatCoordinate } from '@/lib/geoDistance';
 
 interface ClientPlace {
   _id: string;
   name: string;
   address: string;
-  googleMapsLink: string;
+  googleMapsLink?: string;
   coordinates: {
     lat: number;
     lng: number;
@@ -46,7 +47,22 @@ interface ClientPlaceManagementProps {
   allUsers?: User[];
 }
 
-const CLIENT_PLACE_WORKFLOW_STEPS = ['Add a place with Maps link', 'Assign employees', 'Deactivate when no longer needed'] as const;
+type LocationInputMode = 'coordinates' | 'mapsLink';
+
+const CLIENT_PLACE_WORKFLOW_STEPS = [
+  'Add place (lat/long or Maps link)',
+  'Assign employees',
+  'Deactivate when no longer needed',
+] as const;
+
+const EMPTY_NEW_PLACE = {
+  name: '',
+  address: '',
+  googleMapsLink: '',
+  lat: '',
+  lng: '',
+  radiusMeters: 500,
+};
 
 export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ allUsers = [] }) => {
   const [clientPlaces, setClientPlaces] = useState<ClientPlace[]>([]);
@@ -54,15 +70,14 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
   const [error, setError] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingPlace, setEditingPlace] = useState<ClientPlace | null>(null);
+  const [editLat, setEditLat] = useState('');
+  const [editLng, setEditLng] = useState('');
   const [assigningPlace, setAssigningPlace] = useState<ClientPlace | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [addMode, setAddMode] = useState<LocationInputMode>('coordinates');
+  const [editMode, setEditMode] = useState<LocationInputMode>('coordinates');
 
-  const [newPlace, setNewPlace] = useState({
-    name: '',
-    address: '',
-    googleMapsLink: '',
-    radiusMeters: 500
-  });
+  const [newPlace, setNewPlace] = useState(EMPTY_NEW_PLACE);
 
   // Load client places
   const loadClientPlaces = async () => {
@@ -94,17 +109,44 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
     e.preventDefault();
     try {
       setError(null);
+
+      const payload: Record<string, unknown> = {
+        name: newPlace.name,
+        address: newPlace.address,
+        radiusMeters: newPlace.radiusMeters,
+      };
+
+      if (addMode === 'coordinates') {
+        const lat = parseFloat(newPlace.lat.trim());
+        const lng = parseFloat(newPlace.lng.trim());
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+          setError('Enter valid latitude and longitude numbers.');
+          return;
+        }
+        payload.coordinates = { lat, lng };
+        if (newPlace.googleMapsLink.trim()) {
+          payload.googleMapsLink = newPlace.googleMapsLink.trim();
+        }
+      } else {
+        if (!newPlace.googleMapsLink.trim()) {
+          setError('Paste a Google Maps link, or switch to Enter coordinates.');
+          return;
+        }
+        payload.googleMapsLink = newPlace.googleMapsLink.trim();
+      }
+
       const response = await fetch('/api/client-places', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newPlace)
+        body: JSON.stringify(payload),
       });
 
       const result = await response.json();
 
       if (result.success) {
-        setClientPlaces(prev => [result.data, ...prev]);
-        setNewPlace({ name: '', address: '', googleMapsLink: '', radiusMeters: 500 });
+        setClientPlaces((prev) => [result.data, ...prev]);
+        setNewPlace(EMPTY_NEW_PLACE);
+        setAddMode('coordinates');
         setShowAddForm(false);
       } else {
         setError(result.error || 'Failed to add client place');
@@ -115,6 +157,13 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
     }
   };
 
+  const openEditPlace = (place: ClientPlace) => {
+    setEditingPlace(place);
+    setEditLat(formatCoordinate(place.coordinates.lat));
+    setEditLng(formatCoordinate(place.coordinates.lng));
+    setEditMode('coordinates');
+  };
+
   // Handle updating client place
   const handleUpdatePlace = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,22 +171,41 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
 
     try {
       setError(null);
+
+      const payload: Record<string, unknown> = {
+        id: editingPlace._id,
+        name: editingPlace.name,
+        address: editingPlace.address,
+        radiusMeters: editingPlace.radiusMeters,
+        googleMapsLink: editingPlace.googleMapsLink || '',
+      };
+
+      if (editMode === 'coordinates') {
+        const lat = parseFloat(editLat.trim());
+        const lng = parseFloat(editLng.trim());
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+          setError('Enter valid latitude and longitude numbers.');
+          return;
+        }
+        payload.coordinates = { lat, lng };
+      } else if ((editingPlace.googleMapsLink || '').trim()) {
+        // Re-extract from the link only when that mode is chosen.
+        payload.googleMapsLink = editingPlace.googleMapsLink!.trim();
+      } else {
+        setError('Paste a Google Maps link, or switch to Enter coordinates.');
+        return;
+      }
+
       const response = await fetch('/api/client-places', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: editingPlace._id,
-          name: editingPlace.name,
-          address: editingPlace.address,
-          googleMapsLink: editingPlace.googleMapsLink,
-          radiusMeters: editingPlace.radiusMeters
-        })
+        body: JSON.stringify(payload),
       });
 
       const result = await response.json();
 
       if (result.success) {
-        setClientPlaces(prev => prev.map(p => p._id === editingPlace._id ? result.data : p));
+        setClientPlaces((prev) => prev.map((p) => (p._id === editingPlace._id ? result.data : p)));
         setEditingPlace(null);
       } else {
         setError(result.error || 'Failed to update client place');
@@ -346,21 +414,93 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
                 />
               </div>
 
-              <div className="space-y-2">
-                <label htmlFor="new-place-maps" className="text-sm font-medium text-slate-700">
-                  Google Maps link <span className="text-red-600">*</span>
-                </label>
-                <input
-                  id="new-place-maps"
-                  type="url"
-                  value={newPlace.googleMapsLink}
-                  onChange={(e) => setNewPlace((prev) => ({ ...prev, googleMapsLink: e.target.value }))}
-                  placeholder="Paste Google Maps link…"
-                  className={inputCls}
-                  required
-                />
-                <p className="text-xs text-slate-600">Coordinates are extracted automatically from the link.</p>
-              </div>
+              <fieldset className="space-y-3">
+                <legend className="text-sm font-medium text-slate-700">
+                  Location <span className="text-red-600">*</span>
+                </legend>
+                <div className="flex rounded-lg border border-blue-200/65 bg-slate-50 p-1" role="group" aria-label="Location input method">
+                  <button
+                    type="button"
+                    onClick={() => setAddMode('coordinates')}
+                    className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                      addMode === 'coordinates'
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'text-slate-700 hover:bg-white'
+                    }`}
+                  >
+                    Enter lat / long
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAddMode('mapsLink')}
+                    className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                      addMode === 'mapsLink'
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'text-slate-700 hover:bg-white'
+                    }`}
+                  >
+                    Google Maps link
+                  </button>
+                </div>
+
+                {addMode === 'coordinates' ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <label htmlFor="new-place-lat" className="text-sm font-medium text-slate-700">
+                        Latitude
+                      </label>
+                      <input
+                        id="new-place-lat"
+                        type="text"
+                        inputMode="decimal"
+                        value={newPlace.lat}
+                        onChange={(e) => setNewPlace((prev) => ({ ...prev, lat: e.target.value }))}
+                        placeholder="e.g. 19.076090"
+                        className={`${inputCls} font-mono`}
+                        required
+                        autoComplete="off"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label htmlFor="new-place-lng" className="text-sm font-medium text-slate-700">
+                        Longitude
+                      </label>
+                      <input
+                        id="new-place-lng"
+                        type="text"
+                        inputMode="decimal"
+                        value={newPlace.lng}
+                        onChange={(e) => setNewPlace((prev) => ({ ...prev, lng: e.target.value }))}
+                        placeholder="e.g. 72.877426"
+                        className={`${inputCls} font-mono`}
+                        required
+                        autoComplete="off"
+                      />
+                    </div>
+                    <p className="col-span-2 text-xs text-slate-600">
+                      Paste the full numbers with all decimals — nothing is rounded. Most accurate option.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <label htmlFor="new-place-maps" className="text-sm font-medium text-slate-700">
+                      Google Maps link
+                    </label>
+                    <input
+                      id="new-place-maps"
+                      type="url"
+                      value={newPlace.googleMapsLink}
+                      onChange={(e) => setNewPlace((prev) => ({ ...prev, googleMapsLink: e.target.value }))}
+                      placeholder="Paste Google Maps link…"
+                      className={inputCls}
+                      required
+                    />
+                    <p className="text-xs text-slate-600">
+                      Optional alternative. Prefer “Share → Copy link” on the place pin.
+                    </p>
+                  </div>
+                )}
+              </fieldset>
 
               <div className="space-y-2">
                 <label htmlFor="new-place-address" className="text-sm font-medium text-slate-700">
@@ -450,23 +590,110 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
                 />
               </div>
 
-              <div className="space-y-2">
-                <label htmlFor="edit-place-maps" className="text-sm font-medium text-slate-700">
-                  Google Maps link
-                </label>
-                <input
-                  id="edit-place-maps"
-                  type="url"
-                  value={editingPlace.googleMapsLink}
-                  onChange={(e) =>
-                    setEditingPlace((prev) => (prev ? { ...prev, googleMapsLink: e.target.value } : null))
-                  }
-                  className={inputCls}
-                />
-                <p className="text-xs text-slate-600">
-                  Current coordinates: {editingPlace.coordinates.lat.toFixed(6)}, {editingPlace.coordinates.lng.toFixed(6)}
-                </p>
-              </div>
+              <fieldset className="space-y-3">
+                <legend className="text-sm font-medium text-slate-700">Location</legend>
+                <div className="flex rounded-lg border border-blue-200/65 bg-slate-50 p-1" role="group" aria-label="Location input method">
+                  <button
+                    type="button"
+                    onClick={() => setEditMode('coordinates')}
+                    className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                      editMode === 'coordinates'
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'text-slate-700 hover:bg-white'
+                    }`}
+                  >
+                    Enter lat / long
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditMode('mapsLink')}
+                    className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                      editMode === 'mapsLink'
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'text-slate-700 hover:bg-white'
+                    }`}
+                  >
+                    Google Maps link
+                  </button>
+                </div>
+
+                {editMode === 'coordinates' ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <label htmlFor="edit-place-lat" className="text-sm font-medium text-slate-700">
+                        Latitude
+                      </label>
+                      <input
+                        id="edit-place-lat"
+                        type="text"
+                        inputMode="decimal"
+                        value={editLat}
+                        onChange={(e) => setEditLat(e.target.value)}
+                        className={`${inputCls} font-mono`}
+                        required
+                        autoComplete="off"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label htmlFor="edit-place-lng" className="text-sm font-medium text-slate-700">
+                        Longitude
+                      </label>
+                      <input
+                        id="edit-place-lng"
+                        type="text"
+                        inputMode="decimal"
+                        value={editLng}
+                        onChange={(e) => setEditLng(e.target.value)}
+                        className={`${inputCls} font-mono`}
+                        required
+                        autoComplete="off"
+                      />
+                    </div>
+                    <p className="col-span-2 text-xs text-slate-600">
+                      Saved exactly as entered. Maps link below is optional (for opening the place later).
+                    </p>
+                    <div className="col-span-2 space-y-2">
+                      <label htmlFor="edit-place-maps-optional" className="text-sm font-medium text-slate-700">
+                        Google Maps link (optional)
+                      </label>
+                      <input
+                        id="edit-place-maps-optional"
+                        type="url"
+                        value={editingPlace.googleMapsLink || ''}
+                        onChange={(e) =>
+                          setEditingPlace((prev) => (prev ? { ...prev, googleMapsLink: e.target.value } : null))
+                        }
+                        className={inputCls}
+                        placeholder="Optional"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <label htmlFor="edit-place-maps" className="text-sm font-medium text-slate-700">
+                      Google Maps link
+                    </label>
+                    <input
+                      id="edit-place-maps"
+                      type="url"
+                      value={editingPlace.googleMapsLink || ''}
+                      onChange={(e) =>
+                        setEditingPlace((prev) => (prev ? { ...prev, googleMapsLink: e.target.value } : null))
+                      }
+                      className={inputCls}
+                      required
+                      placeholder="Paste link to re-extract coordinates…"
+                    />
+                    <p className="break-all font-mono text-xs text-slate-600">
+                      Current coordinates: {formatCoordinate(editingPlace.coordinates.lat)},{' '}
+                      {formatCoordinate(editingPlace.coordinates.lng)}
+                    </p>
+                    <p className="text-xs text-slate-600">
+                      Saving in this mode re-extracts coordinates from the link.
+                    </p>
+                  </div>
+                )}
+              </fieldset>
 
               <div className="space-y-2">
                 <label htmlFor="edit-place-address" className="text-sm font-medium text-slate-700">
@@ -676,8 +903,8 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
                 <div className="mt-3 space-y-1 text-xs text-slate-600">
                   <div className="flex items-center gap-1">
                     <MapPin className="h-3 w-3 shrink-0 text-slate-500" aria-hidden />
-                    <span className="font-mono">
-                      {place.coordinates.lat.toFixed(4)}, {place.coordinates.lng.toFixed(4)}
+                    <span className="break-all font-mono">
+                      {formatCoordinate(place.coordinates.lat)}, {formatCoordinate(place.coordinates.lng)}
                     </span>
                   </div>
                   <div>Radius: {place.radiusMeters} m</div>
@@ -714,7 +941,7 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
-                    onClick={() => setEditingPlace(place)}
+                    onClick={() => openEditPlace(place)}
                     className="rounded-lg border border-transparent p-1.5 text-slate-600 transition-colors hover:border-blue-200/70 hover:bg-panel focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     title="Edit"
                   >
@@ -728,15 +955,27 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
                   >
                     <Users className="h-4 w-4" aria-hidden />
                   </button>
-                  <a
-                    href={place.googleMapsLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="rounded-lg border border-transparent p-1.5 text-slate-600 transition-colors hover:border-blue-200 hover:bg-blue-50 hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                    title="Open in Google Maps"
-                  >
-                    <ExternalLink className="h-4 w-4" aria-hidden />
-                  </a>
+                  {place.googleMapsLink ? (
+                    <a
+                      href={place.googleMapsLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-lg border border-transparent p-1.5 text-slate-600 transition-colors hover:border-blue-200 hover:bg-blue-50 hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      title="Open in Google Maps"
+                    >
+                      <ExternalLink className="h-4 w-4" aria-hidden />
+                    </a>
+                  ) : (
+                    <a
+                      href={`https://www.google.com/maps?q=${place.coordinates.lat},${place.coordinates.lng}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-lg border border-transparent p-1.5 text-slate-600 transition-colors hover:border-blue-200 hover:bg-blue-50 hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      title="Open coordinates in Google Maps"
+                    >
+                      <ExternalLink className="h-4 w-4" aria-hidden />
+                    </a>
+                  )}
                 </div>
 
                 {place.isActive ? (

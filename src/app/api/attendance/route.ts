@@ -11,6 +11,7 @@ import {
   calculateLeaveUsageForMultipleDays,
   updateLeaveBalanceOnApproval,
   reconcilePartialLeaveFromAttendance,
+  creditMonthlyEarnedIfNeeded,
 } from '@/lib/leaveManagement';
 import {
   calculateTotalHours,
@@ -949,45 +950,15 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Increment leave balance for users who got their FIRST attendance record for this month
-      // Only increment if attendance didn't exist before for that user-month combination
-      // Only increment for months >= January 2026 (2026-01)
+      // Credit monthly base earned leave for users who got their FIRST attendance record
+      // for this month. creditMonthlyEarnedIfNeeded is idempotent per user+month (ledger-based)
+      // and no-ops for pre-2026 months, inactive users, and articles.
       try {
-        const now = new Date();
         let incrementedCount = 0;
-        
-        // Process only users who had NEW attendance created (not updates to existing)
         for (const userMonthKey of newAttendanceUserMonths) {
           const [userId, monthYear] = userMonthKey.split('_');
-          
-          // Skip leave increment for months before January 2026
-          if (monthYear < '2026-01') {
-            console.log(`Skipping leave increment for ${userId} - month ${monthYear} is before Jan 2026`);
-            continue;
-          }
-          
-          const user = await User.findById(userId);
-          if (!user || !user.isActive) continue;
-          
-          if (isArticleEmployee(user)) continue;
-          
-          const currentEarned = user.leaveBalance?.earned || 0;
-          const currentUsed = user.leaveBalance?.used || 0;
-          const currentUsedAfterJan26 = user.leaveBalance?.usedAfterJan26 || 0;
-          const currentBalanceAsOfJan26 = user.leaveBalance?.balanceAsOfJan26 || 0;
-          
-          // Increment earned by 2 for non-articles (first time attendance for this month)
-          const increment = 2;
-          const newEarned = currentEarned + increment;
-          const newRemaining = currentBalanceAsOfJan26 + newEarned - currentUsed - currentUsedAfterJan26;
-          
-          await User.findByIdAndUpdate(user._id, {
-            'leaveBalance.earned': newEarned,
-            'leaveBalance.remaining': newRemaining,
-            'leaveBalance.lastUpdated': now,
-            'leaveBalance.monthlyEarned': 2,
-          });
-          incrementedCount++;
+          const res = await creditMonthlyEarnedIfNeeded(userId, monthYear);
+          if (res.credited) incrementedCount++;
         }
         console.log(`Leave balance incremented for ${incrementedCount} users (first time attendance upload for month >= Jan 2026)`);
       } catch (leaveError) {

@@ -1,25 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Download, Loader2, X, Newspaper, CreditCard, Award } from 'lucide-react';
+import { Search, Download, Loader2, X, Newspaper, CreditCard, Award, Settings } from 'lucide-react';
 import { User } from '@/types/ui';
 import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
 import {
-  resolveDisplayExcess,
   type ExcessAllowanceLookup,
   type ExcessDisplayLookup,
 } from '@/lib/excessHourAllowance';
+import {
+  calculateArticleCredit,
+  DEFAULT_ARTICLE_CREDIT_CONFIG,
+  type ArticleCreditConfig,
+  type ArticleCreditRow,
+  type WeekdayHoursMode,
+} from '@/lib/articleCredit';
 
 const ARTICLE_CREDITS_WORKFLOW_STEPS = ['Set attendance period', 'Search or sort table', 'Export or view breakdown'] as const;
-
-interface ArticleCreditRow {
-  empId: string;
-  name: string;
-  creditAsOnJan26: number;
-  leaveTakenBeforeJan26: number; // From leaveBalance.used
-  leaveTakenAfterJan26: number; // From leaveBalance.usedAfterJan26
-  totalExcessHours: number; // Sum of excessHour from summary of each month from Jan 2026
-  totalExcessDays: number; // Excess hours converted to days
-  finalCredit: number;
-}
 
 const fetchUsers = async (): Promise<User[]> => {
   const res = await fetch('/api/users?listOnly=1', hrCredentialsInit());
@@ -34,71 +29,6 @@ const fetchAttendance = async (userId: string): Promise<any[]> => {
   return json.success ? json.data : [];
 };
 
-const calculateArticleCredit = (
-  user: User,
-  attendanceRecords: any[],
-  allowanceMap?: ExcessAllowanceLookup,
-  displayMap?: ExcessDisplayLookup
-): ArticleCreditRow => {
-  const creditAsOnJan26 = user.articleCreditsAsOnJan26 || 0;
-  const leaveTakenBeforeJan26 = user.leaveBalance?.used || 0; // Leaves taken before 1st Jan 2026
-  const leaveTakenAfterJan26 = user.leaveBalance?.usedAfterJan26 || 0; // Leaves taken on or after 1st Jan 2026
-  let totalExcessHours = 0; // Sum of excessHour from summary of each month from Jan 2026
-
-  // Reference: "2026-01" for string comparison
-  const jan2026Str = '2026-01';
-
-  attendanceRecords.forEach((month: any) => {
-    const monthYear = month.monthYear || '';
-    // String comparison: "2026-01" >= "2026-01" is true
-    const isOnOrAfterJan2026 = monthYear >= jan2026Str;
-
-    // Add excess hours from summary if month is on or after Jan 2026 (partner cap applied)
-    if (isOnOrAfterJan2026 && typeof month.summary?.excessHour === 'number') {
-      const raw = month.summary.excessHour;
-      totalExcessHours += resolveDisplayExcess(
-        raw,
-        String(user._id),
-        monthYear,
-        allowanceMap,
-        displayMap
-      );
-    }
-  });
-
-  // Calculate weekday hours from user's schedule (Monday)
-  let weekdayHours = 8; // Default to 8 hours
-  const schedules = (user as any).schedules;
-  if (schedules && Array.isArray(schedules) && schedules.length > 0) {
-    // Get the most recent schedule
-    const sortedSchedules = schedules.slice().sort((a: any, b: any) => 
-      new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime()
-    );
-    const mondaySchedule = sortedSchedules[0]?.daily?.monday;
-    if (mondaySchedule?.inTime && mondaySchedule?.outTime) {
-      const [inH, inM] = mondaySchedule.inTime.split(':').map(Number);
-      const [outH, outM] = mondaySchedule.outTime.split(':').map(Number);
-      weekdayHours = (outH + outM / 60) - (inH + inM / 60);
-      if (weekdayHours <= 0) weekdayHours = 8; // Fallback if invalid
-    }
-  }
-  const totalExcessDays = totalExcessHours / weekdayHours;
-
-  // Final credit calculation: creditAsOnJan26 - leaveTakenAfterJan26 + totalExcessDays
-  const finalCredit = creditAsOnJan26 - leaveTakenAfterJan26 + totalExcessDays;
-
-  return {
-    empId: user.employeeCode || user.odId || '',
-    name: user.name,
-    creditAsOnJan26,
-    leaveTakenBeforeJan26,
-    leaveTakenAfterJan26,
-    totalExcessHours: Number(totalExcessHours.toFixed(2)),
-    totalExcessDays: Number(totalExcessDays.toFixed(2)),
-    finalCredit: Number(finalCredit.toFixed(2)),
-  };
-};
-
 export const ArticleCreditsManager: React.FC = () => {
   const [rows, setRows] = useState<ArticleCreditRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -109,6 +39,21 @@ export const ArticleCreditsManager: React.FC = () => {
   const [showRangeModal, setShowRangeModal] = useState(false);
   const [showCalcModal, setShowCalcModal] = useState(false);
   const [calcRow, setCalcRow] = useState<ArticleCreditRow|null>(null);
+  const [config, setConfig] = useState<ArticleCreditConfig>(DEFAULT_ARTICLE_CREDIT_CONFIG);
+  const [showRuleModal, setShowRuleModal] = useState(false);
+
+  // Load the (HR-editable) rule config once on mount. Falls back to defaults on error.
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/hr-console-settings/article-credit', hrCredentialsInit());
+        const json = await res.json();
+        if (json.success && json.data) setConfig(json.data as ArticleCreditConfig);
+      } catch {
+        // keep defaults
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -155,13 +100,13 @@ export const ArticleCreditsManager: React.FC = () => {
           if (!range.start || !range.end) return true;
           return rec.monthYear >= range.start && rec.monthYear <= range.end;
         });
-        allRows.push(calculateArticleCredit(user, filtered, allowanceMap, displayMap));
+        allRows.push(calculateArticleCredit(user, filtered, config, allowanceMap, displayMap));
       }
       setRows(allRows);
       setLoading(false);
     };
     load();
-  }, [range]);
+  }, [range, config]);
 
   // Dashboard stats
   const stats = {
@@ -389,22 +334,22 @@ export const ArticleCreditsManager: React.FC = () => {
           </div>
           <div className="space-y-3 p-5 text-sm text-slate-800">
             <div>
-              <span className="font-semibold text-slate-900">Base credit (as on 1 Jan 26):</span>{' '}
+              <span className="font-semibold text-slate-900">Base credit (as on {config.cutoffMonth}):</span>{' '}
               <span className="font-mono tabular-nums">{base}</span>
             </div>
             <div>
-              <span className="font-semibold text-slate-900">Leave taken on/after 1 Jan 2026:</span>{' '}
+              <span className="font-semibold text-slate-900">Leave taken on/after {config.cutoffMonth}:</span>{' '}
               <span className="font-mono tabular-nums text-rose-700">− {leaveAfter}</span>
             </div>
             <div>
-              <span className="font-semibold text-slate-900">Excess hours (from Jan 2026):</span>{' '}
+              <span className="font-semibold text-slate-900">Excess hours (from {config.cutoffMonth}):</span>{' '}
               <span className={`font-mono tabular-nums ${excess >= 0 ? 'text-emerald-800' : 'text-rose-700'}`}>
                 {excess >= 0 ? '+' : ''}
                 {excess}
               </span>
             </div>
             <div>
-              <span className="font-semibold text-slate-900">Excess days (from Jan 2026):</span>{' '}
+              <span className="font-semibold text-slate-900">Excess days (from {config.cutoffMonth}):</span>{' '}
               <span className={`font-mono tabular-nums ${excessDays >= 0 ? 'text-amber-800' : 'text-rose-700'}`}>
                 {excessDays >= 0 ? '+' : ''}
                 {excessDays}
@@ -415,7 +360,11 @@ export const ArticleCreditsManager: React.FC = () => {
               Final credit: <span className="font-mono text-emerald-800 tabular-nums">{row.finalCredit}</span>
             </div>
             <p className="mt-2 text-xs text-slate-600">
-              Formula: credit (1 Jan 26) − leave after Jan 26 + excess days (from weekday hours).
+              Formula: base credit − leave after {config.cutoffMonth} + excess days (excess hours ÷{' '}
+              {config.weekdayHoursMode === 'fixed'
+                ? `${config.defaultWeekdayHours}h fixed`
+                : `weekday hours, default ${config.defaultWeekdayHours}h`}
+              ){config.floorFinalCreditAtZero ? ', floored at 0' : ''}.
             </p>
           </div>
           <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-right">
@@ -425,6 +374,172 @@ export const ArticleCreditsManager: React.FC = () => {
               className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
             >
               Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Rule settings modal (HR-editable). Keeps the formula identical; only tunes constants.
+  const RuleSettingsModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
+    const [cutoffMonth, setCutoffMonth] = useState(config.cutoffMonth);
+    const [defaultWeekdayHours, setDefaultWeekdayHours] = useState(String(config.defaultWeekdayHours));
+    const [weekdayHoursMode, setWeekdayHoursMode] = useState<WeekdayHoursMode>(config.weekdayHoursMode);
+    const [floorFinalCreditAtZero, setFloorFinalCreditAtZero] = useState(config.floorFinalCreditAtZero);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    if (!isOpen) return null;
+    const ruleTitleId = 'article-credits-rule-modal-title';
+    const inputCls =
+      'w-full rounded-md border border-blue-200/65 bg-panel px-2 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20';
+
+    const save = async () => {
+      setError(null);
+      if (!/^\d{4}-\d{2}$/.test(cutoffMonth.trim())) {
+        setError('Cutoff month must be in YYYY-MM format.');
+        return;
+      }
+      const hours = Number(defaultWeekdayHours);
+      if (!Number.isFinite(hours) || hours <= 0) {
+        setError('Default weekday hours must be a number greater than 0.');
+        return;
+      }
+      setSaving(true);
+      try {
+        const res = await fetch(
+          '/api/hr-console-settings/article-credit',
+          hrCredentialsInit({
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              cutoffMonth: cutoffMonth.trim(),
+              defaultWeekdayHours: hours,
+              weekdayHoursMode,
+              floorFinalCreditAtZero,
+            }),
+          })
+        );
+        const json = await res.json();
+        if (json.success && json.data) {
+          setConfig(json.data as ArticleCreditConfig);
+          onClose();
+        } else {
+          setError(json.error || 'Failed to save rule settings.');
+        }
+      } catch {
+        setError('Failed to save rule settings.');
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm"
+        onClick={onClose}
+        role="presentation"
+      >
+        <div
+          className="flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-blue-200/65 bg-panel shadow-xl"
+          onClick={(e) => e.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={ruleTitleId}
+        >
+          <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+            <h3 id={ruleTitleId} className="text-sm font-semibold text-slate-900">
+              Article credit rule settings
+            </h3>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md p-1 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+              aria-label="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="space-y-4 p-5 text-sm text-slate-800">
+            <p className="text-xs text-slate-600">
+              The formula is unchanged (base credit − leave after cutoff + excess days). These settings
+              only tune its constants and apply to everyone.
+            </p>
+            <div>
+              <label htmlFor="acr-cutoff" className="mb-1 block text-xs font-medium text-slate-600">
+                Cutoff month (YYYY-MM)
+              </label>
+              <input
+                id="acr-cutoff"
+                type="text"
+                inputMode="numeric"
+                placeholder="2026-01"
+                value={cutoffMonth}
+                onChange={(e) => setCutoffMonth(e.target.value)}
+                className={`${inputCls} font-mono`}
+              />
+              <p className="mt-1 text-xs text-slate-500">Only attendance months on/after this count toward excess.</p>
+            </div>
+            <div>
+              <label htmlFor="acr-weekday-mode" className="mb-1 block text-xs font-medium text-slate-600">
+                Weekday hours basis
+              </label>
+              <select
+                id="acr-weekday-mode"
+                value={weekdayHoursMode}
+                onChange={(e) => setWeekdayHoursMode(e.target.value as WeekdayHoursMode)}
+                className={inputCls}
+              >
+                <option value="schedule">From each employee&apos;s Monday schedule (fallback below)</option>
+                <option value="fixed">Fixed for everyone (value below)</option>
+              </select>
+            </div>
+            <div>
+              <label htmlFor="acr-weekday-hours" className="mb-1 block text-xs font-medium text-slate-600">
+                {weekdayHoursMode === 'fixed' ? 'Weekday hours (fixed)' : 'Default weekday hours (fallback)'}
+              </label>
+              <input
+                id="acr-weekday-hours"
+                type="number"
+                min="0.5"
+                step="0.5"
+                value={defaultWeekdayHours}
+                onChange={(e) => setDefaultWeekdayHours(e.target.value)}
+                className={`${inputCls} font-mono`}
+              />
+              <p className="mt-1 text-xs text-slate-500">Excess hours are divided by this to convert to days.</p>
+            </div>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={floorFinalCreditAtZero}
+                onChange={(e) => setFloorFinalCreditAtZero(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500/30"
+              />
+              <span className="text-sm text-slate-800">Never show a negative final credit (floor at 0)</span>
+            </label>
+            {error && (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800" role="alert">
+                {error}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md px-3 py-1.5 text-xs text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={save}
+              disabled={saving}
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-50"
+            >
+              {saving ? 'Saving…' : 'Save'}
             </button>
           </div>
         </div>
@@ -445,12 +560,30 @@ export const ArticleCreditsManager: React.FC = () => {
   return (
     <section className="space-y-5 text-slate-900" aria-labelledby="article-credits-heading">
       <header className="space-y-2">
-        <h2 id="article-credits-heading" className="text-lg font-semibold text-slate-900 sm:text-xl">
-          Article credits
-        </h2>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <h2 id="article-credits-heading" className="text-lg font-semibold text-slate-900 sm:text-xl">
+            Article credits
+          </h2>
+          <button
+            type="button"
+            onClick={() => setShowRuleModal(true)}
+            className="inline-flex shrink-0 items-center gap-2 rounded-md border border-blue-200/65 bg-panel px-3 py-1.5 text-xs font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            title="Edit the article credit rule settings"
+          >
+            <Settings className="h-4 w-4 text-slate-600" aria-hidden />
+            Rule settings
+          </button>
+        </div>
         <p className="max-w-3xl text-sm text-slate-600">
           Credits for <span className="font-medium text-slate-800">Article</span> category staff: base credit from
-          master data, leave after 1 Jan 2026, and excess hours from Jan 2026 onward (by selected attendance period).
+          master data, leave after {config.cutoffMonth}, and excess hours from {config.cutoffMonth} onward (by selected attendance period).
+        </p>
+        <p className="max-w-3xl text-xs text-slate-500">
+          Current rule: cutoff <span className="font-mono">{config.cutoffMonth}</span>, weekday hours{' '}
+          {config.weekdayHoursMode === 'fixed'
+            ? `fixed ${config.defaultWeekdayHours}h`
+            : `from schedule (default ${config.defaultWeekdayHours}h)`}
+          {config.floorFinalCreditAtZero ? ', floored at 0' : ''}.
         </p>
         <ol className="flex list-none flex-wrap gap-2 text-xs text-slate-700" aria-label="Article credits workflow">
           {ARTICLE_CREDITS_WORKFLOW_STEPS.map((t, i) => (
@@ -745,6 +878,7 @@ export const ArticleCreditsManager: React.FC = () => {
 
       <RangeModal isOpen={showRangeModal} onClose={() => setShowRangeModal(false)} />
       <CalculationModal row={calcRow} isOpen={showCalcModal} onClose={() => setShowCalcModal(false)} />
+      <RuleSettingsModal isOpen={showRuleModal} onClose={() => setShowRuleModal(false)} />
     </section>
   );
 };

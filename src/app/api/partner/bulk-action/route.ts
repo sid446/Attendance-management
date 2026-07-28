@@ -30,7 +30,7 @@ import AttendanceRequest from '@/models/AttendanceRequest';
 import Attendance from '@/models/Attendance';
 import User from '@/models/User';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
-import LeaveTransaction from '@/models/LeaveTransaction';
+import { creditMonthlyEarnedIfNeeded } from '@/lib/leaveManagement';
 import { verifyPartnerReviewToken } from '@/lib/partnerReviewToken';
 import { transporter, mailOptions } from '@/lib/mailer';
 import { isAttendanceDatePartnerOnlyIst } from '@/lib/attendanceRequestApprovalWindow';
@@ -224,46 +224,15 @@ export async function POST(request: NextRequest) {
                         summary: { totalHour: 0, totalLateArrival: 0, excessHour: 0, totalHalfDay: 0, totalPresent: 0, totalAbsent: 0, totalLeave: 0 }
                     });
 
-                    // Increment leave balance for non-articles if this is a new attendance record for month >= Jan 2026
-                    if (monthYear >= '2026-01') {
-                        const userForLeave = await User.findById(userId);
-                        if (userForLeave && userForLeave.isActive) {
-                            const designationLower = (userForLeave.designation || '').toLowerCase();
-                            const employmentTypeLower = (userForLeave.employmentType || '').toLowerCase();
-      const isArticle = employmentTypeLower.includes('article') || designationLower.includes('article');
-                            
-                            if (!isArticle) {
-                                const currentEarned = userForLeave.leaveBalance?.earned || 0;
-                                const currentUsed = userForLeave.leaveBalance?.used || 0;
-                                const currentUsedAfterJan26 = userForLeave.leaveBalance?.usedAfterJan26 || 0;
-                                const currentBalanceAsOfJan26 = userForLeave.leaveBalance?.balanceAsOfJan26 || 0;
-                                
-                                const increment = 2;
-                                const newEarned = currentEarned + increment;
-                                const newRemaining = currentBalanceAsOfJan26 + newEarned - currentUsed - currentUsedAfterJan26;
-                                
-                                await User.findByIdAndUpdate(userForLeave._id, {
-                                    'leaveBalance.earned': newEarned,
-                                    'leaveBalance.remaining': newRemaining,
-                                    'leaveBalance.lastUpdated': new Date(),
-                                    'leaveBalance.monthlyEarned': 2,
-                                });
-                                console.log(`Leave balance incremented for user ${userForLeave.name} (new attendance record via bulk approval for ${monthYear})`);
-                                try {
-                                    await LeaveTransaction.create({
-                                        userId: userForLeave._id,
-                                        date: new Date().toISOString().split('T')[0],
-                                        monthYear,
-                                        type: 'earned',
-                                        amount: increment,
-                                        source: 'attendance-create-increment-bulk',
-                                        reference: reqRecord._id?.toString()
-                                    });
-                                } catch (e) {
-                                    console.error('Failed to write LeaveTransaction for bulk attendance-create increment', e);
-                                }
-                            }
+                    // Credit monthly base earned leave for this new attendance record.
+                    // Idempotent per user+month (ledger-based); no-ops for pre-2026, inactive, and articles.
+                    try {
+                        const res = await creditMonthlyEarnedIfNeeded(userId, monthYear, reqRecord._id?.toString());
+                        if (res.credited) {
+                            console.log(`Leave balance incremented for user ${userId} (new attendance record via bulk approval for ${monthYear})`);
                         }
+                    } catch (e) {
+                        console.error('Failed to credit monthly earned leave on bulk approval', e);
                     }
                 }
 

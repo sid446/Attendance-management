@@ -3,6 +3,13 @@ import React, { useState, useEffect } from 'react';
 import { MapPin, Clock, Check, X, AlertCircle, Loader2, Navigation, RefreshCw } from 'lucide-react';
 import { istDateString } from '@/lib/attendanceRequestWindow';
 import { employeeCredentialsInit } from '@/lib/employeeCredentialsInit';
+import { formatDistanceMeters } from '@/lib/geoDistance';
+
+interface GpsFix {
+  lat: number;
+  lng: number;
+  accuracyMeters: number | null;
+}
 
 interface ClientPlace {
   _id: string;
@@ -26,12 +33,14 @@ interface LocationAttendanceRecord {
   inPunch?: {
     time: string;
     distanceFromClient: number;
+    accuracyMeters?: number;
     isWithinRadius: boolean;
     status: string;
   };
   outPunch?: {
     time: string;
     distanceFromClient: number;
+    accuracyMeters?: number;
     isWithinRadius: boolean;
     status: string;
   };
@@ -59,7 +68,7 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
   const [selectedPlace, setSelectedPlace] = useState<ClientPlace | null>(null);
   const [markingAttendance, setMarkingAttendance] = useState(false);
   const [gettingLocation, setGettingLocation] = useState(false);
-  const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [currentLocation, setCurrentLocation] = useState<GpsFix | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [punchType, setPunchType] = useState<'in' | 'out'>('in');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -102,7 +111,7 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
   }, [userId]);
 
   // Get current GPS location
-  const getCurrentLocation = (): Promise<{ lat: number; lng: number }> => {
+  const getCurrentLocation = (): Promise<GpsFix> => {
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) {
         reject(new Error('Geolocation is not supported by your browser'));
@@ -114,13 +123,17 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
 
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          const coords = {
+          // Passed through untouched — the device reading is the source of truth.
+          const fix: GpsFix = {
             lat: position.coords.latitude,
-            lng: position.coords.longitude
+            lng: position.coords.longitude,
+            accuracyMeters: Number.isFinite(position.coords.accuracy)
+              ? position.coords.accuracy
+              : null,
           };
-          setCurrentLocation(coords);
+          setCurrentLocation(fix);
           setGettingLocation(false);
-          resolve(coords);
+          resolve(fix);
         },
         (error) => {
           setGettingLocation(false);
@@ -160,7 +173,7 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
       setMessage(null);
 
       // Get current location
-      const location = await getCurrentLocation();
+      const fix = await getCurrentLocation();
 
       // Mark attendance
       const response = await fetch('/api/employee/location-attendance', employeeCredentialsInit({
@@ -170,7 +183,8 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
           userId,
           clientPlaceId: selectedPlace._id,
           punchType,
-          coordinates: location
+          coordinates: { lat: fix.lat, lng: fix.lng },
+          accuracyMeters: fix.accuracyMeters ?? undefined
         })
       }));
 
@@ -329,7 +343,7 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
                           ? 'bg-emerald-900/50 text-emerald-300'
                           : 'bg-amber-900/50 text-amber-300'
                       }`}>
-                        In: {record.inPunch.time} ({record.inPunch.distanceFromClient}m)
+                        In: {record.inPunch.time} ({formatDistanceMeters(record.inPunch.distanceFromClient)})
                       </span>
                     )}
                     {record.outPunch && (
@@ -338,7 +352,7 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
                           ? 'bg-emerald-900/50 text-emerald-300'
                           : 'bg-amber-900/50 text-amber-300'
                       }`}>
-                        Out: {record.outPunch.time} ({record.outPunch.distanceFromClient}m)
+                        Out: {record.outPunch.time} ({formatDistanceMeters(record.outPunch.distanceFromClient)})
                       </span>
                     )}
                     {record.totalHours !== undefined && (
@@ -392,6 +406,14 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
                   <p className="mt-2 text-center text-xs text-muted-foreground">
                     Your current location will be verified against the client place coordinates
                   </p>
+
+                  {currentLocation && (
+                    <p className="mt-1 break-all text-center font-mono text-[11px] text-muted-foreground">
+                      Last GPS fix: {currentLocation.lat}, {currentLocation.lng}
+                      {currentLocation.accuracyMeters !== null &&
+                        ` (±${currentLocation.accuracyMeters.toFixed(0)} m)`}
+                    </p>
+                  )}
                 </div>
               )}
 

@@ -7,7 +7,8 @@ export interface ILocationPunch {
     lat: number;
     lng: number;
   };
-  distanceFromClient: number; // Distance in meters from client place
+  accuracyMeters?: number; // GPS accuracy radius reported by the device
+  distanceFromClient: number; // Exact WGS-84 geodesic distance in meters, unrounded
   isWithinRadius: boolean;
   status: 'approved' | 'rejected' | 'pending';
 }
@@ -31,6 +32,7 @@ const LocationPunchSchema = new Schema<ILocationPunch>({
     lat: { type: Number, required: true },
     lng: { type: Number, required: true }
   },
+  accuracyMeters: { type: Number },
   distanceFromClient: { type: Number, required: true },
   isWithinRadius: { type: Boolean, required: true },
   status: { type: String, enum: ['approved', 'rejected', 'pending'], default: 'pending' }

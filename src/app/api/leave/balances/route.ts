@@ -13,12 +13,13 @@ export async function GET(request: NextRequest) {
       .select('name employeeCode team workingUnderPartner fieldHistories leaveBalance joiningDate employmentType')
       .sort({ name: 1 });
 
-    // Sum used leave from transaction ledger from 31-Dec-2025 onward.
+    // Sum used leave from transaction ledger on/after 1 Jan 2026 (matches UI label
+    // "Used (after 1 Jan)" / "Leave on/after 1 Jan 2026").
     const usedTxAgg = await LeaveTransaction.aggregate([
       {
         $match: {
           type: 'used',
-          date: { $gte: '2025-12-31' },
+          date: { $gte: '2026-01-01' },
         },
       },
       {
@@ -40,8 +41,12 @@ export async function GET(request: NextRequest) {
       const balanceAsOfJan26 = user.leaveBalance?.balanceAsOfJan26 || 0;
       const earned = user.leaveBalance?.earned || 0;
       const used = user.leaveBalance?.used || 0;
-      const remaining = user.leaveBalance?.remaining ?? 0;
-      
+      // Compute remaining from its components so the row is internally consistent
+      // (balanceAsOfJan26 + earned - used - usedAfterJan26). This keeps the displayed
+      // usedAfterJan26 (ledger-derived) and remaining in agreement. Balance can never
+      // go negative; floor at 0.
+      const remaining = Math.max(0, Number((balanceAsOfJan26 + earned - used - usedAfterJan26).toFixed(3)));
+
       return {
         userId: user._id.toString(),
         userName: user.name,
@@ -51,8 +56,8 @@ export async function GET(request: NextRequest) {
         balanceAsOfJan26: balanceAsOfJan26,
         earned: earned,
         used: used, // Leaves before 1st Jan 2026 (from Excel)
-        usedAfterJan26: usedAfterJan26, // Sum of used leave from 31-Dec-2025 onward (transaction ledger)
-        remaining: remaining, // Source of truth from employee.leaveBalance.remaining
+        usedAfterJan26: usedAfterJan26, // Sum of used leave on/after 1 Jan 2026 (transaction ledger)
+        remaining: remaining, // Derived: balanceAsOfJan26 + earned - used - usedAfterJan26
         lastUpdated: user.leaveBalance?.lastUpdated || user.joiningDate || new Date(),
         monthlyEarned: user.leaveBalance?.monthlyEarned || 2,
       };
