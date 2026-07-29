@@ -77,7 +77,8 @@ export async function fetchUploadErrorLogs(logType: UploadLogType): Promise<any[
 async function loadXlsx() {
   const mod = await import('xlsx');
   // Next / bundlers may expose the API on the namespace or on `.default`.
-  return (mod as { default?: typeof mod }).default ?? mod;
+  const withDefault = mod as unknown as { default?: typeof mod };
+  return withDefault.default ?? mod;
 }
 
 /** Windows / browser-safe download name (slashes in original upload names break downloads). */
