@@ -55,6 +55,7 @@ import {
   isArticleEmployee,
 } from '@/lib/isArticleEmployee';
 import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
+import { applyAttendanceEditSource } from '@/lib/daywiseAttendanceSource';
 
 function normalizePartnerName(name: string): string {
     return String(name || '').replace(/[.\s]/g, '').toLowerCase();
@@ -252,6 +253,10 @@ export async function POST(request: NextRequest) {
                         console.error('Failed to apply extra work in bulk-action:', extraErr);
                         throw extraErr;
                     }
+                    applyAttendanceEditSource(rec as any, {
+                      approvedBy: appliedApprovedBy || reqRecord.partnerName || 'Partner',
+                      approvedByEmail: appliedApprovedByEmail || null,
+                    });
                     attendance.records.set(date, rec);
                     attendance.markModified('records');
                     attendance.summary = calculateSummary(attendance.records, userObj);
@@ -543,11 +548,16 @@ export async function POST(request: NextRequest) {
                                         }
                                 }
 
+                applyAttendanceEditSource(rec as any, {
+                  approvedBy: appliedApprovedBy || reqRecord.partnerName || 'Partner',
+                  approvedByEmail: appliedApprovedByEmail || null,
+                });
+
                 attendance.records.set(date, rec);
-                
+
                 // Mark records as modified so Mongoose saves changes to existing Map entries
                 attendance.markModified('records');
-                
+
                 attendance.summary = calculateSummary(attendance.records, userObj);
                 await attendance.save();
 

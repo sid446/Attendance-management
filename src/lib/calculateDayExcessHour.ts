@@ -12,6 +12,7 @@ export type DayExcessRecordLike = {
   editedCheckout?: string;
   totalHour?: number;
   typeOfPresence?: string;
+  halfDay?: boolean;
 };
 
 function effectiveInOut(record: DayExcessRecordLike) {
@@ -21,7 +22,7 @@ function effectiveInOut(record: DayExcessRecordLike) {
   };
 }
 
-function scheduledMinutesBetween(scheduledInTime: string, scheduledOutTime: string): number {
+export function scheduledMinutesBetween(scheduledInTime: string, scheduledOutTime: string): number {
   const [schInH, schInM] = scheduledInTime.split(':').map(Number);
   const [schOutH, schOutM] = scheduledOutTime.split(':').map(Number);
   const schInMin = schInH * 60 + schInM;
@@ -29,6 +30,43 @@ function scheduledMinutesBetween(scheduledInTime: string, scheduledOutTime: stri
   return schOutMin - schInMin >= 0
     ? schOutMin - schInMin
     : 24 * 60 + schOutMin - schInMin;
+}
+
+/** True when the day is treated as half-day attendance (HD). */
+export function isHalfDayAttendanceRecord(
+  record: { halfDay?: boolean; typeOfPresence?: string; status?: string } | null | undefined
+): boolean {
+  if (!record) return false;
+  if (record.halfDay === true) return true;
+  const t = String(record.typeOfPresence || record.status || '')
+    .trim()
+    .toLowerCase();
+  if (!t) return false;
+  return t.includes('half day') || t.includes('halfday') || t === 'hd';
+}
+
+/**
+ * Scheduled minutes for excess / scheduled-hours totals.
+ * Half-day (HD) days use half of the day's scheduled duration.
+ */
+export function effectiveScheduledMinutesForDay(
+  scheduledInTime: string,
+  scheduledOutTime: string,
+  record?: { halfDay?: boolean; typeOfPresence?: string; status?: string } | null
+): number {
+  if (
+    !scheduledInTime ||
+    !scheduledOutTime ||
+    scheduledInTime === '00:00' ||
+    scheduledOutTime === '00:00'
+  ) {
+    return 0;
+  }
+  let mins = scheduledMinutesBetween(scheduledInTime, scheduledOutTime);
+  if (mins > 0 && isHalfDayAttendanceRecord(record)) {
+    mins = Math.round(mins / 2);
+  }
+  return mins;
 }
 
 function actualMinutesBetween(inTime: string, outTime: string): number {
@@ -92,7 +130,11 @@ export function calculateDayExcessHour(
     return 0;
   }
 
-  const scheduledMinutes = scheduledMinutesBetween(scheduledInTime, scheduledOutTime);
+  const scheduledMinutes = effectiveScheduledMinutesForDay(
+    scheduledInTime,
+    scheduledOutTime,
+    record
+  );
   const dayScheduledHours = Number((scheduledMinutes / 60).toFixed(2));
 
   if (!isPresentForExcess(record, inTime, outTime)) {
@@ -110,6 +152,8 @@ export function calculateDayExcessHour(
     dayExcess = -(scheduledMinutes - actualMinutes) / 60;
   } else if (actualMinutes > scheduledMinutes) {
     if (isArticleEmployee(user)) {
+      // Article early-in / late-out rules still use full schedule window;
+      // shortfall vs expected hours uses half schedule above.
       const excessMinutes = calculateArticleDayExcessMinutes(
         scheduledInTime,
         scheduledOutTime,

@@ -5,6 +5,7 @@ import { reapplyExtraWorkEntriesToRecord } from '@/lib/extraWorkRequest';
 import { isArticleEmployee } from '@/lib/isArticleEmployee';
 import {
   calculateDayExcessHour,
+  effectiveScheduledMinutesForDay,
   isNonWorkingDayRecord,
 } from '@/lib/calculateDayExcessHour';
 import { applyLateCheckinAbsentRule, applyLateCheckinHalfDayRule } from '@/lib/lateCheckinAbsentRule';
@@ -98,14 +99,11 @@ export function calculateSummary(
       scheduledInTime !== '00:00' &&
       scheduledOutTime !== '00:00'
     ) {
-      const [schInH, schInM] = scheduledInTime.split(':').map(Number);
-      const [schOutH, schOutM] = scheduledOutTime.split(':').map(Number);
-      const schInMin = schInH * 60 + schInM;
-      const schOutMin = schOutH * 60 + schOutM;
-      const scheduledMinutes =
-        schOutMin - schInMin >= 0
-          ? schOutMin - schInMin
-          : 24 * 60 + schOutMin - schInMin;
+      const scheduledMinutes = effectiveScheduledMinutesForDay(
+        scheduledInTime,
+        scheduledOutTime,
+        record
+      );
       dayScheduledHours = Number((scheduledMinutes / 60).toFixed(2));
     }
 
@@ -130,10 +128,6 @@ export function calculateSummary(
       record.typeOfPresence,
       dateStr
     );
-    if (includeInHoursSummary) {
-      totalHour += record.totalHour;
-      totalScheduledHour += dayScheduledHours;
-    }
 
     if (isNonWorking) {
       record.halfDay = false;
@@ -168,6 +162,37 @@ export function calculateSummary(
     record.halfDay = calculatedHalfDay;
     applyLateCheckinHalfDayRule(record, user, dateStr);
     normalizeHalftimeDayRecord(record, user, dateStr);
+
+    // Recompute scheduled hours + excess after final halfDay flag (HD → half schedule)
+    if (
+      scheduledInTime &&
+      scheduledOutTime &&
+      scheduledInTime !== '00:00' &&
+      scheduledOutTime !== '00:00'
+    ) {
+      const scheduledMinutes = effectiveScheduledMinutesForDay(
+        scheduledInTime,
+        scheduledOutTime,
+        record
+      );
+      dayScheduledHours = Number((scheduledMinutes / 60).toFixed(2));
+    }
+    if (!isNonWorking) {
+      record.excessHour = calculateDayExcessHour(
+        user,
+        dateStr,
+        record,
+        scheduledInTime,
+        scheduledOutTime
+      );
+      reapplyExtraWorkEntriesToRecord(record);
+    }
+
+    if (includeInHoursSummary) {
+      totalHour += record.totalHour;
+      totalScheduledHour += dayScheduledHours;
+    }
+
     if (record.halfDay) {
       totalHalfDay++;
     }

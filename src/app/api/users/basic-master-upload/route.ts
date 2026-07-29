@@ -18,6 +18,7 @@ import {
   effectiveFromDoc,
 } from '@/lib/hrConsolePermissionUtils';
 import { formatRowIdentifier } from '@/lib/uploadErrorLogUtils';
+import { normalizeStoredPersonName } from '@/lib/attendanceNameMatch';
 import {
   buildUploadPresence,
   isUserPresentInUpload,
@@ -177,8 +178,12 @@ export async function POST(request: NextRequest) {
           filledScholarship: emp.filledScholarship,
           qualificationLevel: emp.qualificationLevel,
           nextAttemptDueDate: parseDate(emp.nextAttemptDueDate),
-          registeredUnderPartner: emp.registeredUnderPartner,
-          workingUnderPartner: emp.workingUnderPartner,
+          registeredUnderPartner: emp.registeredUnderPartner
+            ? normalizeStoredPersonName(String(emp.registeredUnderPartner))
+            : emp.registeredUnderPartner,
+          workingUnderPartner: emp.workingUnderPartner
+            ? normalizeStoredPersonName(String(emp.workingUnderPartner))
+            : emp.workingUnderPartner,
         };
 
         const attendanceApprover = normalizeText(emp.attendanceEmail);
@@ -223,6 +228,12 @@ export async function POST(request: NextRequest) {
             stats.reactivated++;
           }
 
+          // Keep stored name free of dots (Excel spelling wins when provided).
+          const displayName = normalizeStoredPersonName(name);
+          if (displayName && matchedUser.name !== displayName) {
+            matchedUser.name = displayName;
+          }
+
           Object.assign(matchedUser, updateData);
 
           if (Object.keys(managedIncoming).length > 0) {
@@ -254,13 +265,14 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        const cleanName = name.replace(/\s+/g, '.');
-        const email = normalizeText(updateData.email) || `${cleanName.toLowerCase().replace(/[^a-z0-9.]/g, '')}@asija.com`;
+        const displayName = normalizeStoredPersonName(name);
+        const emailLocal = displayName.toLowerCase().replace(/\s+/g, '.').replace(/[^a-z0-9.]/g, '');
+        const email = normalizeText(updateData.email) || `${emailLocal || 'user'}@asija.com`;
         const odId = employeeCode || `OD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
         const newUser = new User({
           odId,
-          name: cleanName,
+          name: displayName,
           email,
           attendanceEmail: updateData.attendanceEmail || email,
           joiningDate: updateData.joiningDate || new Date(),

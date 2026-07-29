@@ -6,7 +6,7 @@ import type { AttendanceSummaryView, DailySchedule, ScheduleEntry, ScheduleTime,
 import { isSinglePunch } from './attendanceHours';
 import { getScheduledTimes } from './scheduleUtils';
 
-import { calculateDayExcessHour } from './calculateDayExcessHour';
+import { calculateDayExcessHour, isHalfDayAttendanceRecord } from './calculateDayExcessHour';
 import { applyDayAllowanceToRawExcess, applyExcessHourAllowance, lookupExcessAllowance, lookupExcessDisplay, type ExcessAllowanceLookup, type ExcessDayAllowanceLookup, type ExcessDisplayLookup } from './excessHourAllowance';
 import {
   formatExtraWorkEntriesTimeSummary,
@@ -1057,6 +1057,10 @@ export function getScheduledHoursNoLunchForMonth(
     const [outH, outM] = schedule.outTime!.split(':').map(Number);
     let diff = outH * 60 + outM - (inH * 60 + inM);
     if (diff < 0) diff += 24 * 60;
+
+    if (isHalfDayAttendanceRecord(rec as { halfDay?: boolean; typeOfPresence?: string })) {
+      diff = Math.round(diff / 2);
+    }
 
     total += diff / 60;
   });

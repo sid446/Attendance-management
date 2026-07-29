@@ -9,6 +9,7 @@ import {
   assertCanReadEmployees,
   effectiveFromDoc,
 } from '@/lib/hrConsolePermissionUtils';
+import { normalizeStoredPersonName } from '@/lib/attendanceNameMatch';
 
 // GET - Fetch all users (?listOnly=1 omits heavy fieldHistories for list views)
 export async function GET(request: NextRequest) {
@@ -36,12 +37,12 @@ export async function GET(request: NextRequest) {
     // listOnly: omit heavy salary histories but keep work-partner timeline for reports
     const users = listOnly
       ? await User.find(match)
-          .sort({ name: 1 })
+          .sort({ joiningDate: 1, name: 1 })
           .select(
             '-fieldHistories.basicSalary -fieldHistories.laptopAllowance -fieldHistories.totalSalaryPerMonth -fieldHistories.totalSalaryPerAnnum'
           )
           .lean()
-      : await User.find(match).sort({ name: 1 }).lean();
+      : await User.find(match).sort({ joiningDate: 1, name: 1 }).lean();
 
     // Ensure attendanceEmail is set for backward compatibility
     const usersData = users.map((userData: any) => {
@@ -111,6 +112,7 @@ export async function POST(request: NextRequest) {
       emergencyContactNo,
       emergencyContactRelation,
       anniversaryDate,
+      dateOfBirth,
       bankName,
       branchName,
       accountNumber,
@@ -121,6 +123,7 @@ export async function POST(request: NextRequest) {
       panNumber,
       basicSalary,
       laptopAllowance,
+      mobileAllowance,
       otherAllowance,
       bonus,
       incentive,
@@ -140,6 +143,12 @@ export async function POST(request: NextRequest) {
       registeredUnderPartner,
       workingUnderPartner,
       workingTiming,
+      verticalTransfer1From,
+      verticalTransfer1To,
+      verticalTransfer1FromDate,
+      verticalTransfer2From,
+      verticalTransfer2To,
+      verticalTransfer2FromDate,
     } = body;
 
     if (!odId || !name || !email || !joiningDate) {
@@ -149,13 +158,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const displayName = normalizeStoredPersonName(String(name));
+    const normalizedWorkingPartner = workingUnderPartner
+      ? normalizeStoredPersonName(String(workingUnderPartner))
+      : workingUnderPartner;
+    const normalizedRegisteredPartner = registeredUnderPartner
+      ? normalizeStoredPersonName(String(registeredUnderPartner))
+      : registeredUnderPartner;
+
     // Determine attendanceEmail:
     // 1. If explicitly provided, use it
     // 2. If workingUnderPartner is set, look up partner's email
     // 3. Fall back to employee's own email
     let finalAttendanceEmail = attendanceEmail;
-    if (!finalAttendanceEmail && workingUnderPartner) {
-      const cleanName = workingUnderPartner.trim();
+    if (!finalAttendanceEmail && normalizedWorkingPartner) {
+      const cleanName = String(normalizedWorkingPartner).trim();
       const dottedName = cleanName.replace(/\s+/g, '.');
       const partnerUser = await User.findOne({
         $or: [
@@ -184,7 +201,7 @@ export async function POST(request: NextRequest) {
 
     const user = await User.create({
       odId,
-      name,
+      name: displayName,
       email,
       attendanceEmail: finalAttendanceEmail, // Partner's email or provided value or employee's email
       designation,
@@ -214,6 +231,7 @@ export async function POST(request: NextRequest) {
       ...(emergencyContactNo && { emergencyContactNo }),
       ...(emergencyContactRelation && { emergencyContactRelation }),
       ...(anniversaryDate && { anniversaryDate: new Date(anniversaryDate) }),
+      ...(dateOfBirth && { dateOfBirth: new Date(dateOfBirth) }),
       ...(bankName && { bankName }),
       ...(branchName && { branchName }),
       ...(accountNumber && { accountNumber }),
@@ -224,6 +242,7 @@ export async function POST(request: NextRequest) {
       ...(panNumber && { panNumber }),
       ...(basicSalary && { basicSalary }),
       ...(laptopAllowance && { laptopAllowance }),
+      ...(mobileAllowance && { mobileAllowance }),
       ...(otherAllowance && { otherAllowance }),
       ...(bonus && { bonus }),
       ...(incentive && { incentive }),
@@ -240,9 +259,19 @@ export async function POST(request: NextRequest) {
       ...(filledScholarship && { filledScholarship }),
       ...(qualificationLevel && { qualificationLevel }),
       ...(nextAttemptDueDate && { nextAttemptDueDate: new Date(nextAttemptDueDate) }),
-      ...(registeredUnderPartner && { registeredUnderPartner }),
-      ...(workingUnderPartner && { workingUnderPartner }),
+      ...(normalizedRegisteredPartner && { registeredUnderPartner: normalizedRegisteredPartner }),
+      ...(normalizedWorkingPartner && { workingUnderPartner: normalizedWorkingPartner }),
       ...(workingTiming && { workingTiming }),
+      ...(verticalTransfer1From && { verticalTransfer1From }),
+      ...(verticalTransfer1To && { verticalTransfer1To }),
+      ...(verticalTransfer1FromDate && {
+        verticalTransfer1FromDate: new Date(verticalTransfer1FromDate),
+      }),
+      ...(verticalTransfer2From && { verticalTransfer2From }),
+      ...(verticalTransfer2To && { verticalTransfer2To }),
+      ...(verticalTransfer2FromDate && {
+        verticalTransfer2FromDate: new Date(verticalTransfer2FromDate),
+      }),
     });
 
     try {

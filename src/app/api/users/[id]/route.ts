@@ -35,6 +35,7 @@ import {
   syncUserFieldsFromFieldHistories,
   getActiveFieldHistoryEntry,
 } from '@/lib/userFieldHistory';
+import { normalizeStoredPersonName } from '@/lib/attendanceNameMatch';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -133,6 +134,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       emergencyContactNo,
       emergencyContactRelation,
       anniversaryDate,
+      dateOfBirth,
       bankName,
       branchName,
       accountNumber,
@@ -143,6 +145,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       panNumber,
       basicSalary,
       laptopAllowance,
+      mobileAllowance,
       otherAllowance,
       bonus,
       incentive,
@@ -162,6 +165,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       registeredUnderPartner,
       workingUnderPartner,
       workingTiming,
+      verticalTransfer1From,
+      verticalTransfer1To,
+      verticalTransfer1FromDate,
+      verticalTransfer2From,
+      verticalTransfer2To,
+      verticalTransfer2FromDate,
       employmentType,
       employmentTypeHistory,
       changedBy, // Who made the change
@@ -170,6 +179,18 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       managedEffectiveFromByField,
       fieldHistories,
     } = body;
+
+    const normalizedName =
+      typeof name === 'string' ? normalizeStoredPersonName(name) : name;
+    const normalizedWorkingUnderPartner =
+      typeof workingUnderPartner === 'string' && workingUnderPartner.trim()
+        ? normalizeStoredPersonName(workingUnderPartner)
+        : workingUnderPartner;
+    const normalizedRegisteredUnderPartner =
+      typeof registeredUnderPartner === 'string' && registeredUnderPartner.trim()
+        ? normalizeStoredPersonName(registeredUnderPartner)
+        : registeredUnderPartner;
+
   const managedChangeAt = parseAnyDate(managedEffectiveFrom) || new Date();
   const managedFieldDates: Partial<Record<ManagedEffectiveField, Date>> = {};
   if (managedEffectiveFromByField && typeof managedEffectiveFromByField === 'object') {
@@ -204,7 +225,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     );
 
     for (const field of historyFields) {
-      const newValue = body[field];
+      const newValue =
+        field === 'workingUnderPartner'
+          ? normalizedWorkingUnderPartner
+          : field === 'registeredUnderPartner'
+            ? normalizedRegisteredUnderPartner
+            : body[field];
       const oldValue = currentUser[field as keyof typeof currentUser];
 
       // Check if the field value has changed
@@ -229,10 +255,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (attendanceEmail !== undefined) {
       // Explicitly provided
       finalAttendanceEmail = attendanceEmail;
-    } else if (workingUnderPartner !== undefined && workingUnderPartner !== currentUser.workingUnderPartner) {
+    } else if (
+      normalizedWorkingUnderPartner !== undefined &&
+      normalizedWorkingUnderPartner !== currentUser.workingUnderPartner
+    ) {
       // workingUnderPartner is changing, auto-update attendanceEmail from new partner
-      if (workingUnderPartner) {
-        const cleanName = workingUnderPartner.trim();
+      if (normalizedWorkingUnderPartner) {
+        const cleanName = String(normalizedWorkingUnderPartner).trim();
         const dottedName = cleanName.replace(/\s+/g, '.');
         const partnerUser = await User.findOne({
           $or: [
@@ -255,7 +284,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     // If employmentTypeHistory is provided, update it
     const updateObj: any = {
         ...(odId && { odId }),
-        ...(name && { name }),
+        ...(normalizedName && { name: normalizedName }),
         ...(email && { email }),
         // Set attendanceEmail if determined
         ...(finalAttendanceEmail !== undefined && { attendanceEmail: finalAttendanceEmail }),
@@ -287,6 +316,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         ...(emergencyContactNo !== undefined && { emergencyContactNo }),
         ...(emergencyContactRelation !== undefined && { emergencyContactRelation }),
         ...(anniversaryDate && { anniversaryDate: anniversaryDate ? new Date(anniversaryDate) : undefined }),
+        ...(dateOfBirth !== undefined && {
+          dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
+        }),
         ...(bankName !== undefined && { bankName }),
         ...(branchName !== undefined && { branchName }),
         ...(accountNumber !== undefined && { accountNumber }),
@@ -297,6 +329,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         ...(panNumber !== undefined && { panNumber }),
         ...(basicSalary !== undefined && { basicSalary }),
         ...(laptopAllowance !== undefined && { laptopAllowance }),
+        ...(mobileAllowance !== undefined && { mobileAllowance }),
         ...(otherAllowance !== undefined && { otherAllowance }),
         ...(bonus !== undefined && { bonus }),
         ...(incentive !== undefined && { incentive }),
@@ -313,9 +346,27 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         ...(filledScholarship !== undefined && { filledScholarship }),
         ...(qualificationLevel !== undefined && { qualificationLevel }),
         ...(nextAttemptDueDate && { nextAttemptDueDate: nextAttemptDueDate ? new Date(nextAttemptDueDate) : undefined }),
-        ...(registeredUnderPartner !== undefined && { registeredUnderPartner }),
-        ...(workingUnderPartner !== undefined && { workingUnderPartner }),
+        ...(normalizedRegisteredUnderPartner !== undefined && {
+          registeredUnderPartner: normalizedRegisteredUnderPartner,
+        }),
+        ...(normalizedWorkingUnderPartner !== undefined && {
+          workingUnderPartner: normalizedWorkingUnderPartner,
+        }),
         ...(workingTiming !== undefined && { workingTiming }),
+        ...(verticalTransfer1From !== undefined && { verticalTransfer1From }),
+        ...(verticalTransfer1To !== undefined && { verticalTransfer1To }),
+        ...(verticalTransfer1FromDate !== undefined && {
+          verticalTransfer1FromDate: verticalTransfer1FromDate
+            ? new Date(verticalTransfer1FromDate)
+            : null,
+        }),
+        ...(verticalTransfer2From !== undefined && { verticalTransfer2From }),
+        ...(verticalTransfer2To !== undefined && { verticalTransfer2To }),
+        ...(verticalTransfer2FromDate !== undefined && {
+          verticalTransfer2FromDate: verticalTransfer2FromDate
+            ? new Date(verticalTransfer2FromDate)
+            : null,
+        }),
         ...(employmentType !== undefined && { employmentType }),
         ...(employmentTypeHistory && { employmentTypeHistory }),
       };
@@ -351,6 +402,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       if (Object.prototype.hasOwnProperty.call(body, field)) {
         managedEffectiveIncoming[field] = (body as Record<string, unknown>)[field];
       }
+    }
+    if (Object.prototype.hasOwnProperty.call(managedEffectiveIncoming, 'workingUnderPartner')) {
+      managedEffectiveIncoming.workingUnderPartner = normalizedWorkingUnderPartner;
+    }
+    if (Object.prototype.hasOwnProperty.call(managedEffectiveIncoming, 'registeredUnderPartner')) {
+      managedEffectiveIncoming.registeredUnderPartner = normalizedRegisteredUnderPartner;
     }
 
     const priorManaged: Partial<Record<ManagedEffectiveField, string>> = {};

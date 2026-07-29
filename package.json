@@ -10,6 +10,8 @@
     "seed:predefined-values": "tsx scripts/seed-predefined-values.ts",
     "update:employment-type": "tsx scripts/update-employment-type.ts",
     "migrate:attendance-email": "tsx scripts/migrate-attendance-email.ts",
+    "migrate:names-dots-to-spaces:dry": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/migrate-names-dots-to-spaces.ts --dry-run",
+    "migrate:names-dots-to-spaces": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/migrate-names-dots-to-spaces.ts --apply",
     "migrate:employment-type-history": "tsx --env-file=.env.local scripts/migrate-employment-type-history.ts",
     "migrate:schedule-effective-date": "tsx --env-file=.env.local scripts/migrate-schedule-effective-date.ts",
     "backfill:managed-field-histories": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/backfill-managed-field-histories.ts",

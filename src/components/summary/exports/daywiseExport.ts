@@ -26,9 +26,22 @@ import {
   calculateArticleDayExcessMinutes,
   isArticleEmployee,
 } from '@/lib/isArticleEmployee';
+import { isDateOnOrAfterInactive } from '@/lib/attendanceInactiveFilter';
+import {
+  effectiveScheduledMinutesForDay,
+  isHalfDayAttendanceRecord,
+} from '@/lib/calculateDayExcessHour';
+import {
+  daywiseSourceLookupKey,
+  formatDaywiseSourceLabel,
+  type AttendanceEditSourceInfo,
+} from '@/lib/daywiseAttendanceSource';
+import { DAYWISE_COLUMN_KEYS, DAYWISE_HEADER_LABELS } from './daywiseExportFormat';
+import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
 
-
-export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promise<void> {
+export async function buildDaywiseWorkbook(
+  ctx: SummaryExportContext
+): Promise<import('exceljs').Workbook | null> {
   const {
     filteredSummaries,
     allUsers,
@@ -45,14 +58,45 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
     countTotalSundaysInPeriod,
   } = ctx;
 
-    if (filteredSummaries.length === 0) return;
+    if (filteredSummaries.length === 0) return null;
 
     const summariesToExport =
       selectedEmployeeIds.size > 0
         ? filteredSummaries.filter((item) => selectedEmployeeIds.has(item.userId))
         : filteredSummaries;
 
-    if (summariesToExport.length === 0) return;
+    if (summariesToExport.length === 0) return null;
+
+    // Approved-request Source fallback (partner / HR) for days missing stamp on the record
+    const sourceByUserDate = new Map<string, AttendanceEditSourceInfo>();
+    try {
+      const monthYears = new Set<string>();
+      for (const item of summariesToExport) {
+        if (item.monthYear) monthYears.add(String(item.monthYear));
+        Object.keys(item.recordDetails || {}).forEach((iso) => {
+          const m = String(iso).slice(0, 7);
+          if (/^\d{4}-\d{2}$/.test(m)) monthYears.add(m);
+        });
+      }
+      if (filterType === 'month') {
+        monthYears.add(`${selectedYear}-${String(selectedMonth).padStart(2, '0')}`);
+      }
+      const params = new URLSearchParams();
+      [...monthYears].forEach((my) => params.append('monthYear', my));
+      if ([...monthYears].length > 0) {
+        const res = await fetch(`/api/attendance/daywise-sources?${params}`, hrCredentialsInit());
+        if (res.ok) {
+          const json = await res.json();
+          if (json?.success && json.data && typeof json.data === 'object') {
+            for (const [k, v] of Object.entries(json.data as Record<string, AttendanceEditSourceInfo>)) {
+              sourceByUserDate.set(k, v);
+            }
+          }
+        }
+      }
+    } catch {
+      // Source enrichment is best-effort; export still proceeds
+    }
 
     // 1. Fetch holidays for the relevant year(s)
     let years = new Set<number>();
@@ -88,78 +132,22 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
       views: [{ state: 'frozen', ySplit: 1, topLeftCell: 'A2', activeCell: 'A2' }],
     });
 
-    // Column keys + widths (no `header` here Ã¢â‚¬â€ we insert a real header row so row 1 is not overwritten by data)
-    worksheet.columns = [
-      { key: 'employeeCode', width: 14 },
-      { key: 'weekType', width: 12 },
-      { key: 'source', width: 22 },
-      { key: 'date', width: 12 },
-      { key: 'day', width: 11 },
-      { key: 'employeeName', width: 22 },
-      { key: 'designation', width: 16 },
-      { key: 'verticalHead', width: 22 },
-      { key: 'presentAbsent', width: 14 },
-      { key: 'actualInTimeOriginal', width: 14 },
-      { key: 'actualOutTimeOriginal', width: 14 },
-      { key: 'actualInTimeEditable', width: 14 },
-      { key: 'actualOutTimeEditable', width: 14 },
-      { key: 'extraWorkTimes', width: 22 },
-      { key: 'punchWorkingHrs', width: 14 },
-      { key: 'extraWorkHrs', width: 12 },
-      { key: 'trueFalseInTime', width: 12 },
-      { key: 'trueFalseOutTime', width: 12 },
-      { key: 'scheduledInTime', width: 12 },
-      { key: 'scheduledOutTime', width: 12 },
-      { key: 'maxWFH', width: 10 },
-      { key: 'actualWFH', width: 11 },
-      { key: 'maxOutstation', width: 14 },
-      { key: 'actualOutstation', width: 12 },
-      { key: 'workingHrs', width: 11 },
-      { key: 'scheduledTime', width: 12 },
-      { key: 'scheduledHrsMonth', width: 16 },
-      { key: 'workingHrsMonth', width: 16 },
-      { key: 'excessHrsMonth', width: 14 },
-      { key: 'deficitHrsMonth', width: 14 },
-      { key: 'excessHrsDay', width: 14 },
-      { key: 'deficitHrsDay', width: 14 },
-      { key: 'halfDays', width: 9 },
-    ];
+    // Column keys + widths (no `header` here — we insert a real header row so row 1 is not overwritten by data)
+    worksheet.columns = DAYWISE_COLUMN_KEYS.map((key) => ({
+      key,
+      width:
+        key === 'source'
+          ? 28
+          : key === 'employeeName' || key === 'verticalHead' || key === 'extraWorkTimes'
+          ? 22
+          : key === 'designation'
+            ? 16
+            : key === 'employeeCode'
+              ? 14
+              : 12,
+    }));
 
-    const daywiseHeaderLabels = [
-      'Employee Code',
-      'Weekday / weekoff',
-      'Source',
-      'Date',
-      'Day',
-      'Employee name',
-      'Designation',
-      'Vertical Head',
-      'Present / absent',
-      'Actual in (original)',
-      'Actual out (original)',
-      'Actual in (edited)',
-      'Actual out (edited)',
-      'Extra work (times)',
-      'Working hrs (punch)',
-      'Extra work hrs',
-      'In time unchanged',
-      'Out time unchanged',
-      'Scheduled in',
-      'Scheduled out',
-      'Max WFH',
-      'Actual WFH',
-      'Max outstation (1.2 d)',
-      'Actual outstation',
-      'Working hrs (day)',
-      'Scheduled (day)',
-      'Scheduled hrs (month)',
-      'Working hrs (month)',
-      'Excess (month)',
-      'Deficit (month)',
-      'Excess (day)',
-      'Deficit (day)',
-      'Half day',
-    ];
+    const daywiseHeaderLabels = [...DAYWISE_HEADER_LABELS];
     worksheet.insertRow(1, daywiseHeaderLabels);
 
     const pad2 = (n: number) => String(n).padStart(2, '0');
@@ -447,14 +435,57 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
       return dates;
     };
 
-    const resolveDaywiseScheduledHoursMonth = (item: (typeof summariesToExport)[number], user: User | undefined) => {
+    const resolveDaywiseScheduledHoursMonth = (
+      item: (typeof summariesToExport)[number],
+      user: User | undefined
+    ) => {
+      let total = 0;
       if (typeof item.calcScheduled === 'number' && Number.isFinite(item.calcScheduled)) {
-        return item.calcScheduled;
+        if (!(user as User | undefined)?.inactiveAsOf) {
+          total = item.calcScheduled;
+        }
       }
-      if (!user) return 0;
+      if ((!total || (user as User | undefined)?.inactiveAsOf) && user) {
+        const periodDates = buildDaywisePeriodDateList().filter(
+          (d) => !(user.inactiveAsOf && isDateOnOrAfterInactive(d, user.inactiveAsOf))
+        );
+        if (periodDates.length > 0) {
+          total = getScheduledHoursNoLunchForMonth(item, user, periodDates);
+        }
+      }
+
+      // Worked holiday/Sunday days: scheduled = work hours (add into month scheduled)
       const periodDates = buildDaywisePeriodDateList();
-      if (periodDates.length === 0) return 0;
-      return getScheduledHoursNoLunchForMonth(item, user, periodDates);
+      for (const dateStr of periodDates) {
+        if (user?.inactiveAsOf && isDateOnOrAfterInactive(dateStr, user.inactiveAsOf)) continue;
+        const rec = (item.recordDetails || {})[dateStr] as any;
+        if (!rec) continue;
+        const d = calendarDateFromIsoKey(dateStr);
+        const isSun = d.getDay() === 0;
+        const isHol = holidayDates.has(dateStr);
+        if (!isSun && !isHol) continue;
+        if (isDayIncludedInScheduledCalc(user as User, dateStr, rec)) continue;
+
+        const inT = String(rec.editedCheckin ?? rec.checkin ?? '').trim();
+        const outT = String(rec.editedCheckout ?? rec.checkout ?? '').trim();
+        const type = String(rec.typeOfPresence || rec.status || '').toLowerCase();
+        if (type === 'absent' || type.includes('leave') || type === 'holiday' || type === 'sunday') {
+          // still allow if they have punches (worked)
+        }
+        let workMins = 0;
+        if (inT && outT && inT !== '00:00' && outT !== '00:00') {
+          const [inH, inM] = inT.split(':').map(Number);
+          const [outH, outM] = outT.split(':').map(Number);
+          workMins = outH * 60 + outM - (inH * 60 + inM);
+          if (workMins < 0) workMins += 24 * 60;
+        } else {
+          const hrs = Number(rec.totalHour || 0);
+          if (hrs > 0) workMins = Math.round(hrs * 60);
+        }
+        if (workMins > 0) total += workMins / 60;
+      }
+
+      return Number(total.toFixed(2));
     };
 
     /**
@@ -497,17 +528,35 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
       );
     };
 
-    // Helper to get updater email from attendance request (if edited)
-    const getUpdaterEmail = (record: any) => {
-      if (record && typeof record.updatedByEmail === 'string') return record.updatedByEmail;
-      if (record && typeof record.updatedBy === 'string') return record.updatedBy;
-      return null;
-    };
+    // Helper to get Source (request approval / HR edit / ThumbMachine)
+    const getSource = (record: any, userId: string, dateIso: string) => {
+      const fromRecord: AttendanceEditSourceInfo = {
+        approvedBy: record?.approvedBy,
+        approvedByEmail: record?.approvedByEmail,
+        updatedBy: record?.updatedBy,
+        updatedByEmail: record?.updatedByEmail,
+      };
+      const hasRecordStamp = !!(
+        fromRecord.approvedBy ||
+        fromRecord.updatedBy ||
+        fromRecord.approvedByEmail ||
+        fromRecord.updatedByEmail
+      );
+      if (hasRecordStamp) return formatDaywiseSourceLabel(fromRecord);
 
-    // Helper to get Source
-    const getSource = (record: any) => {
-      const updater = getUpdaterEmail(record);
-      if (updater) return updater;
+      const fromRequest = sourceByUserDate.get(daywiseSourceLookupKey(userId, dateIso));
+      if (fromRequest) return formatDaywiseSourceLabel(fromRequest);
+
+      // Remarks stamp from older HR admin edits: "Updated by HR: email@..."
+      const remarks = String(record?.remarks || '');
+      const hrRemarkMatch = remarks.match(/Updated by HR:\s*([^\s|]+)/i);
+      if (hrRemarkMatch?.[1]) {
+        return formatDaywiseSourceLabel({
+          approvedBy: 'HR',
+          approvedByEmail: hrRemarkMatch[1],
+        });
+      }
+
       return 'ThumbMachine';
     };
 
@@ -532,6 +581,9 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
     const recordsMonth = item.recordDetails || {};
     sortRecordDetailsEntries(recordsMonth).forEach(([date, record]: [string, any]) => {
       if (!includeDaywiseIsoDate(date)) return;
+      if (daywiseUser?.inactiveAsOf && isDateOnOrAfterInactive(date, daywiseUser.inactiveAsOf)) {
+        return;
+      }
       const d = calendarDateFromIsoKey(date);
       if (d.getFullYear() === year && d.getMonth() + 1 === month) {
         // Use edited in/out times for calculation
@@ -602,14 +654,24 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
         }
         const halfDays = isHalfDay ? 'True' : 'False';
 
+        // After inactive/left date: show NA, no excess/deficit or schedule calc
+        const isInactiveDay = !!(
+          daywiseUser?.inactiveAsOf && isDateOnOrAfterInactive(date, daywiseUser.inactiveAsOf)
+        );
+
         // Present/Absent/Holiday logic
         let presentAbsent = 'Absent';
         const inTime = String(actualInTimeEditable).trim();
         const outTime = String(actualOutTimeEditable).trim();
         // Custom present logic for WFH and Outstation (client place / outstation: 00:00 in-out is OK; still fill max/actual outstation)
         const typeOfPresence = record.typeOfPresence || record.status || '';
-        // Outstation / client place / OS-P must win over calendar Sunday or API holidays (e.g. work at client on a Sunday).
-        if (recordIsDaywiseOutstationRow(record)) {
+        if (isInactiveDay) {
+          presentAbsent = 'NA';
+          maxWFH = '';
+          actualWFH = '';
+          maxOutstation = '';
+          actualOutstation = '';
+        } else if (recordIsDaywiseOutstationRow(record)) {
           maxOutstation = '1.2';
           actualOutstation = formatDaywiseActualOutstation(record, workingHrs);
           presentAbsent = 'OS-P';
@@ -640,122 +702,236 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
           presentAbsent = 'Absent';
         }
 
-        // --- Excess/Short calculation for the day ---
-        // Always output ±HH:MM:SS. Leave days never carry day deficit/excess.
-        let daySeconds = 0;
-        const isAbsent = presentAbsent === 'Absent';
-        if (presentAbsent !== 'On leave') {
-          let deficitScheduledIn = scheduledInTime;
-          let deficitScheduledOut = scheduledOutTime;
-          if (
-            isAbsent &&
-            (!deficitScheduledIn ||
-              !deficitScheduledOut ||
-              deficitScheduledIn === '00:00' ||
-              deficitScheduledOut === '00:00')
-          ) {
-            const deficitSchedule = getDaywiseScheduleTimesForAbsentDeficit(
-              daywiseUser as User | undefined,
-              date,
-              record,
-              presentAbsent,
-              isHoliday
-            );
-            deficitScheduledIn = deficitSchedule.scheduledInTime;
-            deficitScheduledOut = deficitSchedule.scheduledOutTime;
-          }
+        // HD: scheduled duration is half for display + excess/deficit
+        const useHalfSchedule =
+          presentAbsent === 'HD' || isHalfDayAttendanceRecord(record);
+        let dayScheduledTimeLabel = scheduledTime;
+        let exportScheduledInTime = scheduledInTime;
+        let exportScheduledOutTime = scheduledOutTime;
+        if (
+          useHalfSchedule &&
+          scheduledInTime &&
+          scheduledOutTime &&
+          scheduledInTime !== '00:00' &&
+          scheduledOutTime !== '00:00'
+        ) {
+          const halfMins = effectiveScheduledMinutesForDay(
+            scheduledInTime,
+            scheduledOutTime,
+            { ...record, halfDay: true }
+          );
+          dayScheduledTimeLabel = `${Math.floor(halfMins / 60)}:${String(halfMins % 60).padStart(2, '0')}`;
+        }
 
-          if (
-            isAbsent &&
-            deficitScheduledIn &&
-            deficitScheduledOut &&
-            deficitScheduledIn !== '00:00' &&
-            deficitScheduledOut !== '00:00'
-          ) {
-            const [schInH, schInM] = deficitScheduledIn.split(':').map(Number);
-            const [schOutH, schOutM] = deficitScheduledOut.split(':').map(Number);
-            let scheduledMinutes = schOutH * 60 + schOutM - (schInH * 60 + schInM);
-            if (scheduledMinutes < 0) scheduledMinutes += 24 * 60;
-            daySeconds = -scheduledMinutes * 60;
-          } else if (scheduledInTime && scheduledOutTime && scheduledInTime !== '00:00' && scheduledOutTime !== '00:00' && inTime && outTime && inTime !== '00:00' && outTime !== '00:00') {
-            const [schInH, schInM] = scheduledInTime.split(':').map(Number);
-            const [schOutH, schOutM] = scheduledOutTime.split(':').map(Number);
+        // Worked on holiday / Sunday: scheduled hours = work hours (no day excess/deficit)
+        const workedOnHolidayOrSunday =
+          (isHoliday || isSunday) &&
+          presentAbsent !== 'Holiday' &&
+          presentAbsent !== 'Absent' &&
+          presentAbsent !== 'On leave' &&
+          presentAbsent !== 'NA';
+
+        let holidaySundayWorkMinutes = 0;
+        if (workedOnHolidayOrSunday) {
+          if (inTime && outTime && inTime !== '00:00' && outTime !== '00:00') {
             const [actInH, actInM] = inTime.split(':').map(Number);
             const [actOutH, actOutM] = outTime.split(':').map(Number);
-            let scheduledMinutes = schOutH * 60 + schOutM - (schInH * 60 + schInM);
-            if (scheduledMinutes < 0) scheduledMinutes += 24 * 60;
-            let actualMinutes = actOutH * 60 + actOutM - (actInH * 60 + actInM);
-            if (actualMinutes < 0) actualMinutes += 24 * 60;
-            let isArticle = false;
-            if (allUsers && item.userId) {
-              const user = allUsers.find(u => u._id === item.userId);
-              if (user) {
-                isArticle = isArticleEmployee(user);
-              }
+            let mins = actOutH * 60 + actOutM - (actInH * 60 + actInM);
+            if (mins < 0) mins += 24 * 60;
+            holidaySundayWorkMinutes = mins;
+          } else if (typeof workingHrs === 'number' && Number.isFinite(workingHrs) && workingHrs > 0) {
+            holidaySundayWorkMinutes = Math.round(workingHrs * 60);
+          } else if (punchWorkingHrs > 0) {
+            holidaySundayWorkMinutes = Math.round(punchWorkingHrs * 60);
+          }
+          if (holidaySundayWorkMinutes > 0) {
+            dayScheduledTimeLabel = `${Math.floor(holidaySundayWorkMinutes / 60)}:${String(
+              holidaySundayWorkMinutes % 60
+            ).padStart(2, '0')}`;
+            if (inTime && outTime && inTime !== '00:00' && outTime !== '00:00') {
+              exportScheduledInTime = inTime;
+              exportScheduledOutTime = outTime;
             }
-            if (actualMinutes < scheduledMinutes) {
-              daySeconds = -(scheduledMinutes - actualMinutes) * 60;
-            } else if (actualMinutes > scheduledMinutes) {
-              if (isArticle) {
-                const excessMinutes = calculateArticleDayExcessMinutes(
-                  scheduledInTime,
-                  scheduledOutTime,
-                  inTime,
-                  outTime
-                );
-                daySeconds = excessMinutes * 60;
-              } else {
-                daySeconds = (actualMinutes - scheduledMinutes) * 60;
+          }
+        }
+
+        // --- Excess/Short calculation for the day ---
+        // Always output ±HH:MM:SS. Leave / inactive (NA) days never carry day deficit/excess.
+        // Holiday/Sunday work: schedule matched to work → day excess/deficit is 0.
+        // For worked days: excess/deficit = Working hrs − Scheduled (day) (same values as those columns).
+        let daySeconds = 0;
+        const isAbsent = presentAbsent === 'Absent';
+        const parseHmLabelToMinutes = (label: string): number => {
+          const m = String(label || '')
+            .trim()
+            .match(/^(-)?(\d+):(\d{2})$/);
+          if (!m) return 0;
+          const mins = Number(m[2]) * 60 + Number(m[3]);
+          return m[1] ? -mins : mins;
+        };
+        const resolveWorkMinutesForDay = (): number => {
+          if (typeof workingHrs === 'number' && Number.isFinite(workingHrs) && workingHrs > 0) {
+            return Math.round(workingHrs * 60);
+          }
+          if (inTime && outTime && inTime !== '00:00' && outTime !== '00:00') {
+            const [actInH, actInM] = inTime.split(':').map(Number);
+            const [actOutH, actOutM] = outTime.split(':').map(Number);
+            let mins = actOutH * 60 + actOutM - (actInH * 60 + actInM);
+            if (mins < 0) mins += 24 * 60;
+            return mins;
+          }
+          const fromText = hmStringToDecimalHours(formatTime(workingHrs));
+          if (fromText !== '' && fromText > 0) return Math.round(fromText * 60);
+          if (punchWorkingHrs > 0) return Math.round(punchWorkingHrs * 60);
+          return 0;
+        };
+
+        if (workedOnHolidayOrSunday) {
+          daySeconds = 0;
+        } else if (presentAbsent !== 'On leave' && presentAbsent !== 'NA') {
+          if (isAbsent) {
+            let deficitScheduledIn = scheduledInTime;
+            let deficitScheduledOut = scheduledOutTime;
+            if (
+              !deficitScheduledIn ||
+              !deficitScheduledOut ||
+              deficitScheduledIn === '00:00' ||
+              deficitScheduledOut === '00:00'
+            ) {
+              const deficitSchedule = getDaywiseScheduleTimesForAbsentDeficit(
+                daywiseUser as User | undefined,
+                date,
+                record,
+                presentAbsent,
+                isHoliday
+              );
+              deficitScheduledIn = deficitSchedule.scheduledInTime;
+              deficitScheduledOut = deficitSchedule.scheduledOutTime;
+            }
+
+            if (
+              deficitScheduledIn &&
+              deficitScheduledOut &&
+              deficitScheduledIn !== '00:00' &&
+              deficitScheduledOut !== '00:00'
+            ) {
+              const scheduledMinutes = effectiveScheduledMinutesForDay(
+                deficitScheduledIn,
+                deficitScheduledOut,
+                useHalfSchedule ? { ...record, halfDay: true } : record
+              );
+              daySeconds = -scheduledMinutes * 60;
+            }
+          } else {
+            let scheduledMinutes = parseHmLabelToMinutes(dayScheduledTimeLabel);
+            if (
+              scheduledMinutes <= 0 &&
+              scheduledInTime &&
+              scheduledOutTime &&
+              scheduledInTime !== '00:00' &&
+              scheduledOutTime !== '00:00'
+            ) {
+              scheduledMinutes = effectiveScheduledMinutesForDay(
+                scheduledInTime,
+                scheduledOutTime,
+                useHalfSchedule ? { ...record, halfDay: true } : record
+              );
+            }
+            const workMinutes = resolveWorkMinutesForDay();
+            if (scheduledMinutes > 0) {
+              const deltaMinutes = workMinutes - scheduledMinutes;
+              if (deltaMinutes < 0) {
+                daySeconds = deltaMinutes * 60;
+              } else if (deltaMinutes > 0) {
+                let isArticle = false;
+                if (allUsers && item.userId) {
+                  const user = allUsers.find((u) => u._id === item.userId);
+                  if (user) isArticle = isArticleEmployee(user);
+                }
+                if (
+                  isArticle &&
+                  inTime &&
+                  outTime &&
+                  inTime !== '00:00' &&
+                  outTime !== '00:00' &&
+                  scheduledInTime &&
+                  scheduledOutTime &&
+                  scheduledInTime !== '00:00' &&
+                  scheduledOutTime !== '00:00'
+                ) {
+                  const excessMinutes = calculateArticleDayExcessMinutes(
+                    scheduledInTime,
+                    scheduledOutTime,
+                    inTime,
+                    outTime
+                  );
+                  daySeconds = excessMinutes * 60;
+                } else {
+                  daySeconds = deltaMinutes * 60;
+                }
               }
             }
           }
         }
         const rawDayHours =
-          presentAbsent === 'On leave'
+          presentAbsent === 'On leave' || presentAbsent === 'NA' || workedOnHolidayOrSunday
             ? 0
-            : isAbsent && daySeconds < 0
-              ? daySeconds / 3600
-              : typeof record.excessHour === 'number' && Number.isFinite(record.excessHour)
-                ? record.excessHour
-                : daySeconds / 3600;
-        const adjustedDayHours = applyDayAllowanceToRawExcess(
-          rawDayHours,
-          String(item.userId || ''),
-          date,
-          ctx.excessDayAllowanceMap
-        );
+            : daySeconds / 3600;
+        // Always use export's Working hrs − Scheduled (day) result — not stored record.excessHour.
+        const adjustedDayHours =
+          presentAbsent === 'NA' || workedOnHolidayOrSunday
+            ? 0
+            : applyDayAllowanceToRawExcess(
+                rawDayHours,
+                String(item.userId || ''),
+                date,
+                ctx.excessDayAllowanceMap
+              );
         daySeconds = adjustedDayHours * 3600;
         dailyExcessShortSeconds.push(daySeconds);
-        const dayExcessDeficitSplit = splitExcessAndDeficitLabels(adjustedDayHours);
+        const dayExcessDeficitSplit =
+          presentAbsent === 'NA' || workedOnHolidayOrSunday
+            ? { excess: '', deficit: '' }
+            : splitExcessAndDeficitLabels(adjustedDayHours);
+
+        const exportScheduledIn = presentAbsent === 'NA' ? '' : exportScheduledInTime;
+        const exportScheduledOut = presentAbsent === 'NA' ? '' : exportScheduledOutTime;
+        const exportScheduledTime = presentAbsent === 'NA' ? '' : dayScheduledTimeLabel;
 
         let workingHrsExport: number | '' = '';
-        if (typeof workingHrs === 'number' && !Number.isNaN(workingHrs)) {
-          workingHrsExport = decimalHoursToExcelDuration(workingHrs);
-        } else {
-          const hm = formatTime(workingHrs);
-          const dec = hmStringToDecimalHours(hm);
-          workingHrsExport = dec === '' ? '' : decimalHoursToExcelDuration(dec);
+        if (presentAbsent !== 'NA') {
+          if (typeof workingHrs === 'number' && !Number.isNaN(workingHrs)) {
+            workingHrsExport = decimalHoursToExcelDuration(workingHrs);
+          } else {
+            const hm = formatTime(workingHrs);
+            const dec = hmStringToDecimalHours(hm);
+            workingHrsExport = dec === '' ? '' : decimalHoursToExcelDuration(dec);
+          }
         }
 
         const punchWorkingHrsExport =
-          punchWorkingHrs > 0 ? decimalHoursToExcelDuration(punchWorkingHrs) : '';
+          presentAbsent === 'NA' || punchWorkingHrs <= 0
+            ? ''
+            : decimalHoursToExcelDuration(punchWorkingHrs);
         const extraWorkHrsExport =
-          extraWorkHrs > 0 ? decimalHoursToExcelDuration(extraWorkHrs) : '';
+          presentAbsent === 'NA' || extraWorkHrs <= 0
+            ? ''
+            : decimalHoursToExcelDuration(extraWorkHrs);
 
         let scheduledTimeExport: number | '' = '';
-        if (scheduledTime === '') {
+        if (exportScheduledTime === '') {
           scheduledTimeExport = '';
-        } else if (/^0h\s*0m$/i.test(String(scheduledTime).trim())) {
+        } else if (/^0h\s*0m$/i.test(String(exportScheduledTime).trim())) {
           scheduledTimeExport = decimalHoursToExcelDuration(0);
         } else {
-          const dec = hmStringToDecimalHours(String(scheduledTime));
+          const dec = hmStringToDecimalHours(String(exportScheduledTime));
           scheduledTimeExport = dec === '' ? '' : decimalHoursToExcelDuration(dec);
         }
 
         worksheet.addRow({
           employeeCode: daywiseUser?.employeeCode || item.employeeCode || item.odId || item.userId || '-',
           weekType,
-          source: getSource(record),
+          source: presentAbsent === 'NA' ? '' : getSource(record, String(item.userId || ''), date),
           date: formatIsoKeyAsDdMmYyyy(date),
           day: dayName,
           employeeName: item.userName,
@@ -769,47 +945,70 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
               )
             : resolveWorkPartnerForItem(daywiseUser, item.monthYear) || item.team || '-',
           presentAbsent,
-          actualInTimeOriginal: hhmmStringToExcelTime(String(actualInTimeOriginal)),
-          actualOutTimeOriginal: hhmmStringToExcelTime(String(actualOutTimeOriginal)),
-          actualInTimeEditable: hhmmStringToExcelTime(String(actualInTimeEditable)),
-          actualOutTimeEditable: hhmmStringToExcelTime(String(actualOutTimeEditable)),
-          extraWorkTimes: extraWorkTimes || '',
+          actualInTimeOriginal:
+            presentAbsent === 'NA' ? '' : hhmmStringToExcelTime(String(actualInTimeOriginal)),
+          actualOutTimeOriginal:
+            presentAbsent === 'NA' ? '' : hhmmStringToExcelTime(String(actualOutTimeOriginal)),
+          actualInTimeEditable:
+            presentAbsent === 'NA' ? '' : hhmmStringToExcelTime(String(actualInTimeEditable)),
+          actualOutTimeEditable:
+            presentAbsent === 'NA' ? '' : hhmmStringToExcelTime(String(actualOutTimeEditable)),
+          extraWorkTimes: presentAbsent === 'NA' ? '' : extraWorkTimes || '',
           punchWorkingHrs: punchWorkingHrsExport,
           extraWorkHrs: extraWorkHrsExport,
-          trueFalseInTime: String(actualInTimeOriginal) === String(actualInTimeEditable) ? 'True' : 'False',
-          trueFalseOutTime: String(actualOutTimeOriginal) === String(actualOutTimeEditable) ? 'True' : 'False',
-          scheduledInTime: hhmmStringToExcelTime(formatTime(scheduledInTime)),
-          scheduledOutTime: hhmmStringToExcelTime(formatTime(scheduledOutTime)),
+          trueFalseInTime:
+            presentAbsent === 'NA'
+              ? ''
+              : String(actualInTimeOriginal) === String(actualInTimeEditable)
+                ? 'True'
+                : 'False',
+          trueFalseOutTime:
+            presentAbsent === 'NA'
+              ? ''
+              : String(actualOutTimeOriginal) === String(actualOutTimeEditable)
+                ? 'True'
+                : 'False',
+          scheduledInTime: hhmmStringToExcelTime(formatTime(exportScheduledIn)),
+          scheduledOutTime: hhmmStringToExcelTime(formatTime(exportScheduledOut)),
           maxWFH: maxWFH === '' ? '' : round2(Number(maxWFH)),
           actualWFH: actualWFH === '' ? '' : daywiseNumericOrString(String(actualWFH)),
           maxOutstation: maxOutstation === '' ? '' : round2(Number(maxOutstation)),
           actualOutstation: actualOutstation === '' ? '' : daywiseNumericOrString(String(actualOutstation)),
           workingHrs: workingHrsExport,
           scheduledTime: scheduledTimeExport,
-          scheduledHrsMonth: scheduledHrsMonth ? decimalHoursToExcelDuration(scheduledHrsMonth) : '',
-          workingHrsMonth: workingHrsMonth ? decimalHoursToExcelDuration(workingHrsMonth) : '',
+          scheduledHrsMonth:
+            presentAbsent === 'NA' || !scheduledHrsMonth
+              ? ''
+              : decimalHoursToExcelDuration(scheduledHrsMonth),
+          workingHrsMonth:
+            presentAbsent === 'NA' || !workingHrsMonth
+              ? ''
+              : decimalHoursToExcelDuration(workingHrsMonth),
           excessHrsMonth: '',
           deficitHrsMonth: '',
           excessHrsDay: dayExcessDeficitSplit.excess,
           deficitHrsDay: dayExcessDeficitSplit.deficit,
-          halfDays,
+          halfDays: presentAbsent === 'NA' ? '' : halfDays,
         });
         rowIndexes.push(worksheet.rowCount);
       });
       // After all rows for this user/month, set monthly excess/deficit columns
       if (rowIndexes.length > 0) {
-        const monthExcessHours =
-          typeof (item as { calcExcessDeficit?: number }).calcExcessDeficit === 'number'
-            ? (item as { calcExcessDeficit: number }).calcExcessDeficit
-            : dailyExcessShortSeconds.reduce((a, b) => a + b, 0) / 3600;
+        const monthExcessHours = dailyExcessShortSeconds.reduce((a, b) => a + b, 0) / 3600;
         const monthSplit = splitExcessAndDeficitLabels(monthExcessHours);
         for (const rowIdx of rowIndexes) {
           const row = worksheet.getRow(rowIdx);
+          const pa = String(row.getCell('presentAbsent').value || '');
+          if (pa === 'NA') {
+            row.getCell('excessHrsMonth').value = '';
+            row.getCell('deficitHrsMonth').value = '';
+            continue;
+          }
           row.getCell('excessHrsMonth').value = monthSplit.excess;
           row.getCell('deficitHrsMonth').value = monthSplit.deficit;
         }
       }
-    };
+    }
 
     // Header row (row 1) Ã¢â‚¬â€ data starts row 2 (keep header compact; no wrap avoids tall rows)
     const headerRow = worksheet.getRow(1);
@@ -910,6 +1109,13 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
           pattern: 'solid',
           fgColor: { argb: 'FFFFF1F2' },
         };
+      } else if (pa === 'NA') {
+        presentAbsentCell.font = { size: 10, name: 'Calibri', color: { argb: 'FF475569' }, bold: true };
+        presentAbsentCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFF1F5F9' },
+        };
       } else if (pa === 'On leave') {
         presentAbsentCell.font = { size: 10, name: 'Calibri', color: { argb: 'FF0369A1' }, bold: true };
         presentAbsentCell.fill = {
@@ -956,6 +1162,12 @@ export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promis
       col.width = Math.min(42, Math.max(base, maxLen * 0.9 + 1.5));
     });
 
-    const fileName = `daywise_attendance_${new Date().toISOString().split('T')[0]}.xlsx`;
-    await downloadWorkbook(await workbook.xlsx.writeBuffer(), fileName);
+    return workbook;
+}
+
+export async function exportDaywiseAttendance(ctx: SummaryExportContext): Promise<void> {
+  const workbook = await buildDaywiseWorkbook(ctx);
+  if (!workbook) return;
+  const fileName = `daywise_attendance_${new Date().toISOString().split('T')[0]}.xlsx`;
+  await downloadWorkbook(await workbook.xlsx.writeBuffer(), fileName);
 }

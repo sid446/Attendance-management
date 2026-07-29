@@ -67,6 +67,7 @@ const NAV_CATEGORIES: NavCategory[] = [
     items: [
       { id: 'summary', label: 'Attendance Summary', icon: CheckCircle },
       { id: 'employee', label: 'Employee Month View', icon: Clock },
+      { id: 'daywiseCompare', label: 'Daywise Compare', icon: FileSpreadsheet },
       { id: 'requests', label: 'Requests', icon: Clock },
       { id: 'invalid', label: 'Invalid Attendance', icon: AlertTriangle },
       { id: 'misExceptions', label: 'MIS Exceptions', icon: ClipboardList },

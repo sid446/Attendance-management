@@ -12,6 +12,7 @@ import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
 import { applyDayExcessToRecord } from '@/lib/calculateDayExcessHour';
 import { getDefaultNumericValueForType } from '@/lib/attendanceRequestValues';
 import { isArticleEmployee } from '@/lib/isArticleEmployee';
+import { applyAttendanceEditSource } from '@/lib/daywiseAttendanceSource';
 
 function calculateDuration(start: string, end: string): number {
     if (!start || !end) return 0;
@@ -137,6 +138,9 @@ export async function GET(request: NextRequest) {
         }
 
         reqRecord.status = 'Approved';
+        if (!reqRecord.approvedBy) {
+          reqRecord.approvedBy = reqRecord.partnerName || 'Partner';
+        }
         await reqRecord.save();
 
         // Update Attendance
@@ -191,6 +195,18 @@ export async function GET(request: NextRequest) {
         if (isNonWorkingDayRecord) {
           rec.halfDay = false;
           rec.excessHour = 0;
+        }
+
+        applyAttendanceEditSource(rec as any, {
+          approvedBy: 'Partner',
+          approvedByEmail: null,
+        });
+        // Prefer partner name from the request when available
+        if (reqRecord.partnerName) {
+          applyAttendanceEditSource(rec as any, {
+            approvedBy: String(reqRecord.partnerName),
+            approvedByEmail: null,
+          });
         }
 
         attendance.records.set(date, rec);
@@ -523,6 +539,11 @@ export async function POST(request: NextRequest) {
         rec.halfDay = false;
         rec.excessHour = 0;
       }
+
+      applyAttendanceEditSource(rec as any, {
+        approvedBy: approvedBy || (actorIsHr ? 'HR' : reqRecord.partnerName || 'Partner'),
+        approvedByEmail: approvedByEmail || null,
+      });
 
       attendance.records.set(date, rec);
 

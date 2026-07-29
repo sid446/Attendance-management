@@ -39,8 +39,10 @@ import {
   formatExtraWorkHoursLabel,
   isExtraWorkRequest,
   sumExtraWorkSlotHours,
+  validateExtraWorkSlotsOutsidePunchRange,
 } from '@/lib/extraWorkRequest';
-import { requiresAttendanceRequestTimePair } from '@/lib/attendanceRequestTimeRules';
+import { requiresAttendanceRequestTimePair, usesWorkHoursInputForRequest } from '@/lib/attendanceRequestTimeRules';
+import { getScheduledTimes } from '@/lib/scheduleUtils';
 import {
   LogOut,
   X,
@@ -546,6 +548,62 @@ function parseTimeToMinutes(time: string): number | null {
   return hours * 60 + minutes;
 }
 
+function minutesToHhMm(totalMinutes: number): string {
+  const mins = ((Math.round(totalMinutes) % (24 * 60)) + 24 * 60) % (24 * 60);
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/**
+ * Derive in/out from entered work hours using the day's scheduled in-time as start.
+ * On weekoff/holiday with no schedule, fall back to Monday schedule or 09:00.
+ */
+function deriveInOutFromWorkHours(
+  user: User | null | undefined,
+  dateStr: string,
+  hours: number
+): { startTime: string; endTime: string } | null {
+  if (!Number.isFinite(hours) || hours <= 0) return null;
+
+  let schedule = user ? getScheduledTimes(user, dateStr) : null;
+  let inTime = schedule?.inTime || '';
+  if (!inTime || inTime === '00:00' || schedule?.isHoliday) {
+    // Prefer weekday (Monday) schedule when the selected day has no working schedule
+    const d = new Date(`${String(dateStr).slice(0, 10)}T12:00:00`);
+    if (!Number.isNaN(d.getTime()) && user) {
+      const monday = new Date(d);
+      const day = monday.getDay();
+      const delta = day === 0 ? 1 : day === 1 ? 0 : 1 - day;
+      monday.setDate(monday.getDate() + delta);
+      const mondayIso = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`;
+      schedule = getScheduledTimes(user, mondayIso);
+      inTime = schedule.inTime || '';
+    }
+  }
+  if (!inTime || inTime === '00:00') inTime = '09:00';
+
+  const startMinutes = parseTimeToMinutes(inTime);
+  if (startMinutes === null) return null;
+
+  const durationMinutes = Math.round(hours * 60);
+  if (durationMinutes <= 0) return null;
+
+  const endMinutes = startMinutes + durationMinutes;
+  if (endMinutes >= 24 * 60) {
+    // Keep both times on the same calendar day for validation
+    return {
+      startTime: minutesToHhMm(startMinutes),
+      endTime: '23:59',
+    };
+  }
+
+  return {
+    startTime: minutesToHhMm(startMinutes),
+    endTime: minutesToHhMm(endMinutes),
+  };
+}
+
 function isTimeRangeValid(startTime: string, endTime: string): boolean {
   const startMinutes = parseTimeToMinutes(startTime);
   const endMinutes = parseTimeToMinutes(endTime);
@@ -849,6 +907,7 @@ export default function EmployeeDashboard() {
   const [requestReason, setRequestReason] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
+  const [requestWorkHours, setRequestWorkHours] = useState('');
   const [extraWorkSlots, setExtraWorkSlots] = useState<ExtraWorkSlotDraft[]>(createInitialExtraWorkSlots);
   const [sendingRequest, setSendingRequest] = useState(false);
   const [sendingExtraWorkRequest, setSendingExtraWorkRequest] = useState(false);
@@ -863,6 +922,7 @@ export default function EmployeeDashboard() {
   const [futureReason, setFutureReason] = useState('');
   const [futureStartTime, setFutureStartTime] = useState('');
   const [futureEndTime, setFutureEndTime] = useState('');
+  const [futureWorkHours, setFutureWorkHours] = useState('');
   const [sendingFutureRequest, setSendingFutureRequest] = useState(false);
 
   // Calendar selection state
@@ -895,6 +955,45 @@ export default function EmployeeDashboard() {
     [selectedDayRecord]
   );
   const correctionStatusRequiresTimePair = requiresAttendanceRequestTimePair(requestStatus);
+  const correctionUsesWorkHours = usesWorkHoursInputForRequest(requestStatus);
+  const futureUsesWorkHours = usesWorkHoursInputForRequest(futureType);
+
+  useEffect(() => {
+    if (!selectedDate || !correctionUsesWorkHours) return;
+    const hours = Number(requestWorkHours);
+    if (!Number.isFinite(hours) || hours <= 0) {
+      setStartTime('');
+      setEndTime('');
+      return;
+    }
+    const derived = deriveInOutFromWorkHours(user, selectedDate, hours);
+    if (derived) {
+      setStartTime(derived.startTime);
+      setEndTime(derived.endTime);
+    } else {
+      setStartTime('');
+      setEndTime('');
+    }
+  }, [selectedDate, correctionUsesWorkHours, requestWorkHours, user]);
+
+  useEffect(() => {
+    if (!futureStartDate || !futureUsesWorkHours) return;
+    const hours = Number(futureWorkHours);
+    if (!Number.isFinite(hours) || hours <= 0) {
+      setFutureStartTime('');
+      setFutureEndTime('');
+      return;
+    }
+    const derived = deriveInOutFromWorkHours(user, futureStartDate, hours);
+    if (derived) {
+      setFutureStartTime(derived.startTime);
+      setFutureEndTime(derived.endTime);
+    } else {
+      setFutureStartTime('');
+      setFutureEndTime('');
+    }
+  }, [futureStartDate, futureUsesWorkHours, futureWorkHours, user]);
+
   const extraWorkHoursPreview = useMemo(() => {
     const withHours = extraWorkSlots
       .map((slot) => {
@@ -1426,6 +1525,7 @@ export default function EmployeeDashboard() {
         setRequestStatus('On leave');
       }
       setRequestReason('');
+      setRequestWorkHours('');
       setStartTime(timeDraft.startTime);
       setEndTime(timeDraft.endTime);
     }
@@ -1437,6 +1537,10 @@ export default function EmployeeDashboard() {
     setSelectedDateHasUploadedAttendance(false);
     setRequestModalTab('correction');
     setExtraWorkSlots(createInitialExtraWorkSlots());
+    setRequestWorkHours('');
+    setRequestReason('');
+    setStartTime('');
+    setEndTime('');
   };
 
   const submitExtraWorkRequest = async () => {
@@ -1467,6 +1571,14 @@ export default function EmployeeDashboard() {
         alert(`Slot ${i + 1}: provide a work explanation.`);
         return;
       }
+    }
+
+    const punchIn = selectedDayRecord?.inTime || '';
+    const punchOut = selectedDayRecord?.outTime || '';
+    const outsidePunch = validateExtraWorkSlotsOutsidePunchRange(slotsPayload, punchIn, punchOut);
+    if (!outsidePunch.ok) {
+      alert(outsidePunch.error);
+      return;
     }
 
     const totalHours = sumExtraWorkSlotHours(
@@ -1523,8 +1635,19 @@ export default function EmployeeDashboard() {
     }
 
     if (correctionStatusRequiresTimePair) {
+      if (correctionUsesWorkHours) {
+        const hours = Number(requestWorkHours);
+        if (!Number.isFinite(hours) || hours <= 0) {
+          alert('Please enter the number of hours worked.');
+          return;
+        }
+      }
       if (!startTime || !endTime) {
-        alert('Please fill both in time and out time for this request.');
+        alert(
+          correctionUsesWorkHours
+            ? 'In and out times could not be calculated from the hours entered.'
+            : 'Please fill both in time and out time for this request.'
+        );
         return;
       }
 
@@ -1538,7 +1661,6 @@ export default function EmployeeDashboard() {
         alert('In time must be earlier than out time.');
         return;
       }
-
     }
 
     let finalStartTime = startTime;
@@ -1626,8 +1748,19 @@ export default function EmployeeDashboard() {
         alert('For this category, only singular date selection is allowed (Start Date must equal End Date).');
         return;
       }
+      if (futureUsesWorkHours) {
+        const hours = Number(futureWorkHours);
+        if (!Number.isFinite(hours) || hours <= 0) {
+          alert('Please enter the number of hours worked.');
+          return;
+        }
+      }
       if (!futureStartTime || !futureEndTime) {
-        alert('Please provide Start Time and End Time.');
+        alert(
+          futureUsesWorkHours
+            ? 'In and out times could not be calculated from the hours entered.'
+            : 'Please provide Start Time and End Time.'
+        );
         return;
       }
       if (!isTimeRangeValid(futureStartTime, futureEndTime)) {
@@ -2740,7 +2873,9 @@ export default function EmployeeDashboard() {
                 <>
                   <div className="p-3 bg-background border-2 border-amber-500 rounded-lg text-foreground text-sm">
                     Report additional hours worked on{' '}
-                    <strong>{formatRequestDateWithDay(selectedDate)}</strong> (outside your regular punch).
+                    <strong>{formatRequestDateWithDay(selectedDate)}</strong>.
+                    Extra time must be <strong>before your in time</strong> or{' '}
+                    <strong>after your out time</strong> — not between them.
                     Your partner will review this as <strong>{EXTRA_WORK_REQUEST_STATUS}</strong>.
                   </div>
 
@@ -2750,6 +2885,17 @@ export default function EmployeeDashboard() {
                       <span className="font-mono text-foreground">
                         {selectedDayRecord.inTime || '--:--'} → {selectedDayRecord.outTime || '--:--'}
                       </span>
+                      {selectedDayRecord.inTime &&
+                        selectedDayRecord.outTime &&
+                        selectedDayRecord.inTime !== '00:00' &&
+                        selectedDayRecord.outTime !== '00:00' && (
+                          <span className="block mt-1">
+                            Allowed extra slots: before{' '}
+                            <span className="font-mono text-foreground">{selectedDayRecord.inTime}</span> or
+                            after{' '}
+                            <span className="font-mono text-foreground">{selectedDayRecord.outTime}</span>
+                          </span>
+                        )}
                     </div>
                   )}
 
@@ -2882,7 +3028,21 @@ export default function EmployeeDashboard() {
                     <label className="text-sm font-medium text-muted-foreground">Select correct status</label>
                     <select
                       value={requestStatus}
-                      onChange={(e) => setRequestStatus(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setRequestStatus(val);
+                        setRequestWorkHours('');
+                        if (usesWorkHoursInputForRequest(val)) {
+                          setStartTime('');
+                          setEndTime('');
+                        } else if (requiresAttendanceRequestTimePair(val)) {
+                          setStartTime(selectedCorrectionTimeDraft.startTime);
+                          setEndTime(selectedCorrectionTimeDraft.endTime);
+                        } else {
+                          setStartTime('');
+                          setEndTime('');
+                        }
+                      }}
                       className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-emerald-500 text-sm sm:text-base"
                     >
                       {getCorrectionStatusOptions().map((s) => (
@@ -2893,33 +3053,72 @@ export default function EmployeeDashboard() {
                     </select>
                   </div>
 
-                  {correctionStatusRequiresTimePair && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {correctionStatusRequiresTimePair && correctionUsesWorkHours && (
+                    <>
                       <div className="space-y-2">
-                        <label className="text-sm font-medium text-muted-foreground">Start time</label>
+                        <label className="text-sm font-medium text-muted-foreground">Number of hours *</label>
                         <input
-                          type="time"
-                          value={startTime}
-                          onChange={(e) => setStartTime(e.target.value)}
+                          type="number"
+                          min="0.25"
+                          step="0.25"
+                          value={requestWorkHours}
+                          onChange={(e) => setRequestWorkHours(e.target.value)}
+                          placeholder="e.g. 5"
                           className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-emerald-500 text-sm sm:text-base"
                         />
                       </div>
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium text-muted-foreground">End time</label>
-                        <input
-                          type="time"
-                          value={endTime}
-                          onChange={(e) => setEndTime(e.target.value)}
-                          className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-emerald-500 text-sm sm:text-base"
-                        />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-muted-foreground">In time</label>
+                          <input
+                            type="time"
+                            value={startTime}
+                            readOnly
+                            className="w-full bg-surface border border-border rounded-lg p-2.5 text-muted-foreground cursor-not-allowed text-sm sm:text-base"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-muted-foreground">Out time</label>
+                          <input
+                            type="time"
+                            value={endTime}
+                            readOnly
+                            className="w-full bg-surface border border-border rounded-lg p-2.5 text-muted-foreground cursor-not-allowed text-sm sm:text-base"
+                          />
+                        </div>
                       </div>
-                    </div>
+                      <p className="text-xs text-muted-foreground">
+                        In and out times are calculated from your schedule start plus the hours you enter.
+                      </p>
+                    </>
                   )}
 
-                  {correctionStatusRequiresTimePair && (
-                    <p className="text-xs text-muted-foreground">
-                      Enter both times in 24-hour format. In time must be earlier than out time.
-                    </p>
+                  {correctionStatusRequiresTimePair && !correctionUsesWorkHours && (
+                    <>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-muted-foreground">In time</label>
+                          <input
+                            type="time"
+                            value={startTime}
+                            onChange={(e) => setStartTime(e.target.value)}
+                            className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-emerald-500 text-sm sm:text-base"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-muted-foreground">Out time</label>
+                          <input
+                            type="time"
+                            value={endTime}
+                            onChange={(e) => setEndTime(e.target.value)}
+                            className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-emerald-500 text-sm sm:text-base"
+                          />
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Enter both times in 24-hour format. In time must be earlier than out time.
+                      </p>
+                    </>
                   )}
 
                   <div className="space-y-2">
@@ -2960,6 +3159,7 @@ export default function EmployeeDashboard() {
                 setFutureReason('');
                 setFutureStartTime('');
                 setFutureEndTime('');
+                setFutureWorkHours('');
                 setFutureCustomType('');
                 setCalendarSelectionStart(null);
               }} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
@@ -3006,6 +3206,7 @@ export default function EmployeeDashboard() {
                   onChange={(e) => {
                     const val = e.target.value;
                     setFutureType(val);
+                    setFutureWorkHours('');
                     if (TIMED_CATEGORIES.includes(val)) {
                       if (futureStartDate) setFutureEndDate(futureStartDate);
                       setFutureStartTime('');
@@ -3035,35 +3236,74 @@ export default function EmployeeDashboard() {
                 </div>
               )}
 
-              {TIMED_CATEGORIES.includes(futureType) && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {TIMED_CATEGORIES.includes(futureType) && futureUsesWorkHours && (
+                <>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-muted-foreground">Start Time *</label>
+                    <label className="text-sm font-medium text-muted-foreground">Number of hours *</label>
                     <input
-                      type="time"
-                      value={futureStartTime}
-                      onChange={(e) => setFutureStartTime(e.target.value)}
-                      required
+                      type="number"
+                      min="0.25"
+                      step="0.25"
+                      value={futureWorkHours}
+                      onChange={(e) => setFutureWorkHours(e.target.value)}
+                      placeholder="e.g. 5"
                       className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-indigo-500 text-sm sm:text-base"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-muted-foreground">End Time *</label>
-                    <input
-                      type="time"
-                      value={futureEndTime}
-                      onChange={(e) => setFutureEndTime(e.target.value)}
-                      required
-                      className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-indigo-500 text-sm sm:text-base"
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-muted-foreground">In time</label>
+                      <input
+                        type="time"
+                        value={futureStartTime}
+                        readOnly
+                        className="w-full bg-surface border border-border rounded-lg p-2.5 text-muted-foreground cursor-not-allowed text-sm sm:text-base"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-muted-foreground">Out time</label>
+                      <input
+                        type="time"
+                        value={futureEndTime}
+                        readOnly
+                        className="w-full bg-surface border border-border rounded-lg p-2.5 text-muted-foreground cursor-not-allowed text-sm sm:text-base"
+                      />
+                    </div>
                   </div>
-                </div>
+                  <p className="text-xs text-muted-foreground">
+                    In and out times are calculated from your schedule start plus the hours you enter.
+                  </p>
+                </>
               )}
 
-              {TIMED_CATEGORIES.includes(futureType) && (
-                <p className="text-xs text-muted-foreground">
-                  Start time must be earlier than end time.
-                </p>
+              {TIMED_CATEGORIES.includes(futureType) && !futureUsesWorkHours && (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-muted-foreground">In time *</label>
+                      <input
+                        type="time"
+                        value={futureStartTime}
+                        onChange={(e) => setFutureStartTime(e.target.value)}
+                        required
+                        className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-indigo-500 text-sm sm:text-base"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-muted-foreground">Out time *</label>
+                      <input
+                        type="time"
+                        value={futureEndTime}
+                        onChange={(e) => setFutureEndTime(e.target.value)}
+                        required
+                        className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-indigo-500 text-sm sm:text-base"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    In time must be earlier than out time.
+                  </p>
+                </>
               )}
 
               <div className="space-y-2">

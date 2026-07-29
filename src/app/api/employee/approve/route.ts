@@ -19,6 +19,7 @@ import { creditMonthlyEarnedIfNeeded } from '@/lib/leaveManagement';
 import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
 import { applyDayExcessToRecord } from '@/lib/calculateDayExcessHour';
 import { calculateTotalHours as calculateDuration } from '@/lib/attendanceHours';
+import { applyAttendanceEditSource } from '@/lib/daywiseAttendanceSource';
 
 export async function POST(request: NextRequest) {
   try {
@@ -35,6 +36,11 @@ export async function POST(request: NextRequest) {
         error: 'Request ID, action, and approver are required'
       }, { status: 400 });
     }
+
+    const resolvedApprovedByEmail =
+      auth.type === 'hr'
+        ? auth.email || approvedByEmail || null
+        : approvedByEmail || null;
 
     if (!['approve', 'reject'].includes(action)) {
       return NextResponse.json({
@@ -86,7 +92,7 @@ export async function POST(request: NextRequest) {
 
     if (action === 'approve') {
       updateData.approvedBy = approvedBy;
-      updateData.approvedByEmail = approvedByEmail || null;
+      updateData.approvedByEmail = resolvedApprovedByEmail;
       updateData.approvedAt = new Date();
       if (approvedBy === 'HR') {
         if (remarks) updateData.hrRemarks = remarks;
@@ -96,7 +102,7 @@ export async function POST(request: NextRequest) {
       }
     } else {
       updateData.rejectedBy = approvedBy;
-      updateData.rejectedByEmail = approvedByEmail || null;
+      updateData.rejectedByEmail = resolvedApprovedByEmail;
       updateData.rejectedAt = new Date();
       if (approvedBy === 'HR') {
         if (remarks) updateData.hrRemarks = remarks;
@@ -201,6 +207,10 @@ export async function POST(request: NextRequest) {
           );
         }
 
+        applyAttendanceEditSource(rec as any, {
+          approvedBy: approvedBy || 'Partner',
+          approvedByEmail: resolvedApprovedByEmail,
+        });
         attendanceRecord.records.set(attendanceRequest.date, rec);
         attendanceRecord.markModified('records');
         const userForSummary = await User.findById(attendanceRequest.userId);
@@ -473,6 +483,11 @@ export async function POST(request: NextRequest) {
       }
 
       // ...existing code...
+
+      applyAttendanceEditSource(rec as any, {
+        approvedBy: approvedBy || 'Partner',
+        approvedByEmail: resolvedApprovedByEmail,
+      });
 
       // Update the records map
       attendanceRecord.records.set(attendanceRequest.date, rec);

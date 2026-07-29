@@ -30,6 +30,7 @@ import { LeaveManagementSection } from '@/components/LeaveManagementSection';
 import { FineManagementSection } from '@/components/FineManagementSection';
 import { InvalidAttendanceSection } from '@/components/InvalidAttendanceSection';
 import { EmployeeMisExceptionsSection } from '@/components/EmployeeMisExceptionsSection';
+import { DaywiseCompareSection } from '@/components/DaywiseCompareSection';
 import { ClientPlaceManagement } from '@/components/ClientPlaceManagement';
 import { HrConsoleAccessSection } from '@/components/HrConsoleAccessSection';
 import { HrConsoleSettingsSection } from '@/components/HrConsoleSettingsSection';
@@ -1983,6 +1984,10 @@ export default function AttendanceUpload() {
             )}
 
             {activeSection === 'misExceptions' && <EmployeeMisExceptionsSection />}
+
+            {activeSection === 'daywiseCompare' && (
+              <DaywiseCompareSection allUsers={allUsers} holidays={holidays} />
+            )}
 
             {/* Client Places Section */}
             {activeSection === 'clientPlaces' && (

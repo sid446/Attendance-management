@@ -16,6 +16,7 @@ import {
   collectUserFieldKeysFromEmployeeRecords,
   effectiveFromDoc,
 } from '@/lib/hrConsolePermissionUtils';
+import { normalizeStoredPersonName } from '@/lib/attendanceNameMatch';
 
 const DEFAULT_BASELINE_EFFECTIVE_FROM = LEGACY_BASELINE_EFFECTIVE_FROM;
 
@@ -119,6 +120,7 @@ export async function POST(request: NextRequest) {
           emergencyContactNo: emp.emergencyContactNo,
           emergencyContactRelation: emp.emergencyContactRelation,
           anniversaryDate: emp.anniversaryDate,
+          dateOfBirth: emp.dateOfBirth,
           bankName: emp.bankName,
           branchName: emp.branchName,
           accountNumber: emp.accountNumber,
@@ -129,6 +131,7 @@ export async function POST(request: NextRequest) {
           panNumber: emp.panNumber,
           basicSalary: emp.basicSalary,
           laptopAllowance: emp.laptopAllowance,
+          mobileAllowance: emp.mobileAllowance,
           otherAllowance: emp.otherAllowance,
           bonus: emp.bonus,
           incentive: emp.incentive,
@@ -146,8 +149,18 @@ export async function POST(request: NextRequest) {
             qualificationLevel: emp.qualificationLevel,
             nextAttemptDueDate: emp.nextAttemptDueDate,
             articleCreditsAsOnJan26: emp.articleCreditsAsOnJan26,
-            registeredUnderPartner: emp.registeredUnderPartner,
-            workingUnderPartner: emp.workingUnderPartner,
+            registeredUnderPartner: emp.registeredUnderPartner
+              ? normalizeStoredPersonName(String(emp.registeredUnderPartner))
+              : emp.registeredUnderPartner,
+            workingUnderPartner: emp.workingUnderPartner
+              ? normalizeStoredPersonName(String(emp.workingUnderPartner))
+              : emp.workingUnderPartner,
+            verticalTransfer1From: emp.verticalTransfer1From,
+            verticalTransfer1To: emp.verticalTransfer1To,
+            verticalTransfer1FromDate: emp.verticalTransfer1FromDate,
+            verticalTransfer2From: emp.verticalTransfer2From,
+            verticalTransfer2To: emp.verticalTransfer2To,
+            verticalTransfer2FromDate: emp.verticalTransfer2FromDate,
             // Remove old workingTiming field
             // workingTiming: emp.workingTiming,
             
@@ -216,6 +229,13 @@ export async function POST(request: NextRequest) {
             if (updateData.articleshipStartDate) matchedUser.articleshipStartDate = new Date(updateData.articleshipStartDate);
             if (updateData.nextAttemptDueDate) matchedUser.nextAttemptDueDate = new Date(updateData.nextAttemptDueDate);
             if (updateData.anniversaryDate) matchedUser.anniversaryDate = new Date(updateData.anniversaryDate);
+            if (updateData.dateOfBirth) matchedUser.dateOfBirth = new Date(updateData.dateOfBirth);
+            if (updateData.verticalTransfer1FromDate) {
+              matchedUser.verticalTransfer1FromDate = new Date(updateData.verticalTransfer1FromDate);
+            }
+            if (updateData.verticalTransfer2FromDate) {
+              matchedUser.verticalTransfer2FromDate = new Date(updateData.verticalTransfer2FromDate);
+            }
             
             // Handle schedules update
             if (emp.schedules && emp.schedules.length > 0) {
@@ -242,8 +262,9 @@ export async function POST(request: NextRequest) {
             
             // Use employee code as OD-ID if available, otherwise generate one
             const odId = employeeCode ? String(employeeCode) : `OD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-            const dbName = excelName.trim().replace(/\s+/g, '.');
-            const email = emp.email || `${dbName.toLowerCase().replace(/[^a-z0-9.]/g, '')}@asija.com`;
+            const displayName = normalizeStoredPersonName(excelName);
+            const emailLocal = displayName.toLowerCase().replace(/\s+/g, '.').replace(/[^a-z0-9.]/g, '');
+            const email = emp.email || `${emailLocal || 'user'}@asija.com`;
 
             // Ensure attendanceEmail falls back to employee email if not set from partner
             if (!updateData.attendanceEmail) {
@@ -259,7 +280,7 @@ export async function POST(request: NextRequest) {
 
             const newUser = new User({
                 odId: odId,
-                name: dbName, // Store as "First.Last" or "First Last"? User DB seemed "First.Last"
+                name: displayName,
                 email: email, 
                 joiningDate: emp.joiningDate ? new Date(emp.joiningDate) : new Date(),
                 isActive: true,

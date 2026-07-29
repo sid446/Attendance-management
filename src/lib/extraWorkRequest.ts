@@ -101,6 +101,57 @@ export function validateExtraWorkSlots(
   return { ok: true, slots: validated };
 }
 
+/**
+ * Extra work must sit entirely before punch-in or entirely after punch-out
+ * (may touch the boundaries). It must not fall inside the in→out range.
+ * Example: in 09:00 / out 18:00 → 07:00–08:30 or 18:00–20:00 OK; 10:00–11:00 not OK.
+ */
+export function validateExtraWorkSlotsOutsidePunchRange(
+  slots: Array<{ startTime: string; endTime: string }>,
+  punchIn: string,
+  punchOut: string
+): { ok: true } | { ok: false; error: string } {
+  const inLabel = String(punchIn || '').trim();
+  const outLabel = String(punchOut || '').trim();
+  const inMinutes = parseExtraWorkTimeToMinutes(inLabel);
+  const outMinutes = parseExtraWorkTimeToMinutes(outLabel);
+
+  if (inMinutes === null || outMinutes === null || inLabel === '00:00' || outLabel === '00:00') {
+    return {
+      ok: false,
+      error: 'Extra work requires both in and out punch times for this day.',
+    };
+  }
+  if (inMinutes >= outMinutes) {
+    return {
+      ok: false,
+      error: 'Uploaded attendance in/out times are invalid for extra work validation.',
+    };
+  }
+
+  for (let i = 0; i < slots.length; i++) {
+    const startMinutes = parseExtraWorkTimeToMinutes(String(slots[i].startTime || '').trim());
+    const endMinutes = parseExtraWorkTimeToMinutes(String(slots[i].endTime || '').trim());
+    if (startMinutes === null || endMinutes === null || startMinutes >= endMinutes) {
+      return {
+        ok: false,
+        error: `Slot ${i + 1}: use valid 24-hour times with start earlier than end.`,
+      };
+    }
+
+    const entirelyBeforeIn = endMinutes <= inMinutes;
+    const entirelyAfterOut = startMinutes >= outMinutes;
+    if (!entirelyBeforeIn && !entirelyAfterOut) {
+      return {
+        ok: false,
+        error: `Slot ${i + 1}: extra work must be before ${inLabel} or after ${outLabel} — not between your in and out times.`,
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
 export function sumExtraWorkEntryHours(
   entries?: Array<{ hours?: number; startTime?: string; endTime?: string }> | null
 ): number {

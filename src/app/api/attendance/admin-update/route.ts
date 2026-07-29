@@ -12,6 +12,7 @@ import {
   captureAttendanceSnapshot,
   recordHrAttendanceEditRequest,
 } from '@/lib/recordHrAttendanceEditRequest';
+import { applyAttendanceEditSource } from '@/lib/daywiseAttendanceSource';
 
 function calculateDuration(start: string, end: string): number {
     if (!start || !end) return 0;
@@ -196,6 +197,11 @@ export async function POST(request: NextRequest) {
     // Add HR remark on attendance record (short stamp; full audit lives on AttendanceRequest)
     const hrRemark = `Updated by HR: ${editorEmail}${remarks ? ` - ${remarks}` : ''}`;
     rec.remarks = rec.remarks ? `${rec.remarks} | ${hrRemark}` : hrRemark;
+
+    applyAttendanceEditSource(rec as any, {
+      approvedBy: 'HR',
+      approvedByEmail: editorEmail || null,
+    });
 
     attendance.records.set(date, rec);
 

@@ -113,6 +113,7 @@ export interface User {
   emergencyContactNo?: string;
   emergencyContactRelation?: string;
   anniversaryDate?: string;
+  dateOfBirth?: string;
   bankName?: string;
   branchName?: string;
   accountNumber?: string;
@@ -123,6 +124,7 @@ export interface User {
   panNumber?: string;
   basicSalary?: string; // Basis Salary/Stipend/Fees
   laptopAllowance?: string;
+  mobileAllowance?: string;
   otherAllowance?: string;
   bonus?: string;
   incentive?: string;
@@ -145,6 +147,12 @@ export interface User {
   registeredUnderPartner?: string;
   workingUnderPartner?: string;
   workingTiming?: string;
+  verticalTransfer1From?: string;
+  verticalTransfer1To?: string;
+  verticalTransfer1FromDate?: string;
+  verticalTransfer2From?: string;
+  verticalTransfer2To?: string;
+  verticalTransfer2FromDate?: string;
 
   fieldHistories?: {
     designation?: Array<{ value: string; effectiveFrom: string | Date; effectiveTo?: string | Date | null; source?: string }>;

@@ -26,6 +26,7 @@ import {
   isExtraWorkRequest,
   sumExtraWorkSlotHours,
   validateExtraWorkSlots,
+  validateExtraWorkSlotsOutsidePunchRange,
   type ExtraWorkSlotInput,
 } from '@/lib/extraWorkRequest';
 
@@ -156,6 +157,11 @@ export async function POST(request: NextRequest) {
         },
         { status: 400 }
       );
+    }
+
+    const outsidePunch = validateExtraWorkSlotsOutsidePunchRange(validatedSlots, inTime, outTime);
+    if (!outsidePunch.ok) {
+      return NextResponse.json({ success: false, error: outsidePunch.error }, { status: 400 });
     }
 
     const existingForDate = await AttendanceRequest.find({ userId: user._id, date });

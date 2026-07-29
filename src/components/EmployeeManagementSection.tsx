@@ -472,6 +472,12 @@ export const EmployeeManagementSection: React.FC<{
       ...user,
       joiningDate: toDateInputValue(user.joiningDate),
       inactiveAsOf: toDateInputValue(user.inactiveAsOf) || undefined,
+      anniversaryDate: toDateInputValue(user.anniversaryDate) || undefined,
+      dateOfBirth: toDateInputValue(user.dateOfBirth) || undefined,
+      articleshipStartDate: toDateInputValue(user.articleshipStartDate) || undefined,
+      nextAttemptDueDate: toDateInputValue(user.nextAttemptDueDate) || undefined,
+      verticalTransfer1FromDate: toDateInputValue(user.verticalTransfer1FromDate) || undefined,
+      verticalTransfer2FromDate: toDateInputValue(user.verticalTransfer2FromDate) || undefined,
       workingUnderPartner: resolvedPartner || user.workingUnderPartner,
       team: resolvedPartner || user.workingUnderPartner || user.team || '',
     };
@@ -1551,6 +1557,7 @@ export const EmployeeManagementSection: React.FC<{
         emergencyContactNo: findCol(['Emergency Contact No.', 'Emergency Contact']),
         emergencyContactRelation: findCol(['Relation', 'Emergency Contact Relation']),
         anniversaryDate: findCol(['Anniversary Date']),
+        dateOfBirth: findCol(['Date of Birth', 'DOB', 'Birth Date']),
         bankName: findCol(['Bank Name']),
         branchName: findCol(['Branch Name']),
         accountNumber: findCol(['Account No.', 'Account Number']),
@@ -1561,8 +1568,9 @@ export const EmployeeManagementSection: React.FC<{
         panNumber: findCol(['PAN', 'PAN Number']),
         basicSalary: findCol(['Basis Salary/Stipend/Fees', 'Basic Salary']),
         laptopAllowance: findCol(['Laptop Allowance', 'Laptop Allowence']),
+        mobileAllowance: findCol(['Mobile Allowance']),
         totalSalaryPerMonth: findCol(['Total Salary (P/M)', 'Total Salary Per Month']),
-        totalSalaryPerAnnum: findCol(['Per Annum', 'Total Salary Per Annum']),
+        totalSalaryPerAnnum: findCol(['Per Annum', 'Total Salary Per Annum', 'Per Annum FY 26-27']),
         joinDate: findCol(['Date of Joining -in Asija', 'Date of Joining', 'Joining Date']),
         articleStart: findCol(['Articleship Start Date', 'Article Start']),
         transfer: findCol(['Transfer Case']),
@@ -1574,6 +1582,12 @@ export const EmployeeManagementSection: React.FC<{
         nextAttempt: findCol(['Next Attempt Due Date', 'Next Attempt']),
         regPartner: findCol(['Registered Under Partner', 'Reg Partner']),
         workPartner: findCol(['Working Under Partner', 'Work Partner']),
+        vt1From: findCol(['1st Vertical Transfer from', '1st Vertical Transfer\nfrom']),
+        vt1To: findCol(['1st Vertical Transfer to', '1st Vertical Transfer\nto']),
+        vt1FromDate: findCol(['1st Vertical Transfer from (date)', '1st Vertical Transfer\nfrom (date)']),
+        vt2From: findCol(['2nd Vertical Transfer from', '2nd Vertical Transfer\nfrom']),
+        vt2To: findCol(['2nd Vertical Transfer to', '2nd Vertical Transfer\nto']),
+        vt2FromDate: findCol(['2nd Vertical Transfer from (date)', '2nd Vertical Transfer\nfrom (date)']),
         leavesBF: findCol(['Leaves B/F', 'Leaves Brought Forward', 'Balance Leaves']),
         articleCredits: findCol(['Credits for Articles (as on 1st Jan 26)'])
       };
@@ -1642,6 +1656,7 @@ export const EmployeeManagementSection: React.FC<{
           emergencyContactNo: getVal(idx.emergencyContactNo),
           emergencyContactRelation: getVal(idx.emergencyContactRelation),
           anniversaryDate: formatExcelDate(row[idx.anniversaryDate]),
+          dateOfBirth: formatExcelDate(row[idx.dateOfBirth]),
           bankName: getVal(idx.bankName),
           branchName: getVal(idx.branchName),
           accountNumber: getVal(idx.accountNumber),
@@ -1652,6 +1667,7 @@ export const EmployeeManagementSection: React.FC<{
           panNumber: getVal(idx.panNumber),
           basicSalary: getVal(idx.basicSalary),
           laptopAllowance: getVal(idx.laptopAllowance),
+          mobileAllowance: getVal(idx.mobileAllowance),
           totalSalaryPerMonth: getVal(idx.totalSalaryPerMonth),
           totalSalaryPerAnnum: getVal(idx.totalSalaryPerAnnum),
           joiningDate: formatExcelDate(row[idx.joinDate]), 
@@ -1665,6 +1681,12 @@ export const EmployeeManagementSection: React.FC<{
           nextAttemptDueDate: formatExcelDate(row[idx.nextAttempt]),
           registeredUnderPartner: getVal(idx.regPartner),
           workingUnderPartner: getVal(idx.workPartner),
+          verticalTransfer1From: getVal(idx.vt1From),
+          verticalTransfer1To: getVal(idx.vt1To),
+          verticalTransfer1FromDate: formatExcelDate(row[idx.vt1FromDate]),
+          verticalTransfer2From: getVal(idx.vt2From),
+          verticalTransfer2To: getVal(idx.vt2To),
+          verticalTransfer2FromDate: formatExcelDate(row[idx.vt2FromDate]),
           leaveBalance,
           articleCreditsAsOnJan26,
           extraInfo: allExtraLabels.map(label => {
@@ -1910,34 +1932,43 @@ export const EmployeeManagementSection: React.FC<{
     }
   };
 
-  const filteredUsers = users.filter((user) => {
-    const inactive = isUserMarkedInactive(user);
-    if (showInactiveEmployees) {
-      if (!inactive) return false;
-    } else if (inactive) {
-      return false;
-    }
-    // Multi-select Designation filter
-    if (filterDesignations.length > 0 && !filterDesignations.includes(user.designation || '')) {
-      return false;
-    }
-    // Multi-select Team filter
-    if (filterTeams.length > 0 && !filterTeams.includes(user.team || user.workingUnderPartner || '')) {
-      return false;
-    }
-    // Multi-select User filter
-    if (filterUsers.length > 0 && !filterUsers.includes(user.name || '')) {
-      return false;
-    }
-    // Search term filter (name, login email, attendance email, codes, team, …)
-    if (searchTerm && !employeeMatchesSearchTerm(user, searchTerm)) {
-      return false;
-    }
-    return true;
-  });
+  const filteredUsers = users
+    .filter((user) => {
+      const inactive = isUserMarkedInactive(user);
+      if (showInactiveEmployees) {
+        if (!inactive) return false;
+      } else if (inactive) {
+        return false;
+      }
+      // Multi-select Designation filter
+      if (filterDesignations.length > 0 && !filterDesignations.includes(user.designation || '')) {
+        return false;
+      }
+      // Multi-select Team filter
+      if (filterTeams.length > 0 && !filterTeams.includes(user.team || user.workingUnderPartner || '')) {
+        return false;
+      }
+      // Multi-select User filter
+      if (filterUsers.length > 0 && !filterUsers.includes(user.name || '')) {
+        return false;
+      }
+      // Search term filter (name, login email, attendance email, codes, team, …)
+      if (searchTerm && !employeeMatchesSearchTerm(user, searchTerm)) {
+        return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      const aTime = a.joiningDate ? new Date(a.joiningDate).getTime() : Number.POSITIVE_INFINITY;
+      const bTime = b.joiningDate ? new Date(b.joiningDate).getTime() : Number.POSITIVE_INFINITY;
+      if (aTime !== bTime) return aTime - bTime;
+      return String(a.name || '').localeCompare(String(b.name || ''), undefined, {
+        sensitivity: 'base',
+      });
+    });
 
   const handleExportToExcel = async () => {
-    if (!users.length) {
+    if (!filteredUsers.length) {
       alert('No employees to export');
       return;
     }
@@ -1954,56 +1985,68 @@ export const EmployeeManagementSection: React.FC<{
       views: [{ state: 'frozen', xSplit: 1, ySplit: 1 }] // Freeze first row and first column
     });
 
-    // Define all columns matching the upload format exactly
+    // Column order + headings match Master headings.xlsx exactly.
     const baseColumns = [
-      { key: 'name', header: 'Name', width: 22 },
-      { key: 'registrationNo', header: 'Registration / Membership No.', width: 25 },
+      { key: 'srNo', header: 'Sr No', width: 8 },
       { key: 'employeeCode', header: 'Employee Code', width: 15 },
-      { key: 'paidFrom', header: 'Paid From', width: 12 },
+      { key: 'name', header: 'Name', width: 22 },
+      { key: 'joiningDate', header: 'Date of Joining -in Asija', width: 22 },
+      { key: 'registrationNo', header: 'Registration / Membership No.', width: 25 },
       { key: 'designation', header: 'Designation', width: 18 },
       { key: 'category', header: 'Category', width: 12 },
-      { key: 'tallyName', header: 'Tally Name', width: 18 },
+      { key: 'registeredUnderPartner', header: 'Registered Under Partner', width: 22 },
+      { key: 'workingUnderPartner', header: 'Working Under Partner', width: 20 },
+      { key: 'attendanceEmail', header: 'Attendance Email', width: 28 },
       { key: 'gender', header: 'Gender', width: 10 },
+      { key: 'dateOfBirth', header: 'Date of Birth', width: 15 },
       { key: 'email', header: 'Asija Mail ID', width: 28 },
-      { key: 'attendanceApprover', header: 'Attendance Approver', width: 28 },
-      { key: 'parentName', header: 'Parents/Guardians Names', width: 25 },
-      { key: 'parentOccupation', header: 'Parents/Guardians Occupation', width: 25 },
+      { key: 'alternateEmail', header: 'Alternate Mail Id', width: 25 },
+      { key: 'aadhaarNumber', header: 'Aadhar No.', width: 15 },
+      { key: 'panNumber', header: 'PAN', width: 12 },
       { key: 'mobileNumber', header: 'Cell No.', width: 15 },
       { key: 'alternateMobileNumber', header: 'Alternate No.', width: 15 },
-      { key: 'alternateEmail', header: 'Alternate Mail Id', width: 25 },
       { key: 'address1', header: 'Address 1', width: 35 },
       { key: 'address2', header: 'Address 2', width: 35 },
+      { key: 'qualificationLevel', header: 'Qualification Level', width: 18 },
+      { key: 'parentName', header: 'Parents/Guardians Names', width: 25 },
+      { key: 'parentOccupation', header: 'Parents/Guardians Occupation', width: 25 },
       { key: 'emergencyContactNo', header: 'Emergency Contact No.', width: 18 },
       { key: 'emergencyContactRelation', header: 'Relation', width: 12 },
-      { key: 'anniversaryDate', header: 'Anniversary Date', width: 15 },
+      { key: 'articleshipStartDate', header: 'CA Articleship Start Date', width: 20 },
+      { key: 'transferCase', header: 'Transfer Case', width: 14 },
+      { key: 'firstYearArticleship', header: '1st Yr of CA Articleship', width: 18 },
+      { key: 'secondYearArticleship', header: '2nd Yr of CA Articleship', width: 18 },
+      { key: 'thirdYearArticleship', header: '3rd Yr of CA Articleship', width: 18 },
+      { key: 'nextAttemptDueDate', header: 'Next Attempt Due Date', width: 20 },
+      { key: 'filledScholarship', header: 'Filled Scholarship', width: 16 },
+      { key: 'paidFrom', header: 'Paid From', width: 12 },
+      { key: 'tallyName', header: 'Tally Name', width: 18 },
       { key: 'bankName', header: 'Bank Name', width: 20 },
       { key: 'branchName', header: 'Branch Name', width: 18 },
       { key: 'accountNumber', header: 'Account No.', width: 18 },
       { key: 'ifscCode', header: 'IFSC', width: 12 },
       { key: 'accountType', header: 'Type of Account', width: 15 },
       { key: 'accountHolderName', header: 'Name of Account Holder', width: 22 },
-      { key: 'aadhaarNumber', header: 'Aadhar No.', width: 15 },
-      { key: 'panNumber', header: 'PAN', width: 12 },
-      { key: 'basicSalary', header: 'Basis Salary/Stipend/Fees', width: 22 },
+      { key: 'basicSalary', header: 'Basic Salary/Stipend/Fees', width: 22 },
       { key: 'laptopAllowance', header: 'Laptop Allowance', width: 16 },
-      { key: 'totalSalaryPerMonth', header: 'Total Salary (P/M)', width: 16 },
-      { key: 'totalSalaryPerAnnum', header: 'Per Annum', width: 14 },
+      { key: 'mobileAllowance', header: 'Mobile Allowance', width: 16 },
+      { key: 'otherAllowance', header: 'Other Allowance', width: 16 },
+      {
+        key: 'totalSalaryPerMonth',
+        header: 'Total Salary (P/M)\n(Changed on 01.04.26)',
+        width: 18,
+      },
+      { key: 'perAnnumFy2627', header: 'Per Annum FY 26-27', width: 16 },
+      { key: 'perAnnumFy2526', header: 'Per Annum FY 25-26', width: 16 },
       { key: 'pf', header: 'PF', width: 10 },
       { key: 'esi', header: 'ESI', width: 10 },
-      { key: 'gratuity', header: 'Gratuity', width: 10 },
-      { key: 'joiningDate', header: 'Date of Joining -in Asija', width: 22 },
-      { key: 'articleshipStartDate', header: 'Articleship Start Date', width: 20 },
-      { key: 'transferCase', header: 'Transfer Case', width: 14 },
-      { key: 'firstYearArticleship', header: '1st Yr of Articleship', width: 18 },
-      { key: 'secondYearArticleship', header: '2nd Yr of Articleship', width: 18 },
-      { key: 'thirdYearArticleship', header: '3rd Yr of Articleship', width: 18 },
-      { key: 'filledScholarship', header: 'Filled Scholarship', width: 16 },
-      { key: 'qualificationLevel', header: 'Qualification Level', width: 18 },
-      { key: 'nextAttemptDueDate', header: 'Next Attempt Due Date', width: 20 },
-      { key: 'registeredUnderPartner', header: 'Registered Under Partner', width: 22 },
-      { key: 'workingUnderPartner', header: 'Working Under Partner', width: 20 },
-      { key: 'employmentStatus', header: 'Status (Active / Inactive)', width: 18 },
-      { key: 'inactiveAsOf', header: 'Inactive Since', width: 16 },
+      { key: 'verticalTransfer1From', header: '1st Vertical Transfer\nfrom', width: 16 },
+      { key: 'verticalTransfer1To', header: '1st Vertical Transfer\nto', width: 16 },
+      { key: 'verticalTransfer1FromDate', header: '1st Vertical Transfer\nfrom (date)', width: 16 },
+      { key: 'verticalTransfer2From', header: '2nd Vertical Transfer\nfrom', width: 16 },
+      { key: 'verticalTransfer2To', header: '2nd Vertical Transfer\nto', width: 16 },
+      { key: 'verticalTransfer2FromDate', header: '2nd Vertical Transfer\nfrom (date)', width: 16 },
+      { key: 'status', header: 'Status', width: 12 },
     ];
 
     worksheet.columns = baseColumns;
@@ -2019,58 +2062,66 @@ export const EmployeeManagementSection: React.FC<{
       return `${dd}-${mm}-${yyyy}`;
     };
 
-    // Add data rows
-    users.forEach((u) => {
+    // Add data rows (same filtered list shown in the table)
+    filteredUsers.forEach((u, index) => {
       const inactive = isUserMarkedInactive(u);
       const rowData: { [key: string]: any } = {
-        name: u.name || '',
-        registrationNo: u.registrationNo || '',
+        srNo: index + 1,
         employeeCode: u.employeeCode || '',
-        paidFrom: u.paidFrom || '',
+        name: u.name || '',
+        joiningDate: toDateString(u.joiningDate),
+        registrationNo: u.registrationNo || '',
         designation: u.designation || '',
         category: u.category || '',
-        tallyName: u.tallyName || '',
+        registeredUnderPartner: u.registeredUnderPartner || '',
+        workingUnderPartner: u.workingUnderPartner || '',
+        attendanceEmail: u.attendanceEmail || '',
         gender: u.gender || '',
+        dateOfBirth: toDateString(u.dateOfBirth),
         email: u.email || '',
-        attendanceApprover: u.attendanceEmail || '',
-        parentName: u.parentName || '',
-        parentOccupation: u.parentOccupation || '',
+        alternateEmail: u.alternateEmail || '',
+        aadhaarNumber: u.aadhaarNumber || '',
+        panNumber: u.panNumber || '',
         mobileNumber: u.mobileNumber || '',
         alternateMobileNumber: u.alternateMobileNumber || '',
-        alternateEmail: u.alternateEmail || '',
         address1: u.address1 || '',
         address2: u.address2 || '',
+        qualificationLevel: u.qualificationLevel || '',
+        parentName: u.parentName || '',
+        parentOccupation: u.parentOccupation || '',
         emergencyContactNo: u.emergencyContactNo || '',
         emergencyContactRelation: u.emergencyContactRelation || '',
-        anniversaryDate: toDateString(u.anniversaryDate),
+        articleshipStartDate: toDateString(u.articleshipStartDate),
+        transferCase: u.transferCase || '',
+        firstYearArticleship: u.firstYearArticleship || '',
+        secondYearArticleship: u.secondYearArticleship || '',
+        thirdYearArticleship: u.thirdYearArticleship || '',
+        nextAttemptDueDate: toDateString(u.nextAttemptDueDate),
+        filledScholarship: u.filledScholarship || '',
+        paidFrom: u.paidFrom || '',
+        tallyName: u.tallyName || '',
         bankName: u.bankName || '',
         branchName: u.branchName || '',
         accountNumber: u.accountNumber || '',
         ifscCode: u.ifscCode || '',
         accountType: u.accountType || '',
         accountHolderName: u.accountHolderName || '',
-        aadhaarNumber: u.aadhaarNumber || '',
-        panNumber: u.panNumber || '',
         basicSalary: u.basicSalary || '',
         laptopAllowance: u.laptopAllowance || '',
+        mobileAllowance: u.mobileAllowance || '',
+        otherAllowance: u.otherAllowance || '',
         totalSalaryPerMonth: u.totalSalaryPerMonth || '',
-        totalSalaryPerAnnum: u.totalSalaryPerAnnum || '',
+        perAnnumFy2627: u.totalSalaryPerAnnum || '',
+        perAnnumFy2526: '', // Historical FY column — not stored separately; Per Annum stays as totalSalaryPerAnnum
         pf: u.pf || '',
         esi: u.esi || '',
-        gratuity: u.gratuity || '',
-        joiningDate: toDateString(u.joiningDate),
-        articleshipStartDate: toDateString(u.articleshipStartDate),
-        transferCase: u.transferCase || '',
-        firstYearArticleship: u.firstYearArticleship || '',
-        secondYearArticleship: u.secondYearArticleship || '',
-        thirdYearArticleship: u.thirdYearArticleship || '',
-        filledScholarship: u.filledScholarship || '',
-        qualificationLevel: u.qualificationLevel || '',
-        nextAttemptDueDate: toDateString(u.nextAttemptDueDate),
-        registeredUnderPartner: u.registeredUnderPartner || '',
-        workingUnderPartner: u.workingUnderPartner || '',
-        employmentStatus: inactive ? 'Inactive' : 'Active',
-        inactiveAsOf: inactive ? toDateString(u.inactiveAsOf as string | undefined) : '',
+        verticalTransfer1From: u.verticalTransfer1From || '',
+        verticalTransfer1To: u.verticalTransfer1To || '',
+        verticalTransfer1FromDate: toDateString(u.verticalTransfer1FromDate),
+        verticalTransfer2From: u.verticalTransfer2From || '',
+        verticalTransfer2To: u.verticalTransfer2To || '',
+        verticalTransfer2FromDate: toDateString(u.verticalTransfer2FromDate),
+        status: inactive ? 'Inactive' : 'Active',
       };
 
       worksheet.addRow(rowData);
@@ -2078,18 +2129,19 @@ export const EmployeeManagementSection: React.FC<{
 
     // Style the header row
     const headerRow = worksheet.getRow(1);
-    headerRow.height = 35;
+    headerRow.height = 42;
 
-    // Define color groups for better visual organization
+    // Color groups aligned to Master headings.xlsx column order
     const colorGroups = {
-      personal: { start: 1, end: 8, color: 'FF2E7D32' },      // Green - Personal Info
-      contact: { start: 9, end: 15, color: 'FF1565C0' },      // Blue - Contact Info
-      address: { start: 16, end: 17, color: 'FF00838F' },     // Teal - Address
-      emergency: { start: 18, end: 20, color: 'FFD84315' },   // Orange - Emergency
-      bank: { start: 21, end: 26, color: 'FF00695C' },        // Dark Teal - Bank
-      identity: { start: 27, end: 28, color: 'FF4527A0' },    // Deep Purple - Identity
-      salary: { start: 29, end: 34, color: 'FFC62828' },      // Red - Salary
-      employment: { start: 35, end: 48, color: 'FF283593' },  // Indigo - Employment
+      identity: { start: 1, end: 10, color: 'FF283593' }, // Sr–Attendance Email
+      personal: { start: 11, end: 16, color: 'FF2E7D32' }, // Gender–PAN
+      contact: { start: 17, end: 25, color: 'FF1565C0' }, // Cell–Relation
+      articleship: { start: 26, end: 32, color: 'FF00838F' }, // CA articleship block
+      payrollMeta: { start: 33, end: 34, color: 'FF4527A0' }, // Paid From / Tally
+      bank: { start: 35, end: 40, color: 'FF00695C' }, // Bank
+      salary: { start: 41, end: 49, color: 'FFC62828' }, // Salary / PF / ESI
+      transfers: { start: 50, end: 55, color: 'FFD84315' }, // Vertical transfers
+      status: { start: 56, end: 56, color: 'FF37474F' }, // Status
     };
 
     headerRow.eachCell((cell, colNumber) => {
@@ -2135,12 +2187,12 @@ export const EmployeeManagementSection: React.FC<{
           fgColor: { argb: isEvenRow ? 'FFF5F5F5' : 'FFFFFFFF' }
         };
 
-        // Left align text columns, center align others
-        const textColumns = [1, 2, 6, 7, 9, 10, 11, 12, 15, 16, 17, 21, 22, 26]; // Name, addresses, emails, etc.
+        // Left-align longer text columns (Name, emails, addresses, partners)
+        const textColumns = [3, 8, 9, 10, 13, 14, 19, 20, 22, 23, 34, 40];
         cell.alignment = {
           vertical: 'middle',
           horizontal: textColumns.includes(colNumber) ? 'left' : 'center',
-          wrapText: colNumber >= 16 && colNumber <= 17 // Wrap text for address columns
+          wrapText: colNumber === 19 || colNumber === 20,
         };
 
         cell.border = {
@@ -3716,6 +3768,15 @@ export const EmployeeManagementSection: React.FC<{
                     />
                   </div>
                   <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Date of Birth</label>
+                    <input
+                      type="date"
+                      value={toDateInputValue((formData as any).dateOfBirth)}
+                      onChange={(e) => handleInputChange('dateOfBirth' as keyof User, e.target.value)}
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+                  <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Aadhar No.</label>
                     <input
                       type="text"
@@ -3789,6 +3850,64 @@ export const EmployeeManagementSection: React.FC<{
                     type="date"
                     value={toDateInputValue(formData.nextAttemptDueDate)}
                     onChange={(e) => handleInputChange('nextAttemptDueDate', e.target.value)}
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+
+                <div className="md:col-span-3">
+                  <h4 className="mb-3 border-b border-slate-200 pb-1 text-sm font-semibold text-slate-800">Vertical Transfers</h4>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">1st Vertical Transfer from</label>
+                  <input
+                    type="text"
+                    value={(formData as any).verticalTransfer1From || ''}
+                    onChange={(e) => handleInputChange('verticalTransfer1From' as keyof User, e.target.value)}
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">1st Vertical Transfer to</label>
+                  <input
+                    type="text"
+                    value={(formData as any).verticalTransfer1To || ''}
+                    onChange={(e) => handleInputChange('verticalTransfer1To' as keyof User, e.target.value)}
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">1st Vertical Transfer from (date)</label>
+                  <input
+                    type="date"
+                    value={toDateInputValue((formData as any).verticalTransfer1FromDate)}
+                    onChange={(e) => handleInputChange('verticalTransfer1FromDate' as keyof User, e.target.value)}
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">2nd Vertical Transfer from</label>
+                  <input
+                    type="text"
+                    value={(formData as any).verticalTransfer2From || ''}
+                    onChange={(e) => handleInputChange('verticalTransfer2From' as keyof User, e.target.value)}
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">2nd Vertical Transfer to</label>
+                  <input
+                    type="text"
+                    value={(formData as any).verticalTransfer2To || ''}
+                    onChange={(e) => handleInputChange('verticalTransfer2To' as keyof User, e.target.value)}
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">2nd Vertical Transfer from (date)</label>
+                  <input
+                    type="date"
+                    value={toDateInputValue((formData as any).verticalTransfer2FromDate)}
+                    onChange={(e) => handleInputChange('verticalTransfer2FromDate' as keyof User, e.target.value)}
                     className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
@@ -3907,6 +4026,15 @@ export const EmployeeManagementSection: React.FC<{
                 
                 {renderSalaryFieldWithHistory('basicSalary', 'Basic Salary', 'salary')}
                 {renderSalaryFieldWithHistory('laptopAllowance', 'Laptop Allowance', 'salary')}
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Mobile Allowance</label>
+                  <input
+                    type="text"
+                    value={(formData as any).mobileAllowance || ''}
+                    onChange={(e) => handleInputChange('mobileAllowance' as keyof User, e.target.value)}
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Other Allowance</label>
                   <input
@@ -4140,6 +4268,15 @@ export const EmployeeManagementSection: React.FC<{
                     />
                   </div>
                   <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Date of Birth</label>
+                    <input
+                      type="date"
+                      value={toDateInputValue((formData as any).dateOfBirth)}
+                      onChange={(e) => handleInputChange('dateOfBirth' as keyof User, e.target.value)}
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+                  <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Bank Name</label>
                     <input
                       type="text"
@@ -4217,6 +4354,15 @@ export const EmployeeManagementSection: React.FC<{
                 <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
                   {renderSalaryFieldWithHistory('basicSalary', 'Basis Salary/Stipend/Fees', 'extended')}
                   {renderSalaryFieldWithHistory('laptopAllowance', 'Laptop Allowance', 'extended')}
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Mobile Allowance</label>
+                    <input
+                      type="text"
+                      value={(formData as any).mobileAllowance || ''}
+                      onChange={(e) => handleInputChange('mobileAllowance' as keyof User, e.target.value)}
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
                   {renderSalaryFieldWithHistory('totalSalaryPerMonth', 'Total Salary (P/M)', 'extended')}
                   {renderSalaryFieldWithHistory('totalSalaryPerAnnum', 'Per Annum', 'extended')}
                 </div>
@@ -4271,6 +4417,64 @@ export const EmployeeManagementSection: React.FC<{
                     type="date"
                     value={toDateInputValue(formData.nextAttemptDueDate)}
                     onChange={(e) => handleInputChange('nextAttemptDueDate', e.target.value)}
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+
+                <div className="md:col-span-3">
+                  <h4 className="mb-3 border-b border-slate-200 pb-1 text-sm font-semibold text-slate-800">Vertical Transfers</h4>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">1st Vertical Transfer from</label>
+                  <input
+                    type="text"
+                    value={(formData as any).verticalTransfer1From || ''}
+                    onChange={(e) => handleInputChange('verticalTransfer1From' as keyof User, e.target.value)}
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">1st Vertical Transfer to</label>
+                  <input
+                    type="text"
+                    value={(formData as any).verticalTransfer1To || ''}
+                    onChange={(e) => handleInputChange('verticalTransfer1To' as keyof User, e.target.value)}
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">1st Vertical Transfer from (date)</label>
+                  <input
+                    type="date"
+                    value={toDateInputValue((formData as any).verticalTransfer1FromDate)}
+                    onChange={(e) => handleInputChange('verticalTransfer1FromDate' as keyof User, e.target.value)}
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">2nd Vertical Transfer from</label>
+                  <input
+                    type="text"
+                    value={(formData as any).verticalTransfer2From || ''}
+                    onChange={(e) => handleInputChange('verticalTransfer2From' as keyof User, e.target.value)}
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">2nd Vertical Transfer to</label>
+                  <input
+                    type="text"
+                    value={(formData as any).verticalTransfer2To || ''}
+                    onChange={(e) => handleInputChange('verticalTransfer2To' as keyof User, e.target.value)}
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">2nd Vertical Transfer from (date)</label>
+                  <input
+                    type="date"
+                    value={toDateInputValue((formData as any).verticalTransfer2FromDate)}
+                    onChange={(e) => handleInputChange('verticalTransfer2FromDate' as keyof User, e.target.value)}
                     className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
@@ -5259,6 +5463,15 @@ export const EmployeeManagementSection: React.FC<{
                     />
                   </div>
                   <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Date of Birth</label>
+                    <input
+                      type="date"
+                      value={toDateInputValue((formData as any).dateOfBirth)}
+                      onChange={(e) => handleInputChange('dateOfBirth' as keyof User, e.target.value)}
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+                  <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Bank Name</label>
                     <input
                       type="text"
@@ -5336,6 +5549,15 @@ export const EmployeeManagementSection: React.FC<{
                 <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4">
                   {renderSalaryFieldWithHistory('basicSalary', 'Basis Salary/Stipend/Fees', 'extended')}
                   {renderSalaryFieldWithHistory('laptopAllowance', 'Laptop Allowance', 'extended')}
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Mobile Allowance</label>
+                    <input
+                      type="text"
+                      value={(formData as any).mobileAllowance || ''}
+                      onChange={(e) => handleInputChange('mobileAllowance' as keyof User, e.target.value)}
+                      className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
                   {renderSalaryFieldWithHistory('totalSalaryPerMonth', 'Total Salary (P/M)', 'extended')}
                   {renderSalaryFieldWithHistory('totalSalaryPerAnnum', 'Per Annum', 'extended')}
                 </div>
@@ -5390,6 +5612,64 @@ export const EmployeeManagementSection: React.FC<{
                     type="date"
                     value={toDateInputValue(formData.nextAttemptDueDate)}
                     onChange={(e) => handleInputChange('nextAttemptDueDate', e.target.value)}
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+
+                <div className="md:col-span-3">
+                  <h4 className="mb-3 border-b border-slate-200 pb-1 text-sm font-semibold text-slate-800">Vertical Transfers</h4>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">1st Vertical Transfer from</label>
+                  <input
+                    type="text"
+                    value={(formData as any).verticalTransfer1From || ''}
+                    onChange={(e) => handleInputChange('verticalTransfer1From' as keyof User, e.target.value)}
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">1st Vertical Transfer to</label>
+                  <input
+                    type="text"
+                    value={(formData as any).verticalTransfer1To || ''}
+                    onChange={(e) => handleInputChange('verticalTransfer1To' as keyof User, e.target.value)}
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">1st Vertical Transfer from (date)</label>
+                  <input
+                    type="date"
+                    value={toDateInputValue((formData as any).verticalTransfer1FromDate)}
+                    onChange={(e) => handleInputChange('verticalTransfer1FromDate' as keyof User, e.target.value)}
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">2nd Vertical Transfer from</label>
+                  <input
+                    type="text"
+                    value={(formData as any).verticalTransfer2From || ''}
+                    onChange={(e) => handleInputChange('verticalTransfer2From' as keyof User, e.target.value)}
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">2nd Vertical Transfer to</label>
+                  <input
+                    type="text"
+                    value={(formData as any).verticalTransfer2To || ''}
+                    onChange={(e) => handleInputChange('verticalTransfer2To' as keyof User, e.target.value)}
+                    className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">2nd Vertical Transfer from (date)</label>
+                  <input
+                    type="date"
+                    value={toDateInputValue((formData as any).verticalTransfer2FromDate)}
+                    onChange={(e) => handleInputChange('verticalTransfer2FromDate' as keyof User, e.target.value)}
                     className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>

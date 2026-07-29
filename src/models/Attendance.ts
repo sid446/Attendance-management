@@ -23,6 +23,11 @@ export interface IDailyRecord {
     requestId?: string;
     approvedAt?: string;
   }[];
+  /** Last edit / request approval attribution (for daywise Source column). */
+  updatedBy?: string;
+  updatedByEmail?: string;
+  approvedBy?: string;
+  approvedByEmail?: string;
 }
 
 // Monthly summary interface
@@ -143,6 +148,10 @@ const DailyRecordSchema: Schema = new Schema(
       ],
       default: undefined,
     },
+    updatedBy: { type: String, trim: true },
+    updatedByEmail: { type: String, trim: true, lowercase: true },
+    approvedBy: { type: String, trim: true },
+    approvedByEmail: { type: String, trim: true, lowercase: true },
   },
   { _id: false }
 );

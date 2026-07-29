@@ -13,6 +13,7 @@ import {
   getArticleExcessBreakdownForPeriod,
   isDayIncludedInScheduledCalc,
 } from '@/lib/attendanceSummaryMetrics';
+import { isHalfDayAttendanceRecord } from '@/lib/calculateDayExcessHour';
 import {
   formatExtraWorkEntriesTimeSummary,
   formatRecordPunchTimeRange,
@@ -1140,6 +1141,9 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
       const [outH, outM] = schedule.outTime!.split(':').map(Number);
       let diff = (outH * 60 + outM) - (inH * 60 + inM);
       if (diff < 0) diff += 24 * 60;
+      if (isHalfDayAttendanceRecord(rec as { halfDay?: boolean; typeOfPresence?: string })) {
+        diff = Math.round(diff / 2);
+      }
 
       const hours = diff / 60;
       total += hours;
@@ -1147,7 +1151,12 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
       breakdown.push({
         date: dateStr,
         info: formatHoursMinutes(hours),
-        subInfo: `${dateObj.toLocaleDateString('en-US', { weekday: 'long' })}${schedule.isHalfDay ? ' (Half Day)' : ''}`
+        subInfo: `${dateObj.toLocaleDateString('en-US', { weekday: 'long' })}${
+          isHalfDayAttendanceRecord(rec as { halfDay?: boolean; typeOfPresence?: string }) ||
+          schedule.isHalfDay
+            ? ' (Half Day)'
+            : ''
+        }`
       });
     });
 
@@ -1178,6 +1187,9 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
       const [outH, outM] = schedule.outTime.split(':').map(Number);
       let diff = (outH * 60 + outM) - (inH * 60 + inM);
       if (diff < 0) diff += 24 * 60;
+      if (isHalfDayAttendanceRecord(rec as { halfDay?: boolean; typeOfPresence?: string })) {
+        diff = Math.round(diff / 2);
+      }
 
       const hours = diff / 60;
       subtotal += hours;
@@ -1186,7 +1198,12 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
       breakdown.push({
         date: dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }),
         info: formatHoursMinutes(hours),
-        subInfo: `${schedule.inTime} - ${schedule.outTime}${schedule.isHalfDay ? ' (Half Day)' : ''}`
+        subInfo: `${schedule.inTime} - ${schedule.outTime}${
+          isHalfDayAttendanceRecord(rec as { halfDay?: boolean; typeOfPresence?: string }) ||
+          schedule.isHalfDay
+            ? ' (Half Day)'
+            : ''
+        }`
       });
     });
 

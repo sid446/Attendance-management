@@ -75,6 +75,7 @@ export interface IUser extends Document {
   emergencyContactNo?: string;
   emergencyContactRelation?: string;
   anniversaryDate?: Date;
+  dateOfBirth?: Date;
   bankName?: string;
   branchName?: string;
   accountNumber?: string;
@@ -85,6 +86,7 @@ export interface IUser extends Document {
   panNumber?: string;
   basicSalary?: string; // Basis Salary/Stipend/Fees
   laptopAllowance?: string;
+  mobileAllowance?: string;
   otherAllowance?: string;
   bonus?: string;
   incentive?: string;
@@ -104,6 +106,12 @@ export interface IUser extends Document {
   registeredUnderPartner?: string;
   workingUnderPartner?: string;
   workingTiming?: string;
+  verticalTransfer1From?: string;
+  verticalTransfer1To?: string;
+  verticalTransfer1FromDate?: Date;
+  verticalTransfer2From?: string;
+  verticalTransfer2To?: string;
+  verticalTransfer2FromDate?: Date;
 
   fieldHistories?: {
     designation?: IEffectiveValueHistory[];
@@ -360,6 +368,9 @@ const UserSchema = new Schema(
     anniversaryDate: {
       type: Date,
     },
+    dateOfBirth: {
+      type: Date,
+    },
     bankName: {
       type: String,
       trim: true,
@@ -397,6 +408,10 @@ const UserSchema = new Schema(
       trim: true,
     },
     laptopAllowance: {
+      type: String,
+      trim: true,
+    },
+    mobileAllowance: {
       type: String,
       trim: true,
     },
@@ -473,6 +488,28 @@ const UserSchema = new Schema(
     workingTiming: {
       type: String,
       trim: true,
+    },
+    verticalTransfer1From: {
+      type: String,
+      trim: true,
+    },
+    verticalTransfer1To: {
+      type: String,
+      trim: true,
+    },
+    verticalTransfer1FromDate: {
+      type: Date,
+    },
+    verticalTransfer2From: {
+      type: String,
+      trim: true,
+    },
+    verticalTransfer2To: {
+      type: String,
+      trim: true,
+    },
+    verticalTransfer2FromDate: {
+      type: Date,
     },
     fieldHistories: {
       designation: {

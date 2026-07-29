@@ -28,6 +28,7 @@ const SECTION_LABELS: Record<HrConsoleSectionId, string> = {
   articleCredits: 'Article Credits',
   invalid: 'Invalid Attendance',
   misExceptions: 'MIS Exceptions',
+  daywiseCompare: 'Daywise Compare',
   clientPlaces: 'Client Places',
   accessControl: 'Access control (this page)',
   settings: 'Settings',
