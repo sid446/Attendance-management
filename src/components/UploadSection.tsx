@@ -1,6 +1,11 @@
 import React, { ChangeEvent, useState, useEffect } from 'react';
 import { Upload, AlertCircle, ChevronDown, ChevronUp, FileSpreadsheet, ChevronRight, Download, History, Clock, Users } from 'lucide-react';
 import { confirmMajorAction } from '@/lib/confirmMajorAction';
+import {
+  exportGroupedErrorsToExcel,
+  exportHistoricalLogToExcel,
+  sanitizeDownloadFileName,
+} from '@/lib/uploadErrorLogUtils';
 
 interface MachineFormat {
   machineId: string;
@@ -198,31 +203,25 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
   }, [uploadErrors]);
 
   const exportCurrentErrors = async () => {
-    const XLSX = (await import('xlsx')).default;
-    const wsData = groupedCurrentErrors.map(e => ({
-      'Error Message': e.message,
-      'Occurrences': e.count,
-      'Sample Records (Max 5)': e.sampleRows.join(', ')
-    }));
-    const ws = XLSX.utils.json_to_sheet(wsData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Errors');
-    XLSX.writeFile(wb, `Current_Upload_Errors.xlsx`);
+    try {
+      await exportGroupedErrorsToExcel(groupedCurrentErrors, 'Current_Upload_Errors.xlsx');
+    } catch (err) {
+      console.error('Failed to export current upload errors:', err);
+      alert(err instanceof Error ? err.message : 'Failed to download error report');
+    }
   };
 
   const exportHistoricalLog = async (log: any) => {
-    const XLSX = (await import('xlsx')).default;
-    const wsData = log.errorDetails.map((e: any) => ({
-      'File Name': log.fileName,
-      'Upload Date': new Date(log.uploadDate).toLocaleString('en-GB'),
-      'Error Message': e.message,
-      'Occurrences': e.count,
-      'Sample Records (Max 5)': e.sampleRows.join(', ')
-    }));
-    const ws = XLSX.utils.json_to_sheet(wsData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Errors');
-    XLSX.writeFile(wb, `Upload_Errors_${log.fileName}.xlsx`);
+    try {
+      const original = String(log.fileName || 'upload').replace(/\.xlsx$/i, '');
+      await exportHistoricalLogToExcel(
+        log,
+        sanitizeDownloadFileName(`Upload_Errors_${original}.xlsx`)
+      );
+    } catch (err) {
+      console.error('Failed to export historical upload errors:', err);
+      alert(err instanceof Error ? err.message : 'Failed to download error report');
+    }
   };
 
   // Keep selectedFiles in sync when parent supplies `file` or `files` props

@@ -698,6 +698,76 @@ export function getTotalDaysInRecords(item: AttendanceSummaryView): number {
   return Object.keys(item.recordDetails || {}).length;
 }
 
+/** Calendar days in the month, regardless of what has been uploaded. */
+export function getTotalDaysInMonth(monthYear: string): number {
+  return monthDateStrings(monthYear).length;
+}
+
+/**
+ * Every working day the month is scheduled to have (excludes Sundays, company
+ * holidays and week-off rows), whether or not attendance has been uploaded yet.
+ */
+export function getScheduledWorkingDaysInMonth(
+  monthYear: string,
+  item: AttendanceSummaryView | null,
+  holidayDates: Set<string>
+): number {
+  return monthDateStrings(monthYear).filter((dateStr) =>
+    isWorkingDayInRecords(dateStr, (item?.recordDetails?.[dateStr] as any) || {}, holidayDates)
+  ).length;
+}
+
+/** Attendance recorded on a Sunday, company holiday or week-off day. */
+export function isWorkedOnHolidayRecord(
+  dateStr: string,
+  recAny: unknown,
+  holidayDates: Set<string>
+): boolean {
+  const rec: any = recAny || {};
+  const type = String(rec.typeOfPresence || '');
+  const typeLower = type.toLowerCase();
+
+  const d = new Date(`${dateStr}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return false;
+
+  const isNonWorkingDay =
+    d.getDay() === 0 ||
+    holidayDates.has(dateStr) ||
+    type === 'Holiday' ||
+    type === 'Sunday' ||
+    typeLower.includes('weekoff') ||
+    typeLower.includes('week off');
+  if (!isNonWorkingDay) return false;
+
+  if (type === 'Absent' || type === 'Leave' || type === 'On leave') return false;
+
+  const checkin = String(rec.editedCheckin || rec.checkin || '').trim();
+  const checkout = String(rec.editedCheckout || rec.checkout || '').trim();
+  const hasValidIn = !!checkin && checkin !== '00:00';
+  const hasValidOut = !!checkout && checkout !== '00:00';
+
+  const workedType =
+    typeLower.includes('present') ||
+    typeLower.includes('half day') ||
+    typeLower.includes('wfh') ||
+    typeLower.includes('outstation') ||
+    typeLower.includes('clientplace') ||
+    typeLower.includes('special allowance');
+
+  return hasValidIn || hasValidOut || Number(rec.totalHour || 0) > 0 || workedType;
+}
+
+export function getWorkedOnHolidayCount(
+  item: AttendanceSummaryView,
+  holidayDates: Set<string>
+): number {
+  let count = 0;
+  Object.entries(item.recordDetails || {}).forEach(([dateStr, rec]) => {
+    if (isWorkedOnHolidayRecord(dateStr, rec, holidayDates)) count += 1;
+  });
+  return count;
+}
+
 export function getHolidaysInRecordsCount(
   item: AttendanceSummaryView,
   holidayDates: Set<string>
@@ -824,12 +894,21 @@ function isFullLeaveDayInRecords(recAny: unknown): boolean {
 export type SummaryMetricDayKind =
   | 'total-days'
   | 'holidays'
+  | 'scheduled-working-days'
   | 'working-days'
   | 'present'
   | 'half-days'
   | 'absent'
   | 'late'
-  | 'leave';
+  | 'leave'
+  | 'absent-leave'
+  | 'worked-on-holiday';
+
+/** Kinds counted across the whole month rather than only uploaded rows. */
+const MONTH_WIDE_METRIC_KINDS: ReadonlySet<SummaryMetricDayKind> = new Set([
+  'total-days',
+  'scheduled-working-days',
+]);
 
 export interface SummaryMetricDayRow {
   date: string;
@@ -857,20 +936,32 @@ export function getSummaryMetricDays(
   const records = item.recordDetails || {};
   const rows: SummaryMetricDayRow[] = [];
 
-  for (const [dateStr, recAny] of Object.entries(records)) {
-    const rec = recAny as any;
+  const dateKeys = MONTH_WIDE_METRIC_KINDS.has(kind)
+    ? monthDateStrings(item.monthYear)
+    : Object.keys(records);
+
+  for (const dateStr of dateKeys) {
+    const recAny = (records as Record<string, unknown>)[dateStr];
+    const rec = (recAny || {}) as any;
     let include = false;
     let detail: string | undefined;
 
     switch (kind) {
       case 'total-days':
         include = true;
+        detail = recAny
+          ? String(rec.typeOfPresence || '').trim() || undefined
+          : 'Not uploaded yet';
         break;
       case 'holidays':
         include = isHolidayInRecords(dateStr, holidayDates);
         if (include) {
           detail = holidayMetricDetailLabel(dateStr);
         }
+        break;
+      case 'scheduled-working-days':
+        include = isWorkingDayInRecords(dateStr, rec, holidayDates);
+        if (include && !recAny) detail = 'Not uploaded yet';
         break;
       case 'working-days':
         include = isWorkingDayInRecords(dateStr, rec, holidayDates);
@@ -902,6 +993,21 @@ export function getSummaryMetricDays(
         include = isFullLeaveDayInRecords(rec);
         if (include) detail = 'Full leave day';
         break;
+      case 'absent-leave':
+        if (isFullLeaveDayInRecords(rec)) {
+          include = true;
+          detail = 'Leave';
+        } else if (isAbsentDayInRecords(dateStr, rec, holidayDates)) {
+          include = true;
+          detail = String(rec.typeOfPresence || 'Absent').trim() || 'Absent';
+        }
+        break;
+      case 'worked-on-holiday':
+        include = isWorkedOnHolidayRecord(dateStr, rec, holidayDates);
+        if (include) {
+          detail = String(rec.typeOfPresence || '').trim() || holidayMetricDetailLabel(dateStr);
+        }
+        break;
       default:
         include = false;
     }
@@ -919,14 +1025,17 @@ export function getSummaryMetricDays(
 }
 
 export const SUMMARY_METRIC_DAY_LABELS: Record<SummaryMetricDayKind, string> = {
-  'total-days': 'Total days',
+  'total-days': 'Total days in month',
   holidays: 'Holidays',
-  'working-days': 'Working days',
+  'scheduled-working-days': 'Scheduled working days',
+  'working-days': 'Working days till yesterday',
   present: 'Present days',
   'half-days': 'Half days',
   absent: 'Absent days',
   late: 'Late arrivals',
   leave: 'Leave days',
+  'absent-leave': 'Absent / leave days',
+  'worked-on-holiday': 'Worked on holiday',
 };
 
 export function getScheduledHoursNoLunchForMonth(
@@ -1123,14 +1232,23 @@ export function getExcessDeficitLikeSummary(
 export interface SummaryAlignedMetrics {
   /** Row count in summary (days with a record row) */
   totalDaysInRecords: number;
+  /** Every calendar day in the month */
+  totalDaysInMonth: number;
   /** Sundays + company holidays that appear in those record dates */
   holidaysInRecords: number;
+  /** All working days the month is scheduled to have, uploaded or not */
+  scheduledWorkingDaysInMonth: number;
+  /** Working days that have actually been uploaded so far */
   workingDaysInRecords: number;
   totalPresent: number;
   totalHalfDay: number;
   totalAbsent: number;
   calcLate: number;
   leaveFullDaysConsumed: number;
+  /** Absent days + full leave days, shown as one figure */
+  absentOrLeaveDays: number;
+  /** Days worked on a Sunday, company holiday or week off */
+  workedOnHolidayDays: number;
   calcScheduledHours: number;
   totalHour: number;
   calcExcessDeficit: number;
@@ -1168,15 +1286,22 @@ export function computeSummaryAlignedMetrics(
     calcExcessDeficit = applyExcessHourAllowance(rawExcess, cap).displayExcess;
   }
 
+  const totalAbsent = getAbsentCountLikeSummary(item, holidayDates, options);
+  const leaveFullDaysConsumed = getLeaveConsumedFullDays(item);
+
   return {
     totalDaysInRecords: getTotalDaysInRecords(item),
+    totalDaysInMonth: dateList.length,
     holidaysInRecords: getHolidaysInRecordsCount(item, holidayDates),
+    scheduledWorkingDaysInMonth: getScheduledWorkingDaysInMonth(monthYear, item, holidayDates),
     workingDaysInRecords: getWorkingDaysInRecordsCount(item, holidayDates),
     totalPresent: getTotalPresentLikeAdminSummary(item, options, holidayDates),
     totalHalfDay: getHalfDayCountLikeSummary(item, user, options, holidayDates),
-    totalAbsent: getAbsentCountLikeSummary(item, holidayDates, options),
+    totalAbsent,
     calcLate: getLateCountLikeSummary(item, user),
-    leaveFullDaysConsumed: getLeaveConsumedFullDays(item),
+    leaveFullDaysConsumed,
+    absentOrLeaveDays: totalAbsent + leaveFullDaysConsumed,
+    workedOnHolidayDays: getWorkedOnHolidayCount(item, holidayDates),
     calcScheduledHours: getScheduledHoursNoLunchForMonth(item, user, dateList),
     totalHour,
     calcExcessDeficit,

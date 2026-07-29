@@ -27,9 +27,9 @@ export function EmployeeDashboardCharts({
     () => [
       // Use solid fills (better contrast on light surfaces)
       { label: "Present", value: m.totalPresent, className: "bg-emerald-500" },
-      { label: "Absent", value: m.totalAbsent, className: "bg-rose-500" },
+      { label: "Absent / leave", value: m.absentOrLeaveDays, className: "bg-rose-500" },
       { label: "Half", value: m.totalHalfDay, className: "bg-amber-500" },
-      { label: "Leave", value: m.leaveFullDaysConsumed, className: "bg-sky-500" },
+      { label: "Worked on holiday", value: m.workedOnHolidayDays, className: "bg-sky-500" },
     ],
     [m]
   );

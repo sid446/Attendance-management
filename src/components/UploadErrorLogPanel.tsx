@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { AlertCircle, Clock, Download, FileSpreadsheet, History } from 'lucide-react';
+import { AlertCircle, Clock, Download, FileSpreadsheet, History, Loader2 } from 'lucide-react';
 import {
   exportGroupedErrorsToExcel,
   exportHistoricalLogToExcel,
   fetchUploadErrorLogs,
   GroupedUploadError,
+  sanitizeDownloadFileName,
   UploadLogType,
 } from '@/lib/uploadErrorLogUtils';
 
@@ -26,6 +27,8 @@ export const UploadErrorLogPanel: React.FC<UploadErrorLogPanelProps> = ({
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState<any[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
+  const [exportingKey, setExportingKey] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!showLogs) return;
@@ -48,6 +51,24 @@ export const UploadErrorLogPanel: React.FC<UploadErrorLogPanelProps> = ({
 
   const totalCurrent = groupedErrors.reduce((sum, e) => sum + e.count, 0);
 
+  const runExport = async (key: string, action: () => Promise<void>) => {
+    setExportError(null);
+    setExportingKey(key);
+    try {
+      await action();
+    } catch (err) {
+      console.error('Failed to export error report:', err);
+      setExportError(err instanceof Error ? err.message : 'Failed to download error report');
+    } finally {
+      setExportingKey(null);
+    }
+  };
+
+  const historicalExportName = (log: { fileName?: string }) => {
+    const original = String(log.fileName || 'upload').replace(/\.xlsx$/i, '');
+    return sanitizeDownloadFileName(`${exportFilePrefix}_Errors_${original}.xlsx`);
+  };
+
   return (
     <div className="mt-6 border-t border-slate-200 pt-6">
       <div className="flex items-center justify-between">
@@ -62,6 +83,23 @@ export const UploadErrorLogPanel: React.FC<UploadErrorLogPanelProps> = ({
         </button>
       </div>
 
+      {exportError && (
+        <div
+          role="alert"
+          className="mt-3 flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <span className="min-w-0 flex-1">{exportError}</span>
+          <button
+            type="button"
+            onClick={() => setExportError(null)}
+            className="text-xs font-medium underline"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {groupedErrors.length > 0 && !showLogs && (
         <div className="mt-4 overflow-hidden rounded-lg border border-red-200 shadow-sm">
           <div className="flex items-center justify-between border-b border-red-200 bg-red-50 px-4 py-3">
@@ -73,10 +111,22 @@ export const UploadErrorLogPanel: React.FC<UploadErrorLogPanelProps> = ({
             </div>
             <button
               type="button"
-              onClick={() => exportGroupedErrorsToExcel(groupedErrors, `${exportFilePrefix}_Current_Errors.xlsx`)}
-              className="inline-flex items-center gap-1.5 rounded-md bg-white px-2.5 py-1.5 text-xs font-medium text-red-700 shadow-sm ring-1 ring-inset ring-red-300 hover:bg-red-50"
+              disabled={exportingKey === 'current'}
+              onClick={() =>
+                runExport('current', () =>
+                  exportGroupedErrorsToExcel(
+                    groupedErrors,
+                    `${exportFilePrefix}_Current_Errors.xlsx`
+                  )
+                )
+              }
+              className="inline-flex items-center gap-1.5 rounded-md bg-white px-2.5 py-1.5 text-xs font-medium text-red-700 shadow-sm ring-1 ring-inset ring-red-300 hover:bg-red-50 disabled:opacity-60"
             >
-              <Download className="h-3.5 w-3.5" />
+              {exportingKey === 'current' ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Download className="h-3.5 w-3.5" />
+              )}
               Export to Excel
             </button>
           </div>
@@ -98,9 +148,9 @@ export const UploadErrorLogPanel: React.FC<UploadErrorLogPanelProps> = ({
                     <td className="px-4 py-2.5 text-center font-semibold text-slate-700">{err.count}</td>
                     <td
                       className="max-w-sm truncate px-4 py-2.5 font-mono text-xs text-slate-500"
-                      title={err.sampleRows.join(', ')}
+                      title={(err.sampleRows || []).join(', ')}
                     >
-                      {err.sampleRows.join(', ')}
+                      {(err.sampleRows || []).join(', ')}
                     </td>
                   </tr>
                 ))}
@@ -137,12 +187,19 @@ export const UploadErrorLogPanel: React.FC<UploadErrorLogPanelProps> = ({
                   </div>
                   <button
                     type="button"
+                    disabled={exportingKey === log._id || !(log.errorDetails || []).length}
                     onClick={() =>
-                      exportHistoricalLogToExcel(log, `${exportFilePrefix}_Errors_${log.fileName}.xlsx`)
+                      runExport(String(log._id), () =>
+                        exportHistoricalLogToExcel(log, historicalExportName(log))
+                      )
                     }
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 transition-colors hover:bg-slate-50"
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 transition-colors hover:bg-slate-50 disabled:opacity-60"
                   >
-                    <Download className="h-4 w-4 text-slate-500" />
+                    {exportingKey === log._id ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-slate-500" />
+                    ) : (
+                      <Download className="h-4 w-4 text-slate-500" />
+                    )}
                     Export Excel
                   </button>
                 </div>
@@ -164,9 +221,9 @@ export const UploadErrorLogPanel: React.FC<UploadErrorLogPanelProps> = ({
                           <td className="px-4 py-2 text-center font-medium text-slate-700">{err.count}</td>
                           <td
                             className="max-w-sm truncate px-4 py-2 font-mono text-xs text-slate-500"
-                            title={err.sampleRows.join(', ')}
+                            title={(err.sampleRows || []).join(', ')}
                           >
-                            {err.sampleRows.join(', ')}
+                            {(err.sampleRows || []).join(', ')}
                           </td>
                         </tr>
                       ))}

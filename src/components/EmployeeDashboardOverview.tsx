@@ -120,9 +120,11 @@ export function EmployeeDashboardOverview({
     if (!m) return 0;
     switch (kind) {
       case "total-days":
-        return m.totalDaysInRecords;
+        return m.totalDaysInMonth;
       case "holidays":
         return m.holidaysInRecords;
+      case "scheduled-working-days":
+        return m.scheduledWorkingDaysInMonth;
       case "working-days":
         return m.workingDaysInRecords;
       case "present":
@@ -135,6 +137,10 @@ export function EmployeeDashboardOverview({
         return m.calcLate;
       case "leave":
         return m.leaveFullDaysConsumed;
+      case "absent-leave":
+        return m.absentOrLeaveDays;
+      case "worked-on-holiday":
+        return m.workedOnHolidayDays;
       default:
         return 0;
     }
@@ -359,7 +365,7 @@ export function EmployeeDashboardOverview({
             </h3>
             <p className="mt-1 text-[11px] text-muted-foreground">
               Same rules as the admin <span className="text-muted-foreground">Attendance Summary</span>.
-              Tap Present, Absent, Late, Leave, Working days, or Holidays to see dates.
+              Tap any card to see the dates behind it.
             </p>
           </div>
           {isLoadingMetrics && (
@@ -378,14 +384,35 @@ export function EmployeeDashboardOverview({
           </p>
         ) : (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-            {cell("total-days", "Total days", String(m.totalDaysInRecords), "Days with rows")}
+            {cell("total-days", "Total days", String(m.totalDaysInMonth), "Calendar days this month")}
             {cell("holidays", "Holidays", String(m.holidaysInRecords), "Week off (Sun) + company holidays")}
-            {cell("working-days", "Working days", String(m.workingDaysInRecords), "Excl. sun / holiday / week-off")}
+            {cell(
+              "scheduled-working-days",
+              "Scheduled working days",
+              String(m.scheduledWorkingDaysInMonth),
+              "Whole month, excl. sun / holiday / week-off"
+            )}
+            {cell(
+              "working-days",
+              "Working days till yesterday",
+              String(m.workingDaysInRecords),
+              "Uploaded so far this month"
+            )}
             {cell("present", "Present", String(m.totalPresent))}
             {cell("half-days", "Half days", String(m.totalHalfDay))}
-            {cell("absent", "Absent", String(m.totalAbsent))}
+            {cell(
+              "absent-leave",
+              "Absent / leave",
+              String(m.absentOrLeaveDays),
+              `Absent ${m.totalAbsent} · Leave ${m.leaveFullDaysConsumed}`
+            )}
             {cell("late", "Late", String(m.calcLate))}
-            {cell("leave", "Leave", String(m.leaveFullDaysConsumed), "Full leave days (value = 1)")}
+            {cell(
+              "worked-on-holiday",
+              "Worked on holiday",
+              String(m.workedOnHolidayDays),
+              "Sunday / holiday / week off"
+            )}
             {cell(null, "Scheduled", formatHoursMinutes(m.calcScheduledHours), "Expected hours (eligible days)")}
             {cell(null, "Work hours", formatHoursMinutes(m.totalHour), "Sum on scheduled days only (same as admin Summary)")}
             {cell(
