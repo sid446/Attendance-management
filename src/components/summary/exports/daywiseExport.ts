@@ -40,7 +40,8 @@ import { DAYWISE_COLUMN_KEYS, DAYWISE_HEADER_LABELS } from './daywiseExportForma
 import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
 
 export async function buildDaywiseWorkbook(
-  ctx: SummaryExportContext
+  ctx: SummaryExportContext,
+  options?: { skipFormatting?: boolean }
 ): Promise<import('exceljs').Workbook | null> {
   const {
     filteredSummaries,
@@ -1029,6 +1030,7 @@ export async function buildDaywiseWorkbook(
       };
     });
 
+    if (!options?.skipFormatting) {
     const daywiseLeftAlignKeys = new Set(['source', 'employeeName', 'designation', 'verticalHead', 'extraWorkTimes']);
 
     const daywiseNumericColumnFmt: Record<string, string> = {
@@ -1161,6 +1163,7 @@ export async function buildDaywiseWorkbook(
       const base = col.width || 10;
       col.width = Math.min(42, Math.max(base, maxLen * 0.9 + 1.5));
     });
+    }
 
     return workbook;
 }

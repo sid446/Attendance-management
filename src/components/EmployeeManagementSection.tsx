@@ -543,6 +543,10 @@ export const EmployeeManagementSection: React.FC<{
       alert('You do not have permission to deactivate employees.');
       return;
     }
+    if (isUserMarkedInactive(user)) {
+      alert('This employee is already inactive. Use permanent delete if you want to remove them.');
+      return;
+    }
     if (
       !confirmMajorAction(`Deactivate employee "${user.name}"`, [
         'This will deactivate their account.',
@@ -593,6 +597,70 @@ export const EmployeeManagementSection: React.FC<{
       await fetchUsers({ soft: true });
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to delete user');
+    }
+  };
+
+  const handlePermanentDeleteUser = async (user: User) => {
+    if (!employeesCanEdit || tabAccess.basic !== 'edit') {
+      alert('You do not have permission to delete employees.');
+      return;
+    }
+    if (!isUserMarkedInactive(user)) {
+      alert('Mark the employee inactive first, then you can delete them permanently.');
+      return;
+    }
+    if (
+      !confirmMajorAction(`Permanently delete employee "${user.name}"`, [
+        'This cannot be undone.',
+        'Their account and related attendance data will be removed forever.',
+      ])
+    ) {
+      return;
+    }
+    if (
+      !window.confirm(
+        `Are you really sure you want to permanently delete "${user.name}"?\n\nThis action cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    const id = normalizeMongoId(user._id);
+    if (!id) {
+      alert('Missing employee id. Please refresh the page and try again.');
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `/api/users/${encodeURIComponent(id)}?permanent=true`,
+        hrCredentialsInit({ method: 'DELETE' })
+      );
+
+      const text = await response.text();
+      let result: { success?: boolean; error?: string } = {};
+      try {
+        result = text ? JSON.parse(text) : {};
+      } catch {
+        alert(`Permanent delete failed (bad response). HTTP ${response.status}.`);
+        return;
+      }
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to permanently delete user');
+      }
+
+      setUsers((prev) => prev.filter((u) => normalizeMongoId(u._id) !== id));
+      if (editingUser && normalizeMongoId(editingUser._id) === id) {
+        handleCancelEdit();
+      }
+      if (onRefreshUsers) {
+        onRefreshUsers();
+      }
+      await fetchUsers({ soft: true });
+      alert(`"${user.name}" was permanently deleted.`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to permanently delete user');
     }
   };
 
@@ -3112,6 +3180,17 @@ export const EmployeeManagementSection: React.FC<{
                       <p className="text-xs text-slate-500 mt-1">
                         Days on and after this date are not counted in reports or dashboards.
                       </p>
+                      {editingUser && isUserMarkedInactive(editingUser) && (
+                        <button
+                          type="button"
+                          onClick={() => handlePermanentDeleteUser(editingUser)}
+                          disabled={!employeesCanEdit || tabAccess.basic !== 'edit'}
+                          className="mt-3 inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-900 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <Trash2 className="h-4 w-4" aria-hidden />
+                          Delete this employee forever
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -6649,18 +6728,33 @@ export const EmployeeManagementSection: React.FC<{
                           disabled={employeesSectionAccess === 'none'}
                           className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label={`Edit ${user.name ?? 'employee'}`}
+                          title="Edit"
                         >
                           <Edit2 className="h-4 w-4" aria-hidden />
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteUser(user)}
-                          disabled={!employeesCanEdit || tabAccess.basic !== 'edit'}
-                          className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-rose-50 hover:text-rose-800 focus:outline-none focus:ring-2 focus:ring-rose-500/30 disabled:cursor-not-allowed disabled:opacity-40"
-                          aria-label={`Deactivate ${user.name ?? 'employee'}`}
-                        >
-                          <Trash2 className="h-4 w-4" aria-hidden />
-                        </button>
+                        {inactive ? (
+                          <button
+                            type="button"
+                            onClick={() => handlePermanentDeleteUser(user)}
+                            disabled={!employeesCanEdit || tabAccess.basic !== 'edit'}
+                            className="rounded-lg px-2 py-1.5 text-xs font-semibold text-rose-800 transition-colors hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-500/30 disabled:cursor-not-allowed disabled:opacity-40"
+                            aria-label={`Permanently delete ${user.name ?? 'employee'}`}
+                            title="Permanently delete"
+                          >
+                            Delete forever
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteUser(user)}
+                            disabled={!employeesCanEdit || tabAccess.basic !== 'edit'}
+                            className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-rose-50 hover:text-rose-800 focus:outline-none focus:ring-2 focus:ring-rose-500/30 disabled:cursor-not-allowed disabled:opacity-40"
+                            aria-label={`Deactivate ${user.name ?? 'employee'}`}
+                            title="Mark inactive"
+                          >
+                            <Trash2 className="h-4 w-4" aria-hidden />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

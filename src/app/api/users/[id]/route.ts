@@ -1,8 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
+import mongoose from 'mongoose';
 import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
 import EmployeeHistory from '@/models/EmployeeHistory';
 import Attendance from '@/models/Attendance';
+import AttendanceRequest from '@/models/AttendanceRequest';
+import ClientPlace from '@/models/ClientPlace';
+import LocationAttendance from '@/models/LocationAttendance';
+import Fine from '@/models/Fine';
+import LeaveSnapshot from '@/models/LeaveSnapshot';
+import LeaveTransaction from '@/models/LeaveTransaction';
+import EmployeeAuthSession from '@/models/EmployeeAuthSession';
+import EmployeeOtpPending from '@/models/EmployeeOtpPending';
+import InvalidAttendanceNotification from '@/models/InvalidAttendanceNotification';
+import PartnerExcessDayApproval from '@/models/PartnerExcessDayApproval';
+import PartnerExcessDayChangeLog from '@/models/PartnerExcessDayChangeLog';
+import PartnerExcessHourAllowance from '@/models/PartnerExcessHourAllowance';
+import AttendanceRequestWindowSettings from '@/models/AttendanceRequestWindowSettings';
+import TeamAttendanceAccess from '@/models/TeamAttendanceAccess';
 import { getHrOperatorEmailFromRequest } from '@/lib/hrAuthServer';
 import { loadHrConsolePermissionDoc } from '@/lib/hrConsolePermissionDb';
 import {
@@ -899,7 +914,7 @@ async function syncExtraInfoLabelsFromUser(sourceUserId: string) {
   }
 }
 
-// DELETE - Delete user (soft delete by setting isActive to false)
+// DELETE - Soft-deactivate user, or permanently delete when ?permanent=true (inactive only)
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     await dbConnect();
@@ -911,10 +926,65 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     const permDoc = await loadHrConsolePermissionDoc(operatorEmail);
     const effective = effectiveFromDoc(operatorEmail, permDoc);
     if (effective.sections.employees !== 'edit' || effective.employeeTabs.basic !== 'edit') {
-      return NextResponse.json({ success: false, error: 'Not allowed to deactivate employees' }, { status: 403 });
+      return NextResponse.json(
+        { success: false, error: 'Not allowed to deactivate or delete employees' },
+        { status: 403 }
+      );
     }
 
     const { id } = await params;
+    const permanent = request.nextUrl.searchParams.get('permanent') === 'true';
+
+    if (permanent) {
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return NextResponse.json({ success: false, error: 'Invalid employee id' }, { status: 400 });
+      }
+
+      const existing = await User.findById(id);
+      if (!existing) {
+        return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
+      }
+      if (existing.isActive !== false) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Mark the employee inactive first, then you can delete them permanently.',
+          },
+          { status: 400 }
+        );
+      }
+
+      const userObjectId = existing._id;
+
+      await Promise.all([
+        Attendance.deleteMany({ userId: userObjectId }),
+        AttendanceRequest.deleteMany({ userId: userObjectId }),
+        EmployeeHistory.deleteMany({ employeeId: userObjectId }),
+        LocationAttendance.deleteMany({ userId: userObjectId }),
+        Fine.deleteMany({ userId: userObjectId }),
+        LeaveSnapshot.deleteMany({ userId: userObjectId }),
+        LeaveTransaction.deleteMany({ userId: userObjectId }),
+        EmployeeAuthSession.deleteMany({ userId: userObjectId }),
+        EmployeeOtpPending.deleteMany({ userId: userObjectId }),
+        InvalidAttendanceNotification.deleteMany({ userId: userObjectId }),
+        PartnerExcessDayApproval.deleteMany({ userId: userObjectId }),
+        PartnerExcessDayChangeLog.deleteMany({ userId: userObjectId }),
+        PartnerExcessHourAllowance.deleteMany({ userId: userObjectId }),
+        AttendanceRequestWindowSettings.deleteMany({ userId: userObjectId }),
+        TeamAttendanceAccess.deleteMany({ viewerUserId: userObjectId }),
+        TeamAttendanceAccess.updateMany({}, { $pull: { extraUserIds: userObjectId } }),
+        ClientPlace.updateMany({}, { $pull: { assignedEmployees: userObjectId } }),
+      ]);
+
+      await User.findByIdAndDelete(userObjectId);
+
+      return NextResponse.json({
+        success: true,
+        message: 'User permanently deleted',
+        permanent: true,
+      });
+    }
+
     const now = new Date();
     const inactiveAsOf = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
     const user = await User.findByIdAndUpdate(
