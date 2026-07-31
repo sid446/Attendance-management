@@ -330,20 +330,20 @@ function humanMatchKey(row: DaywisePlainRow): string {
   return daywiseRowKey(row.employeeCode, row.date, row.employeeName);
 }
 
-export async function parseDaywiseSheetBuffer(buffer: ArrayBuffer): Promise<DaywisePlainRow[]> {
-  const ExcelJS = (await import('exceljs')).default;
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer);
-  const worksheet =
-    workbook.getWorksheet('Daywise Attendance') ||
-    workbook.worksheets.find((ws) => ws.rowCount > 1) ||
-    workbook.worksheets[0];
-  if (!worksheet) throw new Error('No worksheet found in the uploaded file');
-
-  let headerRowNumber = 0;
-  let colIndexToKey = new Map<number, DaywiseColumnKey>();
-
-  const maxHeaderScan = Math.min(5, worksheet.rowCount || 1);
+function scanDaywiseHeaderRow(
+  // ExcelJS worksheet — keep loose so we don't fight workbook typings
+  worksheet: {
+    rowCount?: number;
+    getRow: (r: number) => {
+      eachCell: (
+        opt: { includeEmpty: boolean },
+        cb: (cell: { value: unknown }, colNumber: number) => void
+      ) => void;
+    };
+  },
+  maxScan = 5
+): { headerRowNumber: number; colIndexToKey: Map<number, DaywiseColumnKey> } | null {
+  const maxHeaderScan = Math.min(maxScan, worksheet.rowCount || 1);
   for (let r = 1; r <= maxHeaderScan; r++) {
     const map = new Map<number, DaywiseColumnKey>();
     worksheet.getRow(r).eachCell({ includeEmpty: false }, (cell, colNumber) => {
@@ -355,17 +355,84 @@ export async function parseDaywiseSheetBuffer(buffer: ArrayBuffer): Promise<Dayw
     const hasCode = values.includes('employeeCode');
     const hasName = values.includes('employeeName');
     if (hasDate && (hasCode || hasName)) {
-      headerRowNumber = r;
-      colIndexToKey = map;
-      break;
+      return { headerRowNumber: r, colIndexToKey: map };
+    }
+  }
+  return null;
+}
+
+type DaywiseWorksheet = {
+  name: string;
+  rowCount?: number;
+  getRow: (r: number) => {
+    eachCell: (
+      opt: { includeEmpty: boolean },
+      cb: (cell: { value: unknown }, colNumber: number) => void
+    ) => void;
+    getCell: (colNumber: number) => { value: unknown };
+  };
+  eachRow: (
+    opt: { includeEmpty: boolean },
+    cb: (row: { getCell: (colNumber: number) => { value: unknown } }, rowNumber: number) => void
+  ) => void;
+};
+
+/**
+ * Prefer a sheet that actually has daywise headers. Files like
+ * "Attendance Sheet - June'26_E.xlsx" put schedules on sheet 1 (`Sch.Time`)
+ * and attendance on sheet 2 (`Att.June26`) — picking sheet 1 fails.
+ */
+function findDaywiseWorksheet(workbook: {
+  getWorksheet: (name: string) => DaywiseWorksheet | undefined;
+  worksheets: DaywiseWorksheet[];
+}): {
+  worksheet: DaywiseWorksheet;
+  headerRowNumber: number;
+  colIndexToKey: Map<number, DaywiseColumnKey>;
+} {
+  const preferredNames = ['Daywise Attendance', 'Daywise'];
+  for (const name of preferredNames) {
+    const ws = workbook.getWorksheet(name);
+    if (!ws) continue;
+    const header = scanDaywiseHeaderRow(ws);
+    if (header) return { worksheet: ws, ...header };
+  }
+
+  // Prefer sheets whose name looks like attendance (Att.June26, Att June, etc.)
+  const ranked = [...workbook.worksheets].sort((a, b) => {
+    const score = (name: string) => {
+      const n = name.toLowerCase();
+      if (n.startsWith('att')) return 0;
+      if (n.includes('daywise') || n.includes('attendance')) return 1;
+      if (n.startsWith('sch') || n.includes('schedule') || n.includes('time')) return 3;
+      return 2;
+    };
+    return score(a.name) - score(b.name);
+  });
+
+  for (const ws of ranked) {
+    const header = scanDaywiseHeaderRow(ws);
+    if (header) {
+      return { worksheet: ws, ...header };
     }
   }
 
-  if (!headerRowNumber || !colIndexToKey.size) {
-    throw new Error(
-      'Could not recognize daywise headers. Need Date plus Employee Code or Employee Name.'
-    );
-  }
+  throw new Error(
+    'Could not recognize daywise headers. Need a sheet with Date plus Employee Code or Employee Name (e.g. Att.June26). Schedule sheets like Sch.Time are skipped.'
+  );
+}
+
+export async function parseDaywiseSheetBuffer(buffer: ArrayBuffer): Promise<DaywisePlainRow[]> {
+  const ExcelJS = (await import('exceljs')).default;
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+
+  const { worksheet, headerRowNumber, colIndexToKey } = findDaywiseWorksheet(
+    workbook as unknown as {
+      getWorksheet: (name: string) => DaywiseWorksheet | undefined;
+      worksheets: DaywiseWorksheet[];
+    }
+  );
 
   const hasCode = [...colIndexToKey.values()].includes('employeeCode');
   const hasDate = [...colIndexToKey.values()].includes('date');

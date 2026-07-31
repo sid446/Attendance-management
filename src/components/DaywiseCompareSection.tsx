@@ -420,6 +420,8 @@ export const DaywiseCompareSection: React.FC<Props> = ({ allUsers = [], holidays
               Pick a month, upload the human-maintained daywise Excel, and compare it with a freshly
               generated portal sheet. Portal export format works best; older sheets with{' '}
               <strong>Employee Name + Date</strong> (even without Employee Code) are also accepted.
+              Multi-sheet workbooks are fine — the attendance tab (e.g. <strong>Att.June26</strong>)
+              is used automatically; schedule tabs like <strong>Sch.Time</strong> are skipped.
             </p>
           </div>
         </div>
