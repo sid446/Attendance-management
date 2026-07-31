@@ -6,6 +6,12 @@ export function employeeAuthUserPayload(user: {
   odId?: unknown;
   team?: unknown;
   workingUnderPartner?: unknown;
+  employmentType?: unknown;
+  schedules?: unknown;
+  seasonalSchedules?: unknown;
+  scheduleInOutTime?: unknown;
+  scheduleInOutTimeSat?: unknown;
+  scheduleInOutTimeMonth?: unknown;
 }) {
   return {
     _id: user._id,
@@ -14,5 +20,12 @@ export function employeeAuthUserPayload(user: {
     odId: user.odId,
     team: user.team,
     workingUnderPartner: user.workingUnderPartner,
+    employmentType: user.employmentType,
+    // Needed so WFH / outstation / client-place hour requests use that day's schedule
+    schedules: user.schedules,
+    seasonalSchedules: user.seasonalSchedules,
+    scheduleInOutTime: user.scheduleInOutTime,
+    scheduleInOutTimeSat: user.scheduleInOutTimeSat,
+    scheduleInOutTimeMonth: user.scheduleInOutTimeMonth,
   };
 }

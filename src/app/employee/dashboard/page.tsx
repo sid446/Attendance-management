@@ -558,22 +558,31 @@ function minutesToHhMm(totalMinutes: number): string {
 }
 
 /**
- * Derive in/out from entered work hours using the day's scheduled in-time as start.
- * On weekoff/holiday with no schedule, fall back to Monday schedule or 09:00.
+ * Derive in/out from entered work hours using that day's scheduled in-time as start.
+ * Uses the exact schedule for the selected date (weekday / Saturday / seasonal).
+ * Only falls back to Monday (or 09:00) when that day has no working in-time.
  */
 function deriveInOutFromWorkHours(
   user: User | null | undefined,
   dateStr: string,
   hours: number
-): { startTime: string; endTime: string } | null {
+): { startTime: string; endTime: string; scheduleIn: string; scheduleSource: string } | null {
   if (!Number.isFinite(hours) || hours <= 0) return null;
 
-  let schedule = user ? getScheduledTimes(user, dateStr) : null;
+  const dayIso = String(dateStr || '').slice(0, 10);
+  let schedule = user ? getScheduledTimes(user, dayIso) : null;
   let inTime = schedule?.inTime || '';
-  if (!inTime || inTime === '00:00' || schedule?.isHoliday) {
-    // Prefer weekday (Monday) schedule when the selected day has no working schedule
-    const d = new Date(`${String(dateStr).slice(0, 10)}T12:00:00`);
-    if (!Number.isNaN(d.getTime()) && user) {
+  let scheduleSource: string = schedule?.source || 'default';
+
+  const hasWorkingIn =
+    !!inTime &&
+    inTime !== '00:00' &&
+    !(schedule?.isHoliday && (!schedule.outTime || schedule.outTime === '00:00'));
+
+  if (!hasWorkingIn && user) {
+    // Weekoff / empty day: use nearest Monday schedule as a working-day reference
+    const d = new Date(`${dayIso}T12:00:00`);
+    if (!Number.isNaN(d.getTime())) {
       const monday = new Date(d);
       const day = monday.getDay();
       const delta = day === 0 ? 1 : day === 1 ? 0 : 1 - day;
@@ -581,9 +590,13 @@ function deriveInOutFromWorkHours(
       const mondayIso = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`;
       schedule = getScheduledTimes(user, mondayIso);
       inTime = schedule.inTime || '';
+      scheduleSource = `${schedule.source}-monday-fallback`;
     }
   }
-  if (!inTime || inTime === '00:00') inTime = '09:00';
+  if (!inTime || inTime === '00:00') {
+    inTime = '09:00';
+    scheduleSource = 'default';
+  }
 
   const startMinutes = parseTimeToMinutes(inTime);
   if (startMinutes === null) return null;
@@ -593,17 +606,35 @@ function deriveInOutFromWorkHours(
 
   const endMinutes = startMinutes + durationMinutes;
   if (endMinutes >= 24 * 60) {
-    // Keep both times on the same calendar day for validation
     return {
       startTime: minutesToHhMm(startMinutes),
       endTime: '23:59',
+      scheduleIn: inTime,
+      scheduleSource,
     };
   }
 
   return {
     startTime: minutesToHhMm(startMinutes),
     endTime: minutesToHhMm(endMinutes),
+    scheduleIn: inTime,
+    scheduleSource,
   };
+}
+
+/** Prefer the profile that actually carries schedule data (attendance merge or login). */
+function userWithSchedule(primary: User | null, fallback: User | null): User | null {
+  const hasSchedule = (u: User | null | undefined) =>
+    !!u &&
+    ((Array.isArray((u as any).schedules) && (u as any).schedules.length > 0) ||
+      (Array.isArray((u as any).seasonalSchedules) && (u as any).seasonalSchedules.length > 0) ||
+      !!(u as any).scheduleInOutTime ||
+      !!(u as any).scheduleInOutTimeSat ||
+      !!(u as any).scheduleInOutTimeMonth);
+
+  if (hasSchedule(primary)) return primary;
+  if (hasSchedule(fallback)) return fallback;
+  return primary || fallback;
 }
 
 function isTimeRangeValid(startTime: string, endTime: string): boolean {
@@ -961,6 +992,25 @@ export default function EmployeeDashboard() {
   const correctionUsesWorkHours = usesWorkHoursInputForRequest(requestStatus);
   const futureUsesWorkHours = usesWorkHoursInputForRequest(futureType);
 
+  const scheduleUserForRequests = useMemo(
+    () => userWithSchedule(attendanceUser, user),
+    [attendanceUser, user]
+  );
+
+  const correctionScheduleHint = useMemo(() => {
+    if (!selectedDate || !correctionUsesWorkHours || !scheduleUserForRequests) return null;
+    const sch = getScheduledTimes(scheduleUserForRequests, selectedDate);
+    if (!sch.inTime || sch.inTime === '00:00') return null;
+    return sch;
+  }, [selectedDate, correctionUsesWorkHours, scheduleUserForRequests]);
+
+  const futureScheduleHint = useMemo(() => {
+    if (!futureStartDate || !futureUsesWorkHours || !scheduleUserForRequests) return null;
+    const sch = getScheduledTimes(scheduleUserForRequests, futureStartDate);
+    if (!sch.inTime || sch.inTime === '00:00') return null;
+    return sch;
+  }, [futureStartDate, futureUsesWorkHours, scheduleUserForRequests]);
+
   useEffect(() => {
     if (!selectedDate || !correctionUsesWorkHours) return;
     const hours = Number(requestWorkHours);
@@ -969,7 +1019,7 @@ export default function EmployeeDashboard() {
       setEndTime('');
       return;
     }
-    const derived = deriveInOutFromWorkHours(user, selectedDate, hours);
+    const derived = deriveInOutFromWorkHours(scheduleUserForRequests, selectedDate, hours);
     if (derived) {
       setStartTime(derived.startTime);
       setEndTime(derived.endTime);
@@ -977,7 +1027,7 @@ export default function EmployeeDashboard() {
       setStartTime('');
       setEndTime('');
     }
-  }, [selectedDate, correctionUsesWorkHours, requestWorkHours, user]);
+  }, [selectedDate, correctionUsesWorkHours, requestWorkHours, scheduleUserForRequests]);
 
   useEffect(() => {
     if (!futureStartDate || !futureUsesWorkHours) return;
@@ -987,7 +1037,7 @@ export default function EmployeeDashboard() {
       setFutureEndTime('');
       return;
     }
-    const derived = deriveInOutFromWorkHours(user, futureStartDate, hours);
+    const derived = deriveInOutFromWorkHours(scheduleUserForRequests, futureStartDate, hours);
     if (derived) {
       setFutureStartTime(derived.startTime);
       setFutureEndTime(derived.endTime);
@@ -995,7 +1045,7 @@ export default function EmployeeDashboard() {
       setFutureStartTime('');
       setFutureEndTime('');
     }
-  }, [futureStartDate, futureUsesWorkHours, futureWorkHours, user]);
+  }, [futureStartDate, futureUsesWorkHours, futureWorkHours, scheduleUserForRequests]);
 
   const extraWorkHoursPreview = useMemo(() => {
     const withHours = extraWorkSlots
@@ -3108,7 +3158,15 @@ export default function EmployeeDashboard() {
                         </div>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        In and out times are calculated from your schedule start plus the hours you enter.
+                        In and out times use your schedule for this day
+                        {correctionScheduleHint
+                          ? ` (scheduled in ${correctionScheduleHint.inTime}${
+                              correctionScheduleHint.outTime
+                                ? `, out ${correctionScheduleHint.outTime}`
+                                : ''
+                            })`
+                          : ''}{' '}
+                        — in time is schedule start, out time is start plus the hours you enter.
                       </p>
                     </>
                   )}
@@ -3291,7 +3349,13 @@ export default function EmployeeDashboard() {
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    In and out times are calculated from your schedule start plus the hours you enter.
+                    In and out times use your schedule for this day
+                    {futureScheduleHint
+                      ? ` (scheduled in ${futureScheduleHint.inTime}${
+                          futureScheduleHint.outTime ? `, out ${futureScheduleHint.outTime}` : ''
+                        })`
+                      : ''}{' '}
+                    — in time is schedule start, out time is start plus the hours you enter.
                   </p>
                 </>
               )}

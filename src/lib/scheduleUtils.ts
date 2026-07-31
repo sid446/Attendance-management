@@ -13,7 +13,19 @@ export function getScheduledTimes(user: any, dateInput: string | Date): {
     return { inTime: '09:00', outTime: '18:00', isHoliday: false, isHalfDay: false, source: 'default' };
   }
 
-  const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  // YYYY-MM-DD must be local noon — bare `new Date('YYYY-MM-DD')` is UTC midnight and
+  // can shift the weekday in timezones west of UTC (and break schedule day lookup).
+  let date: Date;
+  if (typeof dateInput === 'string') {
+    const isoDay = dateInput.slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(isoDay)) {
+      date = new Date(`${isoDay}T12:00:00`);
+    } else {
+      date = new Date(dateInput);
+    }
+  } else {
+    date = dateInput;
+  }
   if (isNaN(date.getTime())) {
     return { inTime: '09:00', outTime: '18:00', isHoliday: false, isHalfDay: false, source: 'default' };
   }
