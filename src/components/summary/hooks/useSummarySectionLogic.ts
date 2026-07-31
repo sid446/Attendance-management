@@ -14,6 +14,7 @@ import {
   isDayIncludedInScheduledCalc,
 } from '@/lib/attendanceSummaryMetrics';
 import { isHalfDayAttendanceRecord } from '@/lib/calculateDayExcessHour';
+import { isLaterThanScheduledIn } from '@/lib/attendanceHours';
 import {
   formatExtraWorkEntriesTimeSummary,
   formatRecordPunchTimeRange,
@@ -288,7 +289,7 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
       const schedule = getCachedScheduledTimes(user, d);
       const scheduledIn = schedule.inTime;
       
-      if (effectiveCheckin > scheduledIn) {
+      if (isLaterThanScheduledIn(effectiveCheckin, scheduledIn)) {
         dates.push({
           date,
           info: `${effectiveCheckin}`,
@@ -1025,7 +1026,7 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
             scheduledIn = daySchedule.inTime || '09:00';
           }
           
-          if (effectiveCheckin > scheduledIn) count++;
+          if (isLaterThanScheduledIn(effectiveCheckin, scheduledIn)) count++;
       });
       return count;
   };

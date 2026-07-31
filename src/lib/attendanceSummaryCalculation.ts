@@ -1,5 +1,5 @@
 import { IUser } from '@/models/User';
-import { calculateTotalHours, isSinglePunch } from '@/lib/attendanceHours';
+import { calculateTotalHours, isLaterThanScheduledIn, isSinglePunch } from '@/lib/attendanceHours';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { reapplyExtraWorkEntriesToRecord } from '@/lib/extraWorkRequest';
 import { isArticleEmployee } from '@/lib/isArticleEmployee';
@@ -200,7 +200,7 @@ export function calculateSummary(
     if (
       inTime &&
       scheduledInTime &&
-      inTime > scheduledInTime &&
+      isLaterThanScheduledIn(inTime, scheduledInTime) &&
       !isHalftime
     ) {
       totalLateArrival++;

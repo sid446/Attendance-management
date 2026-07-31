@@ -6,6 +6,7 @@ import User from '@/models/User';
 import { transporter, mailOptions } from '@/lib/mailer';
 import { createPartnerReviewAllLink } from '@/lib/partnerReviewToken';
 import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAuth';
+import { resolveRequestRoutingForDate } from '@/lib/attendanceRequestNotifications';
 
 interface CorrectionData {
   date: string;
@@ -44,27 +45,11 @@ export async function POST(request: NextRequest) {
       }, { status: 404 });
     }
 
-    if (!user.workingUnderPartner) {
-      return NextResponse.json({
-        success: false,
-        error: 'No partner assigned to this employee'
-      }, { status: 400 });
-    }
-
-    const partnerName = user.workingUnderPartner;
-    const approverNotificationEmail = String((user as any).attendanceEmail || user.email || '').trim();
-
-    if (!approverNotificationEmail) {
-      return NextResponse.json({
-        success: false,
-        error: 'No attendance email configured for this employee. Please contact admin.'
-      }, { status: 400 });
-    }
-
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || request.headers.get('origin') || 'http://localhost:3000';
     let successCount = 0;
     let failedCount = 0;
     const createdRequests: any[] = [];
+    const partnerEmails = new Map<string, string>();
 
     for (const correction of corrections as CorrectionData[]) {
       try {
@@ -74,6 +59,13 @@ export async function POST(request: NextRequest) {
           failedCount++;
           continue;
         }
+
+        const routing = await resolveRequestRoutingForDate(user, date);
+        if ('error' in routing) {
+          failedCount++;
+          continue;
+        }
+        partnerEmails.set(routing.partnerName, routing.notificationEmail);
 
         // Check for existing pending request for this date
         const existingRequest = await AttendanceRequest.findOne({
@@ -98,7 +90,7 @@ export async function POST(request: NextRequest) {
         const newRequest = await AttendanceRequest.create({
           userId: user._id,
           userName: user.name,
-          partnerName,
+          partnerName: routing.partnerName,
           date,
           monthYear,
           requestedStatus: 'Manual', // Time correction is treated as Manual entry
@@ -117,9 +109,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Send email notification to partner if any requests were created
+    // Send email notification to each partner who received requests
     if (createdRequests.length > 0) {
       try {
+        for (const [partnerName, approverNotificationEmail] of partnerEmails) {
         // Fetch all pending requests for this partner
         const pendingRequests = await AttendanceRequest.find({
           partnerName,
@@ -271,6 +264,7 @@ export async function POST(request: NextRequest) {
 </html>
           `,
         });
+        }
       } catch (emailError) {
         console.error('Error sending email to partner:', emailError);
         // Don't fail the entire request if email fails

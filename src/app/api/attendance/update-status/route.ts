@@ -5,6 +5,7 @@ import Attendance from '@/models/Attendance';
 import User from '@/models/User';
 import { reapplyExtraWorkEntriesToRecord } from '@/lib/extraWorkRequest';
 import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
+import { isLaterThanScheduledIn } from '@/lib/attendanceHours';
 
 export async function POST(request: NextRequest) {
     try {
@@ -99,7 +100,7 @@ export async function POST(request: NextRequest) {
 
                            const isPartner = user && (user.category === 'Partner' || (user.designation && user.designation.toLowerCase().includes('partner')));
                            const isHalftime = (user && (user.employmentType === 'halftime' || user.employmentType?.includes('half'))) || isPartner;
-                           if (r.checkin && r.checkin > scheduledIn && !isHalftime) tLate++;
+                           if (r.checkin && isLaterThanScheduledIn(r.checkin, scheduledIn) && !isHalftime) tLate++;
 
                            // Status (align with global summary logic)
                             switch (r.typeOfPresence) {

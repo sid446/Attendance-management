@@ -20,6 +20,7 @@ import { getEffectiveRequestWindowBoundsForUser } from '@/lib/attendanceRequestW
 import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAuth';
 import { autoApproveSelfRequests } from '@/lib/selfApproveAttendanceRequests';
 import { requiresAttendanceRequestTimePair } from '@/lib/attendanceRequestTimeRules';
+import { resolveRequestRoutingForDate } from '@/lib/attendanceRequestNotifications';
 
 const ZERO_TIME_PREFIXES = ['On leave', 'Weekoff - special allowance'];
 
@@ -55,17 +56,6 @@ export async function POST(request: NextRequest) {
     const user = await User.findById(userId);
     if (!user) {
       return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
-    }
-
-    if (!user.workingUnderPartner) {
-        return NextResponse.json({ success: false, error: 'No Partner assigned to this employee' }, { status: 400 });
-    }
-
-    const partnerName = user.workingUnderPartner;
-    const approverNotificationEmail = String((user as any).attendanceEmail || user.email || '').trim();
-
-    if (!approverNotificationEmail) {
-        return NextResponse.json({ success: false, error: 'No attendance email configured for this employee. Please contact admin.' }, { status: 400 });
     }
 
     const start = new Date(startDate);
@@ -159,8 +149,9 @@ export async function POST(request: NextRequest) {
         currentDate.setDate(currentDate.getDate() + 1);
     }
 
-    // Process requests
+    // Process requests — each day routes to the work partner covering that date
     const createdRequests = [];
+    const partnerEmails = new Map<string, string>();
 
     for (const d of datesToProcess) {
         // Skip Sundays (getDay() === 0)
@@ -168,11 +159,12 @@ export async function POST(request: NextRequest) {
         
         const dateStr = d.toISOString().split('T')[0];
         const monthYear = dateStr.substring(0, 7); // YYYY-MM
-        
-        // Check if request already exists for this date? 
-        // We probably should overwrite or fail. For now, let's create dynamic checking or just upsert logic if we want to valid duplicates
-        // But schema doesn't enforce unique date per user. 
-        // We will create a fresh request.
+
+        const routing = await resolveRequestRoutingForDate(user, dateStr);
+        if ('error' in routing) {
+          return NextResponse.json({ success: false, error: routing.error }, { status: 400 });
+        }
+        partnerEmails.set(routing.partnerName, routing.notificationEmail);
         
         let finalStartTime = startTime;
         let finalEndTime = endTime;
@@ -216,7 +208,7 @@ export async function POST(request: NextRequest) {
         const newRequest = new AttendanceRequest({
             userId: user._id,
             userName: user.name,
-            partnerName: user.workingUnderPartner || 'Admin',
+            partnerName: routing.partnerName,
             date: dateStr,
             monthYear: monthYear,
             requestedStatus: requestType,
@@ -231,6 +223,13 @@ export async function POST(request: NextRequest) {
         createdRequests.push(newRequest);
     }
 
+    if (createdRequests.length === 0) {
+      return NextResponse.json({
+        success: false,
+        error: 'No eligible dates to create requests for (e.g. only Sundays in range).',
+      }, { status: 400 });
+    }
+
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || request.headers.get('origin') || 'http://localhost:3000';
 
     const autoApprovedIds = await autoApproveSelfRequests(
@@ -242,44 +241,46 @@ export async function POST(request: NextRequest) {
       baseUrl
     );
 
-    // Send Email Notification to Partner
-    // Fetch all pending requests assigned to this partner (across all employees)
-    const pendingRequests = await AttendanceRequest.find({ partnerName: partnerName, status: 'Pending' }).sort({ createdAt: 1 });
+    // Notify each work partner who received at least one day in this range
+    const notifiedEmails: string[] = [];
+    for (const [partnerName, approverNotificationEmail] of partnerEmails) {
+      const pendingRequests = await AttendanceRequest.find({
+        partnerName,
+        status: 'Pending',
+      }).sort({ createdAt: 1 });
 
-    const groupedRows = groupPendingRequestsForEmail(pendingRequests);
-    const reviewAllLink = createPartnerReviewAllLink(baseUrl, partnerName, approverNotificationEmail);
+      const groupedRows = groupPendingRequestsForEmail(pendingRequests);
+      const reviewAllLink = createPartnerReviewAllLink(baseUrl, partnerName, approverNotificationEmail);
 
-    const emailHtml = buildAttendanceRequestEmailHtml({
-      title: 'Future leave requests',
-      reviewAllLink,
-      infoHtml: `<strong style="color:#0f172a;">New request from:</strong> ${escapeHtml(user.name)}<br/><span style="font-size:14px;color:#475569;">Dates requested: ${escapeHtml(startDate)} to ${escapeHtml(endDate)}</span>`,
-      description:
-        'Pending leave and attendance requests are listed below. Use <strong>Review all pending</strong> to open the review page.',
-      tableBodyHtml: buildGroupedTableRows(groupedRows),
-      mobileCardsHtml: buildGroupedMobileCards(groupedRows),
-      showReviewColumn: false,
-      noteHtml: `<strong style="color:#14532d;">Tip:</strong> Use the review link above to approve or reject requests in one place.`,
-    });
+      const emailHtml = buildAttendanceRequestEmailHtml({
+        title: 'Future leave requests',
+        reviewAllLink,
+        infoHtml: `<strong style="color:#0f172a;">New request from:</strong> ${escapeHtml(user.name)}<br/><span style="font-size:14px;color:#475569;">Dates requested: ${escapeHtml(startDate)} to ${escapeHtml(endDate)}</span>`,
+        description:
+          'Pending leave and attendance requests are listed below. Use <strong>Review all pending</strong> to open the review page.',
+        tableBodyHtml: buildGroupedTableRows(groupedRows),
+        mobileCardsHtml: buildGroupedMobileCards(groupedRows),
+        showReviewColumn: false,
+        noteHtml: `<strong style="color:#14532d;">Tip:</strong> Use the review link above to approve or reject requests in one place.`,
+      });
 
-    try {
+      try {
         await transporter.sendMail({
-            ...mailOptions,
-            to: approverNotificationEmail,
-            subject: `Future Leave Requests: ${user.name}`,
-            html: emailHtml,
+          ...mailOptions,
+          to: approverNotificationEmail,
+          subject: `Future Leave Requests: ${user.name}`,
+          html: emailHtml,
         });
-    } catch (emailError) {
+        notifiedEmails.push(approverNotificationEmail);
+      } catch (emailError) {
         console.error('Failed to send email:', emailError);
-        // Don't fail the request just because email failed? 
-        // If partner doesn't get email, they might not review it.
-        // But preventing data creation might be annoying.
-        // Let's keep it as warning.
+      }
     }
 
     return NextResponse.json({
       success: true,
       count: createdRequests.length,
-      sentTo: approverNotificationEmail,
+      sentTo: notifiedEmails.join(', ') || Array.from(partnerEmails.values()).join(', '),
       autoApprovedCount: autoApprovedIds.length,
       autoApproved: autoApprovedIds.length > 0,
     });

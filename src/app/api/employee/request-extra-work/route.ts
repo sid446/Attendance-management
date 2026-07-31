@@ -29,6 +29,7 @@ import {
   validateExtraWorkSlotsOutsidePunchRange,
   type ExtraWorkSlotInput,
 } from '@/lib/extraWorkRequest';
+import { resolveRequestRoutingForDate } from '@/lib/attendanceRequestNotifications';
 
 export async function POST(request: NextRequest) {
   try {
@@ -97,22 +98,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
     }
 
-    if (!user.workingUnderPartner) {
-      return NextResponse.json(
-        { success: false, error: 'No Partner assigned to this employee' },
-        { status: 400 }
-      );
+    const routing = await resolveRequestRoutingForDate(user, date);
+    if ('error' in routing) {
+      return NextResponse.json({ success: false, error: routing.error }, { status: 400 });
     }
-
-    const partnerName = user.workingUnderPartner;
-    const approverNotificationEmail = String((user as { attendanceEmail?: string }).attendanceEmail || user.email || '').trim();
-
-    if (!approverNotificationEmail) {
-      return NextResponse.json(
-        { success: false, error: 'No attendance email configured for this employee. Please contact admin.' },
-        { status: 400 }
-      );
-    }
+    const { partnerName, notificationEmail: approverNotificationEmail } = routing;
 
     const monthYear = date.substring(0, 7);
     const attendance = await Attendance.findOne({ userId: user._id, monthYear }).lean();

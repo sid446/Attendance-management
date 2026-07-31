@@ -1,6 +1,7 @@
 import User from '@/models/User';
 import { transporter, mailOptions } from '@/lib/mailer';
 import { escapeHtml } from '@/lib/attendanceRequestEmail';
+import { getWorkingUnderPartnerForDate } from '@/lib/userFieldHistory';
 
 export type RequestDecisionOutcome = 'approved' | 'rejected' | 'partner_approved_hr_pending';
 
@@ -13,6 +14,11 @@ export interface RequestDecisionRow {
   reason?: string;
 }
 
+export type RequestRouting = {
+  partnerName: string;
+  notificationEmail: string;
+};
+
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -20,7 +26,7 @@ function escapeRegex(value: string): string {
 /** Partner inbox used for new-request mails; also fallback when partner user row is missing. */
 export async function resolvePartnerNotificationEmail(
   partnerName: string | undefined | null,
-  employeeUser?: { attendanceEmail?: string; email?: string } | null
+  employeeUser?: { attendanceEmail?: string | null; email?: string | null } | null
 ): Promise<string | null> {
   const pn = String(partnerName || '').trim();
   if (pn) {
@@ -35,13 +41,50 @@ export async function resolvePartnerNotificationEmail(
       .lean();
 
     if (partnerUser) {
-      const em = String(partnerUser.attendanceEmail || partnerUser.email || '').trim();
+      // Partner's login email is their request inbox; attendanceEmail is who approves them.
+      const em = String(partnerUser.email || partnerUser.attendanceEmail || '').trim();
       if (em) return em;
     }
   }
 
-  const fallback = String(employeeUser?.attendanceEmail || '').trim();
+  const fallback = String(employeeUser?.attendanceEmail || employeeUser?.email || '').trim();
   return fallback || null;
+}
+
+/**
+ * Route an attendance request to the work partner who covered the request date
+ * (from fieldHistories), not necessarily the employee's current partner.
+ */
+export async function resolveRequestRoutingForDate(
+  user: {
+    workingUnderPartner?: string | null;
+    attendanceEmail?: string | null;
+    email?: string | null;
+    team?: string | null;
+    fieldHistories?: unknown;
+  },
+  date: string | Date
+): Promise<RequestRouting | { error: string }> {
+  const partnerName = String(
+    getWorkingUnderPartnerForDate(user as Parameters<typeof getWorkingUnderPartnerForDate>[0], date) ||
+      user.workingUnderPartner ||
+      ''
+  ).trim();
+
+  if (!partnerName) {
+    return {
+      error: 'No work partner was assigned for this date. Please contact admin.',
+    };
+  }
+
+  const notificationEmail = await resolvePartnerNotificationEmail(partnerName, user);
+  if (!notificationEmail) {
+    return {
+      error: `No email found for work partner "${partnerName}". Please contact admin.`,
+    };
+  }
+
+  return { partnerName, notificationEmail };
 }
 
 export function resolveDecisionOutcome(

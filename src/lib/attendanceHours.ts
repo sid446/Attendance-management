@@ -22,6 +22,20 @@ export function normalizeTimeToHHmm(rawTime: string | null | undefined): string 
   return '';
 }
 
+/**
+ * True when check-in is after scheduled in-time.
+ * Normalizes first so "9:41" vs "10:00" compares correctly (string "9:41" > "10:00" is wrong).
+ */
+export function isLaterThanScheduledIn(
+  checkin: string | null | undefined,
+  scheduledIn: string | null | undefined
+): boolean {
+  const inNorm = normalizeTimeToHHmm(checkin);
+  const schNorm = normalizeTimeToHHmm(scheduledIn);
+  if (!inNorm || inNorm === '00:00' || !schNorm || schNorm === '00:00') return false;
+  return inNorm > schNorm;
+}
+
 function minutesBetween(start: string, end: string): number | null {
   if (!isValidPunchTime(start) || !isValidPunchTime(end)) return null;
 

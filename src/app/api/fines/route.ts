@@ -4,6 +4,7 @@ import Fine from '@/models/Fine';
 import Attendance  from '@/models/Attendance';
 import User from '@/models/User';
 import { getWorkingUnderPartnerForDate } from '@/lib/userFieldHistory';
+import { isLaterThanScheduledIn } from '@/lib/attendanceHours';
 
 // Fine calculation rules
 // Staff: 2 late days in month = warning, 3-7 late days = 50 each, 8+ = 100 each
@@ -26,8 +27,7 @@ function getArticleFineRules(consecutiveDay: number): FineRule {
 }
 
 function isLateArrival(checkin: string, scheduledIn: string): boolean {
-  if (!checkin || checkin === '00:00') return false;
-  return checkin > scheduledIn;
+  return isLaterThanScheduledIn(checkin, scheduledIn);
 }
 
 // Helper function to get scheduled in time for a user on a specific date

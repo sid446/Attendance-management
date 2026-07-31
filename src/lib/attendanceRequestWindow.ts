@@ -1,11 +1,19 @@
 const TZ = 'Asia/Kolkata';
 
 export interface RequestWindowConfig {
-  /** Inclusive day-of-month (IST) until which the previous calendar month stays open. */
+  /**
+   * Inclusive day-of-month (IST) that is the deadline for requesting the whole
+   * previous calendar month. On day 3 with a cutoff of 3 the previous month is
+   * still fully open; from day 4 it is closed.
+   */
   previousMonthCutoffDay: number;
   /** Max look-back for current-month past dates (in days). */
   currentMonthPastDays: number;
-  /** 1 = allow through end of next calendar month after today. */
+  /**
+   * Extra whole calendar months open after the current one. Future dates in the
+   * current month are always open, so 0 = rest of this month only, 1 = rest of
+   * this month plus all of next month.
+   */
   futureMonthsAhead: number;
 }
 
@@ -15,9 +23,20 @@ export const DEFAULT_REQUEST_WINDOW: RequestWindowConfig = {
   futureMonthsAhead: 1,
 };
 
+/** One continuous run of allowed dates (inclusive, YYYY-MM-DD). */
+export interface RequestWindowSegment {
+  startDate: string;
+  endDate: string;
+}
+
 export interface RequestWindowBounds {
   earliestDate: string; // YYYY-MM-DD inclusive
   latestDate: string; // YYYY-MM-DD inclusive
+  /**
+   * Allowed runs of dates. The previous-month allowance can sit apart from the
+   * look-back/future run, so `earliestDate`..`latestDate` is only an envelope.
+   */
+  segments: RequestWindowSegment[];
   config: RequestWindowConfig;
 }
 
@@ -150,31 +169,84 @@ function dayOfMonthIst(now: Date = new Date()): number {
   return Number(parts.find((p) => p.type === 'day')?.value ?? '1');
 }
 
+/** Collapse overlapping or day-adjacent runs into the fewest segments. */
+function mergeSegments(segments: RequestWindowSegment[]): RequestWindowSegment[] {
+  const sorted = [...segments]
+    .filter((s) => s.startDate <= s.endDate)
+    .sort((a, b) => a.startDate.localeCompare(b.startDate));
+
+  const merged: RequestWindowSegment[] = [];
+  for (const segment of sorted) {
+    const last = merged[merged.length - 1];
+    if (last && segment.startDate <= addDaysYyyyMmDd(last.endDate, 1)) {
+      if (segment.endDate > last.endDate) last.endDate = segment.endDate;
+      continue;
+    }
+    merged.push({ ...segment });
+  }
+  return merged;
+}
+
+/**
+ * Allowed date runs (inclusive, IST). Each setting is applied independently:
+ * the previous month is open in full until the cutoff day, current-month past
+ * dates use the rolling look-back, and future dates run through the end of the
+ * last allowed future month.
+ */
+export function getRequestWindowSegments(
+  config: RequestWindowConfig,
+  now: Date = new Date()
+): RequestWindowSegment[] {
+  const sanitized = sanitizeRequestWindowConfig(config);
+  const today = istDateString(now);
+  const currentMonth = monthKeyFromDateStr(today);
+  const currentMonthStart = firstDayOfMonthYyyyMm(currentMonth);
+
+  const rollingStart = addDaysYyyyMmDd(today, -sanitized.currentMonthPastDays);
+  const lookBackStart =
+    rollingStart < currentMonthStart ? currentMonthStart : rollingStart;
+  const futureEnd = lastDayOfMonthYyyyMm(
+    addMonthsToYyyyMm(currentMonth, sanitized.futureMonthsAhead)
+  );
+
+  const segments: RequestWindowSegment[] = [
+    { startDate: lookBackStart, endDate: futureEnd },
+  ];
+
+  if (dayOfMonthIst(now) <= sanitized.previousMonthCutoffDay) {
+    const previousMonth = prevMonthKey(currentMonth);
+    segments.push({
+      startDate: firstDayOfMonthYyyyMm(previousMonth),
+      endDate: lastDayOfMonthYyyyMm(previousMonth),
+    });
+  }
+
+  return mergeSegments(segments);
+}
+
 /** Allowed request date range (inclusive) in IST for the given config. */
 export function getRequestWindowBounds(
   config: RequestWindowConfig,
   now: Date = new Date()
 ): RequestWindowBounds {
   const sanitized = sanitizeRequestWindowConfig(config);
-  const today = istDateString(now);
-  const currentMonth = monthKeyFromDateStr(today);
-  const previousMonth = prevMonthKey(currentMonth);
-  const currentMonthStart = firstDayOfMonthYyyyMm(currentMonth);
-  const previousMonthStart = firstDayOfMonthYyyyMm(previousMonth);
+  const segments = getRequestWindowSegments(sanitized, now);
 
-  let earliest: string;
-  if (dayOfMonthIst(now) <= sanitized.previousMonthCutoffDay) {
-    earliest = previousMonthStart;
-  } else {
-    const rollingEarliest = addDaysYyyyMmDd(today, -sanitized.currentMonthPastDays);
-    earliest =
-      rollingEarliest < currentMonthStart ? currentMonthStart : rollingEarliest;
-  }
+  return {
+    earliestDate: segments[0].startDate,
+    latestDate: segments[segments.length - 1].endDate,
+    segments,
+    config: sanitized,
+  };
+}
 
-  const futureMonth = addMonthsToYyyyMm(currentMonth, sanitized.futureMonthsAhead);
-  const latest = lastDayOfMonthYyyyMm(futureMonth);
-
-  return { earliestDate: earliest, latestDate: latest, config: sanitized };
+export function isDateInRequestWindowSegments(
+  dateYyyyMmDd: string,
+  segments: RequestWindowSegment[]
+): boolean {
+  return segments.some(
+    (s) => dateYyyyMmDd >= s.startDate && dateYyyyMmDd <= s.endDate
+  );
 }
 
 export function isDateWithinRequestWindow(
@@ -183,25 +255,33 @@ export function isDateWithinRequestWindow(
   now: Date = new Date()
 ): boolean {
   if (!parseYyyyMmDd(dateYyyyMmDd)) return false;
-  const { earliestDate, latestDate } = getRequestWindowBounds(config, now);
-  return dateYyyyMmDd >= earliestDate && dateYyyyMmDd <= latestDate;
+  return isDateInRequestWindowSegments(
+    dateYyyyMmDd,
+    getRequestWindowSegments(config, now)
+  );
 }
 
+function formatSegments(segments: RequestWindowSegment[]): string {
+  return segments.map((s) => `${s.startDate} to ${s.endDate}`).join(' and ');
+}
+
+/** Tolerates payloads without `segments` (e.g. a cached API response). */
 export function requestWindowRejectionMessage(
   dateYyyyMmDd: string,
-  bounds: RequestWindowBounds
+  bounds: Omit<RequestWindowBounds, 'segments'> & { segments?: RequestWindowSegment[] }
 ): string {
   const { earliestDate, latestDate, config } = bounds;
-  if (dateYyyyMmDd < earliestDate) {
-    const today = istDateString();
-    const day = dayOfMonthIst();
-    if (day <= config.previousMonthCutoffDay) {
-      return `Requests are only allowed from ${earliestDate} onward (previous month open until day ${config.previousMonthCutoffDay}; current-month look-back is ${config.currentMonthPastDays} days).`;
-    }
-    return `This date is outside the allowed window. You can request from ${earliestDate} (last ${config.currentMonthPastDays} days of the current month; previous month closed after day ${config.previousMonthCutoffDay}).`;
-  }
+  const segments = bounds.segments?.length
+    ? bounds.segments
+    : [{ startDate: earliestDate, endDate: latestDate }];
+
   if (dateYyyyMmDd > latestDate) {
-    return `Future requests cannot go beyond ${latestDate} (limit: through end of month ${config.futureMonthsAhead} month(s) ahead).`;
+    return `Future requests cannot go beyond ${latestDate} (limit: rest of this month plus ${config.futureMonthsAhead} future month(s)).`;
   }
-  return 'This date is outside the allowed request window.';
+
+  if (dateYyyyMmDd < earliestDate) {
+    return `This date is outside the allowed window. You can request ${formatSegments(segments)} (previous month closes after day ${config.previousMonthCutoffDay}; current-month look-back is ${config.currentMonthPastDays} days).`;
+  }
+
+  return `This date is outside the allowed request window. You can request ${formatSegments(segments)} (previous month closes after day ${config.previousMonthCutoffDay}; current-month look-back is ${config.currentMonthPastDays} days).`;
 }

@@ -261,8 +261,11 @@ export const AttendanceRequestWindowSettings: React.FC = () => {
       <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4">
         <h4 className="text-sm font-semibold text-slate-900">Global defaults</h4>
         <p className="mt-1 text-xs text-slate-500">
-          Previous month stays open until this day (inclusive). Current-month past dates use the
-          rolling look-back. Future requests may go through the end of N month(s) ahead.
+          <strong>Cutoff day</strong>: the whole previous month can be requested up to and
+          including this day of the current month (3 = deadline is the 3rd).{' '}
+          <strong>Look-back</strong>: how many days back from today stay open inside the current
+          month. <strong>Future months</strong>: future dates in the current month are always
+          open, plus this many whole calendar months after it.
         </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-3">
           <label className="block text-xs font-medium text-slate-600">

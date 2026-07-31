@@ -20,6 +20,7 @@ import { autoApproveSelfRequests } from '@/lib/selfApproveAttendanceRequests';
 import { isExtraWorkRequest } from '@/lib/extraWorkRequest';
 import { requiresAttendanceRequestTimePair } from '@/lib/attendanceRequestTimeRules';
 import { canViewerAccessTeamMember } from '@/lib/teamRequestAuthorization';
+import { resolveRequestRoutingForDate } from '@/lib/attendanceRequestNotifications';
 
 const TIME_INPUT_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -117,20 +118,12 @@ export async function POST(request: NextRequest) {
     const user = await User.findById(userId);
     if (!user) return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
 
-    if (!user.workingUnderPartner) {
-      return NextResponse.json({ success: false, error: 'No Partner assigned to this employee' }, { status: 400 });
+    /** Partner who covered this attendance date (history), not necessarily current work partner. */
+    const routing = await resolveRequestRoutingForDate(user, date);
+    if ('error' in routing) {
+      return NextResponse.json({ success: false, error: routing.error }, { status: 400 });
     }
-
-    /** Who receives the request mail + signed review links: this employee's `attendanceEmail` (approver inbox), not login email. */
-    const partnerName = user.workingUnderPartner;
-    const approverNotificationEmail = String((user as any).attendanceEmail || user.email || '').trim();
-
-    if (!approverNotificationEmail) {
-      return NextResponse.json(
-        { success: false, error: 'No attendance email configured for this employee. Please contact admin.' },
-        { status: 400 }
-      );
-    }
+    const { partnerName, notificationEmail: approverNotificationEmail } = routing;
 
     const monthYear = date.substring(0, 7); // YYYY-MM
 

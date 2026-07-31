@@ -13,6 +13,7 @@ import {
   recordHrAttendanceEditRequest,
 } from '@/lib/recordHrAttendanceEditRequest';
 import { applyAttendanceEditSource } from '@/lib/daywiseAttendanceSource';
+import { normalizeTimeToHHmm } from '@/lib/attendanceHours';
 
 function calculateDuration(start: string, end: string): number {
     if (!start || !end) return 0;
@@ -120,9 +121,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Use provided times for edited checkin/checkout
-    if (startTime && startTime !== '00:00') rec.editedCheckin = startTime;
-    if (endTime && endTime !== '00:00') rec.editedCheckout = endTime;
+    // Use provided times for edited checkin/checkout (always store HH:MM)
+    if (startTime && startTime !== '00:00') {
+      rec.editedCheckin = normalizeTimeToHHmm(startTime) || startTime;
+    }
+    if (endTime && endTime !== '00:00') {
+      rec.editedCheckout = normalizeTimeToHHmm(endTime) || endTime;
+    }
 
     // Calculate totalHour and excessHour depending on type
     const isType = (type: string) => typeof requestedStatus === 'string' && requestedStatus.toLowerCase().includes(type.toLowerCase());

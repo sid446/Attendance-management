@@ -1680,6 +1680,18 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                             LATE
                           </span>
                         )}
+                        {approvedReq &&
+                          (approvedReq.status === 'Pending' || approvedReq.status === 'PendingHr') && (
+                          <span
+                            className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[9px] font-bold ${
+                              approvedReq.status === 'PendingHr'
+                                ? 'border-violet-200 bg-violet-50 text-violet-900'
+                                : 'border-amber-200 bg-amber-50 text-amber-900'
+                            }`}
+                          >
+                            {approvedReq.status === 'PendingHr' ? 'HR PENDING' : 'PENDING'}
+                          </span>
+                        )}
                       </div>
                     </div>
                     

@@ -28,9 +28,11 @@ import {
 } from '@/lib/attendanceSummaryMetrics';
 import { isValidPunchTime } from '@/lib/attendanceHours';
 import {
+  isDateInRequestWindowSegments,
   requestWindowRejectionMessage,
   istDateString,
   type RequestWindowConfig,
+  type RequestWindowSegment,
 } from '@/lib/attendanceRequestWindow';
 import type { ExcessAllowanceLookup, ExcessDisplayLookup } from '@/lib/excessHourAllowance';
 import {
@@ -935,6 +937,7 @@ export default function EmployeeDashboard() {
   const [requestWindow, setRequestWindow] = useState<{
     earliestDate: string;
     latestDate: string;
+    segments?: RequestWindowSegment[];
     config: RequestWindowConfig;
   } | null>(null);
 
@@ -1072,7 +1075,10 @@ export default function EmployeeDashboard() {
   const isDateInRequestWindow = useCallback(
     (date: string) => {
       if (!requestWindow) return true;
-      return date >= requestWindow.earliestDate && date <= requestWindow.latestDate;
+      const segments = requestWindow.segments?.length
+        ? requestWindow.segments
+        : [{ startDate: requestWindow.earliestDate, endDate: requestWindow.latestDate }];
+      return isDateInRequestWindowSegments(date, segments);
     },
     [requestWindow]
   );
@@ -2462,9 +2468,23 @@ export default function EmployeeDashboard() {
                   <div className="mb-4 rounded-lg border border-blue-200/80 bg-blue-50/60 px-4 py-3 text-sm text-blue-950">
                     <p className="font-medium">Request window (IST)</p>
                     <p className="mt-1 text-blue-900/90">
-                      You can raise requests for dates from{' '}
-                      <strong>{requestWindow.earliestDate}</strong> through{' '}
-                      <strong>{requestWindow.latestDate}</strong>.
+                      You can raise requests for{' '}
+                      {(requestWindow.segments?.length
+                        ? requestWindow.segments
+                        : [
+                            {
+                              startDate: requestWindow.earliestDate,
+                              endDate: requestWindow.latestDate,
+                            },
+                          ]
+                      ).map((segment, index, all) => (
+                        <React.Fragment key={segment.startDate}>
+                          {index > 0 && ' and '}
+                          <strong>{segment.startDate}</strong> through{' '}
+                          <strong>{segment.endDate}</strong>
+                          {index === all.length - 1 && '.'}
+                        </React.Fragment>
+                      ))}
                       {requestWindow.config.previousMonthCutoffDay != null && (
                         <>
                           {' '}

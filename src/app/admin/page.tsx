@@ -1482,12 +1482,12 @@ export default function AttendanceUpload() {
       const attendanceResult = await attendanceResponse.json();
       const requestsResult = await requestsResponse.json();
 
-      // Process requests - filter by month and approved status
+      // Process requests for this month (include pending so calendar can show them)
       let filteredRequests: any[] = [];
       if (requestsResult.success && requestsResult.data) {
         filteredRequests = requestsResult.data.filter((req: any) => {
           const reqMonthYear = req.monthYear || (req.date ? req.date.substring(0, 7) : '');
-          return reqMonthYear === monthYear && req.status === 'Approved';
+          return reqMonthYear === monthYear;
         });
         setEmployeeApprovedRequests(filteredRequests);
       }

@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
       data: {
         earliestDate: bounds.earliestDate,
         latestDate: bounds.latestDate,
+        segments: bounds.segments,
         config: bounds.config,
       },
     });

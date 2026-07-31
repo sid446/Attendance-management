@@ -366,6 +366,16 @@ export async function updateLeaveBalanceOnApproval(
           return; // No balance update needed for unpaid leave
         }
 
+        // Approving the same day twice must not deduct twice.
+        const alreadyDeducted = await LeaveTransaction.findOne({
+          userId,
+          date: dateOrDetails,
+          type: 'used',
+        }).lean();
+        if (alreadyDeducted) {
+          return;
+        }
+
         const currentUsedAfterJan26 = user.leaveBalance?.usedAfterJan26 || 0;
         const currentBalanceAsOfJan26 = user.leaveBalance?.balanceAsOfJan26 || 0;
         const currentEarned = user.leaveBalance?.earned || 0;
@@ -422,10 +432,26 @@ export async function updateLeaveBalanceOnApproval(
 
     // Handle multiple dates
     const leaveDetails = dateOrDetails as Array<{ date: string; isPaidLeave: boolean; value: number }>;
-    const paidLeaves = leaveDetails.filter(detail => detail.isPaidLeave);
+    const requestedPaidLeaves = leaveDetails.filter(detail => detail.isPaidLeave);
+
+    if (requestedPaidLeaves.length === 0) {
+      return; // No paid leaves to update
+    }
+
+    // Days already deducted (by an earlier approval or a reconcile) must be skipped,
+    // otherwise re-approving a range double-counts those days.
+    const existingUsed = await LeaveTransaction.find({
+      userId,
+      type: 'used',
+      date: { $in: requestedPaidLeaves.map(p => p.date) },
+    })
+      .select('date')
+      .lean();
+    const alreadyDeductedDates = new Set(existingUsed.map(t => String(t.date)));
+    const paidLeaves = requestedPaidLeaves.filter(p => !alreadyDeductedDates.has(p.date));
 
     if (paidLeaves.length === 0) {
-      return; // No paid leaves to update
+      return; // Every requested day was already deducted
     }
 
     const currentUsedAfterJan26 = user.leaveBalance?.usedAfterJan26 || 0;

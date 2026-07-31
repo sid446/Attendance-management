@@ -13,6 +13,7 @@ import { applyDayExcessToRecord } from '@/lib/calculateDayExcessHour';
 import { getDefaultNumericValueForType } from '@/lib/attendanceRequestValues';
 import { isArticleEmployee } from '@/lib/isArticleEmployee';
 import { applyAttendanceEditSource } from '@/lib/daywiseAttendanceSource';
+import { normalizeTimeToHHmm } from '@/lib/attendanceHours';
 
 function calculateDuration(start: string, end: string): number {
     if (!start || !end) return 0;
@@ -174,9 +175,11 @@ export async function GET(request: NextRequest) {
 
         // Update times if provided - use editedCheckin/editedCheckout for corrections (never modify original checkin/checkout)
         if (startTime && endTime && startTime !== '00:00' && endTime !== '00:00') {
-                rec.editedCheckin = startTime;
-                rec.editedCheckout = endTime;
-                rec.totalHour = calculateDuration(startTime, endTime);
+                const normStart = normalizeTimeToHHmm(startTime) || startTime;
+                const normEnd = normalizeTimeToHHmm(endTime) || endTime;
+                rec.editedCheckin = normStart;
+                rec.editedCheckout = normEnd;
+                rec.totalHour = calculateDuration(normStart, normEnd);
                 // Assuming 9 hours standard for excess calculation logic roughly
                 rec.excessHour = rec.totalHour > 9 ? parseFloat((rec.totalHour - 9).toFixed(2)) : 0;
         }
@@ -433,10 +436,10 @@ export async function POST(request: NextRequest) {
       
       // If request provides startTime/endTime, use those for editedCheckin/editedCheckout
       if (startTime && startTime !== '00:00') {
-        rec.editedCheckin = startTime;
+        rec.editedCheckin = normalizeTimeToHHmm(startTime) || startTime;
       }
       if (endTime && endTime !== '00:00') {
-        rec.editedCheckout = endTime;
+        rec.editedCheckout = normalizeTimeToHHmm(endTime) || endTime;
       }
 
       const hasCustomTimes =

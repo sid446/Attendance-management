@@ -25,11 +25,7 @@ import {
   assertCanReadEmployees,
   effectiveFromDoc,
 } from '@/lib/hrConsolePermissionUtils';
-import {
-  calculateTotalHours as calculateHours,
-  isSinglePunch,
-  isValidPunchTime,
-} from '@/lib/attendanceHours';
+import { calculateTotalHours as calculateHours, isLaterThanScheduledIn, isSinglePunch, isValidPunchTime, normalizeTimeToHHmm } from '@/lib/attendanceHours';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { reapplyExtraWorkEntriesToRecord } from '@/lib/extraWorkRequest';
 import {
@@ -824,7 +820,7 @@ async function recalculateAttendanceFromDate(userId: string, fromDate: Date) {
       }
 
       if (record.halfDay) summary.totalHalfDay++;
-      if (inTime && scheduledIn && inTime > scheduledIn) summary.totalLateArrival++;
+      if (inTime && scheduledIn && isLaterThanScheduledIn(inTime, scheduledIn)) summary.totalLateArrival++;
 
       switch (record.typeOfPresence) {
         case 'ThumbMachine':

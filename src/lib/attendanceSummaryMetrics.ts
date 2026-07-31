@@ -3,7 +3,7 @@
  * so the employee portal can show the same numbers for a single month.
  */
 import type { AttendanceSummaryView, DailySchedule, ScheduleEntry, ScheduleTime, User } from '@/types/ui';
-import { isSinglePunch } from './attendanceHours';
+import { isLaterThanScheduledIn, isSinglePunch } from './attendanceHours';
 import { getScheduledTimes } from './scheduleUtils';
 
 import { calculateDayExcessHour, isHalfDayAttendanceRecord } from './calculateDayExcessHour';
@@ -361,7 +361,7 @@ export function isLateArrivalLikeSummary(
   const schedule = getScheduledTimes(user, d);
   if (!schedule.inTime || schedule.inTime === '00:00') return false;
 
-  return effectiveCheckin > schedule.inTime;
+  return isLaterThanScheduledIn(effectiveCheckin, schedule.inTime);
 }
 
 export function getLateCountLikeSummary(item: AttendanceSummaryView, user: User | undefined): number {
