@@ -7,13 +7,18 @@ import {
   type DaywisePlainRow,
 } from '@/components/summary/exports/daywiseExportFormat';
 
-const TIME_KEYS = new Set<DaywiseColumnKey>([
+/** Clock-of-day punches / schedule times (never exceed 24h meaningfully). */
+const CLOCK_TIME_KEYS = new Set<DaywiseColumnKey>([
   'actualInTimeOriginal',
   'actualOutTimeOriginal',
   'actualInTimeEditable',
   'actualOutTimeEditable',
   'scheduledInTime',
   'scheduledOutTime',
+]);
+
+/** Elapsed working/scheduled hours — may exceed 24h (month totals). */
+const DURATION_HHMM_KEYS = new Set<DaywiseColumnKey>([
   'punchWorkingHrs',
   'extraWorkHrs',
   'workingHrs',
@@ -22,6 +27,8 @@ const TIME_KEYS = new Set<DaywiseColumnKey>([
   'workingHrsMonth',
 ]);
 
+const TIME_KEYS = new Set<DaywiseColumnKey>([...CLOCK_TIME_KEYS, ...DURATION_HHMM_KEYS]);
+
 const DURATION_LABEL_KEYS = new Set<DaywiseColumnKey>([
   'excessHrsMonth',
   'deficitHrsMonth',
@@ -29,8 +36,22 @@ const DURATION_LABEL_KEYS = new Set<DaywiseColumnKey>([
   'deficitHrsDay',
 ]);
 
+const PRESENCE_QUOTA_KEYS = new Set<DaywiseColumnKey>([
+  'maxWFH',
+  'actualWFH',
+  'maxOutstation',
+  'actualOutstation',
+]);
+
+/** ExcelJS maps serial 0 → 1899-12-30T00:00:00.000Z (UTC). */
+const EXCELJS_EPOCH_MS = Date.UTC(1899, 11, 30);
+
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
+}
+
+function dateToExcelSerial(d: Date): number {
+  return (d.getTime() - EXCELJS_EPOCH_MS) / 86_400_000;
 }
 
 function normalizeHeader(h: unknown): string {
@@ -136,12 +157,24 @@ const HEADER_TO_KEY: Map<string, DaywiseColumnKey> = (() => {
   return map;
 })();
 
-function excelSerialToHhMm(serial: number): string {
-  const totalMinutes = Math.round(((serial % 1) + (serial < 0 ? 1 : 0)) * 24 * 60);
+/** Clock time-of-day from an Excel serial (fractional day). */
+function excelSerialToClockHhMm(serial: number): string {
+  let frac = serial % 1;
+  if (frac < 0) frac += 1;
+  let totalMinutes = Math.round(frac * 24 * 60);
+  if (totalMinutes === 24 * 60) totalMinutes = 0;
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${pad2(h)}:${pad2(m)}`;
+}
+
+/** Duration from Excel serial — keeps hours ≥ 24 (e.g. month totals). */
+function excelSerialToDurationHhMm(serial: number): string {
+  const totalMinutes = Math.round(serial * 24 * 60);
+  const sign = totalMinutes < 0 ? '-' : '';
   const abs = Math.abs(totalMinutes);
   const h = Math.floor(abs / 60);
   const m = abs % 60;
-  const sign = totalMinutes < 0 || serial < 0 ? '-' : '';
   return `${sign}${pad2(h)}:${pad2(m)}`;
 }
 
@@ -159,9 +192,45 @@ function dateToDdMmYyyy(d: Date): string {
   return `${pad2(d.getUTCDate())}/${pad2(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
 }
 
+function formatExcelSerialForKey(serial: number, key?: DaywiseColumnKey): string {
+  if (key && DURATION_LABEL_KEYS.has(key)) return excelSerialToDurationLabel(serial);
+  if (key && DURATION_HHMM_KEYS.has(key)) return excelSerialToDurationHhMm(serial);
+  if (key && CLOCK_TIME_KEYS.has(key)) return excelSerialToClockHhMm(serial);
+  if (key && TIME_KEYS.has(key)) return excelSerialToClockHhMm(serial);
+  return excelSerialToClockHhMm(serial);
+}
+
+function isEmptyishPresenceQuota(val: string): boolean {
+  const v = val.trim().toLowerCase();
+  return !v || v === '0' || v === '0.0' || v === '0.00' || v === 'na' || v === 'n/a' || v === '-';
+}
+
+function isEmptyishDuration(val: string): boolean {
+  const v = val.trim();
+  if (!v) return true;
+  return /^-?0+:0+(:0+)?$/.test(v);
+}
+
+function valuesEquivalentForKey(key: DaywiseColumnKey, portal: string, human: string): boolean {
+  if (portal === human) return true;
+  if (PRESENCE_QUOTA_KEYS.has(key)) {
+    return isEmptyishPresenceQuota(portal) && isEmptyishPresenceQuota(human);
+  }
+  if (DURATION_LABEL_KEYS.has(key) || DURATION_HHMM_KEYS.has(key) || CLOCK_TIME_KEYS.has(key)) {
+    if (isEmptyishDuration(portal) && isEmptyishDuration(human)) return true;
+  }
+  return false;
+}
+
 /** Normalize any sheet cell into a stable compare string. */
 export function normalizeDaywiseCellValue(raw: unknown, key?: DaywiseColumnKey): string {
   if (raw == null) return '';
+  if (typeof raw === 'boolean') {
+    if (key === 'halfDays' || key === 'trueFalseInTime' || key === 'trueFalseOutTime') {
+      return raw ? 'True' : 'False';
+    }
+    return raw ? 'True' : 'False';
+  }
   if (typeof raw === 'object' && raw !== null && !(raw instanceof Date)) {
     const obj = raw as {
       text?: unknown;
@@ -179,7 +248,9 @@ export function normalizeDaywiseCellValue(raw: unknown, key?: DaywiseColumnKey):
   }
   if (raw instanceof Date && !Number.isNaN(raw.getTime())) {
     if (key === 'date') return dateToDdMmYyyy(raw);
-    return `${pad2(raw.getHours())}:${pad2(raw.getMinutes())}`;
+    // ExcelJS stores times/durations as UTC Dates on the 1899-12-30 epoch.
+    // Never use local getHours() — IST (+5:30) shifts every punch (12:27 → 17:57).
+    return formatExcelSerialForKey(dateToExcelSerial(raw), key);
   }
   if (raw instanceof Date) {
     return '';
@@ -189,20 +260,39 @@ export function normalizeDaywiseCellValue(raw: unknown, key?: DaywiseColumnKey):
       const utc = new Date(Math.round((raw - 25569) * 86400 * 1000));
       return dateToDdMmYyyy(utc);
     }
-    if (key && DURATION_LABEL_KEYS.has(key)) {
-      return excelSerialToDurationLabel(raw);
+    if (key === 'halfDays' || key === 'trueFalseInTime' || key === 'trueFalseOutTime') {
+      if (raw === 0) return 'False';
+      if (raw === 1) return 'True';
     }
-    if (key && TIME_KEYS.has(key)) {
-      if (raw >= 0 && raw < 10) return excelSerialToHhMm(raw);
-      const h = Math.floor(raw);
-      const m = Math.round((raw - h) * 60);
-      return `${pad2(h)}:${pad2(m)}`;
+    if (key && (DURATION_LABEL_KEYS.has(key) || TIME_KEYS.has(key))) {
+      // Excel time/duration serials are fractions of a day (36h → 1.5).
+      // Values ≥ 10 are treated as decimal hours (legacy).
+      if (Math.abs(raw) < 10) return formatExcelSerialForKey(raw, key);
+      const h = Math.floor(Math.abs(raw));
+      const m = Math.round((Math.abs(raw) - h) * 60);
+      const sign = raw < 0 ? '-' : '';
+      if (key && DURATION_LABEL_KEYS.has(key)) {
+        return `${sign}${pad2(h)}:${pad2(m)}:00`;
+      }
+      return `${sign}${pad2(h)}:${pad2(m)}`;
     }
     const rounded = Math.round(raw * 100) / 100;
     return String(rounded);
   }
   let s = String(raw).replace(/\u00a0/g, ' ').trim();
   if (!s || s === 'Invalid Date' || s === '[object Object]') return '';
+
+  // ExcelJS sometimes stringifies formula results as ISO datetimes
+  if (key && key !== 'date' && (TIME_KEYS.has(key) || DURATION_LABEL_KEYS.has(key))) {
+    const isoDt = s.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/);
+    if (isoDt) {
+      const asDate = new Date(s);
+      if (!Number.isNaN(asDate.getTime())) {
+        return normalizeDaywiseCellValue(asDate, key);
+      }
+    }
+  }
+
   if (key === 'date') {
     const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
     if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
@@ -232,6 +322,11 @@ export function normalizeDaywiseCellValue(raw: unknown, key?: DaywiseColumnKey):
     const low = s.toLowerCase();
     if (low === 'true' || low === 'yes' || low === '1') return 'True';
     if (low === 'false' || low === 'no' || low === '0') return 'False';
+  }
+  if (key === 'weekType') {
+    const low = s.toLowerCase().replace(/\s+/g, '');
+    if (low === 'weekday' || low === 'weekdays') return 'Weekdays';
+    if (low === 'weekoff' || low === 'weekoffs' || low === 'weeklyoff') return 'Weekoff';
   }
   if (key === 'presentAbsent') {
     return s.replace(/\s+/g, ' ');
@@ -571,9 +666,11 @@ export function compareDaywiseRows(
       if (rawHuman === undefined) continue;
       const pVal = normalizeDaywiseCellValue(p[key] ?? '', key);
       const hVal = normalizeDaywiseCellValue(rawHuman ?? '', key);
+      if (valuesEquivalentForKey(key, pVal, hVal)) continue;
       // Legacy sheets often have blank/broken formulas — only compare when human has a value
       if (!hVal) continue;
-      if (pVal === hVal) continue;
+      // Human sheets fill WFH/OS columns with 0 / NA as placeholders — ignore those
+      if (PRESENCE_QUOTA_KEYS.has(key) && isEmptyishPresenceQuota(hVal)) continue;
       fields.push({
         key,
         label: DAYWISE_COMPARE_LABEL[key],
