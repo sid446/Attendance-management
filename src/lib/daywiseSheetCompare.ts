@@ -43,6 +43,22 @@ const PRESENCE_QUOTA_KEYS = new Set<DaywiseColumnKey>([
   'actualOutstation',
 ]);
 
+/**
+ * Values repeated on every day row for an employee (same month totals).
+ * When they mismatch, report once per employee — not once per date.
+ */
+export const MONTH_LEVEL_COMPARE_KEYS = new Set<DaywiseColumnKey>([
+  'scheduledHrsMonth',
+  'workingHrsMonth',
+  'excessHrsMonth',
+  'deficitHrsMonth',
+]);
+
+export const MONTH_TOTAL_DATE_LABEL = 'Month total';
+
+export function isMonthLevelCompareKey(key: DaywiseColumnKey): boolean {
+  return MONTH_LEVEL_COMPARE_KEYS.has(key);
+}
 /** ExcelJS maps serial 0 → 1899-12-30T00:00:00.000Z (UTC). */
 const EXCELJS_EPOCH_MS = Date.UTC(1899, 11, 30);
 
@@ -211,13 +227,72 @@ function isEmptyishDuration(val: string): boolean {
   return /^-?0+:0+(:0+)?$/.test(v);
 }
 
+/** Portal "Holiday" ↔ human "Sun"/"Sunday" for non-worked weekoffs. */
+function isWeekoffRestStatus(val: string): boolean {
+  const v = String(val || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+  return (
+    v === 'holiday' ||
+    v === 'sun' ||
+    v === 'sunday' ||
+    v === 'weekoff' ||
+    v === 'week off'
+  );
+}
+
+/** Human sheets put "Sun"/"Holiday" in punch columns on weekoffs. */
+function isWeekoffPlaceholderValue(val: string): boolean {
+  const v = String(val || '')
+    .trim()
+    .toLowerCase();
+  if (!v) return true;
+  if (isEmptyishDuration(v)) return true;
+  return (
+    v === 'sun' ||
+    v === 'sunday' ||
+    v === 'holiday' ||
+    v === 'weekoff' ||
+    v === 'week off' ||
+    v === 'na' ||
+    v === 'n/a' ||
+    v === '-'
+  );
+}
+
+/** Day-level noise that is meaningless when both sides are a rest Holiday/Sun. */
+const WEEKOFF_REST_SKIP_KEYS = new Set<DaywiseColumnKey>([
+  'weekType',
+  'actualInTimeOriginal',
+  'actualOutTimeOriginal',
+  'actualInTimeEditable',
+  'actualOutTimeEditable',
+  'trueFalseInTime',
+  'trueFalseOutTime',
+  'scheduledInTime',
+  'scheduledOutTime',
+  'scheduledTime',
+  'workingHrs',
+  'punchWorkingHrs',
+  'extraWorkHrs',
+  'extraWorkTimes',
+  'excessHrsDay',
+  'deficitHrsDay',
+  'halfDays',
+]);
+
 function valuesEquivalentForKey(key: DaywiseColumnKey, portal: string, human: string): boolean {
   if (portal === human) return true;
+  if (key === 'presentAbsent') {
+    if (isWeekoffRestStatus(portal) && isWeekoffRestStatus(human)) return true;
+  }
   if (PRESENCE_QUOTA_KEYS.has(key)) {
     return isEmptyishPresenceQuota(portal) && isEmptyishPresenceQuota(human);
   }
   if (DURATION_LABEL_KEYS.has(key) || DURATION_HHMM_KEYS.has(key) || CLOCK_TIME_KEYS.has(key)) {
     if (isEmptyishDuration(portal) && isEmptyishDuration(human)) return true;
+    if (isWeekoffPlaceholderValue(portal) && isWeekoffPlaceholderValue(human)) return true;
   }
   return false;
 }
@@ -306,6 +381,20 @@ export function normalizeDaywiseCellValue(raw: unknown, key?: DaywiseColumnKey):
     }
   }
   if (key && (TIME_KEYS.has(key) || DURATION_LABEL_KEYS.has(key))) {
+    const low = s.toLowerCase();
+    // Human Att sheet writes "Sun"/"Holiday" into time cells on weekoffs
+    if (
+      low === 'sun' ||
+      low === 'sunday' ||
+      low === 'holiday' ||
+      low === 'weekoff' ||
+      low === 'week off' ||
+      low === 'na' ||
+      low === 'n/a' ||
+      low === '-'
+    ) {
+      return '';
+    }
     const m = s.match(/^(-)?(\d{1,3}):(\d{1,2})(?::(\d{1,2}))?$/);
     if (m) {
       const sign = m[1] || '';
@@ -329,7 +418,10 @@ export function normalizeDaywiseCellValue(raw: unknown, key?: DaywiseColumnKey):
     if (low === 'weekoff' || low === 'weekoffs' || low === 'weeklyoff') return 'Weekoff';
   }
   if (key === 'presentAbsent') {
-    return s.replace(/\s+/g, ' ');
+    const cleaned = s.replace(/\s+/g, ' ');
+    // Portal exports Sunday/calendar holiday rest as "Holiday"; human sheet uses "Sun"
+    if (isWeekoffRestStatus(cleaned)) return 'Holiday';
+    return cleaned;
   }
   return s;
 }
@@ -593,7 +685,7 @@ function reasonForField(key: DaywiseColumnKey, portal: string, human: string): s
   const label = DAYWISE_COMPARE_LABEL[key];
   switch (key) {
     case 'presentAbsent':
-      return `Status differs — portal shows "${portal || '(blank)'}", human sheet shows "${human || '(blank)'}". Often caused by leave/WFH/OS-P/holiday classification or edited punches.`;
+      return `Status differs — portal shows "${portal || '(blank)'}", human sheet shows "${human || '(blank)'}". Often caused by leave/WFH/OS-P/holiday classification or edited punches. (Note: Holiday and Sun are treated as the same rest-day status.)`;
     case 'actualInTimeEditable':
     case 'actualOutTimeEditable':
       return `Edited punch time differs in ${label}. Human may have corrected in/out after export, or portal request edits were applied later.`;
@@ -615,7 +707,7 @@ function reasonForField(key: DaywiseColumnKey, portal: string, human: string): s
     case 'deficitHrsMonth':
     case 'scheduledHrsMonth':
     case 'workingHrsMonth':
-      return `Month total column differs — usually a knock-on from day-level punch/status differences.`;
+      return `Month total column differs — this value is the same on every day row, so it is shown once per employee. Usually a knock-on from day-level punch/status differences.`;
     case 'maxWFH':
     case 'actualWFH':
     case 'maxOutstation':
@@ -659,11 +751,18 @@ export function compareDaywiseRows(
     }
     matchedHumanKeys.add(humanMatchKey(h));
 
+    const pStatusRaw = String(p.presentAbsent ?? '');
+    const hStatusRaw = String(h.presentAbsent ?? '');
+    const bothWeekoffRest =
+      isWeekoffRestStatus(pStatusRaw) && isWeekoffRestStatus(hStatusRaw);
+
     const fields: DaywiseFieldDiff[] = [];
     for (const key of DAYWISE_COMPARE_KEYS) {
       const rawHuman = h[key];
       // Column not present on human sheet at all
       if (rawHuman === undefined) continue;
+      // Holiday ↔ Sun rest day: ignore punch / true-false / schedule placeholder noise
+      if (bothWeekoffRest && WEEKOFF_REST_SKIP_KEYS.has(key)) continue;
       const pVal = normalizeDaywiseCellValue(p[key] ?? '', key);
       const hVal = normalizeDaywiseCellValue(rawHuman ?? '', key);
       if (valuesEquivalentForKey(key, pVal, hVal)) continue;
@@ -707,13 +806,78 @@ export function compareDaywiseRows(
     });
   }
 
-  diffs.sort((a, b) => {
+  // Month-level columns (excess/deficit/scheduled/working hrs in month) repeat on every
+  // day row — lift them into one "Month total" diff per employee.
+  const monthFieldsByEmp = new Map<
+    string,
+    { employeeCode: string; employeeName: string; fields: DaywiseFieldDiff[] }
+  >();
+  const collapsed: DaywiseRowDiff[] = [];
+  for (const diff of diffs) {
+    if (diff.kind !== 'mismatch') {
+      collapsed.push(diff);
+      continue;
+    }
+    const empKey = (
+      normalizeDaywiseCellValue(diff.employeeCode || '', 'employeeCode') ||
+      normalizePersonNameForMatch(diff.employeeName || '') ||
+      'unknown'
+    ).toLowerCase();
+    const dayFields: DaywiseFieldDiff[] = [];
+    for (const field of diff.fields) {
+      if (!MONTH_LEVEL_COMPARE_KEYS.has(field.key)) {
+        dayFields.push(field);
+        continue;
+      }
+      let bucket = monthFieldsByEmp.get(empKey);
+      if (!bucket) {
+        bucket = {
+          employeeCode: diff.employeeCode,
+          employeeName: diff.employeeName,
+          fields: [],
+        };
+        monthFieldsByEmp.set(empKey, bucket);
+      }
+      if (!bucket.fields.some((f) => f.key === field.key)) {
+        bucket.fields.push(field);
+      }
+    }
+    if (dayFields.length === 0) {
+      matchedRowCount += 1;
+      continue;
+    }
+    collapsed.push({
+      ...diff,
+      fields: dayFields,
+      summary: `${dayFields.length} field${dayFields.length === 1 ? '' : 's'} differ`,
+    });
+  }
+
+  for (const [empKey, bucket] of monthFieldsByEmp) {
+    if (bucket.fields.length === 0) continue;
+    // Month total rows are new diffs (not previously counted as day mismatches)
+    collapsed.push({
+      key: `month:${empKey}`,
+      employeeCode: bucket.employeeCode,
+      date: MONTH_TOTAL_DATE_LABEL,
+      employeeName: bucket.employeeName,
+      kind: 'mismatch',
+      fields: bucket.fields,
+      summary: `${bucket.fields.length} month-level field${
+        bucket.fields.length === 1 ? '' : 's'
+      } differ (same on every day — shown once)`,
+    });
+  }
+
+  collapsed.sort((a, b) => {
     const kindOrder = { mismatch: 0, missingInHuman: 1, extraInHuman: 2 };
     if (kindOrder[a.kind] !== kindOrder[b.kind]) return kindOrder[a.kind] - kindOrder[b.kind];
     const nameCmp = a.employeeName.localeCompare(b.employeeName, undefined, { sensitivity: 'base' });
     if (nameCmp !== 0) return nameCmp;
     const codeCmp = a.employeeCode.localeCompare(b.employeeCode, undefined, { sensitivity: 'base' });
     if (codeCmp !== 0) return codeCmp;
+    if (a.date === MONTH_TOTAL_DATE_LABEL && b.date !== MONTH_TOTAL_DATE_LABEL) return -1;
+    if (b.date === MONTH_TOTAL_DATE_LABEL && a.date !== MONTH_TOTAL_DATE_LABEL) return 1;
     return a.date.localeCompare(b.date);
   });
 
@@ -721,10 +885,10 @@ export function compareDaywiseRows(
     portalRowCount: portal.rows.length,
     humanRowCount: human.rows.length,
     matchedRowCount,
-    mismatchCount: diffs.filter((d) => d.kind === 'mismatch').length,
-    missingInHumanCount: diffs.filter((d) => d.kind === 'missingInHuman').length,
-    extraInHumanCount: diffs.filter((d) => d.kind === 'extraInHuman').length,
-    diffs,
+    mismatchCount: collapsed.filter((d) => d.kind === 'mismatch').length,
+    missingInHumanCount: collapsed.filter((d) => d.kind === 'missingInHuman').length,
+    extraInHumanCount: collapsed.filter((d) => d.kind === 'extraInHuman').length,
+    diffs: collapsed,
   };
 }
 

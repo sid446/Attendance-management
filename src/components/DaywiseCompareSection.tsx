@@ -18,6 +18,8 @@ import type { SummaryExportContext } from '@/components/summary/exports/exportTy
 import type { EnrichedSummary } from '@/components/summary/types';
 import {
   compareDaywiseRows,
+  isMonthLevelCompareKey,
+  MONTH_TOTAL_DATE_LABEL,
   parseDaywiseSheetBuffer,
   plainRowsFromDaywiseWorkbook,
   type DaywiseCompareResult,
@@ -737,6 +739,11 @@ export const DaywiseCompareSection: React.FC<Props> = ({ allUsers = [], holidays
                               <span className="text-sm font-semibold text-slate-900">
                                 {diff.date}
                               </span>
+                              {diff.date === MONTH_TOTAL_DATE_LABEL && (
+                                <span className="rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[11px] font-medium text-violet-900">
+                                  Once per employee
+                                </span>
+                              )}
                               <span
                                 className={`rounded border px-1.5 py-0.5 text-[11px] font-medium ${kindBadge(
                                   diff.kind
@@ -766,7 +773,14 @@ export const DaywiseCompareSection: React.FC<Props> = ({ allUsers = [], holidays
                                       return (
                                         <React.Fragment key={f.key}>
                                           <tr className="align-top">
-                                            <td className="px-3 py-2 text-slate-800">{f.label}</td>
+                                            <td className="px-3 py-2 text-slate-800">
+                                              {f.label}
+                                              {isMonthLevelCompareKey(f.key) && (
+                                                <span className="ml-1.5 text-[10px] font-normal uppercase tracking-wide text-violet-700">
+                                                  month
+                                                </span>
+                                              )}
+                                            </td>
                                             <td className="px-3 py-2 font-medium text-slate-900">
                                               {f.portal || (
                                                 <span className="text-slate-400">(blank)</span>

@@ -354,7 +354,28 @@ export async function buildDaywiseWorkbook(
       date: string,
       record: any
     ) => {
-      if (!user || !isDayIncludedInScheduledCalc(user, date, record)) {
+      if (!user) {
+        return zeroDaywiseScheduledFields();
+      }
+
+      // Weekday WFH must show that day's schedule (not 00:00). Weekoff WFH / Sunday
+      // stay on the normal include rules (usually excluded from Sched.).
+      const type = String(record?.typeOfPresence || record?.status || '').trim();
+      const isWeekdayWfh =
+        type === 'WFH - weekdays' ||
+        type === 'Work From Home (WFH)' ||
+        (recordIsDaywiseWFHRow(record) &&
+          type !== 'WFH - weekoff' &&
+          type !== 'Weekly Off - Work From Home (WO-WFH)' &&
+          !type.toLowerCase().includes('weekoff'));
+
+      if (!isWeekdayWfh && !isDayIncludedInScheduledCalc(user, date, record)) {
+        return zeroDaywiseScheduledFields();
+      }
+
+      // Weekday WFH on Sunday / schedule-holiday: do not invent a weekday schedule
+      const d = calendarDateFromIsoKey(date);
+      if (isWeekdayWfh && d.getDay() === 0) {
         return zeroDaywiseScheduledFields();
       }
 
@@ -362,6 +383,7 @@ export async function buildDaywiseWorkbook(
       const scheduledInTime = schedule.inTime ?? '';
       const scheduledOutTime = schedule.outTime ?? '';
       if (
+        schedule.isHoliday ||
         !scheduledInTime ||
         !scheduledOutTime ||
         scheduledInTime === '00:00' ||

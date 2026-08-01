@@ -323,6 +323,12 @@ export function isExcessEligibleRecord(dateStr: string, recAny: any): boolean {
     return true;
   }
 
+  // Weekday WFH counts toward Sched. (same as office present). Weekoff WFH is
+  // already excluded above via includes('weekoff') / Sunday check.
+  if (type === 'WFH - weekdays' || type === 'Work From Home (WFH)') {
+    return true;
+  }
+
   if (typeLower.includes('present')) {
     return hasWorkActivity();
   }
