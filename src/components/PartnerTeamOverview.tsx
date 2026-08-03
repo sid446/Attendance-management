@@ -425,21 +425,23 @@ export function PartnerTeamOverview({
                     </div>
                   </div>
                   <div className="shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
-                    <span className="text-emerald-700">
-                      P {r.metrics.totalPresent}
-                    </span>
-                    <span className="mx-1 text-muted-foreground/50">·</span>
-                    <span className="text-rose-700">
-                      A {r.metrics.totalAbsent}
-                    </span>
-                    <span className="mx-1 text-muted-foreground/50">·</span>
-                    <span className="text-amber-700">
-                      L {r.metrics.calcLate}
-                    </span>
-                  </div>
-                  <div className="hidden w-20 shrink-0 text-right font-mono text-[10px] text-muted-foreground sm:block">
-                    {r.metrics.calcExcessDeficit > 0 ? "+" : r.metrics.calcExcessDeficit < 0 ? "−" : ""}
-                    {formatHoursMinutes(Math.abs(r.metrics.calcExcessDeficit))}
+                    <div>
+                      <span className="text-emerald-700">
+                        P {r.metrics.totalPresent}
+                      </span>
+                      <span className="mx-1 text-muted-foreground/50">·</span>
+                      <span className="text-rose-700">
+                        A {r.metrics.totalAbsent}
+                      </span>
+                      <span className="mx-1 text-muted-foreground/50">·</span>
+                      <span className="text-amber-700">
+                        L {r.metrics.calcLate}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                      {r.metrics.calcExcessDeficit > 0 ? "+" : r.metrics.calcExcessDeficit < 0 ? "−" : ""}
+                      {formatHoursMinutes(Math.abs(r.metrics.calcExcessDeficit))}
+                    </div>
                   </div>
                 </button>
               </li>

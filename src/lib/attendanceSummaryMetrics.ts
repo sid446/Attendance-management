@@ -17,9 +17,23 @@ import {
 } from './extraWorkRequest';
 import { isArticleEmployee } from './isArticleEmployee';
 
+/**
+ * Parse YYYY-MM-DD as a local calendar date (noon).
+ * Bare `new Date('YYYY-MM-DD')` is UTC midnight (weekday can shift west of UTC) and
+ * is Invalid Date on some mobile Safari builds — which breaks holidays / working days /
+ * absent / scheduled hours on the employee dashboard.
+ */
+export function parseIsoDateLocal(dateStr: string): Date {
+  const iso = String(dateStr || '').trim().slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+    return new Date(`${iso}T12:00:00`);
+  }
+  return new Date(dateStr);
+}
+
 /** True when the ISO date (YYYY-MM-DD) falls on a Sunday. */
 export function isSundayDate(dateStr: string): boolean {
-  const d = new Date(`${dateStr}T12:00:00`);
+  const d = parseIsoDateLocal(dateStr);
   return !Number.isNaN(d.getTime()) && d.getDay() === 0;
 }
 
@@ -157,7 +171,7 @@ export function getApplicableSchedule(
   user: User | undefined,
   date?: string
 ): ScheduleEntry | undefined {
-  const targetDate = date ? new Date(date) : new Date(item.monthYear + '-01');
+  const targetDate = date ? parseIsoDateLocal(date) : parseIsoDateLocal(`${item.monthYear}-01`);
 
   if (item.schedules && !date) {
     return item.schedules;
@@ -247,8 +261,7 @@ function isWorkingDayForMetrics(
   rec: any,
   holidayDates: Set<string>
 ): boolean {
-  const d = new Date(dateStr);
-  if (d.getDay() === 0) return false;
+  if (isSundayDate(dateStr)) return false;
   if (holidayDates.has(dateStr)) return false;
   if (typeof rec?.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff')) {
     return false;
@@ -273,7 +286,7 @@ export function isExcessEligibleRecord(dateStr: string, recAny: any): boolean {
   const rec: any = recAny || {};
   const type = String(rec.typeOfPresence || '').trim();
   const typeLower = type.toLowerCase();
-  const d = new Date(dateStr);
+  const d = parseIsoDateLocal(dateStr);
 
   if (Number.isNaN(d.getTime())) return false;
   if (d.getDay() === 0) return false;
@@ -354,7 +367,7 @@ export function isLateArrivalLikeSummary(
   const effectiveCheckin = rec.editedCheckin || rec.checkin || rec.inTime;
   if (!effectiveCheckin || effectiveCheckin === '00:00') return false;
 
-  const d = new Date(`${dateStr}T12:00:00`);
+  const d = parseIsoDateLocal(dateStr);
   if (Number.isNaN(d.getTime())) return false;
   if (d.getDay() === 0) return false;
 
@@ -399,7 +412,7 @@ export function getHalfDayCountLikeSummary(
     const isBothZero =
       !(effectiveCheckin && effectiveCheckin !== '00:00') &&
       !(effectiveCheckout && effectiveCheckout !== '00:00');
-    const d = new Date(date);
+    const d = parseIsoDateLocal(date);
     const empTypeHalfDay = getEmploymentTypeForDate(user, d);
     if (isHalftimeEmploymentType(empTypeHalfDay)) return;
     if (isSinglePunchAbsentDay(date, r, holidays, options)) return;
@@ -428,8 +441,7 @@ export function getAbsentCountLikeSummary(
   let calcAbsent = 0;
   Object.entries(item.recordDetails || {}).forEach(([dateStr, recAny]) => {
     const rec: any = recAny || {};
-    const d = new Date(dateStr);
-    if (d.getDay() === 0) return;
+    if (isSundayDate(dateStr)) return;
     if (holidayDates.has(dateStr)) return;
     if (typeof rec.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff')) {
       return;
@@ -548,8 +560,8 @@ export function isDayIncludedInScheduledCalc(
   recAny: unknown
 ): boolean {
   if (!recAny || !isExcessEligibleRecord(dateStr, recAny)) return false;
-  const dateObj = new Date(dateStr);
-  const schedule = getScheduledTimes(user, dateObj);
+  // Pass ISO string so getScheduledTimes uses local-noon parsing (not UTC midnight Date).
+  const schedule = getScheduledTimes(user, dateStr);
   if (
     schedule.isHoliday ||
     !schedule.inTime ||
@@ -733,7 +745,7 @@ export function isWorkedOnHolidayRecord(
   const type = String(rec.typeOfPresence || '');
   const typeLower = type.toLowerCase();
 
-  const d = new Date(`${dateStr}T12:00:00`);
+  const d = parseIsoDateLocal(dateStr);
   if (Number.isNaN(d.getTime())) return false;
 
   const isNonWorkingDay =
@@ -780,9 +792,7 @@ export function getHolidaysInRecordsCount(
 ): number {
   let holidayCount = 0;
   Object.keys(item.recordDetails || {}).forEach((dateStr) => {
-    const d = new Date(dateStr);
-    if (d.getDay() === 0) holidayCount++;
-    else if (holidayDates.has(dateStr)) holidayCount++;
+    if (isSundayDate(dateStr) || holidayDates.has(dateStr)) holidayCount++;
   });
   return holidayCount;
 }
@@ -802,8 +812,7 @@ function isWorkingDayInRecords(
   rec: { typeOfPresence?: string },
   holidayDates: Set<string>
 ): boolean {
-  const d = new Date(dateStr);
-  if (d.getDay() === 0) return false;
+  if (isSundayDate(dateStr)) return false;
   if (holidayDates.has(dateStr)) return false;
   if (typeof rec.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff')) {
     return false;
@@ -812,8 +821,7 @@ function isWorkingDayInRecords(
 }
 
 function isHolidayInRecords(dateStr: string, holidayDates: Set<string>): boolean {
-  const d = new Date(dateStr);
-  if (d.getDay() === 0) return true;
+  if (isSundayDate(dateStr)) return true;
   return holidayDates.has(dateStr);
 }
 
@@ -823,8 +831,7 @@ function isAbsentDayInRecords(
   holidayDates: Set<string>
 ): boolean {
   const rec: any = recAny || {};
-  const d = new Date(dateStr);
-  if (d.getDay() === 0) return false;
+  if (isSundayDate(dateStr)) return false;
   if (holidayDates.has(dateStr)) return false;
   if (typeof rec.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff')) {
     return false;
@@ -887,7 +894,7 @@ function isHalfDayInRecords(dateStr: string, recAny: unknown, user: User | undef
   const isBothZero =
     !(effectiveCheckin && effectiveCheckin !== '00:00') &&
     !(effectiveCheckout && effectiveCheckout !== '00:00');
-  const d = new Date(dateStr);
+  const d = parseIsoDateLocal(dateStr);
   const empTypeHalfDay = getEmploymentTypeForDate(user, d);
   if (isHalftimeEmploymentType(empTypeHalfDay)) return false;
   return !!(r?.halfDay && r?.typeOfPresence !== 'Holiday' && !isBothZero);
@@ -923,7 +930,7 @@ export interface SummaryMetricDayRow {
 }
 
 function formatSummaryDayLabel(dateStr: string): string {
-  const d = new Date(`${dateStr}T12:00:00`);
+  const d = parseIsoDateLocal(dateStr);
   if (Number.isNaN(d.getTime())) return dateStr;
   return d.toLocaleDateString('en-IN', {
     weekday: 'short',
@@ -938,7 +945,11 @@ export function getSummaryMetricDays(
   user: User | undefined,
   holidays: { date: string }[]
 ): SummaryMetricDayRow[] {
-  const holidayDates = new Set(holidays.map((h) => h.date));
+  const holidayDates = new Set(
+    holidays
+      .map((h) => String(h.date || '').trim().slice(0, 10))
+      .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+  );
   const records = item.recordDetails || {};
   const rows: SummaryMetricDayRow[] = [];
 
@@ -991,7 +1002,7 @@ export function getSummaryMetricDays(
         include = isLateArrivalLikeSummary(dateStr, rec, user);
         if (include) {
           const checkin = rec.editedCheckin || rec.checkin || rec.inTime || '—';
-          const scheduled = user ? getScheduledTimes(user, new Date(`${dateStr}T12:00:00`)).inTime : '';
+          const scheduled = user ? getScheduledTimes(user, dateStr).inTime : '';
           detail = scheduled ? `In ${checkin} (sched. ${scheduled})` : `In ${checkin}`;
         }
         break;
@@ -1056,8 +1067,7 @@ export function getScheduledHoursNoLunchForMonth(
     const rec = item.recordDetails?.[dateStr];
     if (!isDayIncludedInScheduledCalc(user, dateStr, rec)) return;
 
-    const dateObj = new Date(dateStr);
-    const schedule = getScheduledTimes(user, dateObj);
+    const schedule = getScheduledTimes(user, dateStr);
 
     const [inH, inM] = schedule.inTime!.split(':').map(Number);
     const [outH, outM] = schedule.outTime!.split(':').map(Number);
@@ -1107,7 +1117,7 @@ export function getArticleExcessSumForPeriod(
     const rec = item.recordDetails?.[dateStr];
     if (!rec) return;
 
-    const schedule = getScheduledTimes(user, new Date(dateStr));
+    const schedule = getScheduledTimes(user, dateStr);
     total += resolveArticleDayExcessHour(
       user,
       dateStr,
@@ -1143,7 +1153,7 @@ export function getArticleExcessBreakdownForPeriod(
     const rec = item.recordDetails?.[dateStr];
     if (!rec) return;
 
-    const schedule = getScheduledTimes(user, new Date(dateStr));
+    const schedule = getScheduledTimes(user, dateStr);
     const scheduledInTime = schedule.inTime || '';
     const scheduledOutTime = schedule.outTime || '';
     const inTime = formatPunchTime(getRecordPunchTimeRange(rec).inTime);
@@ -1172,7 +1182,7 @@ export function getArticleExcessBreakdownForPeriod(
       options?.dayAllowanceMap
     );
     const sign = dayExcess > 0 ? '+' : dayExcess < 0 ? '-' : '';
-    const dateObj = new Date(dateStr);
+    const dateObj = parseIsoDateLocal(dateStr);
     const weekday = Number.isNaN(dateObj.getTime())
       ? ''
       : dateObj.toLocaleDateString('en-US', { weekday: 'short' });
@@ -1195,7 +1205,7 @@ export function getArticleExcessBreakdownForPeriod(
   });
 
   datedRows.sort(
-    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+    (a, b) => parseIsoDateLocal(a.date).getTime() - parseIsoDateLocal(b.date).getTime()
   );
   breakdown.push(...datedRows);
 
@@ -1273,7 +1283,11 @@ export function computeSummaryAlignedMetrics(
 ): SummaryAlignedMetrics | null {
   if (!item || !user) return null;
 
-  const holidayDates = new Set(holidays.map((h) => h.date));
+  const holidayDates = new Set(
+    holidays
+      .map((h) => String(h.date || '').trim().slice(0, 10))
+      .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+  );
   const dateList = monthDateStrings(monthYear);
   const totalHour = getTotalHourLikeAdminSummary(item, user, dateList);
 

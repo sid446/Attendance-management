@@ -68,7 +68,7 @@ export interface EmployeeDashboardOverviewProps {
   chartDailySeries?: { date: string; hours: number }[];
   requestsPending: number;
   pendingRequests?: EmployeeAttendanceRequest[];
-  /** Direct reports (partners only); shown below profile on desktop. */
+  /** Direct reports (partners only); shown below profile. */
   teamMembers?: User[];
   teamMembersLoading?: boolean;
   isLoadingMetrics: boolean;
@@ -279,8 +279,9 @@ export function EmployeeDashboardOverview({
                   Loading team…
                 </div>
               ) : (
-                <>
-                  <ul className="mt-2 space-y-1.5 lg:hidden">
+                <div className="mt-2 min-h-0 flex-1 overflow-auto rounded-lg border border-border">
+                  {/* Same fields on all breakpoints (mobile previously omitted email). */}
+                  <ul className="divide-y divide-border/80 lg:hidden">
                     {sortedTeamMembers.map((member) => {
                       const employeeId =
                         member.employeeCode?.trim() || member.odId?.trim() || "—";
@@ -289,64 +290,72 @@ export function EmployeeDashboardOverview({
                           <button
                             type="button"
                             onClick={() => onSelectTeamMember?.(member._id)}
-                            className="flex w-full items-center gap-3 rounded-lg border border-border bg-background px-3 py-2.5 text-left transition hover:bg-surface/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/40"
+                            className="flex w-full flex-col gap-0.5 px-3 py-2.5 text-left transition hover:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400/40"
                           >
-                            <span className="font-mono text-[10px] text-muted-foreground">{employeeId}</span>
-                            <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-                              {member.name}
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                                {employeeId}
+                              </span>
+                              <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                                {member.name}
+                              </span>
+                            </div>
+                            <span
+                              className="truncate text-[11px] text-muted-foreground"
+                              title={member.email}
+                            >
+                              {member.email || "—"}
                             </span>
                           </button>
                         </li>
                       );
                     })}
                   </ul>
-                  <div className="mt-2 hidden min-h-0 flex-1 overflow-y-auto rounded-lg border border-border lg:block">
-                    <table className="w-full min-w-0 text-left text-[11px]">
-                      <thead className="sticky top-0 z-[1] bg-surface text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                        <tr className="border-b border-border">
-                          <th className="px-2 py-1.5 font-medium">ID</th>
-                          <th className="px-2 py-1.5 font-medium">Name</th>
-                          <th className="px-2 py-1.5 font-medium">Email</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border/80">
-                        {sortedTeamMembers.map((member) => {
-                          const employeeId =
-                            member.employeeCode?.trim() || member.odId?.trim() || "—";
-                          return (
-                            <tr
-                              key={member._id}
-                              className={`bg-background/50 ${onSelectTeamMember ? "cursor-pointer hover:bg-background focus-within:bg-background" : "hover:bg-background"}`}
-                              onClick={() => onSelectTeamMember?.(member._id)}
-                              onKeyDown={(e) => {
-                                if (!onSelectTeamMember) return;
-                                if (e.key === "Enter" || e.key === " ") {
-                                  e.preventDefault();
-                                  onSelectTeamMember(member._id);
-                                }
-                              }}
-                              tabIndex={onSelectTeamMember ? 0 : undefined}
-                              role={onSelectTeamMember ? "button" : undefined}
+                  <table className="hidden w-full min-w-0 text-left text-[11px] lg:table">
+                    <thead className="sticky top-0 z-[1] bg-surface text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      <tr className="border-b border-border">
+                        <th className="px-2 py-1.5 font-medium">ID</th>
+                        <th className="px-2 py-1.5 font-medium">Name</th>
+                        <th className="px-2 py-1.5 font-medium">Email</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/80">
+                      {sortedTeamMembers.map((member) => {
+                        const employeeId =
+                          member.employeeCode?.trim() || member.odId?.trim() || "—";
+                        return (
+                          <tr
+                            key={member._id}
+                            className={`bg-background/50 ${onSelectTeamMember ? "cursor-pointer hover:bg-background focus-within:bg-background" : "hover:bg-background"}`}
+                            onClick={() => onSelectTeamMember?.(member._id)}
+                            onKeyDown={(e) => {
+                              if (!onSelectTeamMember) return;
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                onSelectTeamMember(member._id);
+                              }
+                            }}
+                            tabIndex={onSelectTeamMember ? 0 : undefined}
+                            role={onSelectTeamMember ? "button" : undefined}
+                          >
+                            <td className="whitespace-nowrap px-2 py-1.5 font-mono text-muted-foreground">
+                              {employeeId}
+                            </td>
+                            <td className="max-w-[7rem] truncate px-2 py-1.5 font-medium text-foreground" title={member.name}>
+                              {member.name}
+                            </td>
+                            <td
+                              className="max-w-[8rem] truncate px-2 py-1.5 text-muted-foreground"
+                              title={member.email}
                             >
-                              <td className="whitespace-nowrap px-2 py-1.5 font-mono text-muted-foreground">
-                                {employeeId}
-                              </td>
-                              <td className="max-w-[7rem] truncate px-2 py-1.5 font-medium text-foreground" title={member.name}>
-                                {member.name}
-                              </td>
-                              <td
-                                className="max-w-[8rem] truncate px-2 py-1.5 text-muted-foreground"
-                                title={member.email}
-                              >
-                                {member.email || "—"}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
+                              {member.email || "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           ) : null}
