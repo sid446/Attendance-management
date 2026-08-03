@@ -4,6 +4,7 @@ import {
   getExtraWorkHoursTotalForPeriod,
   getWorkedHoursMatchingScheduledDays,
   getExcessDeficitLikeSummary,
+  isWorkedOnHolidayRecord,
 } from '@/lib/attendanceSummaryMetrics';
 import { isDateOnOrAfterInactive } from '@/lib/attendanceInactiveFilter';
 import {
@@ -150,6 +151,7 @@ export async function exportSummaryAttendance(ctx: SummaryExportContext): Promis
       { key: 'holidays', header: 'Holidays', width: 10 },
       { key: 'workingDays', header: 'Working Days', width: 12 },
       { key: 'present', header: 'Present', width: 8 },
+      { key: 'presentWeekoff', header: 'Present Weekoff', width: 14 },
       { key: 'halfDays', header: 'Half Days', width: 10 },
       { key: 'absent', header: 'Absent', width: 8 },
       { key: 'late', header: 'Late', width: 8 },
@@ -224,6 +226,18 @@ export async function exportSummaryAttendance(ctx: SummaryExportContext): Promis
           }).length;
         })(),
         present: item.summary.totalPresent,
+        presentWeekoff:
+          typeof item.calcPresentWeekoff === 'number'
+            ? item.calcPresentWeekoff
+            : (() => {
+                const holidayDatesSet = new Set(holidays.map((h) => h.date));
+                let count = 0;
+                periodDateList.forEach((dateStr) => {
+                  const rec = item.recordDetails?.[dateStr];
+                  if (isWorkedOnHolidayRecord(dateStr, rec, holidayDatesSet)) count += 1;
+                });
+                return count;
+              })(),
         halfDays: item.summary.totalHalfDay,
         absent: item.summary.totalAbsent,
         late: item.calcLate || 0,

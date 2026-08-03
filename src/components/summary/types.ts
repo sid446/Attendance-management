@@ -19,6 +19,8 @@ export type EnrichedSummary = AttendanceSummaryView & {
   rawExcessDeficit?: number;
   allowedExcessCap?: number | null;
   calcLate?: number;
+  /** Days worked on Sunday, company holiday, or weekoff */
+  calcPresentWeekoff?: number;
   rank?: number;
 };
 

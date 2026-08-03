@@ -12,6 +12,7 @@ import {
   getExcessDeficitLikeSummary,
   getArticleExcessBreakdownForPeriod,
   isDayIncludedInScheduledCalc,
+  isWorkedOnHolidayRecord,
 } from '@/lib/attendanceSummaryMetrics';
 import { isDateOnOrAfterInactive } from '@/lib/attendanceInactiveFilter';
 import { isHalfDayAttendanceRecord } from '@/lib/calculateDayExcessHour';
@@ -381,6 +382,25 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
       return dates.sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   };
 
+  const getPresentWeekoffDetails = (item: AttendanceSummaryView) => {
+    if (!item) return [];
+    const user = allUsers?.find((u) => u._id === item.userId || u.odId === item.userId);
+    const holidayDates = new Set(holidays.map((h) => h.date));
+    const dates: { date: string; info: string; subInfo?: string }[] = [];
+    Object.entries(item.recordDetails || {}).forEach(([date, rec]) => {
+      if (user?.inactiveAsOf && isDateOnOrAfterInactive(date, user.inactiveAsOf)) return;
+      if (!isWorkedOnHolidayRecord(date, rec, holidayDates)) return;
+      const effectiveCheckin = (rec as any).editedCheckin || (rec as any).checkin;
+      const type = String((rec as any).typeOfPresence || 'Present weekoff');
+      dates.push({
+        date,
+        info: type,
+        subInfo: effectiveCheckin && effectiveCheckin !== '00:00' ? `In: ${effectiveCheckin}` : undefined,
+      });
+    });
+    return dates.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  };
+
   const getHalfDayDetails = (item: AttendanceSummaryView) => {
     if (!item) return [];
     const records = item.recordDetails || {};
@@ -607,13 +627,14 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
     return getDefinedScheduleResultForItem(item).breakdown;
   };
 
-  const openDetail = (e: React.MouseEvent, type: 'Late' | 'Absent' | 'Leave' | 'Present' | 'WorkHours' | 'ScheduledHours' | 'HalfDay' | 'DefinedSchedule' | 'WorkingDays', item: AttendanceSummaryView) => {
+  const openDetail = (e: React.MouseEvent, type: 'Late' | 'Absent' | 'Leave' | 'Present' | 'PresentWeekoff' | 'WorkHours' | 'ScheduledHours' | 'HalfDay' | 'DefinedSchedule' | 'WorkingDays', item: AttendanceSummaryView) => {
       e.stopPropagation();
       let data: any[] = [];
       if (type === 'Late') data = getLateDetails(item);
       if (type === 'Absent') data = getAbsentDetails(item);
       if (type === 'Leave') data = getLeaveDetails(item);
       if (type === 'Present') data = getPresentDetails(item);
+      if (type === 'PresentWeekoff') data = getPresentWeekoffDetails(item);
       if (type === 'WorkHours') data = getWorkHoursDetails(item);
       if (type === 'ScheduledHours') data = getScheduledHoursDetails(item);
       if (type === 'HalfDay') {
@@ -626,9 +647,10 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
       if (type === 'DefinedSchedule') data = getDefinedScheduleDetails(item);
       if (type === 'WorkingDays') data = getWorkingDaysDetails(item);
 
+      const titlePrefix = type === 'PresentWeekoff' ? 'Present weekoff' : type;
       setDetailModal({
           isOpen: true,
-          title: `${type} Details - ${item.userName}`,
+          title: `${titlePrefix} Details - ${item.userName}`,
           data
       });
   };
@@ -1508,6 +1530,12 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
           }
         });
 
+        let calcPresentWeekoff = 0;
+        Object.entries(item.recordDetails || {}).forEach(([dateStr, rec]) => {
+          if (user?.inactiveAsOf && isDateOnOrAfterInactive(dateStr, user.inactiveAsOf)) return;
+          if (isWorkedOnHolidayRecord(dateStr, rec, holidayDatesSet)) calcPresentWeekoff += 1;
+        });
+
         return {
           ...item,
           team: workPartnerAtPeriod || item.team || '',
@@ -1525,7 +1553,8 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
           calcExcessDeficit,
           rawExcessDeficit: appliedExcess.rawExcess,
           allowedExcessCap: appliedExcess.allowedExcessCap,
-          calcLate: calcLate // Override summary late
+          calcLate: calcLate, // Override summary late
+          calcPresentWeekoff,
         };
       });
 
@@ -1577,6 +1606,10 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
         case 'totalPresent':
           aValue = a.summary.totalPresent;
           bValue = b.summary.totalPresent;
+          break;
+        case 'calcPresentWeekoff':
+          aValue = a.calcPresentWeekoff || 0;
+          bValue = b.calcPresentWeekoff || 0;
           break;
         case 'totalAbsent':
           aValue = a.summary.totalAbsent;
