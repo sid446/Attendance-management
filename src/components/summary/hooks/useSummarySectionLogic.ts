@@ -13,6 +13,7 @@ import {
   getArticleExcessBreakdownForPeriod,
   isDayIncludedInScheduledCalc,
 } from '@/lib/attendanceSummaryMetrics';
+import { isDateOnOrAfterInactive } from '@/lib/attendanceInactiveFilter';
 import { isHalfDayAttendanceRecord } from '@/lib/calculateDayExcessHour';
 import { isLaterThanScheduledIn } from '@/lib/attendanceHours';
 import {
@@ -41,6 +42,7 @@ import type { SummaryExportContext } from '../exports/exportTypes';
 import type { EnrichedSummary, SummarySectionProps } from '../types';
 import {
   applyExcessHourAllowance,
+  applyDayAllowanceToRawExcess,
   lookupExcessAllowance,
   resolveDisplayExcess,
   type ExcessAllowanceLookup,
@@ -1222,7 +1224,9 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
   const getExcessResultForItem = (item: AttendanceSummaryView) => {
     const enriched = item as EnrichedSummary;
     const user = allUsers?.find(u => u._id === item.userId || u.odId === item.userId);
-    const dateList = getExcessDateListForCurrentPeriod();
+    const dateList = getExcessDateListForCurrentPeriod().filter(
+      (d) => !(user?.inactiveAsOf && isDateOnOrAfterInactive(d, user.inactiveAsOf))
+    );
     const workedHours = user
       ? getWorkedHoursMatchingScheduledDays(item, user, dateList)
       : Number(item.summary?.totalHour || 0);
@@ -1238,7 +1242,7 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
             item.userId,
             item.monthYear,
             excessAllowanceMap,
-            excessDisplayMap
+            user?.inactiveAsOf ? null : excessDisplayMap
           );
 
     if (user && isArticleEmployee(user)) {
@@ -1365,7 +1369,9 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
     const startTime = performance.now();
     const enriched = list.map(item => {
         const user = allUsers?.find(u => u._id === item.userId || u.odId === item.userId);
-        const periodDateList = getExcessDateListForCurrentPeriod();
+        const periodDateList = getExcessDateListForCurrentPeriod().filter(
+          (d) => !(user?.inactiveAsOf && isDateOnOrAfterInactive(d, user.inactiveAsOf))
+        );
         const workedTotal = user
           ? getWorkedHoursMatchingScheduledDays(item, user, periodDateList)
           : item.summary.totalHour;
@@ -1394,13 +1400,45 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
         const rawExcessDeficit = user
           ? getExcessDeficitLikeSummary(item, user, periodDateList, workedTotal)
           : Number((workedTotal - sched).toFixed(2));
-        const calcExcessDeficit = resolveDisplayExcess(
-          rawExcessDeficit,
-          item.userId,
-          item.monthYear,
-          excessAllowanceMap,
-          excessDisplayMap
-        );
+
+        let calcExcessDeficit: number;
+        if (user?.inactiveAsOf) {
+          // Match daywise: never count on/after inactiveAsOf. Prefer day approvals before cutoff;
+          // ignore month display map (may still include post-leave stored deficits).
+          const uid = String(item.userId || '');
+          const hasDayDecisions = Object.keys(excessDayAllowanceMap || {}).some((k) =>
+            k.startsWith(`${uid}:`)
+          );
+          if (hasDayDecisions) {
+            let display = 0;
+            for (const dateStr of periodDateList) {
+              const rec = item.recordDetails?.[dateStr] as { excessHour?: number } | undefined;
+              display += applyDayAllowanceToRawExcess(
+                Number(rec?.excessHour ?? 0),
+                uid,
+                dateStr,
+                excessDayAllowanceMap
+              );
+            }
+            calcExcessDeficit = Number(display.toFixed(2));
+          } else {
+            calcExcessDeficit = resolveDisplayExcess(
+              rawExcessDeficit,
+              item.userId,
+              item.monthYear,
+              excessAllowanceMap,
+              null
+            );
+          }
+        } else {
+          calcExcessDeficit = resolveDisplayExcess(
+            rawExcessDeficit,
+            item.userId,
+            item.monthYear,
+            excessAllowanceMap,
+            excessDisplayMap
+          );
+        }
         const cap = lookupExcessAllowance(excessAllowanceMap, item.userId, item.monthYear);
         const appliedExcess = applyExcessHourAllowance(rawExcessDeficit, cap);
         // Calculate Late on frontend based on toggle
@@ -1419,6 +1457,7 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
         // present values exceed expected working days.
         let calcAbsent = 0;
         Object.entries(item.recordDetails || {}).forEach(([dateStr, recAny]) => {
+          if (user?.inactiveAsOf && isDateOnOrAfterInactive(dateStr, user.inactiveAsOf)) return;
           const rec: any = recAny || {};
           const d = new Date(dateStr);
           // Skip Sundays
@@ -1586,7 +1625,7 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
       ...item,
       rank: index + 1
     }));
-  }, [summaries, searchTerm, selectedYear, selectedMonth, teamFilter, designationFilter, lateFilter, presentFilter, absentFilter, leaveFilter, halfDayFilter, workHoursFilter, excessFilter, sortField, sortDirection, holidays, allUsers, filterType, currentWeekStart, rangeStart, rangeEnd, resolveWorkPartnerForItem, resolveDesignationForItem, excessAllowanceMap, excessDisplayMap]);
+  }, [summaries, searchTerm, selectedYear, selectedMonth, teamFilter, designationFilter, lateFilter, presentFilter, absentFilter, leaveFilter, halfDayFilter, workHoursFilter, excessFilter, sortField, sortDirection, holidays, allUsers, filterType, currentWeekStart, rangeStart, rangeEnd, resolveWorkPartnerForItem, resolveDesignationForItem, excessAllowanceMap, excessDisplayMap, excessDayAllowanceMap]);
 
   /** Render the table in chunks; stats and exports still use full `filteredSummaries`. */
   const [tableVisibleCount, setTableVisibleCount] = useState(SUMMARY_TABLE_CHUNK);
@@ -1682,12 +1721,14 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
       resolveDesignation: resolveDesignationForItem,
       countTotalSundaysInPeriod,
       excessDayAllowanceMap,
+      excessAllowanceMap,
+      excessDisplayMap,
     }),
     [
       filteredSummaries, allUsers, holidays, filterType, selectedYear, selectedMonth,
       currentWeekStart, rangeStart, rangeEnd, selectedEmployees, summaryPeriodBase,
       resolveWorkPartnerForItem, resolveDesignationForItem, countTotalSundaysInPeriod,
-      excessDayAllowanceMap,
+      excessDayAllowanceMap, excessAllowanceMap, excessDisplayMap,
     ]
   );
 

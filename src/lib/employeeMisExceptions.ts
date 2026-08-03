@@ -183,13 +183,15 @@ function normalizeEmail(v: unknown): string {
   return normalizeStr(v).toLowerCase();
 }
 
-/** Employee is in master as active and not yet on/after inactive cutoff for the given day. */
+/** Employee counts for reporting on this day: before inactiveAsOf (and after joining). */
 export function isEmployeeActiveOnDate(user: any, dateKey: string): boolean {
-  if (!user?.isActive) return false;
+  if (!user) return false;
   const day = dateKey.slice(0, 10);
   if (user.inactiveAsOf && isDateOnOrAfterInactive(day, user.inactiveAsOf)) {
     return false;
   }
+  // Deactivated with no cutoff → inactive for all report days
+  if (user.isActive === false && !user.inactiveAsOf) return false;
   const joining = user.joiningDate ? toYmd(user.joiningDate) : '';
   if (joining && day < joining) return false;
   return true;

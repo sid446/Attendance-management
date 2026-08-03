@@ -357,6 +357,9 @@ export async function buildDaywiseWorkbook(
       if (!user) {
         return zeroDaywiseScheduledFields();
       }
+      if (user.inactiveAsOf && isDateOnOrAfterInactive(date, user.inactiveAsOf)) {
+        return zeroDaywiseScheduledFields();
+      }
 
       // Weekday WFH must show that day's schedule (not 00:00). Weekoff WFH / Sunday
       // stay on the normal include rules (usually excluded from Sched.).

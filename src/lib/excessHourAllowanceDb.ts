@@ -16,6 +16,7 @@ import {
   type ExcessDisplayLookup,
 } from '@/lib/excessHourAllowance';
 import { isMissedEntryRecord } from '@/lib/attendanceSummaryMetrics';
+import { isDateOnOrAfterInactive } from '@/lib/attendanceInactiveFilter';
 
 export interface ExcessAllowancePair {
   userId: string;
@@ -360,8 +361,12 @@ export async function computeDailyExcessBreakdown(
   dayApprovals?: Record<string, number>,
   dayDetails?: Record<string, DayApprovalDetail>
 ): Promise<ReturnType<typeof applyDayWiseExcessApprovals>> {
-  const attendance = await Attendance.findOne({ userId, monthYear }).lean();
+  const [attendance, userDoc] = await Promise.all([
+    Attendance.findOne({ userId, monthYear }).lean(),
+    User.findById(userId).select('inactiveAsOf').lean(),
+  ]);
   const records = recordsToMap(attendance?.records as Record<string, unknown> | Map<string, unknown>);
+  const inactiveAsOf = (userDoc as { inactiveAsOf?: Date | string | null } | null)?.inactiveAsOf ?? null;
   const details =
     dayDetails ?? (await fetchDayApprovalDetailsForUsersMonth([userId], monthYear));
   const approvals =
@@ -373,6 +378,19 @@ export async function computeDailyExcessBreakdown(
     );
 
   const days = monthDateStrings(monthYear).map((date) => {
+    // Match daywise: on/after inactiveAsOf → NA (no excess/deficit)
+    if (inactiveAsOf && isDateOnOrAfterInactive(date, inactiveAsOf)) {
+      return {
+        date,
+        rawExcessHour: 0,
+        allowedExcessHours: null as number | null,
+        typeOfPresence: 'NA',
+        missedEntry: false,
+        checkIn: undefined as string | undefined,
+        checkOut: undefined as string | undefined,
+        remark: undefined as string | undefined,
+      };
+    }
     const rec = records[date];
     const rawExcessHour = Number(rec?.excessHour ?? 0);
     const approvalKey = `${userId}:${date}`;

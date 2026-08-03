@@ -1,5 +1,15 @@
 import type { User } from '@/types/ui';
-import { formatHoursMinutes, getExtraWorkHoursTotalForPeriod } from '@/lib/attendanceSummaryMetrics';
+import {
+  formatHoursMinutes,
+  getExtraWorkHoursTotalForPeriod,
+  getWorkedHoursMatchingScheduledDays,
+  getExcessDeficitLikeSummary,
+} from '@/lib/attendanceSummaryMetrics';
+import { isDateOnOrAfterInactive } from '@/lib/attendanceInactiveFilter';
+import {
+  applyDayAllowanceToRawExcess,
+  resolveDisplayExcess,
+} from '@/lib/excessHourAllowance';
 import {
   formatExtraWorkEntriesTimeSummary,
   getRecordPunchHours,
@@ -29,6 +39,53 @@ function formatExportDate(value?: string | Date | null): string {
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const yyyy = d.getFullYear();
   return `${dd}-${mm}-${yyyy}`;
+}
+
+/** Excess for summary export — same cutoff as daywise (NA on/after inactiveAsOf). */
+function resolveExportExcess(
+  item: SummaryExportContext['filteredSummaries'][number],
+  user: User | undefined,
+  ctx: SummaryExportContext
+): number {
+  const periodDateList = Object.keys(item.recordDetails || {}).filter(
+    (dateStr) => !(user?.inactiveAsOf && isDateOnOrAfterInactive(dateStr, user.inactiveAsOf))
+  );
+  const workedTotal = user
+    ? getWorkedHoursMatchingScheduledDays(item, user, periodDateList)
+    : Number(item.summary.totalHour || 0);
+  const raw = user
+    ? getExcessDeficitLikeSummary(item, user, periodDateList, workedTotal)
+    : Number((workedTotal - Number(item.calcScheduled || 0)).toFixed(2));
+
+  if (user?.inactiveAsOf && ctx.excessDayAllowanceMap) {
+    const uid = String(item.userId || '');
+    const hasDayDecisions = Object.keys(ctx.excessDayAllowanceMap).some((k) =>
+      k.startsWith(`${uid}:`)
+    );
+    if (hasDayDecisions) {
+      let display = 0;
+      for (const dateStr of periodDateList) {
+        const rec = item.recordDetails?.[dateStr] as { excessHour?: number } | undefined;
+        const rawDay = Number(rec?.excessHour ?? 0);
+        display += applyDayAllowanceToRawExcess(
+          rawDay,
+          uid,
+          dateStr,
+          ctx.excessDayAllowanceMap
+        );
+      }
+      return Number(display.toFixed(2));
+    }
+  }
+
+  // Ignore month display map when inactive — it may still include post-leave day deficits
+  return resolveDisplayExcess(
+    raw,
+    String(item.userId || ''),
+    item.monthYear,
+    ctx.excessAllowanceMap ?? null,
+    user?.inactiveAsOf ? null : ctx.excessDisplayMap ?? null
+  );
 }
 
 
@@ -121,6 +178,9 @@ export async function exportSummaryAttendance(ctx: SummaryExportContext): Promis
         ? resolveDesignationForItem(user, item.monthYear)
         : item.designation || '';
       const periodDateList = Object.keys(item.recordDetails || {}).filter((dateStr) => {
+        if (user?.inactiveAsOf && isDateOnOrAfterInactive(dateStr, user.inactiveAsOf)) {
+          return false;
+        }
         const records = item.recordDetails || {};
         return dateStr in records;
       });
@@ -128,6 +188,7 @@ export async function exportSummaryAttendance(ctx: SummaryExportContext): Promis
       const punchWorkHoursTotal = Number(
         Math.max(0, (item.summary.totalHour || 0) - extraWorkHoursTotal).toFixed(2)
       );
+      const exportExcess = resolveExportExcess(item, user, ctx);
 
       worksheet.addRow({
         employeeCode: user?.employeeCode || item.employeeCode || item.odId || item.userId || '-',
@@ -139,12 +200,11 @@ export async function exportSummaryAttendance(ctx: SummaryExportContext): Promis
         designation: designationAtPeriod || '-',
         joiningDate: formatExportDate(user?.joiningDate),
         dateOfLeave: formatExportDate(user?.inactiveAsOf),
-        totalDays: Object.keys(item.recordDetails || {}).length,
+        totalDays: periodDateList.length,
         holidays: (() => {
-          const records = item.recordDetails || {};
           const holidayDatesSet = new Set(holidays.map(h => h.date));
           let holidayCount = 0;
-          Object.keys(records).forEach((dateStr) => {
+          periodDateList.forEach((dateStr) => {
             const d = new Date(dateStr);
             if (d.getDay() === 0) holidayCount++;
             else if (holidayDatesSet.has(dateStr)) holidayCount++;
@@ -154,11 +214,12 @@ export async function exportSummaryAttendance(ctx: SummaryExportContext): Promis
         workingDays: (() => {
           const records = item.recordDetails || {};
           const holidayDatesSet = new Set(holidays.map(h => h.date));
-          return Object.entries(records).filter(([dateStr, rec]: [string, any]) => {
+          return periodDateList.filter((dateStr) => {
+            const rec = records[dateStr] as { typeOfPresence?: string } | undefined;
             const d = new Date(dateStr);
             if (d.getDay() === 0) return false;
             if (holidayDatesSet.has(dateStr)) return false;
-            if (typeof rec.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff')) return false;
+            if (typeof rec?.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff')) return false;
             return true;
           }).length;
         })(),
@@ -174,7 +235,7 @@ export async function exportSummaryAttendance(ctx: SummaryExportContext): Promis
           extraWorkHoursTotal > 0
             ? decimalHoursToExcelDuration(extraWorkHoursTotal)
             : decimalHoursToExcelDuration(0),
-        excess: formatHoursMinutes(item.calcExcessDeficit ?? 0),
+        excess: formatHoursMinutes(exportExcess),
       });
     });
 

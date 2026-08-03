@@ -9,6 +9,7 @@ import {
   buildSummaryPeriodDateList,
   getWorkedHoursMatchingScheduledDays,
 } from '@/lib/attendanceSummaryMetrics';
+import { isDateOnOrAfterInactive } from '@/lib/attendanceInactiveFilter';
 import { LoginView } from '@/components/LoginView';
 import { Sidebar } from '@/components/Sidebar';
 import { ArticleCreditsManager } from '@/components/ArticleCreditsManager';
@@ -1097,7 +1098,7 @@ export default function AttendanceUpload() {
 
   const fetchUsers = useCallback(async () => {
     try {
-      const response = await fetch('/api/users?listOnly=1', hrCredentialsInit());
+      const response = await fetch('/api/users?listOnly=1&includeInactive=1', hrCredentialsInit());
       const result = await response.json();
       if (result.success && Array.isArray(result.data)) {
         setAllUsers(result.data);
@@ -1107,7 +1108,7 @@ export default function AttendanceUpload() {
             method: 'POST',
             ...hrCredentialsInit(),
           })
-            .then(() => fetch('/api/users?listOnly=1', hrCredentialsInit()))
+            .then(() => fetch('/api/users?listOnly=1&includeInactive=1', hrCredentialsInit()))
             .then((r) => r.json())
             .then((seedRefresh) => {
               if (seedRefresh.success && Array.isArray(seedRefresh.data)) {
@@ -1226,8 +1227,8 @@ export default function AttendanceUpload() {
         monthYears = months;
       }
 
-      // Fetch all users with schedules for schedule lookup
-      const usersResponse = await fetch('/api/users?listOnly=1', hrCredentialsInit());
+      // Include inactive employees so schedules/worked still resolve for months before inactiveAsOf
+      const usersResponse = await fetch('/api/users?listOnly=1&includeInactive=1', hrCredentialsInit());
       const usersResult = await usersResponse.json();
       const allUsersWithSchedules = usersResult.success ? usersResult.data : [];
       const userScheduleMap = new Map<string, any>();
@@ -1269,6 +1270,8 @@ export default function AttendanceUpload() {
       const periodDateList = buildSummaryPeriodDateList(filter, startDate, endDate);
 
       for (const user of userMap.values()) {
+        const userId = String(user.userId?._id ?? '');
+        const uiUser = userScheduleMap.get(userId);
         const filteredRecords: any = {};
         for (const [date, rec] of Object.entries(user.recordDetails)) {
           if (startDate && endDate) {
@@ -1291,7 +1294,12 @@ export default function AttendanceUpload() {
           totalLeave: 0,
         };
 
-        for (const rec of Object.values(filteredRecords) as any[]) {
+        for (const [date, recAny] of Object.entries(filteredRecords) as [string, any][]) {
+          // On/after inactiveAsOf → NA in daywise; do not count absent/present/leave here
+          if (uiUser?.inactiveAsOf && isDateOnOrAfterInactive(date, uiUser.inactiveAsOf)) {
+            continue;
+          }
+          const rec = recAny || {};
           const type = String(rec?.typeOfPresence || '');
           const checkin = String(rec?.editedCheckin || rec?.checkin || '').trim();
           const checkout = String(rec?.editedCheckout || rec?.checkout || '').trim();
@@ -1331,8 +1339,6 @@ export default function AttendanceUpload() {
           }
         }
 
-        const userId = String(user.userId?._id ?? '');
-        const uiUser = userScheduleMap.get(userId);
         if (uiUser && periodDateList.length > 0) {
           const itemForWorked: AttendanceSummaryView = {
             id: String(user._id ?? ''),

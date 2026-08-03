@@ -5,6 +5,7 @@
 import type { AttendanceSummaryView, DailySchedule, ScheduleEntry, ScheduleTime, User } from '@/types/ui';
 import { isLaterThanScheduledIn, isSinglePunch } from './attendanceHours';
 import { getScheduledTimes } from './scheduleUtils';
+import { isDateOnOrAfterInactive } from './attendanceInactiveFilter';
 
 import { calculateDayExcessHour, isHalfDayAttendanceRecord } from './calculateDayExcessHour';
 import { applyDayAllowanceToRawExcess, applyExcessHourAllowance, lookupExcessAllowance, lookupExcessDisplay, type ExcessAllowanceLookup, type ExcessDayAllowanceLookup, type ExcessDisplayLookup } from './excessHourAllowance';
@@ -551,12 +552,16 @@ export function getTotalPresentLikeAdminSummary(
 
 /**
  * Same day gate as Sched. column: excess-eligible + valid employee schedule in/out.
+ * Days on/after inactiveAsOf are excluded (report as NA, not scheduled/worked/absent).
  */
 export function isDayIncludedInScheduledCalc(
   user: User,
   dateStr: string,
   recAny: unknown
 ): boolean {
+  if (user?.inactiveAsOf && isDateOnOrAfterInactive(dateStr, user.inactiveAsOf)) {
+    return false;
+  }
   if (!recAny || !isExcessEligibleRecord(dateStr, recAny)) return false;
   // Pass ISO string so getScheduledTimes uses local-noon parsing (not UTC midnight Date).
   const schedule = getScheduledTimes(user, dateStr);
@@ -1112,6 +1117,7 @@ export function getArticleExcessSumForPeriod(
 ): number {
   let total = 0;
   dateList.forEach((dateStr) => {
+    if (user.inactiveAsOf && isDateOnOrAfterInactive(dateStr, user.inactiveAsOf)) return;
     const rec = item.recordDetails?.[dateStr];
     if (!rec) return;
 

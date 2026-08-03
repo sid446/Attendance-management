@@ -26,6 +26,10 @@ export interface SummaryExportContext {
   countTotalSundaysInPeriod: () => number;
   /** Partner-set allowed hours per day (userId:YYYY-MM-DD). */
   excessDayAllowanceMap?: Record<string, number>;
+  /** Monthly excess caps (userId:YYYY-MM). */
+  excessAllowanceMap?: Record<string, number>;
+  /** Day-approval display totals (userId:YYYY-MM). */
+  excessDisplayMap?: Record<string, number>;
 }
 
 export type { AttendanceSummaryView };

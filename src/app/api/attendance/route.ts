@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
     }
 
     const populateFields =
-      'name employeeId odId employeeCode email department team designation workingUnderPartner paidFrom category employmentType employmentTypeHistory schedules seasonalSchedules scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth';
+      'name employeeId odId employeeCode email department team designation workingUnderPartner paidFrom category employmentType employmentTypeHistory schedules seasonalSchedules scheduleInOutTime scheduleInOutTimeSat scheduleInOutTimeMonth isActive inactiveAsOf joiningDate';
 
     let attendanceRecords = await Attendance.find(query)
       .populate('userId', populateFields)

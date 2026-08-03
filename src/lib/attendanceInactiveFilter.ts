@@ -1,20 +1,28 @@
 /**
- * Dates on/after inactiveAsOf (calendar day, YYYY-MM-DD) are excluded from attendance display and summaries.
+ * Calendar day as YYYY-MM-DD in local time.
+ * Prefer leading ISO date from strings; never use UTC `toISOString().slice` for Date
+ * (shifts the day west of UTC / can move inactiveAsOf back a day).
  */
-
 export function toYmd(date: Date | string | null | undefined): string {
   if (date == null) return '';
   if (typeof date === 'string') {
-    const m = date.match(/^(\d{4}-\d{2}-\d{2})/);
+    const m = String(date).trim().match(/^(\d{4}-\d{2}-\d{2})/);
     if (m) return m[1];
     const d = new Date(date);
     if (isNaN(d.getTime())) return '';
-    return d.toISOString().slice(0, 10);
+    const y = d.getFullYear();
+    const mo = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${mo}-${day}`;
   }
   if (isNaN(date.getTime())) return '';
-  return date.toISOString().slice(0, 10);
+  const y = date.getFullYear();
+  const mo = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${y}-${mo}-${day}`;
 }
 
+/** True when dateKey is on or after the first inactive calendar day (inclusive → NA). */
 export function isDateOnOrAfterInactive(dateKey: string, inactiveAsOf: Date | string | null | undefined): boolean {
   if (inactiveAsOf == null) return false;
   const cut = toYmd(inactiveAsOf);
