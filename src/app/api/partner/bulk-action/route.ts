@@ -618,14 +618,26 @@ export async function POST(request: NextRequest) {
                     const subject = hasPendingHr
                         ? `Attendance requests — partner approved, HR review pending`
                         : `Attendance Requests ${action === 'approve' ? 'Approved' : 'Rejected'}`;
-                    const requestsHtml = requests.map((req: any) => `
+                    const requestsHtml = requests.map((req: any) => {
+                        const iso = String(req.date || '').split('T')[0];
+                        const d = new Date(`${iso}T12:00:00`);
+                        const dateLabel = Number.isNaN(d.getTime())
+                          ? iso
+                          : d.toLocaleDateString('en-IN', {
+                              weekday: 'short',
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric',
+                            });
+                        return `
                         <tr style="border-bottom: 1px solid #e5e5e7;">
-                            <td style="padding: 12px 0; font-size: 14px; color: #1d1d1f;">${new Date(req.date).toLocaleDateString('en-GB')}</td>
+                            <td style="padding: 12px 0; font-size: 14px; color: #1d1d1f;">${dateLabel}</td>
                             <td style="padding: 12px 0; font-size: 14px; color: #1d1d1f; text-align: center;">${req.requestedStatus}</td>
                             <td style="padding: 12px 0; font-size: 14px; color: #1d1d1f; text-align: right;">${req.reason || '-'}</td>
                             <td style="padding: 12px 0; font-size: 14px; color: #1d1d1f; text-align: center;">${req.status === 'PendingHr' ? 'Awaiting HR' : req.status}</td>
                         </tr>
-                    `).join('');
+                    `;
+                    }).join('');
 
                     const html = `
                         <div style="background-color: #f5f5f7; padding: 40px 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1d1d1f; line-height: 1.5;">

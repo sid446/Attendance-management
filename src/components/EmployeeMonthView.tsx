@@ -130,9 +130,15 @@ function getDayUpdatesButtonLabel(
 }
 
 function formatDayActivityDate(dateStr: string): string {
-  const d = new Date(`${dateStr}T12:00:00`);
-  if (Number.isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const iso = String(dateStr || '').split('T')[0];
+  const d = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return iso || dateStr;
+  return d.toLocaleDateString('en-IN', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
 }
 
 function formatPunchTimeRange(rec: AttendanceRecord | null | undefined): string {

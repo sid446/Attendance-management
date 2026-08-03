@@ -8,6 +8,27 @@ export interface AttendanceRequestsTableProps extends RequestsAdminActionsProps 
   sortedRequestRows: RequestDisplayRow[];
 }
 
+function formatAttendanceRequestDate(dateStr: string): string {
+  const iso = String(dateStr || '').split('T')[0];
+  const d = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(d.getTime())) {
+    const fallback = new Date(dateStr);
+    if (Number.isNaN(fallback.getTime())) return String(dateStr || '');
+    return fallback.toLocaleDateString('en-IN', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  }
+  return d.toLocaleDateString('en-IN', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
 export const AttendanceRequestsTable: React.FC<AttendanceRequestsTableProps> = ({
   sortedRequestRows,
   isAdminView = false,
@@ -56,8 +77,8 @@ export const AttendanceRequestsTable: React.FC<AttendanceRequestsTableProps> = (
                 </td>
                 <td className={tdCls}>
                   <div className="text-slate-800">
-                    {new Date(row.item.startDate).toLocaleDateString('en-GB')} –{' '}
-                    {new Date(row.item.endDate).toLocaleDateString('en-GB')}
+                    {formatAttendanceRequestDate(row.item.startDate)} –{' '}
+                    {formatAttendanceRequestDate(row.item.endDate)}
                   </div>
                 </td>
                 <td className={tdCls}>
@@ -169,7 +190,7 @@ export const AttendanceRequestsTable: React.FC<AttendanceRequestsTableProps> = (
                   </div>
                 </td>
                 <td className={tdCls}>
-                  <div className="text-slate-800">{new Date(row.item.date).toLocaleDateString('en-GB')}</div>
+                  <div className="text-slate-800">{formatAttendanceRequestDate(row.item.date)}</div>
                 </td>
                 <td className={tdCls}>
                   <span className="font-medium text-slate-900">{row.item.requestedStatus}</span>

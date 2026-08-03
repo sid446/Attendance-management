@@ -36,10 +36,15 @@ const APPROVE_CHIPS = ['Done', 'Missed Entry', 'Client Visit', 'Emergency', 'App
 const REJECT_CHIPS = ['Insufficient Hours', 'Incorrect Date', 'Incorrect Entry', 'Not Discussed', 'Proof Required'];
 
 function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  const day = date.getDate();
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${day} ${months[date.getMonth()]} ${date.getFullYear()}`;
+  const iso = String(dateStr || '').split('T')[0];
+  const date = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return iso || String(dateStr || '');
+  return date.toLocaleDateString('en-IN', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
 }
 
 function PartnerReviewContent() {
