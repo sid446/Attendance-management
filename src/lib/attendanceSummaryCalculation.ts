@@ -201,7 +201,10 @@ export function calculateSummary(
       inTime &&
       scheduledInTime &&
       isLaterThanScheduledIn(inTime, scheduledInTime) &&
-      !isHalftime
+      !(
+        user?.category === 'Partner' ||
+        !!(user?.designation && user.designation.toLowerCase().includes('partner'))
+      )
     ) {
       totalLateArrival++;
     }

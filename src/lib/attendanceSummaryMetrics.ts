@@ -160,7 +160,7 @@ export function getEmploymentTypeForDate(user: User | undefined, date: Date): st
   return user.employmentType;
 }
 
-/** Matches upload/API rules: halftime employees are never late or half-day. */
+/** Matches upload/API rules: halftime employees are never half-day (late still applies). */
 export function isHalftimeEmploymentType(employmentType: string | undefined): boolean {
   const t = String(employmentType || '').toLowerCase();
   return t === 'halftime' || t.includes('half');
@@ -351,7 +351,7 @@ export function isExcessEligibleRecord(dateStr: string, recAny: any): boolean {
 
 
 
-/** Same late rules as admin Summary (schedule-aware, skips weekoff/holiday/halftime). */
+/** Same late rules as admin Summary (schedule-aware, skips weekoff/holiday). Halftime can be late. */
 export function isLateArrivalLikeSummary(
   dateStr: string,
   rec: {
@@ -374,8 +374,6 @@ export function isLateArrivalLikeSummary(
   const type = String(rec.typeOfPresence || '');
   if (type === 'Holiday') return false;
   if (type.toLowerCase().includes('weekoff')) return false;
-
-  if (isHalftimeEmploymentType(getEmploymentTypeForDate(user, d))) return false;
 
   const schedule = getScheduledTimes(user, d);
   if (!schedule.inTime || schedule.inTime === '00:00') return false;

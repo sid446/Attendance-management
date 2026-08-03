@@ -285,7 +285,6 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
       // Skip weekoff (case-insensitive)
       if (typeof rec.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff')) return;
       const empTypeLate = getEmploymentTypeForDate(user, d);
-      if (empTypeLate === 'halftime') return;
       const schedule = getCachedScheduledTimes(user, d);
       const scheduledIn = schedule.inTime;
       

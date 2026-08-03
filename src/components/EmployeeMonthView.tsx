@@ -651,7 +651,7 @@ function resolveAttendanceCellStyle(input: {
       };
     }
 
-    const showLate = isLate && !isHalftime;
+    const showLate = isLate;
     return {
       borderClass: showLate ? 'border-amber-200' : 'border-emerald-200',
       bgClass: showLate ? 'bg-amber-50' : 'bg-emerald-50',
@@ -1505,7 +1505,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                 }
 
                 let isLate = false;
-                if (rec && scheduleUser && !isHalftimeDay) {
+                if (rec && scheduleUser) {
                   isLate = isLateArrivalLikeSummary(
                     currentDateStr,
                     {

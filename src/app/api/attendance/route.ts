@@ -494,7 +494,7 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          // Special handling for halftime employees (history-aware; partners exempt from half-day/late)
+          // Special handling for halftime employees (history-aware; partners exempt from half-day)
           if (isHalftimeEmployeeForDate(user, isoDate)) {
             const halftimeRecord = {
               checkin: finalCheckin,

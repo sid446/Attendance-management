@@ -99,8 +99,8 @@ export async function POST(request: NextRequest) {
                            if (dow === 0) scheduledIn = user.scheduleInOutTime?.inTime || '09:00';
 
                            const isPartner = user && (user.category === 'Partner' || (user.designation && user.designation.toLowerCase().includes('partner')));
-                           const isHalftime = (user && (user.employmentType === 'halftime' || user.employmentType?.includes('half'))) || isPartner;
-                           if (r.checkin && isLaterThanScheduledIn(r.checkin, scheduledIn) && !isHalftime) tLate++;
+                           // Halftime can be marked late; partners remain excluded here as before.
+                           if (r.checkin && isLaterThanScheduledIn(r.checkin, scheduledIn) && !isPartner) tLate++;
 
                            // Status (align with global summary logic)
                             switch (r.typeOfPresence) {
