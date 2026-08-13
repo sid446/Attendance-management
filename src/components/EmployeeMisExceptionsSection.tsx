@@ -186,11 +186,34 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
     if (typeFilter === 'early-in-late-out') {
       return `No days with in time ≤ 8 AM or out time ≥ 8 PM for ${formatMonthYear(selectedMonth)}.`;
     }
+    if (typeFilter === 'missing-attendance') {
+      return `No active employees without attendance recorded for ${formatMonthYear(selectedMonth)}.`;
+    }
     if (typeFilter === FILTER_ALL) {
       return `No active employees with MIS exceptions for ${formatMonthYear(selectedMonth)}.`;
     }
     return `No active employees with “${labelFor(typeFilter)}”.`;
   }, [typeFilter, selectedMonth, labels]);
+
+  const attendanceNotRecordedRows = useMemo(
+    () => displayRows.filter((row) => row.exceptions.includes('missing-attendance')),
+    [displayRows]
+  );
+
+  const otherExceptionRows = useMemo(() => {
+    if (typeFilter === 'missing-attendance') return [];
+    if (typeFilter !== FILTER_ALL) {
+      return displayRows.filter((row) => !row.exceptions.includes('missing-attendance'));
+    }
+    // All view: keep employees who still have other flags after excluding pure missing-attendance-only rows,
+    // but show everyone once — attendance-not-recorded goes in its own section.
+    return displayRows.filter((row) => !row.exceptions.includes('missing-attendance'));
+  }, [displayRows, typeFilter]);
+
+  const showAttendanceNotRecordedSection =
+    typeFilter === FILTER_ALL || typeFilter === 'missing-attendance';
+  const showOtherExceptionsList =
+    typeFilter !== 'missing-attendance' && !isDayGroupedView;
 
   useEffect(() => {
     setExpandedId(null);
@@ -220,6 +243,140 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
     'w-full rounded-md border border-blue-200/65 bg-panel py-2 pl-10 pr-4 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
   const selectCls =
     'rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20';
+
+  const renderEmployeeList = (list: MisRow[]) => (
+    <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200">
+      {list.map((row) => {
+        const expanded = expandedId === row.userId;
+        return (
+          <li key={row.userId}>
+            <button
+              type="button"
+              onClick={() => setExpandedId(expanded ? null : row.userId)}
+              className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-slate-50"
+              aria-expanded={expanded}
+            >
+              {expanded ? (
+                <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+              ) : (
+                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-baseline gap-2">
+                  <span className="font-medium text-slate-900">{row.name}</span>
+                  <span className="font-mono text-xs text-slate-500">{row.odId || '—'}</span>
+                </div>
+                <p className="text-xs text-slate-600">
+                  {row.designation || '—'}
+                  {row.workingUnderPartner ? ` · ${row.workingUnderPartner}` : ''}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {row.exceptions.map((ex) => (
+                    <span
+                      key={ex}
+                      className={`inline-flex rounded-md border px-2 py-0.5 text-xs font-medium ${exceptionBadgeClass(ex)}`}
+                    >
+                      {labelFor(ex)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </button>
+            {expanded && (
+              <div className="border-t border-slate-100 bg-slate-50/80 px-4 py-3 pl-11 text-sm text-slate-700">
+                <dl className="grid gap-2 sm:grid-cols-2">
+                  <div>
+                    <dt className="text-xs font-medium text-slate-500">Email</dt>
+                    <dd>{row.email || '—'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-medium text-slate-500">Attendance approver</dt>
+                    <dd>{row.attendanceEmail || '—'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-medium text-slate-500">Registered under partner</dt>
+                    <dd>{row.registeredUnderPartner || '—'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-medium text-slate-500">Working under partner</dt>
+                    <dd>{row.workingUnderPartner || '—'}</dd>
+                  </div>
+                </dl>
+                {row.exceptions.includes('missing-attendance') && (
+                  <p className="mt-3 text-xs text-red-900">
+                    This employee is active but has no attendance recorded for{' '}
+                    {formatMonthYear(selectedMonth)} (no month record or empty file). Upload
+                    machine/biometric data for the month.
+                  </p>
+                )}
+                {row.exceptions.includes('no-schedule') && (
+                  <p className="mt-3 text-xs text-amber-900">
+                    No attendance timing schedule is defined on this employee record (no uploaded
+                    weekday in/out times in schedules).
+                  </p>
+                )}
+                {row.exceptions.includes('no-pl-partner') && (
+                  <p className="mt-3 text-xs text-violet-900">
+                    {!row.registeredUnderPartner && !row.workingUnderPartner
+                      ? 'Registered Under Partner and Working Under Partner are both missing.'
+                      : !row.registeredUnderPartner
+                        ? 'Registered Under Partner is missing.'
+                        : 'Working Under Partner is missing.'}
+                  </p>
+                )}
+                {row.exceptions.includes('approver-same-as-employee') && (
+                  <p className="mt-3 text-xs text-orange-900">
+                    Employee email and attendance email are the same ({row.email}) — attendance
+                    should be approved by a different person (partner/approver email).
+                  </p>
+                )}
+                {row.exceptions.includes('non-asija-email') && (
+                  <p className="mt-3 text-xs text-sky-900">
+                    Employee login email ({row.email || '—'}) must end with @asija.in.
+                  </p>
+                )}
+                {row.missingBiometricDates && row.missingBiometricDates.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-xs font-medium text-slate-500">
+                      {row.exceptions.includes('missing-attendance')
+                        ? 'Days missing attendance'
+                        : 'Missing biometric'}{' '}
+                      ({row.missingBiometricDates.length} day
+                      {row.missingBiometricDates.length === 1 ? '' : 's'} in{' '}
+                      {formatMonthYear(selectedMonth)})
+                    </p>
+                    <p className="mt-1 font-mono text-xs leading-relaxed text-slate-800">
+                      {row.missingBiometricDates.join(', ')}
+                    </p>
+                  </div>
+                )}
+                {row.earlyInLateOutHits && row.earlyInLateOutHits.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-xs font-medium text-slate-500">
+                      In ≤ 8 AM or out ≥ 8 PM ({row.earlyInLateOutHits.length} day
+                      {row.earlyInLateOutHits.length === 1 ? '' : 's'} in{' '}
+                      {formatMonthYear(selectedMonth)})
+                    </p>
+                    <ul className="mt-1 space-y-1 text-xs leading-relaxed text-slate-800">
+                      {row.earlyInLateOutHits.map((hit) => (
+                        <li key={hit.date} className="font-mono">
+                          {formatEarlyInLateOutDetail(hit)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+
+  const employeeListEmpty =
+    (!showAttendanceNotRecordedSection || attendanceNotRecordedRows.length === 0) &&
+    (!showOtherExceptionsList || otherExceptionRows.length === 0);
 
   return (
     <section
@@ -474,136 +631,47 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
               })}
             </ul>
           )
-        ) : displayRows.length === 0 ? (
+        ) : employeeListEmpty ? (
           <p className="py-12 text-center text-sm text-slate-600">{emptyMessage}</p>
         ) : (
-          <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200">
-            {displayRows.map((row) => {
-              const expanded = expandedId === row.userId;
-              return (
-                <li key={row.userId}>
-                  <button
-                    type="button"
-                    onClick={() => setExpandedId(expanded ? null : row.userId)}
-                    className="flex w-full items-start gap-3 px-4 py-3 text-left hover:bg-slate-50"
-                    aria-expanded={expanded}
-                  >
-                    {expanded ? (
-                      <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" aria-hidden />
-                    ) : (
-                      <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" aria-hidden />
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-baseline gap-2">
-                        <span className="font-medium text-slate-900">{row.name}</span>
-                        <span className="font-mono text-xs text-slate-500">{row.odId || '—'}</span>
-                      </div>
-                      <p className="text-xs text-slate-600">
-                        {row.designation || '—'}
-                        {row.workingUnderPartner ? ` · ${row.workingUnderPartner}` : ''}
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {row.exceptions.map((ex) => (
-                          <span
-                            key={ex}
-                            className={`inline-flex rounded-md border px-2 py-0.5 text-xs font-medium ${exceptionBadgeClass(ex)}`}
-                          >
-                            {labelFor(ex)}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </button>
-                  {expanded && (
-                    <div className="border-t border-slate-100 bg-slate-50/80 px-4 py-3 pl-11 text-sm text-slate-700">
-                      <dl className="grid gap-2 sm:grid-cols-2">
-                        <div>
-                          <dt className="text-xs font-medium text-slate-500">Email</dt>
-                          <dd>{row.email || '—'}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs font-medium text-slate-500">Attendance approver</dt>
-                          <dd>{row.attendanceEmail || '—'}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs font-medium text-slate-500">Registered under partner</dt>
-                          <dd>{row.registeredUnderPartner || '—'}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs font-medium text-slate-500">Working under partner</dt>
-                          <dd>{row.workingUnderPartner || '—'}</dd>
-                        </div>
-                      </dl>
-                      {row.exceptions.includes('missing-attendance') && (
-                        <p className="mt-3 text-xs text-red-900">
-                          This active employee has no attendance uploaded for{' '}
-                          {formatMonthYear(selectedMonth)} (no month record or empty file). Upload
-                          machine/biometric data for the month.
-                        </p>
-                      )}
-                      {row.exceptions.includes('no-schedule') && (
-                        <p className="mt-3 text-xs text-amber-900">
-                          No attendance timing schedule is defined on this employee record (no uploaded
-                          weekday in/out times in schedules).
-                        </p>
-                      )}
-                      {row.exceptions.includes('no-pl-partner') && (
-                        <p className="mt-3 text-xs text-violet-900">
-                          {!row.registeredUnderPartner && !row.workingUnderPartner
-                            ? 'Registered Under Partner and Working Under Partner are both missing.'
-                            : !row.registeredUnderPartner
-                              ? 'Registered Under Partner is missing.'
-                              : 'Working Under Partner is missing.'}
-                        </p>
-                      )}
-                      {row.exceptions.includes('approver-same-as-employee') && (
-                        <p className="mt-3 text-xs text-orange-900">
-                          Employee email and attendance email are the same ({row.email}) — attendance
-                          should be approved by a different person (partner/approver email).
-                        </p>
-                      )}
-                      {row.exceptions.includes('non-asija-email') && (
-                        <p className="mt-3 text-xs text-sky-900">
-                          Employee login email ({row.email || '—'}) must end with @asija.in.
-                        </p>
-                      )}
-                      {row.missingBiometricDates && row.missingBiometricDates.length > 0 && (
-                        <div className="mt-3">
-                          <p className="text-xs font-medium text-slate-500">
-                            {row.exceptions.includes('missing-attendance')
-                              ? 'Days missing attendance'
-                              : 'Missing biometric'}{' '}
-                            ({row.missingBiometricDates.length} day
-                            {row.missingBiometricDates.length === 1 ? '' : 's'} in{' '}
-                            {formatMonthYear(selectedMonth)})
-                          </p>
-                          <p className="mt-1 font-mono text-xs leading-relaxed text-slate-800">
-                            {row.missingBiometricDates.join(', ')}
-                          </p>
-                        </div>
-                      )}
-                      {row.earlyInLateOutHits && row.earlyInLateOutHits.length > 0 && (
-                        <div className="mt-3">
-                          <p className="text-xs font-medium text-slate-500">
-                            In ≤ 8 AM or out ≥ 8 PM ({row.earlyInLateOutHits.length} day
-                            {row.earlyInLateOutHits.length === 1 ? '' : 's'} in{' '}
-                            {formatMonthYear(selectedMonth)})
-                          </p>
-                          <ul className="mt-1 space-y-1 text-xs leading-relaxed text-slate-800">
-                            {row.earlyInLateOutHits.map((hit) => (
-                              <li key={hit.date} className="font-mono">
-                                {formatEarlyInLateOutDetail(hit)}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+          <div className="space-y-6">
+            {showAttendanceNotRecordedSection && attendanceNotRecordedRows.length > 0 && (
+              <div>
+                <div className="mb-3 flex items-start gap-2">
+                  <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-red-200 bg-red-50">
+                    <AlertTriangle className="h-4 w-4 text-red-700" aria-hidden />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      Employee active but attendance not recorded
+                    </h3>
+                    <p className="mt-0.5 text-xs text-slate-600">
+                      {attendanceNotRecordedRows.length} active employee
+                      {attendanceNotRecordedRows.length === 1 ? '' : 's'} with no attendance
+                      uploaded for {formatMonthYear(selectedMonth)}.
+                    </p>
+                  </div>
+                </div>
+                {renderEmployeeList(attendanceNotRecordedRows)}
+              </div>
+            )}
+
+            {showOtherExceptionsList && otherExceptionRows.length > 0 && (
+              <div>
+                {showAttendanceNotRecordedSection && attendanceNotRecordedRows.length > 0 && (
+                  <div className="mb-3">
+                    <h3 className="text-sm font-semibold text-slate-900">Other MIS exceptions</h3>
+                    <p className="mt-0.5 text-xs text-slate-600">
+                      {otherExceptionRows.length} employee
+                      {otherExceptionRows.length === 1 ? '' : 's'} with master-data or day-level
+                      flags.
+                    </p>
+                  </div>
+                )}
+                {renderEmployeeList(otherExceptionRows)}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </section>

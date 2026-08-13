@@ -17,6 +17,17 @@ const CLOCK_TIME_KEYS = new Set<DaywiseColumnKey>([
   'scheduledOutTime',
 ]);
 
+/**
+ * Punch columns where the human sheet often writes status short codes
+ * (A, WFH, OS-P, HD, …) instead of real clock times — those are not comparable.
+ */
+const PUNCH_CLOCK_COMPARE_KEYS = new Set<DaywiseColumnKey>([
+  'actualInTimeOriginal',
+  'actualOutTimeOriginal',
+  'actualInTimeEditable',
+  'actualOutTimeEditable',
+]);
+
 /** Elapsed working/scheduled hours — may exceed 24h (month totals). */
 const DURATION_HHMM_KEYS = new Set<DaywiseColumnKey>([
   'punchWorkingHrs',
@@ -242,6 +253,48 @@ function isWeekoffRestStatus(val: string): boolean {
   );
 }
 
+/**
+ * Collapse known portal ↔ human status label variants so noise diffs are skipped:
+ * - WO-PIO ↔ WO-Present
+ * - Absent ↔ A
+ * - On leave ↔ A (human uses A for both absent and leave)
+ */
+function presentAbsentCompareToken(val: string): string {
+  const v = String(val || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+  if (!v) return '';
+  if (
+    v === 'wo-pio' ||
+    v === 'wo-present' ||
+    v === 'wo present' ||
+    v === 'wo present (wo-present)' ||
+    v.includes('(wo-present)') ||
+    v === 'weekly off - present (wo-present)' ||
+    v === 'present - weekoff' ||
+    v === 'present - in office - weekoff'
+  ) {
+    return 'wo-present';
+  }
+  if (v === 'a') return 'a';
+  if (v === 'absent') return 'absent';
+  if (v === 'on leave' || v === 'leave') return 'on leave';
+  return v;
+}
+
+function presentAbsentValuesEquivalent(portal: string, human: string): boolean {
+  if (isWeekoffRestStatus(portal) && isWeekoffRestStatus(human)) return true;
+  const p = presentAbsentCompareToken(portal);
+  const h = presentAbsentCompareToken(human);
+  if (!p && !h) return true;
+  if (p === h) return true;
+  // Human sheet uses "A" for both Absent and On leave
+  if (h === 'a' && (p === 'absent' || p === 'on leave')) return true;
+  if (p === 'a' && (h === 'absent' || h === 'on leave')) return true;
+  return false;
+}
+
 /** Human sheets put "Sun"/"Holiday" in punch columns on weekoffs. */
 function isWeekoffPlaceholderValue(val: string): boolean {
   const v = String(val || '')
@@ -259,6 +312,11 @@ function isWeekoffPlaceholderValue(val: string): boolean {
     v === 'n/a' ||
     v === '-'
   );
+}
+
+/** True when the cell looks like HH:MM or HH:MM:SS (optional leading minus for durations). */
+function looksLikeHhMmValue(val: string): boolean {
+  return /^-?\d{1,3}:\d{1,2}(:\d{1,2})?$/.test(String(val || '').trim());
 }
 
 /** Day-level noise that is meaningless when both sides are a rest Holiday/Sun. */
@@ -285,7 +343,7 @@ const WEEKOFF_REST_SKIP_KEYS = new Set<DaywiseColumnKey>([
 function valuesEquivalentForKey(key: DaywiseColumnKey, portal: string, human: string): boolean {
   if (portal === human) return true;
   if (key === 'presentAbsent') {
-    if (isWeekoffRestStatus(portal) && isWeekoffRestStatus(human)) return true;
+    return presentAbsentValuesEquivalent(portal, human);
   }
   if (PRESENCE_QUOTA_KEYS.has(key)) {
     return isEmptyishPresenceQuota(portal) && isEmptyishPresenceQuota(human);
@@ -382,26 +440,29 @@ export function normalizeDaywiseCellValue(raw: unknown, key?: DaywiseColumnKey):
   }
   if (key && (TIME_KEYS.has(key) || DURATION_LABEL_KEYS.has(key))) {
     const low = s.toLowerCase();
-    // Human Att sheet writes "Sun"/"Holiday" into time cells on weekoffs
-    if (
-      low === 'sun' ||
-      low === 'sunday' ||
-      low === 'holiday' ||
-      low === 'weekoff' ||
-      low === 'week off' ||
-      low === 'na' ||
-      low === 'n/a' ||
-      low === '-'
-    ) {
-      return '';
-    }
-    const m = s.match(/^(-)?(\d{1,3}):(\d{1,2})(?::(\d{1,2}))?$/);
-    if (m) {
-      const sign = m[1] || '';
-      const h = pad2(Number(m[2]));
-      const min = pad2(Number(m[3]));
-      if (DURATION_LABEL_KEYS.has(key) || m[4] != null) {
-        const sec = pad2(Number(m[4] || 0));
+    // Human Att sheet writes status / rest labels into time cells (A, WFH, OS-P, Sun, …)
+    // Anything that is not HH:MM is treated as blank for compare.
+    const timeMatch = s.match(/^(-)?(\d{1,3}):(\d{1,2})(?::(\d{1,2}))?$/);
+    if (!timeMatch) {
+      if (
+        low === 'sun' ||
+        low === 'sunday' ||
+        low === 'holiday' ||
+        low === 'weekoff' ||
+        low === 'week off' ||
+        low === 'na' ||
+        low === 'n/a' ||
+        low === '-' ||
+        PUNCH_CLOCK_COMPARE_KEYS.has(key)
+      ) {
+        return '';
+      }
+    } else {
+      const sign = timeMatch[1] || '';
+      const h = pad2(Number(timeMatch[2]));
+      const min = pad2(Number(timeMatch[3]));
+      if (DURATION_LABEL_KEYS.has(key) || timeMatch[4] != null) {
+        const sec = pad2(Number(timeMatch[4] || 0));
         return `${sign}${h}:${min}:${sec}`;
       }
       return `${sign}${h}:${min}`;
@@ -685,7 +746,7 @@ function reasonForField(key: DaywiseColumnKey, portal: string, human: string): s
   const label = DAYWISE_COMPARE_LABEL[key];
   switch (key) {
     case 'presentAbsent':
-      return `Status differs — portal shows "${portal || '(blank)'}", human sheet shows "${human || '(blank)'}". Often caused by leave/WFH/OS-P/holiday classification or edited punches. (Note: Holiday and Sun are treated as the same rest-day status.)`;
+      return `Status differs — portal shows "${portal || '(blank)'}", human sheet shows "${human || '(blank)'}". Often caused by leave/WFH/OS-P/holiday classification or edited punches. (Note: Holiday↔Sun, WO-PIO↔WO-Present, and Absent/On leave↔A are treated as the same.)`;
     case 'actualInTimeEditable':
     case 'actualOutTimeEditable':
       return `Edited punch time differs in ${label}. Human may have corrected in/out after export, or portal request edits were applied later.`;
@@ -699,7 +760,7 @@ function reasonForField(key: DaywiseColumnKey, portal: string, human: string): s
     case 'weekType':
       return `Weekday/weekoff differs. Portal uses Sunday + holiday calendar; human sheet may mark a day differently.`;
     case 'halfDays':
-      return `Half-day flag differs (Saturday is always half day in portal export).`;
+      return `Half-day flag differs — portal uses the attendance record's halfDay value; human sheet may differ.`;
     case 'excessHrsDay':
     case 'deficitHrsDay':
       return `Day excess/deficit differs because punches, schedule, article rules, or day allowance differ.`;
@@ -768,6 +829,8 @@ export function compareDaywiseRows(
       if (valuesEquivalentForKey(key, pVal, hVal)) continue;
       // Legacy sheets often have blank/broken formulas — only compare when human has a value
       if (!hVal) continue;
+      // Human put status short codes (A, WFH, OS-P, …) in punch cells — not real times
+      if (PUNCH_CLOCK_COMPARE_KEYS.has(key) && !looksLikeHhMmValue(hVal)) continue;
       // Human sheets fill WFH/OS columns with 0 / NA as placeholders — ignore those
       if (PRESENCE_QUOTA_KEYS.has(key) && isEmptyishPresenceQuota(hVal)) continue;
       fields.push({

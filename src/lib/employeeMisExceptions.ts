@@ -13,7 +13,7 @@ export type MisExceptionType =
   | 'non-asija-email';
 
 export const MIS_EXCEPTION_LABELS: Record<MisExceptionType, string> = {
-  'missing-attendance': 'Active — attendance not uploaded for month',
+  'missing-attendance': 'Employee active but attendance not recorded',
   'missing-biometric': 'Biometric not uploaded (past dates)',
   'early-in-late-out': 'In time ≤ 8 AM or out time ≥ 8 PM',
   'no-schedule': 'Attendance timing schedule not defined',
@@ -414,11 +414,8 @@ export function computeMisExceptionsForUser(
     opts.todayYmd
   );
 
-  const attendanceMissing =
-    isAttendanceMissingForMonth(opts.hasAttendanceDoc, opts.records) &&
-    missingBio.length > 0;
-
-  if (attendanceMissing) {
+  // Active employee with no month attendance document (or empty records)
+  if (isAttendanceMissingForMonth(opts.hasAttendanceDoc, opts.records)) {
     types.push('missing-attendance');
   } else if (missingBio.length > 0) {
     types.push('missing-biometric');

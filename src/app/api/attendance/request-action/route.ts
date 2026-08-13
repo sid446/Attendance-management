@@ -14,6 +14,7 @@ import { getDefaultNumericValueForType } from '@/lib/attendanceRequestValues';
 import { isArticleEmployee } from '@/lib/isArticleEmployee';
 import { applyAttendanceEditSource } from '@/lib/daywiseAttendanceSource';
 import { normalizeTimeToHHmm } from '@/lib/attendanceHours';
+import { fillMissingHolidayAndSundayRecords } from '@/lib/fillHolidaySundayAttendance';
 
 function calculateDuration(start: string, end: string): number {
     if (!start || !end) return 0;
@@ -213,7 +214,7 @@ export async function GET(request: NextRequest) {
         }
 
         attendance.records.set(date, rec);
-        
+        await fillMissingHolidayAndSundayRecords(attendance);
 
         // Recalculate summary
         const user = await User.findById(userId);
@@ -549,6 +550,7 @@ export async function POST(request: NextRequest) {
       });
 
       attendance.records.set(date, rec);
+      await fillMissingHolidayAndSundayRecords(attendance);
 
       // Recalculate summary
       const user = await User.findById(userId);

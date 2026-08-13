@@ -668,15 +668,12 @@ export async function buildDaywiseWorkbook(
         let actualOutstation = '';
         // Total working hours (punch + approved extra work)
         const workingHrs = record.workingHours ?? record.workingHour ?? record.totalHour ?? '';
-        // Mark halfday as true for Saturday
+        // Use the attendance record's halfDay flag only — Saturday is not always half day
         let isHalfDay = false;
         if (typeof record.halfDay === 'boolean') {
           isHalfDay = record.halfDay;
         } else if (record.halfDay !== undefined) {
           isHalfDay = Boolean(record.halfDay);
-        }
-        if (dayName.toLowerCase() === 'saturday') {
-          isHalfDay = true;
         }
         const halfDays = isHalfDay ? 'True' : 'False';
 

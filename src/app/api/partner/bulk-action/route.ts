@@ -56,6 +56,7 @@ import {
 } from '@/lib/isArticleEmployee';
 import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
 import { applyAttendanceEditSource } from '@/lib/daywiseAttendanceSource';
+import { fillMissingHolidayAndSundayRecords } from '@/lib/fillHolidaySundayAttendance';
 
 function normalizePartnerName(name: string): string {
     return String(name || '').replace(/[.\s]/g, '').toLowerCase();
@@ -259,6 +260,7 @@ export async function POST(request: NextRequest) {
                     });
                     attendance.records.set(date, rec);
                     attendance.markModified('records');
+                    await fillMissingHolidayAndSundayRecords(attendance);
                     attendance.summary = calculateSummary(attendance.records, userObj);
                     await attendance.save();
                 } else {
@@ -557,6 +559,7 @@ export async function POST(request: NextRequest) {
 
                 // Mark records as modified so Mongoose saves changes to existing Map entries
                 attendance.markModified('records');
+                await fillMissingHolidayAndSundayRecords(attendance);
 
                 attendance.summary = calculateSummary(attendance.records, userObj);
                 await attendance.save();

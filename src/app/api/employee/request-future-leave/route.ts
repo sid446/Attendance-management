@@ -21,6 +21,8 @@ import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAut
 import { autoApproveSelfRequests } from '@/lib/selfApproveAttendanceRequests';
 import { requiresAttendanceRequestTimePair } from '@/lib/attendanceRequestTimeRules';
 import { resolveRequestRoutingForDate } from '@/lib/attendanceRequestNotifications';
+import Holiday from '@/models/Holiday';
+import { isSundayDate, parseIsoDateLocal } from '@/lib/attendanceSummaryMetrics';
 
 const ZERO_TIME_PREFIXES = ['On leave', 'Weekoff - special allowance'];
 
@@ -141,23 +143,34 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const datesToProcess = [];
-    let currentDate = new Date(start);
-    
-    while (currentDate <= end) {
-        datesToProcess.push(new Date(currentDate));
-        currentDate.setDate(currentDate.getDate() + 1);
+    const datesToProcess: string[] = [];
+    const cursor = new Date(`${startStr}T12:00:00`);
+    const endLocal = new Date(`${endStr}T12:00:00`);
+    while (cursor.getTime() <= endLocal.getTime()) {
+      const y = cursor.getFullYear();
+      const m = String(cursor.getMonth() + 1).padStart(2, '0');
+      const d = String(cursor.getDate()).padStart(2, '0');
+      datesToProcess.push(`${y}-${m}-${d}`);
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    const years = new Set(datesToProcess.map((ds) => Number(ds.slice(0, 4))));
+    const holidayDates = new Set<string>();
+    for (const year of years) {
+      const holidays = await Holiday.find({ year, isActive: true }).select('date').lean();
+      for (const h of holidays) {
+        const dateKey = String(h.date || '').slice(0, 10);
+        if (dateKey) holidayDates.add(dateKey);
+      }
     }
 
     // Process requests — each day routes to the work partner covering that date
     const createdRequests = [];
     const partnerEmails = new Map<string, string>();
 
-    for (const d of datesToProcess) {
-        // Skip Sundays (getDay() === 0)
-        if (d.getDay() === 0) continue;
-        
-        const dateStr = d.toISOString().split('T')[0];
+    for (const dateStr of datesToProcess) {
+        // Skip Sundays and company holidays — they are marked Holiday on approval
+        if (isSundayDate(dateStr) || holidayDates.has(dateStr)) continue;
         const monthYear = dateStr.substring(0, 7); // YYYY-MM
 
         const routing = await resolveRequestRoutingForDate(user, dateStr);
@@ -179,8 +192,9 @@ export async function POST(request: NextRequest) {
 
         const isOutstationType = String(requestType || '').toLowerCase().includes('outstation');
         if (isOutstationType && !hasCustomTimes) {
-            const dayOfWeek = d.getDay();
-            const month = d.getMonth() + 1;
+            const dayDate = parseIsoDateLocal(dateStr);
+            const dayOfWeek = dayDate.getDay();
+            const month = dayDate.getMonth() + 1;
 
             let scheduleToUse;
             if (month === 12 || month === 1) {
@@ -226,7 +240,7 @@ export async function POST(request: NextRequest) {
     if (createdRequests.length === 0) {
       return NextResponse.json({
         success: false,
-        error: 'No eligible dates to create requests for (e.g. only Sundays in range).',
+        error: 'No eligible dates to create requests for (e.g. only Sundays or holidays in range).',
       }, { status: 400 });
     }
 

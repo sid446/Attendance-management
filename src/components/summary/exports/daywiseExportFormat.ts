@@ -85,13 +85,10 @@ export const DAYWISE_COMPARE_KEYS: readonly DaywiseColumnKey[] = [
   'extraWorkTimes',
   'punchWorkingHrs',
   'extraWorkHrs',
-  'trueFalseInTime',
-  'trueFalseOutTime',
+  // trueFalseInTime / trueFalseOutTime omitted — formula noise, not actionable
   'scheduledInTime',
   'scheduledOutTime',
-  'maxWFH',
   'actualWFH',
-  'maxOutstation',
   'actualOutstation',
   'workingHrs',
   'scheduledTime',
@@ -101,7 +98,6 @@ export const DAYWISE_COMPARE_KEYS: readonly DaywiseColumnKey[] = [
   'deficitHrsMonth',
   'excessHrsDay',
   'deficitHrsDay',
-  'halfDays',
 ];
 
 export const DAYWISE_COMPARE_LABEL: Record<DaywiseColumnKey, string> = Object.fromEntries(

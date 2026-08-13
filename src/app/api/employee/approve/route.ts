@@ -20,6 +20,7 @@ import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
 import { applyDayExcessToRecord } from '@/lib/calculateDayExcessHour';
 import { calculateTotalHours as calculateDuration } from '@/lib/attendanceHours';
 import { applyAttendanceEditSource } from '@/lib/daywiseAttendanceSource';
+import { fillMissingHolidayAndSundayRecords } from '@/lib/fillHolidaySundayAttendance';
 
 export async function POST(request: NextRequest) {
   try {
@@ -213,6 +214,7 @@ export async function POST(request: NextRequest) {
         });
         attendanceRecord.records.set(attendanceRequest.date, rec);
         attendanceRecord.markModified('records');
+        await fillMissingHolidayAndSundayRecords(attendanceRecord);
         const userForSummary = await User.findById(attendanceRequest.userId);
         attendanceRecord.summary = calculateSummary(attendanceRecord.records, userForSummary);
         await attendanceRecord.save();
@@ -497,6 +499,7 @@ export async function POST(request: NextRequest) {
       
       // Recalculate summary
       const user = await User.findById(attendanceRequest.userId);
+      await fillMissingHolidayAndSundayRecords(attendanceRecord);
       attendanceRecord.summary = calculateSummary(attendanceRecord.records, user);
       
       await attendanceRecord.save();

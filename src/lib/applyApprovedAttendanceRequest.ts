@@ -19,6 +19,7 @@ import {
   isExtraWorkRequest,
   normalizeExtraWorkSlotsFromRequest,
 } from '@/lib/extraWorkRequest';
+import { fillMissingHolidayAndSundayRecords } from '@/lib/fillHolidaySundayAttendance';
 
 type DayRecord = Record<string, unknown>;
 type RecordsMap = Map<string, DayRecord> | Record<string, DayRecord> | any;
@@ -197,6 +198,7 @@ export async function applyApprovedExtraWorkRequestToAttendance(
 
   setDayRecord(attendance, date, rec);
   const userObj = await User.findById(userObjectId);
+  await fillMissingHolidayAndSundayRecords(attendance, { user: userObj });
   const recordsMap =
     attendance.records instanceof Map
       ? attendance.records
@@ -443,6 +445,7 @@ export async function applyApprovedRequestToAttendance(
   }
 
   setDayRecord(attendance, date, rec);
+  await fillMissingHolidayAndSundayRecords(attendance, { user: userObj });
   const recordsMap =
     attendance.records instanceof Map
       ? attendance.records
