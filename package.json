@@ -30,7 +30,9 @@
     "backfill:late-checkin-rules:dry": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/backfill-late-checkin-rules.ts --dry-run",
     "backfill:late-checkin-rules": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/backfill-late-checkin-rules.ts",
     "fix:holiday-sundays:dry": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/fix-missing-holiday-sunday-records.ts --dry-run",
-    "fix:holiday-sundays": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/fix-missing-holiday-sunday-records.ts --apply"
+    "fix:holiday-sundays": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/fix-missing-holiday-sunday-records.ts --apply",
+    "fix:location-punch:dry": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/restore-location-punch-attendance.ts --dry-run",
+    "fix:location-punch": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/restore-location-punch-attendance.ts --apply"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

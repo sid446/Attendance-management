@@ -8,6 +8,11 @@ import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
 import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAuth';
 import { istDateString, istTimeString } from '@/lib/attendanceRequestWindow';
 import { geodesicDistanceMeters, isValidCoordinates } from '@/lib/geoDistance';
+import { applyAttendanceEditSource } from '@/lib/daywiseAttendanceSource';
+import {
+  LOCATION_PUNCH_REMARK_PREFIX,
+  LOCATION_PUNCH_SOURCE,
+} from '@/lib/locationPunchAttendance';
 
 // Helper to calculate total hours between two times
 function calculateTotalHours(inTime: string, outTime: string): number {
@@ -279,7 +284,7 @@ async function updateMainAttendanceRecord(
     }
     
     // Update the record for this date
-    attendance.records.set(date, {
+    const rec: Record<string, unknown> = {
       checkin: inTime,
       checkout: outTime,
       typeOfPresence: 'Present - client place',
@@ -287,8 +292,10 @@ async function updateMainAttendanceRecord(
       halfDay: false,
       totalHour: 0, // Will be recalculated
       excessHour: 0,
-      remarks: `Location verified at: ${clientPlaceName}`
-    });
+      remarks: `${LOCATION_PUNCH_REMARK_PREFIX} ${clientPlaceName}`,
+    };
+    applyAttendanceEditSource(rec, { approvedBy: LOCATION_PUNCH_SOURCE });
+    attendance.records.set(date, rec as any);
 
     const user = await User.findById(userId);
     if (user) {

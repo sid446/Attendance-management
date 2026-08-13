@@ -38,6 +38,10 @@ import {
 } from '@/lib/daywiseAttendanceSource';
 import { DAYWISE_COLUMN_KEYS, DAYWISE_HEADER_LABELS } from './daywiseExportFormat';
 import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
+import {
+  isLocationPunchAttendanceRecord,
+  locationPunchSourceLabel,
+} from '@/lib/locationPunchAttendance';
 
 export async function buildDaywiseWorkbook(
   ctx: SummaryExportContext,
@@ -232,53 +236,70 @@ export async function buildDaywiseWorkbook(
       right: { style: 'thin' as const, color: { argb: 'FFCBD5E1' } },
     };
 
+    const daywisePresenceText = (raw: string) =>
+      String(raw || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+
+    /** Location punch / client-place request types → daywise CP-P. */
+    const isDaywiseClientPlaceType = (raw: string) => {
+      const low = daywisePresenceText(raw);
+      if (!low) return false;
+      if (low === 'cp-p' || low.includes('(cp-p)')) return true;
+      return low.includes('clientplace') || low.includes('client place');
+    };
+
     /** Presence types that use max outstation 1.2 d and per-day actual from `record.value` (same as legacy Present - outstation). */
     const daywiseOutstationPresenceExact = new Set([
       'Present - outstation',
       'Present - Outstation (Weekdays)',
       'Present - Outstation (Weekoff)',
-      'Present - ClientPlace (Weekdays)',
-      'Present - ClientPlace (Weekoff)',
-      'Present - client place',
       'Onsite Presence (OS-P)',
     ]);
     const isDaywiseOutstationPresence = (raw: string) => {
       const s = String(raw || '').trim();
+      if (isDaywiseClientPlaceType(s)) return false;
       if (daywiseOutstationPresenceExact.has(s)) return true;
-      const low = s.toLowerCase().replace(/\s+/g, ' ');
+      const low = daywisePresenceText(s);
       return (
         low === 'present - outstation (weekdays)' ||
         low === 'present - outstation (weekoff)' ||
-        low === 'present - clientplace (weekdays)' ||
-        low === 'present - clientplace (weekoff)' ||
-        low === 'present - client place' ||
         low === 'present- outstation (weekoff)' ||
         low === 'present- outstation (weekdays)' ||
-        low === 'present- clientplace (weekoff)' ||
-        low === 'present- clientplace (weekdays)' ||
         low === 'onsite presence (os-p)' ||
         low === 'os-p'
       );
     };
 
-    /** Loose match when type/status strings vary but still mean client place / outstation (in/out may be 00:00). */
+    /** Loose match when type/status strings vary but still mean outstation (in/out may be 00:00). */
     const isDaywiseOutstationByPhrase = (raw: string) => {
-      const low = String(raw || '').toLowerCase().replace(/\s+/g, ' ');
+      const low = daywisePresenceText(raw);
+      if (isDaywiseClientPlaceType(raw)) return false;
       if (low === 'os-p' || low.includes('(os-p)') || low.includes('onsite presence')) return true;
       if (!low.includes('present')) return false;
-      if (low.includes('outstation')) return true;
-      if (low.includes('clientplace') || low.includes('client place')) return true;
-      return false;
+      return low.includes('outstation');
     };
 
-    const recordIsDaywiseOutstationRow = (rec: any) => {
+    const recordHasPresenceMatch = (rec: any, match: (raw: string) => boolean) => {
       for (const k of ['typeOfPresence', 'status'] as const) {
         const v = rec?.[k];
         if (typeof v !== 'string' || !v.trim()) continue;
-        const t = v.trim();
-        if (isDaywiseOutstationPresence(t) || isDaywiseOutstationByPhrase(t)) return true;
+        if (match(v.trim())) return true;
       }
       return false;
+    };
+
+    const recordIsDaywiseClientPlaceRow = (rec: any) =>
+      recordHasPresenceMatch(rec, isDaywiseClientPlaceType) ||
+      isLocationPunchAttendanceRecord(rec);
+
+    const recordIsDaywiseOutstationRow = (rec: any) => {
+      if (recordIsDaywiseClientPlaceRow(rec)) return false;
+      return recordHasPresenceMatch(
+        rec,
+        (t) => isDaywiseOutstationPresence(t) || isDaywiseOutstationByPhrase(t)
+      );
     };
 
     /** Per-day actual outstation days: prefer numeric `value` (including 0), then fallbacks. */
@@ -554,8 +575,11 @@ export async function buildDaywiseWorkbook(
       );
     };
 
-    // Helper to get Source (request approval / HR edit / ThumbMachine)
+    // Helper to get Source (request approval / HR edit / location punch / ThumbMachine)
     const getSource = (record: any, userId: string, dateIso: string) => {
+      const locationSource = locationPunchSourceLabel(record);
+      if (locationSource) return locationSource;
+
       const fromRecord: AttendanceEditSourceInfo = {
         approvedBy: record?.approvedBy,
         approvedByEmail: record?.approvedByEmail,
@@ -694,6 +718,10 @@ export async function buildDaywiseWorkbook(
           actualWFH = '';
           maxOutstation = '';
           actualOutstation = '';
+        } else if (recordIsDaywiseClientPlaceRow(record)) {
+          maxOutstation = '1.2';
+          actualOutstation = formatDaywiseActualOutstation(record, workingHrs);
+          presentAbsent = 'CP-P';
         } else if (recordIsDaywiseOutstationRow(record)) {
           maxOutstation = '1.2';
           actualOutstation = formatDaywiseActualOutstation(record, workingHrs);
@@ -1161,7 +1189,14 @@ export async function buildDaywiseWorkbook(
           pattern: 'solid',
           fgColor: { argb: 'FFFEF3C7' },
         };
-      } else if (pa === 'Present' || pa === 'OS-P' || pa === 'WFH' || pa === 'WO-WFH' || pa === 'WO-PIO') {
+      } else if (
+        pa === 'Present' ||
+        pa === 'OS-P' ||
+        pa === 'CP-P' ||
+        pa === 'WFH' ||
+        pa === 'WO-WFH' ||
+        pa === 'WO-PIO'
+      ) {
         presentAbsentCell.font = { size: 10, name: 'Calibri', color: { argb: 'FF047857' }, bold: true };
         presentAbsentCell.fill = {
           type: 'pattern',

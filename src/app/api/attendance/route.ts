@@ -29,6 +29,7 @@ import {
   isHalftimeEmployeeForDate,
   normalizeHalftimeDayRecord,
 } from '@/lib/halftimeAttendance';
+import { isLocationPunchAttendanceRecord } from '@/lib/locationPunchAttendance';
 
 // GET - Fetch attendance records
 export async function GET(request: NextRequest) {
@@ -632,6 +633,20 @@ export async function POST(request: NextRequest) {
             }
           }
 
+          if (
+            isLocationPunchAttendanceRecord(existingRecordBeforeUpdate) &&
+            !isFixedDataUpload
+          ) {
+            const prevType = String(existingRecordBeforeUpdate.typeOfPresence || '').trim();
+            typeOfPresence = prevType.toLowerCase().includes('client')
+              ? prevType
+              : 'Present - client place';
+            const prevRemarks = String(existingRecordBeforeUpdate.remarks || '');
+            if (/location verified/i.test(prevRemarks)) {
+              remarksStr = prevRemarks;
+            }
+          }
+
           attendance.records.set(isoDate, {
             checkin: finalCheckin,
             checkout: finalCheckout,
@@ -646,6 +661,14 @@ export async function POST(request: NextRequest) {
             ...(Array.isArray(existingRecordBeforeUpdate?.extraWorkEntries) &&
             existingRecordBeforeUpdate.extraWorkEntries.length > 0
               ? { extraWorkEntries: existingRecordBeforeUpdate.extraWorkEntries }
+              : {}),
+            ...(isLocationPunchAttendanceRecord(existingRecordBeforeUpdate)
+              ? {
+                  approvedBy: existingRecordBeforeUpdate.approvedBy || 'Location punch',
+                  approvedByEmail: existingRecordBeforeUpdate.approvedByEmail,
+                  updatedBy: existingRecordBeforeUpdate.updatedBy || 'Location punch',
+                  updatedByEmail: existingRecordBeforeUpdate.updatedByEmail,
+                }
               : {}),
           });
 

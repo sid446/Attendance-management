@@ -44,6 +44,10 @@ export function formatDaywiseSourceLabel(info: AttendanceEditSourceInfo | null |
 
   if (!by && !email) return 'ThumbMachine';
 
+  if (by.toLowerCase() === 'location punch') {
+    return 'Location punch';
+  }
+
   const isHr = by.toLowerCase() === 'hr' || by.toLowerCase() === 'hr admin';
 
   if (isHr) {
