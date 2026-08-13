@@ -4,7 +4,6 @@ import { getManagedFieldValueForDate } from '@/lib/userFieldHistory';
 import { isValidPunchTime, normalizeTimeToHHmm } from '@/lib/attendanceHours';
 
 export type MisExceptionType =
-  | 'missing-attendance'
   | 'missing-biometric'
   | 'early-in-late-out'
   | 'no-schedule'
@@ -13,7 +12,6 @@ export type MisExceptionType =
   | 'non-asija-email';
 
 export const MIS_EXCEPTION_LABELS: Record<MisExceptionType, string> = {
-  'missing-attendance': 'Employee active but attendance not recorded',
   'missing-biometric': 'Biometric not uploaded (past dates)',
   'early-in-late-out': 'In time ≤ 8 AM or out time ≥ 8 PM',
   'no-schedule': 'Attendance timing schedule not defined',
@@ -23,7 +21,6 @@ export const MIS_EXCEPTION_LABELS: Record<MisExceptionType, string> = {
 };
 
 export const MIS_EXCEPTION_TYPES: MisExceptionType[] = [
-  'missing-attendance',
   'missing-biometric',
   'early-in-late-out',
   'no-schedule',
@@ -391,6 +388,72 @@ export function isAttendanceMissingForMonth(
   return Object.keys(records || {}).length === 0;
 }
 
+export function localTodayYmd(): string {
+  const t = new Date();
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+}
+
+export function attendanceRecordsFromDoc(doc: { records?: unknown } | null | undefined): Record<string, any> {
+  if (!doc?.records) return {};
+  if (doc.records instanceof Map) {
+    const records: Record<string, any> = {};
+    for (const [k, v] of doc.records.entries()) records[String(k)] = v;
+    return records;
+  }
+  return { ...(doc.records as Record<string, any>) };
+}
+
+/** Dates that at least one employee already has a record for. */
+export function collectDatesWithAnyAttendance(
+  recordsByUserId: Iterable<Record<string, any>>
+): string[] {
+  const set = new Set<string>();
+  for (const records of recordsByUserId) {
+    for (const key of Object.keys(records || {})) {
+      const dateKey = String(key).slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateKey) && records[key] != null) {
+        set.add(dateKey);
+      }
+    }
+  }
+  return [...set].sort();
+}
+
+/**
+ * Past days this employee should have, but does not:
+ * days others already have recorded (before today), while the employee was active.
+ * If nobody else has days yet and the whole month is empty, fall back to all past days in the month.
+ */
+export function findMissingAttendanceDates(opts: {
+  user: any;
+  records: Record<string, any>;
+  datesWithAnyAttendance: string[];
+  monthYear: string;
+  todayYmd: string;
+  wholeMonthMissing: boolean;
+}): string[] {
+  const { user, records, datesWithAnyAttendance, monthYear, todayYmd, wholeMonthMissing } = opts;
+  const expected =
+    datesWithAnyAttendance.length > 0
+      ? datesWithAnyAttendance
+      : wholeMonthMissing
+        ? datesInMonthYear(monthYear)
+        : [];
+
+  const missing: string[] = [];
+  for (const dateKey of expected) {
+    if (dateKey >= todayYmd) continue;
+    if (!isEmployeeActiveOnDate(user, dateKey)) continue;
+    if (records[dateKey] == null) missing.push(dateKey);
+  }
+  return missing;
+}
+
+/** True if the employee was active on at least one calendar day of the month. */
+export function wasEmployeeActiveDuringMonth(user: any, monthYear: string): boolean {
+  return datesInMonthYear(monthYear).some((dateKey) => isEmployeeActiveOnDate(user, dateKey));
+}
+
 export function computeMisExceptionsForUser(
   user: any,
   opts: {
@@ -414,10 +477,11 @@ export function computeMisExceptionsForUser(
     opts.todayYmd
   );
 
-  // Active employee with no month attendance document (or empty records)
-  if (isAttendanceMissingForMonth(opts.hasAttendanceDoc, opts.records)) {
-    types.push('missing-attendance');
-  } else if (missingBio.length > 0) {
+  // Whole-month missing attendance is handled on Invalid Attendance (notify/export), not MIS.
+  if (
+    !isAttendanceMissingForMonth(opts.hasAttendanceDoc, opts.records) &&
+    missingBio.length > 0
+  ) {
     types.push('missing-biometric');
   }
 

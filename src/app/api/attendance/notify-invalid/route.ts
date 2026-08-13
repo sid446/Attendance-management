@@ -273,6 +273,7 @@ export async function POST(request: NextRequest) {
             userId: employeeId,
             monthYear,
             date: rec.date,
+            kind: 'invalid-punch',
             sentAt,
           }))
         );

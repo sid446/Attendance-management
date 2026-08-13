@@ -18,7 +18,6 @@ import {
 } from '@/lib/userFieldHistory';
 
 const ALL_EXCEPTION_TYPES: MisExceptionType[] = [
-  'missing-attendance',
   'missing-biometric',
   'early-in-late-out',
   'no-schedule',
@@ -87,7 +86,6 @@ export async function GET(request: NextRequest) {
     const partnerAsOf = lastDayOfMonthYear(monthYear);
     const fullRows: MisExceptionRow[] = [];
     const counts: Record<MisExceptionType, number> = {
-      'missing-attendance': 0,
       'missing-biometric': 0,
       'early-in-late-out': 0,
       'no-schedule': 0,
@@ -116,9 +114,7 @@ export async function GET(request: NextRequest) {
         counts[ex] += 1;
       }
 
-      const missingBiometricDates =
-        exceptions.includes('missing-biometric') ||
-        exceptions.includes('missing-attendance')
+      const missingBiometricDates = exceptions.includes('missing-biometric')
           ? findMissingBiometricDates(user, records, holidayDateSet, monthYear, todayYmd)
           : undefined;
 
@@ -153,10 +149,7 @@ export async function GET(request: NextRequest) {
           ...row,
           exceptions: [exceptionFilter],
           missingBiometricDates:
-            exceptionFilter === 'missing-biometric' ||
-            exceptionFilter === 'missing-attendance'
-              ? row.missingBiometricDates
-              : undefined,
+            exceptionFilter === 'missing-biometric' ? row.missingBiometricDates : undefined,
           earlyInLateOutHits:
             exceptionFilter === 'early-in-late-out' ? row.earlyInLateOutHits : undefined,
         }));

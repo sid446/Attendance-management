@@ -54,6 +54,7 @@ export async function GET(request: NextRequest) {
     const notificationLogs = await InvalidAttendanceNotification.find({ monthYear }).lean();
     const notificationByUserDate = new Map<string, { count: number; lastNotifiedAt: Date }>();
     for (const log of notificationLogs) {
+      if (log.kind === 'missing-month') continue;
       const key = `${String(log.userId)}:${log.date}`;
       const existing = notificationByUserDate.get(key);
       const sentAt = new Date(log.sentAt);

@@ -1,9 +1,12 @@
 import mongoose, { Schema, Document, Model, Types } from 'mongoose';
 
+export type InvalidAttendanceNotificationKind = 'invalid-punch' | 'missing-month';
+
 export interface IInvalidAttendanceNotification extends Document {
   userId: Types.ObjectId;
   monthYear: string;
   date: string;
+  kind?: InvalidAttendanceNotificationKind;
   sentAt: Date;
 }
 
@@ -12,6 +15,11 @@ const InvalidAttendanceNotificationSchema = new Schema(
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     monthYear: { type: String, required: true, match: /^\d{4}-\d{2}$/ },
     date: { type: String, required: true, match: /^\d{4}-\d{2}-\d{2}$/ },
+    kind: {
+      type: String,
+      enum: ['invalid-punch', 'missing-month'],
+      default: 'invalid-punch',
+    },
     sentAt: { type: Date, default: Date.now, required: true },
   },
   { timestamps: false }

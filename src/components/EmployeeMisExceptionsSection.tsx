@@ -133,7 +133,6 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
   const monthAffectsList =
     typeFilter === FILTER_ALL ||
     typeFilter === 'missing-biometric' ||
-    typeFilter === 'missing-attendance' ||
     typeFilter === 'early-in-late-out';
 
   const searchFilteredRows = useMemo(() => {
@@ -158,9 +157,7 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
         ...row,
         exceptions: [typeFilter],
         missingBiometricDates:
-          typeFilter === 'missing-biometric' || typeFilter === 'missing-attendance'
-            ? row.missingBiometricDates
-            : undefined,
+          typeFilter === 'missing-biometric' ? row.missingBiometricDates : undefined,
         earlyInLateOutHits:
           typeFilter === 'early-in-late-out' ? row.earlyInLateOutHits : undefined,
       }));
@@ -186,34 +183,11 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
     if (typeFilter === 'early-in-late-out') {
       return `No days with in time ≤ 8 AM or out time ≥ 8 PM for ${formatMonthYear(selectedMonth)}.`;
     }
-    if (typeFilter === 'missing-attendance') {
-      return `No active employees without attendance recorded for ${formatMonthYear(selectedMonth)}.`;
-    }
     if (typeFilter === FILTER_ALL) {
       return `No active employees with MIS exceptions for ${formatMonthYear(selectedMonth)}.`;
     }
     return `No active employees with “${labelFor(typeFilter)}”.`;
   }, [typeFilter, selectedMonth, labels]);
-
-  const attendanceNotRecordedRows = useMemo(
-    () => displayRows.filter((row) => row.exceptions.includes('missing-attendance')),
-    [displayRows]
-  );
-
-  const otherExceptionRows = useMemo(() => {
-    if (typeFilter === 'missing-attendance') return [];
-    if (typeFilter !== FILTER_ALL) {
-      return displayRows.filter((row) => !row.exceptions.includes('missing-attendance'));
-    }
-    // All view: keep employees who still have other flags after excluding pure missing-attendance-only rows,
-    // but show everyone once — attendance-not-recorded goes in its own section.
-    return displayRows.filter((row) => !row.exceptions.includes('missing-attendance'));
-  }, [displayRows, typeFilter]);
-
-  const showAttendanceNotRecordedSection =
-    typeFilter === FILTER_ALL || typeFilter === 'missing-attendance';
-  const showOtherExceptionsList =
-    typeFilter !== 'missing-attendance' && !isDayGroupedView;
 
   useEffect(() => {
     setExpandedId(null);
@@ -222,8 +196,6 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
 
   const exceptionBadgeClass = (type: MisExceptionType) => {
     switch (type) {
-      case 'missing-attendance':
-        return 'border-red-200 bg-red-50 text-red-950';
       case 'missing-biometric':
         return 'border-rose-200 bg-rose-50 text-rose-900';
       case 'early-in-late-out':
@@ -302,13 +274,6 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
                     <dd>{row.workingUnderPartner || '—'}</dd>
                   </div>
                 </dl>
-                {row.exceptions.includes('missing-attendance') && (
-                  <p className="mt-3 text-xs text-red-900">
-                    This employee is active but has no attendance recorded for{' '}
-                    {formatMonthYear(selectedMonth)} (no month record or empty file). Upload
-                    machine/biometric data for the month.
-                  </p>
-                )}
                 {row.exceptions.includes('no-schedule') && (
                   <p className="mt-3 text-xs text-amber-900">
                     No attendance timing schedule is defined on this employee record (no uploaded
@@ -338,9 +303,7 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
                 {row.missingBiometricDates && row.missingBiometricDates.length > 0 && (
                   <div className="mt-3">
                     <p className="text-xs font-medium text-slate-500">
-                      {row.exceptions.includes('missing-attendance')
-                        ? 'Days missing attendance'
-                        : 'Missing biometric'}{' '}
+                      Missing biometric{' '}
                       ({row.missingBiometricDates.length} day
                       {row.missingBiometricDates.length === 1 ? '' : 's'} in{' '}
                       {formatMonthYear(selectedMonth)})
@@ -374,9 +337,7 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
     </ul>
   );
 
-  const employeeListEmpty =
-    (!showAttendanceNotRecordedSection || attendanceNotRecordedRows.length === 0) &&
-    (!showOtherExceptionsList || otherExceptionRows.length === 0);
+  const employeeListEmpty = displayRows.length === 0;
 
   return (
     <section
@@ -634,44 +595,7 @@ export const EmployeeMisExceptionsSection: React.FC = () => {
         ) : employeeListEmpty ? (
           <p className="py-12 text-center text-sm text-slate-600">{emptyMessage}</p>
         ) : (
-          <div className="space-y-6">
-            {showAttendanceNotRecordedSection && attendanceNotRecordedRows.length > 0 && (
-              <div>
-                <div className="mb-3 flex items-start gap-2">
-                  <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-red-200 bg-red-50">
-                    <AlertTriangle className="h-4 w-4 text-red-700" aria-hidden />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="text-sm font-semibold text-slate-900">
-                      Employee active but attendance not recorded
-                    </h3>
-                    <p className="mt-0.5 text-xs text-slate-600">
-                      {attendanceNotRecordedRows.length} active employee
-                      {attendanceNotRecordedRows.length === 1 ? '' : 's'} with no attendance
-                      uploaded for {formatMonthYear(selectedMonth)}.
-                    </p>
-                  </div>
-                </div>
-                {renderEmployeeList(attendanceNotRecordedRows)}
-              </div>
-            )}
-
-            {showOtherExceptionsList && otherExceptionRows.length > 0 && (
-              <div>
-                {showAttendanceNotRecordedSection && attendanceNotRecordedRows.length > 0 && (
-                  <div className="mb-3">
-                    <h3 className="text-sm font-semibold text-slate-900">Other MIS exceptions</h3>
-                    <p className="mt-0.5 text-xs text-slate-600">
-                      {otherExceptionRows.length} employee
-                      {otherExceptionRows.length === 1 ? '' : 's'} with master-data or day-level
-                      flags.
-                    </p>
-                  </div>
-                )}
-                {renderEmployeeList(otherExceptionRows)}
-              </div>
-            )}
-          </div>
+          renderEmployeeList(displayRows)
         )}
       </div>
     </section>
