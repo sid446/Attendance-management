@@ -1,5 +1,5 @@
 import React, { useState, useEffect, ChangeEvent, useMemo, useCallback, useRef } from 'react';
-import { Edit2, Save, X, Plus, Upload, FileUp, Filter, Trash2, Search, Download, ChevronDown, ChevronUp, FileSpreadsheet, Settings, Users, Briefcase, CreditCard, Tag } from 'lucide-react';
+import { Edit2, Save, X, Plus, Upload, FileUp, Filter, Trash2, Search, Download, ChevronDown, ChevronUp, FileSpreadsheet, Settings, Users, UserCheck, Briefcase, CreditCard, Tag } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { User as UserBase, ScheduleTime, DailySchedule } from '@/types/ui';
 import { fullEditDefaults, type EmployeeManagementTabId, type HrAccessLevel } from '@/lib/hrConsolePermissionUtils';
@@ -293,6 +293,7 @@ export const EmployeeManagementSection: React.FC<{
   // Filter State
   const [filterDesignations, setFilterDesignations] = useState<string[]>([]);
   const [filterTeams, setFilterTeams] = useState<string[]>([]);
+  const [filterCompanies, setFilterCompanies] = useState<string[]>([]);
   const [filterUsers, setFilterUsers] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>('');
   /** When false, deactivated employees are hidden from the table (still in data for export / re-activate). */
@@ -300,6 +301,7 @@ export const EmployeeManagementSection: React.FC<{
   // Dropdown visibility state
   const [showDesignationDropdown, setShowDesignationDropdown] = useState(false);
   const [showTeamDropdown, setShowTeamDropdown] = useState(false);
+  const [showCompanyDropdown, setShowCompanyDropdown] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
 
   // Upload State
@@ -391,6 +393,19 @@ export const EmployeeManagementSection: React.FC<{
     const list = users.map(u => u.team || u.workingUnderPartner).filter(Boolean);
     return Array.from(new Set(list)).sort() as string[];
   }, [users]);
+  // Company = Paid From (AAACA, AAAFC, ATC, AFS, …)
+  const uniqueCompanies = useMemo(() => {
+    const set = new Set<string>();
+    for (const value of predefinedValues.paidFrom) {
+      const trimmed = String(value || '').trim();
+      if (trimmed) set.add(trimmed);
+    }
+    for (const user of users) {
+      const trimmed = String(user.paidFrom || '').trim();
+      if (trimmed) set.add(trimmed);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [users, predefinedValues.paidFrom]);
 
   /** Work partner dropdown: predefined teams + partners already used in the org + current form value. */
   const workPartnerSelectOptions = useMemo(() => {
@@ -2014,6 +2029,9 @@ export const EmployeeManagementSection: React.FC<{
       }
       // Multi-select Team filter
       if (filterTeams.length > 0 && !filterTeams.includes(user.team || user.workingUnderPartner || '')) {
+        return false;
+      }
+      if (filterCompanies.length > 0 && !filterCompanies.includes(String(user.paidFrom || '').trim())) {
         return false;
       }
       // Multi-select User filter
@@ -5863,12 +5881,12 @@ export const EmployeeManagementSection: React.FC<{
                   </div>
                 </div>
                 <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-200/80">
-                    <Briefcase className="h-4 w-4 text-slate-700" aria-hidden />
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100">
+                    <UserCheck className="h-4 w-4 text-emerald-800" aria-hidden />
                   </div>
                   <div>
-                    <p className="text-xl font-bold text-slate-900">{uniqueDesignations.length}</p>
-                    <p className="text-xs text-slate-600">Designations</p>
+                    <p className="text-xl font-bold text-slate-900">{users.length - inactiveUserCount}</p>
+                    <p className="text-xs text-slate-600">Active employees</p>
                   </div>
                 </div>
               </div>
@@ -5987,6 +6005,53 @@ export const EmployeeManagementSection: React.FC<{
                             onChange={() => {
                               setFilterTeams((prev) =>
                                 prev.includes(opt) ? prev.filter((t) => t !== opt) : [...prev, opt]
+                              );
+                            }}
+                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500/40"
+                          />
+                          {opt}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="relative min-w-[10rem] flex-1 sm:max-w-[11rem]">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between rounded-lg border border-blue-200/65 bg-panel px-3 py-2.5 text-left text-sm text-slate-800 shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/25"
+                  onClick={() => setShowCompanyDropdown((v) => !v)}
+                  aria-expanded={showCompanyDropdown}
+                  aria-haspopup="listbox"
+                >
+                  <span>{filterCompanies.length > 0 ? `${filterCompanies.length} companies` : 'Company'}</span>
+                  <ChevronDown className="ml-2 h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+                </button>
+                {showCompanyDropdown && (
+                  <div
+                    className="absolute z-20 mt-2 max-h-56 w-full overflow-y-auto rounded-lg border border-blue-200/65 bg-panel py-1 shadow-lg"
+                    role="listbox"
+                    aria-label="Filter by company (paid from)"
+                  >
+                    <div className="p-2">
+                      <label className="mb-1 flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={filterCompanies.length === 0}
+                          onChange={() => setFilterCompanies([])}
+                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500/40"
+                        />
+                        All companies
+                      </label>
+                      {uniqueCompanies.map((opt) => (
+                        <label key={opt} className="mb-1 flex cursor-pointer items-center gap-2 text-sm text-slate-800">
+                          <input
+                            type="checkbox"
+                            checked={filterCompanies.includes(opt)}
+                            onChange={() => {
+                              setFilterCompanies((prev) =>
+                                prev.includes(opt) ? prev.filter((c) => c !== opt) : [...prev, opt]
                               );
                             }}
                             className="rounded border-slate-300 text-blue-600 focus:ring-blue-500/40"
@@ -6124,7 +6189,7 @@ export const EmployeeManagementSection: React.FC<{
       </div>
 
       {/* Active filters — explicit feedback, easy reset */}
-      {(searchTerm || filterDesignations.length > 0 || filterTeams.length > 0 || filterUsers.length > 0) && (
+      {(searchTerm || filterDesignations.length > 0 || filterTeams.length > 0 || filterCompanies.length > 0 || filterUsers.length > 0) && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
           <span className="text-xs font-medium text-slate-600">Active filters</span>
           {searchTerm && (
@@ -6172,6 +6237,22 @@ export const EmployeeManagementSection: React.FC<{
               </button>
             </span>
           ))}
+          {filterCompanies.map((company) => (
+            <span
+              key={company}
+              className="inline-flex items-center gap-1.5 rounded-md border border-blue-200/65 bg-panel px-2.5 py-1 text-xs text-slate-800"
+            >
+              {company}
+              <button
+                type="button"
+                onClick={() => setFilterCompanies(filterCompanies.filter((c) => c !== company))}
+                className="rounded p-0.5 text-slate-600 hover:bg-slate-100"
+                aria-label={`Remove company ${company}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
           {filterUsers.map((user) => (
             <span
               key={user}
@@ -6194,6 +6275,7 @@ export const EmployeeManagementSection: React.FC<{
               setSearchTerm('');
               setFilterDesignations([]);
               setFilterTeams([]);
+              setFilterCompanies([]);
               setFilterUsers([]);
             }}
             className="ml-auto text-xs font-medium text-blue-700 hover:text-blue-900 focus:outline-none focus:underline"
