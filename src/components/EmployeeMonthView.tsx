@@ -946,7 +946,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
     return { inTime: schedule.inTime, outTime: schedule.outTime };
   };
 
-  // Statuses that auto-fill from schedule and lock in/out time fields
+  // Statuses that auto-fill in/out from schedule; HR can still edit the times.
   const STATUS_USE_SCHEDULE = new Set<string>([
     'WFH - weekdays', 'WFH - weekoff', 'Half Day - weekdays', 'Half Day - weekoff',
     'Present - client place',
@@ -1109,8 +1109,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                               value={formStartTime}
                               onChange={(e) => setFormStartTime(e.target.value)}
                               placeholder="09:00"
-                              disabled={formStatus === 'Absent' || STATUS_USE_SCHEDULE.has(formStatus) || formStatus.startsWith('Half Day')}
-                              className={`${fieldCls} mt-1 ${formStatus === 'Absent' || STATUS_USE_SCHEDULE.has(formStatus) || formStatus.startsWith('Half Day') ? 'cursor-not-allowed opacity-60' : ''}`}
+                              className={`${fieldCls} mt-1`}
                             />
                           </div>
                           <div>
@@ -1119,8 +1118,7 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                               value={formEndTime}
                               onChange={(e) => setFormEndTime(e.target.value)}
                               placeholder="18:00"
-                              disabled={formStatus === 'Absent' || STATUS_USE_SCHEDULE.has(formStatus) || formStatus.startsWith('Half Day')}
-                              className={`${fieldCls} mt-1 ${formStatus === 'Absent' || STATUS_USE_SCHEDULE.has(formStatus) || formStatus.startsWith('Half Day') ? 'cursor-not-allowed opacity-60' : ''}`}
+                              className={`${fieldCls} mt-1`}
                             />
                           </div>
                           <div className="sm:col-span-2">
