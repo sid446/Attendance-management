@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
 
     const activeUsers = await User.find({ isActive: true })
       .select(
-        'odId name email designation workingUnderPartner attendanceEmail joiningDate inactiveAsOf isActive fieldHistories'
+        'odId name email designation workingUnderPartner attendanceEmail joiningDate inactiveAsOf isActive schedules seasonalSchedules fieldHistories'
       )
       .lean();
 

@@ -559,7 +559,7 @@ export const InvalidAttendanceSection: React.FC<InvalidAttendanceSectionProps> =
               <p className="mt-0.5 text-sm text-slate-600">
                 {view === 'invalid'
                   ? 'Employees with missing check-in or check-out for machine attendance.'
-                  : 'Active employees with no month file, or missing days that other employees already have.'}
+                  : 'Active employees with a defined schedule who have no month file, or missing days that other employees already have.'}
               </p>
               <ol
                 className="mt-3 flex list-none flex-wrap gap-2 text-xs text-slate-700"
@@ -693,8 +693,9 @@ export const InvalidAttendanceSection: React.FC<InvalidAttendanceSectionProps> =
                     </h3>
                     <p className="mt-0.5 text-xs text-slate-600">
                       {filteredMissingMonth.length} active employee
-                      {filteredMissingMonth.length === 1 ? '' : 's'} with no month file, or missing
-                      days that other employees already have (up to yesterday).
+                      {filteredMissingMonth.length === 1 ? '' : 's'} with a defined schedule and no
+                      month file, or missing days that other employees already have (up to
+                      yesterday).
                     </p>
                   </div>
                 </div>

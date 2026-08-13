@@ -1,6 +1,6 @@
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { toYmd, isDateOnOrAfterInactive } from '@/lib/attendanceInactiveFilter';
-import { getManagedFieldValueForDate } from '@/lib/userFieldHistory';
+import { getManagedFieldValueForDate, lastDayOfMonthYear } from '@/lib/userFieldHistory';
 import { isValidPunchTime, normalizeTimeToHHmm } from '@/lib/attendanceHours';
 
 export type MisExceptionType =
@@ -433,6 +433,7 @@ export function findMissingAttendanceDates(opts: {
   wholeMonthMissing: boolean;
 }): string[] {
   const { user, records, datesWithAnyAttendance, monthYear, todayYmd, wholeMonthMissing } = opts;
+  if (!hasAttendanceScheduleDefined(user, lastDayOfMonthYear(monthYear))) return [];
   const expected =
     datesWithAnyAttendance.length > 0
       ? datesWithAnyAttendance
