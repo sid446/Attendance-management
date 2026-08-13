@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Loader2, Save, ShieldCheck, Trash2, Users } from 'lucide-react';
+import { Loader2, Save, ShieldCheck, Trash2, Users, UserPlus, X } from 'lucide-react';
 import { User } from '@/types/ui';
 
 interface TeamAttendanceAccessSectionProps {
@@ -41,6 +41,7 @@ export const TeamAttendanceAccessSection: React.FC<TeamAttendanceAccessSectionPr
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [showGrantAllConfirm, setShowGrantAllConfirm] = useState(false);
 
   const activeUsers = useMemo(
     () => allUsers.filter((user) => user && user._id && user.isActive !== false),
@@ -176,6 +177,14 @@ export const TeamAttendanceAccessSection: React.FC<TeamAttendanceAccessSectionPr
   const toggleUser = (userId: string) => {
     setExtraUserIds((prev) =>
       prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+    );
+  };
+
+  const applyGrantAllActive = () => {
+    setExtraUserIds(activeUsers.map((user) => user._id));
+    setShowGrantAllConfirm(false);
+    setMessage(
+      `Selected all ${activeUsers.length} active employees for ${selectedViewer?.name || 'this viewer'}. Click Save Access to apply.`
     );
   };
 
@@ -361,9 +370,20 @@ export const TeamAttendanceAccessSection: React.FC<TeamAttendanceAccessSectionPr
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-slate-900">Extra Employees</h3>
-              <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">{extraUserIds.length} selected</span>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">{extraUserIds.length} selected</span>
+                <button
+                  type="button"
+                  onClick={() => setShowGrantAllConfirm(true)}
+                  disabled={!isActive || !selectedViewerId || activeUsers.length === 0}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-800 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <UserPlus className="h-3.5 w-3.5" aria-hidden />
+                  Grant all active
+                </button>
+              </div>
             </div>
             {selectedViewer && (
               <label className="mb-3 flex items-start gap-3 rounded-lg border border-blue-100 bg-blue-50/70 px-3 py-2.5 text-sm text-slate-700">
@@ -429,6 +449,66 @@ export const TeamAttendanceAccessSection: React.FC<TeamAttendanceAccessSectionPr
           <p className="text-sm text-blue-900">No employees are visible with the current settings.</p>
         )}
       </div>
+
+      {showGrantAllConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowGrantAllConfirm(false);
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-xl border border-blue-200/65 bg-panel shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="grant-all-title"
+          >
+            <div className="flex items-start justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
+              <h3 id="grant-all-title" className="text-sm font-semibold text-slate-900">
+                Grant all active members?
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowGrantAllConfirm(false)}
+                className="rounded-md p-1 text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-3 p-4 text-sm text-slate-700">
+              <p>
+                This will select every currently <strong>active</strong> employee (
+                {activeUsers.length}) so{' '}
+                <strong>{selectedViewer?.name || 'this viewer'}</strong> can see them in Team
+                Attendance.
+              </p>
+              <p className="text-slate-600">
+                Inactive employees are not included. This only updates the Extra Employees list —
+                click <strong>Save Access</strong> afterwards to apply.
+              </p>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setShowGrantAllConfirm(false)}
+                className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={applyGrantAllActive}
+                className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                <UserPlus className="h-4 w-4" aria-hidden />
+                Select all active
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 };
