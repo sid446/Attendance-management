@@ -633,15 +633,13 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          if (
-            isLocationPunchAttendanceRecord(existingRecordBeforeUpdate) &&
-            !isFixedDataUpload
-          ) {
-            const prevType = String(existingRecordBeforeUpdate.typeOfPresence || '').trim();
+          const existingLoc = existingRecordBeforeUpdate;
+          if (existingLoc && isLocationPunchAttendanceRecord(existingLoc) && !isFixedDataUpload) {
+            const prevType = String(existingLoc.typeOfPresence || '').trim();
             typeOfPresence = prevType.toLowerCase().includes('client')
               ? prevType
               : 'Present - client place';
-            const prevRemarks = String(existingRecordBeforeUpdate.remarks || '');
+            const prevRemarks = String(existingLoc.remarks || '');
             if (/location verified/i.test(prevRemarks)) {
               remarksStr = prevRemarks;
             }
@@ -662,12 +660,12 @@ export async function POST(request: NextRequest) {
             existingRecordBeforeUpdate.extraWorkEntries.length > 0
               ? { extraWorkEntries: existingRecordBeforeUpdate.extraWorkEntries }
               : {}),
-            ...(isLocationPunchAttendanceRecord(existingRecordBeforeUpdate)
+            ...(existingLoc && isLocationPunchAttendanceRecord(existingLoc)
               ? {
-                  approvedBy: existingRecordBeforeUpdate.approvedBy || 'Location punch',
-                  approvedByEmail: existingRecordBeforeUpdate.approvedByEmail,
-                  updatedBy: existingRecordBeforeUpdate.updatedBy || 'Location punch',
-                  updatedByEmail: existingRecordBeforeUpdate.updatedByEmail,
+                  approvedBy: existingLoc.approvedBy || 'Location punch',
+                  approvedByEmail: existingLoc.approvedByEmail,
+                  updatedBy: existingLoc.updatedBy || 'Location punch',
+                  updatedByEmail: existingLoc.updatedByEmail,
                 }
               : {}),
           });

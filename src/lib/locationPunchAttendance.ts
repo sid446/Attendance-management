@@ -12,9 +12,9 @@ export function isClientPlacePresenceType(type: unknown): boolean {
 }
 
 /** True when the day was marked via client-location punch (type or remarks). */
-export function isLocationPunchAttendanceRecord(
-  rec: { typeOfPresence?: unknown; remarks?: unknown } | null | undefined
-): boolean {
+export function isLocationPunchAttendanceRecord<
+  T extends { typeOfPresence?: unknown; remarks?: unknown },
+>(rec: T | null | undefined): rec is T {
   if (!rec) return false;
   if (isClientPlacePresenceType(rec.typeOfPresence)) return true;
   return /location verified/i.test(String(rec.remarks || ''));
