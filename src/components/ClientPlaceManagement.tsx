@@ -10,6 +10,7 @@ import {
   AlertCircle,
   Users,
   UserPlus,
+  UserMinus,
   Search,
   ExternalLink,
   RefreshCw,
@@ -80,9 +81,12 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
   const [addMode, setAddMode] = useState<LocationInputMode>('coordinates');
   const [editMode, setEditMode] = useState<LocationInputMode>('coordinates');
   const [assignTeamName, setAssignTeamName] = useState('');
-  const [assignConfirm, setAssignConfirm] = useState<null | { kind: 'all' } | { kind: 'team'; team: string }>(
-    null
-  );
+  type AssignConfirm =
+    | { kind: 'all' }
+    | { kind: 'team'; team: string }
+    | { kind: 'remove-all' }
+    | { kind: 'remove-team'; team: string };
+  const [assignConfirm, setAssignConfirm] = useState<AssignConfirm | null>(null);
   const [bulkAssigning, setBulkAssigning] = useState(false);
 
   const [newPlace, setNewPlace] = useState(EMPTY_NEW_PLACE);
@@ -320,12 +324,8 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
     }
   };
 
-  const handleBulkAssign = async (employeeIds: string[]) => {
-    if (!assigningPlace || employeeIds.length === 0) return;
-
-    const mergedIds = Array.from(
-      new Set([...assigningPlace.assignedEmployees.map((e) => e._id), ...employeeIds])
-    );
+  const saveAssignedIds = async (assignedIds: string[]) => {
+    if (!assigningPlace) return;
 
     try {
       setBulkAssigning(true);
@@ -335,7 +335,7 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: assigningPlace._id,
-          assignedEmployees: mergedIds,
+          assignedEmployees: assignedIds,
         }),
       });
       const result = await response.json();
@@ -354,16 +354,30 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
   };
 
   const confirmBulkAssign = async () => {
-    if (!assignConfirm) return;
+    if (!assignConfirm || !assigningPlace) return;
+    const currentIds = assigningPlace.assignedEmployees.map((e) => e._id);
+
     if (assignConfirm.kind === 'all') {
-      await handleBulkAssign(activeEmployees.map((user) => user._id));
+      await saveAssignedIds(
+        Array.from(new Set([...currentIds, ...activeEmployees.map((user) => user._id)]))
+      );
+    } else if (assignConfirm.kind === 'team') {
+      const teamKey = normalizePartner(assignConfirm.team);
+      const teamIds = activeEmployees
+        .filter((user) => normalizePartner(user.workingUnderPartner) === teamKey)
+        .map((user) => user._id);
+      await saveAssignedIds(Array.from(new Set([...currentIds, ...teamIds])));
+    } else if (assignConfirm.kind === 'remove-all') {
+      await saveAssignedIds([]);
     } else {
       const teamKey = normalizePartner(assignConfirm.team);
-      await handleBulkAssign(
-        activeEmployees
-          .filter((user) => normalizePartner(user.workingUnderPartner) === teamKey)
-          .map((user) => user._id)
-      );
+      const remaining = assigningPlace.assignedEmployees
+        .filter((emp) => {
+          const user = allUsers.find((u) => u._id === emp._id);
+          return normalizePartner(user?.workingUnderPartner) !== teamKey;
+        })
+        .map((emp) => emp._id);
+      await saveAssignedIds(remaining);
     }
     setAssignConfirm(null);
   };
@@ -373,6 +387,14 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
         (user) => normalizePartner(user.workingUnderPartner) === normalizePartner(assignTeamName)
       ).length
     : 0;
+
+  const teamRemoveCount =
+    assignTeamName && assigningPlace
+      ? assigningPlace.assignedEmployees.filter((emp) => {
+          const user = allUsers.find((u) => u._id === emp._id);
+          return normalizePartner(user?.workingUnderPartner) === normalizePartner(assignTeamName);
+        }).length
+      : 0;
 
   const handlePermanentDeletePlace = async (id: string) => {
     if (!confirm('Are you sure you want to permanently delete this client place? This action cannot be undone.')) return;
@@ -875,43 +897,61 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
                   className={`${inputCls} pl-10`}
                 />
               </div>
-              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="mt-3 grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setAssignConfirm({ kind: 'all' })}
                   disabled={bulkAssigning || activeEmployees.length === 0}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-800 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex h-10 items-center justify-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-3 text-sm font-medium text-blue-800 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <UserPlus className="h-4 w-4" aria-hidden />
-                  Assign all active ({activeEmployees.length})
+                  <UserPlus className="h-4 w-4 shrink-0" aria-hidden />
+                  <span className="truncate">Assign all ({activeEmployees.length})</span>
                 </button>
-                <div className="flex min-w-0 flex-1 items-center gap-2">
-                  <select
-                    value={assignTeamName}
-                    onChange={(e) => setAssignTeamName(e.target.value)}
-                    disabled={bulkAssigning}
-                    className={`${inputCls} py-2`}
-                    aria-label="Select team to assign"
-                  >
-                    <option value="">Select team…</option>
-                    {teamNames.map((team) => (
-                      <option key={team} value={team}>
-                        {team}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!assignTeamName) return;
-                      setAssignConfirm({ kind: 'team', team: assignTeamName });
-                    }}
-                    disabled={bulkAssigning || !assignTeamName || teamAssignCount === 0}
-                    className="shrink-0 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Assign team
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setAssignConfirm({ kind: 'remove-all' })}
+                  disabled={bulkAssigning || assigningPlace.assignedEmployees.length === 0}
+                  className="inline-flex h-10 items-center justify-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-3 text-sm font-medium text-rose-800 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <UserMinus className="h-4 w-4 shrink-0" aria-hidden />
+                  <span className="truncate">Remove all ({assigningPlace.assignedEmployees.length})</span>
+                </button>
+                <select
+                  value={assignTeamName}
+                  onChange={(e) => setAssignTeamName(e.target.value)}
+                  disabled={bulkAssigning}
+                  className="col-span-2 h-10 w-full rounded-lg border border-blue-200/65 bg-panel px-3 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50"
+                  aria-label="Select team to assign or remove"
+                >
+                  <option value="">Select team…</option>
+                  {teamNames.map((team) => (
+                    <option key={team} value={team}>
+                      {team}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!assignTeamName) return;
+                    setAssignConfirm({ kind: 'team', team: assignTeamName });
+                  }}
+                  disabled={bulkAssigning || !assignTeamName || teamAssignCount === 0}
+                  className="inline-flex h-10 items-center justify-center rounded-md bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Assign team
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!assignTeamName) return;
+                    setAssignConfirm({ kind: 'remove-team', team: assignTeamName });
+                  }}
+                  disabled={bulkAssigning || !assignTeamName || teamRemoveCount === 0}
+                  className="inline-flex h-10 items-center justify-center rounded-md border border-rose-200 bg-white px-3 text-sm font-medium text-rose-800 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Remove team
+                </button>
               </div>
             </div>
 
@@ -1004,7 +1044,13 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
           >
             <div className="flex items-start justify-between border-b border-slate-200 bg-slate-50 px-4 py-3">
               <h3 id="assign-bulk-title" className="text-sm font-semibold text-slate-900">
-                {assignConfirm.kind === 'all' ? 'Assign to all active employees?' : 'Assign to this team?'}
+                {assignConfirm.kind === 'all'
+                  ? 'Assign to all active employees?'
+                  : assignConfirm.kind === 'team'
+                    ? 'Assign to this team?'
+                    : assignConfirm.kind === 'remove-all'
+                      ? 'Remove all assigned employees?'
+                      : 'Remove this team?'}
               </h3>
               <button
                 type="button"
@@ -1022,14 +1068,32 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
                   <strong>active</strong> employee ({activeEmployees.length}). People already assigned
                   stay assigned. Inactive employees are not included.
                 </p>
-              ) : (
+              ) : assignConfirm.kind === 'team' ? (
                 <p>
                   This will assign <strong>{assigningPlace.name}</strong> to all active employees whose
                   Working Under Partner is <strong>{assignConfirm.team}</strong> ({teamAssignCount}{' '}
                   {teamAssignCount === 1 ? 'person' : 'people'}). People already assigned stay assigned.
                 </p>
+              ) : assignConfirm.kind === 'remove-all' ? (
+                <p>
+                  This will unassign every employee currently on{' '}
+                  <strong>{assigningPlace.name}</strong> (
+                  {assigningPlace.assignedEmployees.length}). They will no longer be able to punch at
+                  this location.
+                </p>
+              ) : (
+                <p>
+                  This will unassign active employees on{' '}
+                  <strong>{assigningPlace.name}</strong> whose Working Under Partner is{' '}
+                  <strong>{assignConfirm.team}</strong> ({teamRemoveCount}{' '}
+                  {teamRemoveCount === 1 ? 'person' : 'people'}). Other assigned people stay.
+                </p>
               )}
-              <p className="text-slate-600">They will be able to punch attendance at this location.</p>
+              <p className="text-slate-600">
+                {assignConfirm.kind === 'remove-all' || assignConfirm.kind === 'remove-team'
+                  ? 'You can assign people again later.'
+                  : 'They will be able to punch attendance at this location.'}
+              </p>
             </div>
             <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 px-4 py-3">
               <button
@@ -1044,10 +1108,22 @@ export const ClientPlaceManagement: React.FC<ClientPlaceManagementProps> = ({ al
                 type="button"
                 onClick={() => void confirmBulkAssign()}
                 disabled={bulkAssigning}
-                className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-white disabled:opacity-50 ${
+                  assignConfirm.kind === 'remove-all' || assignConfirm.kind === 'remove-team'
+                    ? 'bg-rose-600 hover:bg-rose-700'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
               >
-                {bulkAssigning ? <RefreshCw className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
-                Confirm assign
+                {bulkAssigning ? (
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                ) : assignConfirm.kind === 'remove-all' || assignConfirm.kind === 'remove-team' ? (
+                  <UserMinus className="h-4 w-4" />
+                ) : (
+                  <UserPlus className="h-4 w-4" />
+                )}
+                {assignConfirm.kind === 'remove-all' || assignConfirm.kind === 'remove-team'
+                  ? 'Confirm remove'
+                  : 'Confirm assign'}
               </button>
             </div>
           </div>
