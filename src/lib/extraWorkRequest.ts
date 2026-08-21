@@ -1,3 +1,5 @@
+import { calculateTotalHours } from '@/lib/attendanceHours';
+
 /** Label shown in UI, emails, and partner review for extra-work requests. */
 export const EXTRA_WORK_REQUEST_STATUS = 'Extra work hours';
 
@@ -322,9 +324,21 @@ export function formatExtraWorkEntriesTimeSummary(
 /** Hours worked from punch only (totalHour minus approved extra work). */
 export function getRecordPunchHours(rec: {
   totalHour?: number;
+  editedCheckin?: string;
+  checkin?: string;
+  inTime?: string;
+  editedCheckout?: string;
+  checkout?: string;
+  outTime?: string;
   extraWorkEntries?: Array<{ hours?: number; startTime?: string; endTime?: string }> | null;
 } | null | undefined): number {
   const total = Number(rec?.totalHour || 0);
   const extra = sumExtraWorkEntryHours(rec?.extraWorkEntries);
-  return Number(Math.max(0, total - extra).toFixed(2));
+  const fromTotal = Number(Math.max(0, total - extra).toFixed(2));
+  if (fromTotal > 0) return fromTotal;
+
+  // When totalHour was wiped to 0 but punches exist (common for CP-P), derive from times.
+  const { inTime, outTime } = getRecordPunchTimeRange(rec);
+  const fromTimes = calculateTotalHours(inTime, outTime);
+  return Number(Math.max(0, fromTimes).toFixed(2));
 }

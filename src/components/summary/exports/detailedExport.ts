@@ -523,6 +523,15 @@ export async function exportDetailedAttendance(ctx: SummaryExportContext): Promi
         let isAbsentRecord = false;
         const isExplicitAbsent = rec.typeOfPresence === 'Absent';
         const isLeaveMarked = rec.typeOfPresence === 'Leave' || rec.typeOfPresence === 'On leave';
+        const typeLower = String(t || '').toLowerCase();
+        const isClientOrRemotePresence =
+          outclientSet.has(t) ||
+          typeLower.includes('client place') ||
+          typeLower.includes('clientplace') ||
+          typeLower.includes('outstation') ||
+          typeLower.includes('wfh') ||
+          typeLower.includes('work from home') ||
+          typeLower.includes('onsite presence');
 
         if (!isSunday && !isHoliday && (isExplicitAbsent || isLeaveMarked)) {
           absent += 1;
@@ -530,6 +539,7 @@ export async function exportDetailedAttendance(ctx: SummaryExportContext): Promi
         } else if (
           !isSunday &&
           !isHoliday &&
+          !isClientOrRemotePresence &&
           rec.totalHour === 0 &&
           rec.typeOfPresence !== 'Holiday' &&
           !(typeof rec.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff'))

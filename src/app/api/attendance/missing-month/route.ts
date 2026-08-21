@@ -12,11 +12,15 @@ import {
   wasEmployeeActiveDuringMonth,
 } from '@/lib/employeeMisExceptions';
 import { getWorkingUnderPartnerForDate, lastDayOfMonthYear } from '@/lib/userFieldHistory';
+import { loadOpenEmployeeRequestsByUserDate } from '@/lib/openAttendanceRequestsForMonth';
 
 export type MissingDayRecord = {
   date: string;
   notificationCount?: number;
   lastNotifiedAt?: string;
+  requestRaised?: boolean;
+  requestStatus?: 'Pending' | 'PendingHr';
+  requestedStatus?: string;
 };
 
 export type MissingMonthEmployee = {
@@ -68,10 +72,13 @@ export async function GET(request: NextRequest) {
 
     const datesWithAnyAttendance = collectDatesWithAnyAttendance(recordsByUserId.values());
 
-    const notificationLogs = await InvalidAttendanceNotification.find({
-      monthYear,
-      kind: 'missing-month',
-    }).lean();
+    const [notificationLogs, openRequestsByUserDate] = await Promise.all([
+      InvalidAttendanceNotification.find({
+        monthYear,
+        kind: 'missing-month',
+      }).lean(),
+      loadOpenEmployeeRequestsByUserDate(monthYear),
+    ]);
 
     const notificationByUserDate = new Map<string, { count: number; lastNotifiedAt: Date }>();
     const notificationByUser = new Map<string, { count: number; lastNotifiedAt: Date }>();
@@ -118,10 +125,18 @@ export async function GET(request: NextRequest) {
 
       const missingDays: MissingDayRecord[] = missingDateKeys.map((date) => {
         const notif = notificationByUserDate.get(`${userId}:${date}`);
+        const openReq = openRequestsByUserDate.get(`${userId}:${date}`);
         return {
           date,
           notificationCount: notif?.count,
           lastNotifiedAt: notif?.lastNotifiedAt.toISOString(),
+          ...(openReq
+            ? {
+                requestRaised: true,
+                requestStatus: openReq.status,
+                requestedStatus: openReq.requestedStatus,
+              }
+            : {}),
         };
       });
 

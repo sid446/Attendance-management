@@ -87,7 +87,48 @@ interface LeaveManagementSectionProps {
   onRefresh: () => void;
 }
 
-const LEAVE_MANAGEMENT_WORKFLOW_STEPS = ['Pick tab & filters', 'Review balances', 'Refresh from server'] as const;
+const LEAVE_MANAGEMENT_WORKFLOW_STEPS = [
+  'Pick month & filters',
+  'Review balances',
+  'Refresh from server',
+] as const;
+
+/** Leave day amounts always display with exactly two decimal places. */
+const formatLeaveValue = (value: number | null | undefined): string => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '0.00';
+  return n.toFixed(2);
+};
+
+function currentMonthYear(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** Months from Jan 2026 through the current month (newest first). */
+function leaveMonthOptions(): string[] {
+  const options: string[] = [];
+  const end = currentMonthYear();
+  let y = 2026;
+  let m = 1;
+  while (true) {
+    const my = `${y}-${String(m).padStart(2, '0')}`;
+    if (my > end) break;
+    options.push(my);
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return options.reverse();
+}
+
+function formatMonthLabel(monthYear: string): string {
+  const [year, month] = monthYear.split('-');
+  const date = new Date(parseInt(year, 10), parseInt(month, 10) - 1, 1);
+  return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
 
 const UploadPreviewDialog: React.FC<{
   preview: UploadPreview;
@@ -242,19 +283,19 @@ const UploadPreviewDialog: React.FC<{
                         )}
                       </td>
                       <td className="px-3 py-2 text-center tabular-nums text-slate-600">
-                        {m.currentBalanceAsOfJan26}
+                        {formatLeaveValue(m.currentBalanceAsOfJan26)}
                       </td>
                       <td className="px-3 py-2 text-center font-medium tabular-nums text-slate-900">
-                        {m.newBalanceAsOfJan26}
+                        {formatLeaveValue(m.newBalanceAsOfJan26)}
                       </td>
                       <td className="px-3 py-2 text-center tabular-nums text-emerald-800">
-                        {u ? (u.isArticle ? 'N/A' : `+${u.earned}`) : '—'}
+                        {u ? (u.isArticle ? 'N/A' : `+${formatLeaveValue(u.earned)}`) : '—'}
                       </td>
                       <td className="px-3 py-2 text-center tabular-nums text-slate-700">
-                        {u ? u.usedAfterJan26 : '—'}
+                        {u ? formatLeaveValue(u.usedAfterJan26) : '—'}
                       </td>
                       <td className="px-3 py-2 text-center font-medium tabular-nums text-slate-900">
-                        {u ? u.remaining : '—'}
+                        {u ? formatLeaveValue(u.remaining) : '—'}
                       </td>
                       <td className="px-3 py-2 text-center tabular-nums text-slate-700">
                         {u && u.attendanceDayChanges > 0 ? (
@@ -326,6 +367,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
   const [leaveBalances, setLeaveBalances] = useState<LeaveBalance[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [filterTeam, setFilterTeam] = useState<string>('all');
+  const [monthFilter, setMonthFilter] = useState<string>(() => currentMonthYear());
   const [sortBy, setSortBy] = useState<'name' | 'balanceAsOfJan26' | 'earned' | 'remaining' | 'used'>('earned');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'all' | 'articles' | 'employees'>('all');
@@ -337,10 +379,14 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
   const [pendingRows, setPendingRows] = useState<UploadRow[] | null>(null);
   const [preview, setPreview] = useState<UploadPreview | null>(null);
 
-  const fetchLeaveBalances = async () => {
+  const monthOptions = leaveMonthOptions();
+
+  const fetchLeaveBalances = async (monthYear = monthFilter) => {
     setLoading(true);
     try {
-      const response = await fetch('/api/leave/balances');
+      const response = await fetch(
+        `/api/leave/balances?monthYear=${encodeURIComponent(monthYear)}`
+      );
       if (!response.ok) {
         throw new Error('Failed to fetch leave balances');
       }
@@ -358,8 +404,9 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
   };
 
   useEffect(() => {
-    fetchLeaveBalances();
-  }, []);
+    void fetchLeaveBalances(monthFilter);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch when month changes
+  }, [monthFilter]);
 
   const filteredAndSortedBalances = leaveBalances
     .filter(balance => {
@@ -407,7 +454,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
     'rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20';
 
   const handleRefresh = () => {
-    void fetchLeaveBalances();
+    void fetchLeaveBalances(monthFilter);
     onRefresh();
   };
 
@@ -530,7 +577,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
           `${applied.reconcile.recordsUpdated} attendance day(s) changed across ` +
           `${applied.reconcile.monthsRebuilt.length} month(s).`
       );
-      await fetchLeaveBalances();
+      await fetchLeaveBalances(monthFilter);
       onRefresh();
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Failed to save');
@@ -553,10 +600,12 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
             Leave management
           </h2>
           <p className="max-w-2xl text-sm text-slate-600">
-            {activeTab === 'all' && 'Track earned, used, and remaining leave balances for everyone in view.'}
+            {activeTab === 'all' &&
+              `Track earned, used, and remaining leave balances as of ${formatMonthLabel(monthFilter)}.`}
             {activeTab === 'articles' &&
               'Article staff: opening balance and usage; no monthly earn after 1 Jan 2026 in this view.'}
-            {activeTab === 'employees' && 'Regular employees: full earned / used / remaining picture.'}
+            {activeTab === 'employees' &&
+              `Regular employees: earned / used / remaining as of ${formatMonthLabel(monthFilter)}.`}
           </p>
           <ol className="flex list-none flex-wrap gap-2 text-xs text-slate-700" aria-label="Leave management workflow">
             {LEAVE_MANAGEMENT_WORKFLOW_STEPS.map((t, i) => (
@@ -663,7 +712,9 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
             <Calendar className="h-5 w-5 text-blue-700" aria-hidden />
             <span className="text-sm font-medium text-slate-700">Balance as of 1 Jan 26</span>
           </div>
-          <div className="text-2xl font-bold tabular-nums text-slate-900">{totalStats.totalBalanceAsOfJan26}</div>
+          <div className="text-2xl font-bold tabular-nums text-slate-900">
+            {formatLeaveValue(totalStats.totalBalanceAsOfJan26)}
+          </div>
           <div className="mt-1 text-xs text-slate-500">Opening balance</div>
         </div>
 
@@ -673,7 +724,9 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
               <TrendingUp className="h-5 w-5 text-emerald-700" aria-hidden />
               <span className="text-sm font-medium text-slate-700">Earned (after Jan)</span>
             </div>
-            <div className="text-2xl font-bold tabular-nums text-slate-900">{totalStats.totalEarned}</div>
+            <div className="text-2xl font-bold tabular-nums text-slate-900">
+              {formatLeaveValue(totalStats.totalEarned)}
+            </div>
             <div className="mt-1 text-xs text-slate-500">Earned after 1 Jan 2026</div>
           </div>
         )}
@@ -683,7 +736,9 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
             <TrendingDown className="h-5 w-5 text-rose-700" aria-hidden />
             <span className="text-sm font-medium text-slate-700">Used (before 1 Jan)</span>
           </div>
-          <div className="text-2xl font-bold tabular-nums text-slate-900">{totalStats.totalUsed}</div>
+          <div className="text-2xl font-bold tabular-nums text-slate-900">
+            {formatLeaveValue(totalStats.totalUsed)}
+          </div>
           <div className="mt-1 text-xs text-slate-500">Leave before 1 Jan 2026</div>
         </div>
 
@@ -692,7 +747,9 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
             <TrendingDown className="h-5 w-5 text-amber-800" aria-hidden />
             <span className="text-sm font-medium text-slate-700">Used (after 1 Jan)</span>
           </div>
-          <div className="text-2xl font-bold tabular-nums text-slate-900">{totalStats.totalUsedAfterJan26}</div>
+          <div className="text-2xl font-bold tabular-nums text-slate-900">
+            {formatLeaveValue(totalStats.totalUsedAfterJan26)}
+          </div>
           <div className="mt-1 text-xs text-slate-500">Leave on/after 1 Jan 2026</div>
         </div>
 
@@ -701,7 +758,9 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
             <Calendar className="h-5 w-5 text-sky-700" aria-hidden />
             <span className="text-sm font-medium text-slate-700">Total remaining</span>
           </div>
-          <div className="text-2xl font-bold tabular-nums text-slate-900">{totalStats.totalRemaining}</div>
+          <div className="text-2xl font-bold tabular-nums text-slate-900">
+            {formatLeaveValue(totalStats.totalRemaining)}
+          </div>
           <div className="mt-1 text-xs text-slate-500">Available leave balance</div>
         </div>
       </div>
@@ -723,6 +782,24 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
             placeholder="Search by name or code…"
             className="w-full rounded-md border border-blue-200/65 bg-panel py-2 pl-10 pr-3 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
           />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label htmlFor="leave-management-month" className="text-xs font-medium text-slate-600">
+            Month
+          </label>
+          <select
+            id="leave-management-month"
+            value={monthFilter}
+            onChange={(e) => setMonthFilter(e.target.value)}
+            className={selectCls}
+          >
+            {monthOptions.map((my) => (
+              <option key={my} value={my}>
+                {formatMonthLabel(my)}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="flex flex-col gap-1">
@@ -771,7 +848,10 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
           <h3 id="leave-balances-table-heading" className="text-sm font-semibold text-slate-900">
             Leave balances
           </h3>
-          <p className="text-xs text-slate-600">Totals above respect the current tab, team, and search.</p>
+          <p className="text-xs text-slate-600">
+            Showing balances as of {formatMonthLabel(monthFilter)}. Totals above respect the current
+            tab, team, and search.
+          </p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px] text-sm">
@@ -844,7 +924,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
                     <td className="px-4 py-3 text-slate-700">{balance.team || '—'}</td>
                     <td className="px-4 py-3 text-center">
                       <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-medium tabular-nums text-blue-900">
-                        {balance.balanceAsOfJan26}
+                        {formatLeaveValue(balance.balanceAsOfJan26)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center">
@@ -852,18 +932,18 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
                         <span className="text-xs italic text-slate-500">N/A</span>
                       ) : (
                         <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-medium tabular-nums text-emerald-900">
-                          {balance.earned}
+                          {formatLeaveValue(balance.earned)}
                         </span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-center">
                       <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-0.5 text-xs font-medium tabular-nums text-rose-900">
-                        {balance.used}
+                        {formatLeaveValue(balance.used)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center">
                       <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-medium tabular-nums text-amber-950">
-                        {balance.usedAfterJan26 || 0}
+                        {formatLeaveValue(balance.usedAfterJan26 || 0)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center">
@@ -874,7 +954,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
                             : 'border-slate-200 bg-slate-100 text-slate-700'
                         }`}
                       >
-                        {balance.remaining}
+                        {formatLeaveValue(balance.remaining)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-slate-600">{new Date(balance.lastUpdated).toLocaleDateString('en-GB')}</td>

@@ -62,6 +62,25 @@ export function shouldExcludeFromSummaryHours(
   return excluded.has(typeOfPresence);
 }
 
+/** Types that store day-credit via `value` and may have 00:00 punches (CP-P / OS-P / WFH). */
+function isValueBasedPresenceHoursType(typeOfPresence: string): boolean {
+  const t = String(typeOfPresence || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+  if (!t) return false;
+  return (
+    t.includes('client place') ||
+    t.includes('clientplace') ||
+    t.includes('outstation') ||
+    t.includes('onsite presence') ||
+    t === 'os-p' ||
+    t.includes('(os-p)') ||
+    t.includes('wfh') ||
+    t.includes('work from home')
+  );
+}
+
 export function calculateSummary(
   records: Map<string, AttendanceRecordForSummary>,
   user?: IUser | null
@@ -113,6 +132,26 @@ export function calculateSummary(
       scheduledIn: scheduledInTime,
       scheduledOut: scheduledOutTime,
     });
+
+    // CP-P / OS-P / WFH often keep day credit in `value` with 00:00 punches.
+    // Don't wipe scheduled/value-based hours when punch duration is 0.
+    if (
+      Number(record.totalHour || 0) <= 0 &&
+      isValueBasedPresenceHoursType(record.typeOfPresence) &&
+      dayScheduledHours > 0
+    ) {
+      const dayValue = Number(record.value);
+      if (Number.isFinite(dayValue) && dayValue > 0) {
+        record.totalHour = Number((dayValue * dayScheduledHours).toFixed(2));
+        if (!inTime || inTime === '00:00') {
+          record.editedCheckin = scheduledInTime;
+        }
+        if (!outTime || outTime === '00:00') {
+          record.editedCheckout = scheduledOutTime;
+        }
+      }
+    }
+
     record.excessHour = isNonWorking
       ? 0
       : calculateDayExcessHour(

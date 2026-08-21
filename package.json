@@ -32,7 +32,8 @@
     "fix:holiday-sundays:dry": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/fix-missing-holiday-sunday-records.ts --dry-run",
     "fix:holiday-sundays": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/fix-missing-holiday-sunday-records.ts --apply",
     "fix:location-punch:dry": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/restore-location-punch-attendance.ts --dry-run",
-    "fix:location-punch": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/restore-location-punch-attendance.ts --apply"
+    "fix:location-punch": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/restore-location-punch-attendance.ts --apply",
+    "cron:pending-digest:dry": "echo Use GET/POST /api/cron/pending-request-digest?dryRun=1 with Authorization Bearer CRON_SECRET — see CRON_PENDING_DIGEST.md"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

@@ -636,15 +636,27 @@ export async function buildDaywiseWorkbook(
       }
       const d = calendarDateFromIsoKey(date);
       if (d.getFullYear() === year && d.getMonth() + 1 === month) {
-        // Use edited in/out times for calculation
-        const actualIn = (record.editedCheckin ?? record.inTime ?? '').trim();
-        const actualOut = (record.editedCheckout ?? record.outTime ?? '').trim();
+        const actualIn = (
+          record.editedCheckin ??
+          record.checkin ??
+          record.inTime ??
+          ''
+        ).trim();
+        const actualOut = (
+          record.editedCheckout ??
+          record.checkout ??
+          record.outTime ??
+          ''
+        ).trim();
         if (actualIn && actualOut && actualIn !== '00:00' && actualOut !== '00:00') {
           const [inH, inM] = actualIn.split(':').map(Number);
           const [outH, outM] = actualOut.split(':').map(Number);
           let diff = (outH * 60 + outM) - (inH * 60 + inM);
           if (diff < 0) diff += 24 * 60;
           workingHrsMonth += diff / 60;
+        } else {
+          const stored = Number(record.workingHours ?? record.workingHour ?? record.totalHour ?? 0);
+          if (Number.isFinite(stored) && stored > 0) workingHrsMonth += stored;
         }
       }
     });
@@ -690,8 +702,44 @@ export async function buildDaywiseWorkbook(
         let actualWFH = '';
         let maxOutstation = '';
         let actualOutstation = '';
-        // Total working hours (punch + approved extra work)
-        const workingHrs = record.workingHours ?? record.workingHour ?? record.totalHour ?? '';
+        // Total working hours (punch + approved extra work). Prefer stored totalHour,
+        // else punch duration from in/out, else value × scheduled for CP-P/OS-P/WFH.
+        const storedWorkingHrs = record.workingHours ?? record.workingHour ?? record.totalHour;
+        let workingHrs: number | string = storedWorkingHrs ?? '';
+        const storedNum = Number(storedWorkingHrs);
+        if (!(typeof storedWorkingHrs === 'number' && Number.isFinite(storedWorkingHrs) && storedWorkingHrs > 0) &&
+            !(typeof storedWorkingHrs === 'string' && storedNum > 0)) {
+          const punchMins = (() => {
+            const inT = String(actualInTimeEditable || '').trim();
+            const outT = String(actualOutTimeEditable || '').trim();
+            if (!inT || !outT || inT === '00:00' || outT === '00:00') return 0;
+            const [actInH, actInM] = inT.split(':').map(Number);
+            const [actOutH, actOutM] = outT.split(':').map(Number);
+            if ([actInH, actInM, actOutH, actOutM].some((n) => Number.isNaN(n))) return 0;
+            let mins = actOutH * 60 + actOutM - (actInH * 60 + actInM);
+            if (mins < 0) mins += 24 * 60;
+            return mins;
+          })();
+          if (punchMins > 0) {
+            workingHrs = Number((punchMins / 60).toFixed(2));
+          } else if (
+            recordIsDaywiseClientPlaceRow(record) ||
+            recordIsDaywiseOutstationRow(record) ||
+            recordIsDaywiseWFHRow(record)
+          ) {
+            const dayValue = Number(record.value);
+            const schedMins =
+              scheduledInTime &&
+              scheduledOutTime &&
+              scheduledInTime !== '00:00' &&
+              scheduledOutTime !== '00:00'
+                ? effectiveScheduledMinutesForDay(scheduledInTime, scheduledOutTime, record)
+                : 0;
+            if (Number.isFinite(dayValue) && dayValue > 0 && schedMins > 0) {
+              workingHrs = Number(((dayValue * schedMins) / 60).toFixed(2));
+            }
+          }
+        }
         // Use the attendance record's halfDay flag only — Saturday is not always half day
         let isHalfDay = false;
         if (typeof record.halfDay === 'boolean') {
@@ -951,12 +999,15 @@ export async function buildDaywiseWorkbook(
 
         let workingHrsExport: number | '' = '';
         if (presentAbsent !== 'NA') {
-          if (typeof workingHrs === 'number' && !Number.isNaN(workingHrs)) {
+          const resolvedMinutes = resolveWorkMinutesForDay();
+          if (resolvedMinutes > 0) {
+            workingHrsExport = decimalHoursToExcelDuration(resolvedMinutes / 60);
+          } else if (typeof workingHrs === 'number' && !Number.isNaN(workingHrs) && workingHrs > 0) {
             workingHrsExport = decimalHoursToExcelDuration(workingHrs);
-          } else {
+          } else if (workingHrs !== '' && workingHrs != null) {
             const hm = formatTime(workingHrs);
             const dec = hmStringToDecimalHours(hm);
-            workingHrsExport = dec === '' ? '' : decimalHoursToExcelDuration(dec);
+            workingHrsExport = dec === '' || dec <= 0 ? '' : decimalHoursToExcelDuration(dec);
           }
         }
 

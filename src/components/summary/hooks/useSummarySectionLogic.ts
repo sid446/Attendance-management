@@ -329,7 +329,8 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
         // Presence types that shouldn't be absent even with 0 hours
         const isPresenceType = typeLower.includes('wfh') || 
                                typeLower.includes('outstation') || 
-                               typeLower.includes('clientplace') || 
+                               typeLower.includes('clientplace') ||
+                               typeLower.includes('client place') ||
                                typeLower.includes('half day') ||
                                rec.halfDay;
 
@@ -502,7 +503,8 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
         const typeLower = String(rec.typeOfPresence || '').toLowerCase();
         const isPresenceType = typeLower.includes('wfh') || 
                                typeLower.includes('outstation') || 
-                               typeLower.includes('clientplace') || 
+                               typeLower.includes('clientplace') ||
+                               typeLower.includes('client place') ||
                                typeLower.includes('half day') ||
                                rec.halfDay;
 
@@ -598,7 +600,8 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
                   const typeLower = String(rec.typeOfPresence || '').toLowerCase();
                   const isPresenceType = typeLower.includes('wfh') || 
                                          typeLower.includes('outstation') || 
-                                         typeLower.includes('clientplace') || 
+                                         typeLower.includes('clientplace') ||
+                                         typeLower.includes('client place') ||
                                          typeLower.includes('half day') ||
                                          rec.halfDay;
 
@@ -1503,7 +1506,8 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
           const typeLower = String(rec.typeOfPresence || '').toLowerCase();
           const isPresenceType = typeLower.includes('wfh') || 
                                  typeLower.includes('outstation') || 
-                                 typeLower.includes('clientplace') || 
+                                 typeLower.includes('clientplace') ||
+                                 typeLower.includes('client place') ||
                                  typeLower.includes('half day') ||
                                  rec.halfDay;
 
@@ -1525,7 +1529,7 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
           const type = String(rec.typeOfPresence || '').toLowerCase();
           
           if ((effectiveCheckin && effectiveCheckin !== '00:00') || (rec.halfDay && !isBothZero) || 
-              ((type.includes('wfh') || type.includes('outstation') || type.includes('clientplace')) && (rec.value > 0 || !isBothZero))) {
+              ((type.includes('wfh') || type.includes('outstation') || type.includes('clientplace') || type.includes('client place')) && (rec.value > 0 || !isBothZero))) {
             calcPresent += 1;
           }
         });

@@ -5,6 +5,7 @@ import ClientPlace from '@/models/ClientPlace';
 import Attendance from '@/models/Attendance';
 import User from '@/models/User';
 import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
+import { calculateTotalHours } from '@/lib/attendanceHours';
 import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAuth';
 import { istDateString, istTimeString } from '@/lib/attendanceRequestWindow';
 import { geodesicDistanceMeters, isValidCoordinates } from '@/lib/geoDistance';
@@ -13,15 +14,6 @@ import {
   LOCATION_PUNCH_REMARK_PREFIX,
   LOCATION_PUNCH_SOURCE,
 } from '@/lib/locationPunchAttendance';
-
-// Helper to calculate total hours between two times
-function calculateTotalHours(inTime: string, outTime: string): number {
-  const [inH, inM] = inTime.split(':').map(Number);
-  const [outH, outM] = outTime.split(':').map(Number);
-  const inMinutes = inH * 60 + inM;
-  const outMinutes = outH * 60 + outM;
-  return (outMinutes - inMinutes) / 60;
-}
 
 // GET - Get location attendance records for an employee
 export async function GET(req: NextRequest) {
@@ -284,13 +276,16 @@ async function updateMainAttendanceRecord(
     }
     
     // Update the record for this date
+    const workedHours = calculateTotalHours(inTime, outTime);
     const rec: Record<string, unknown> = {
       checkin: inTime,
       checkout: outTime,
+      editedCheckin: inTime,
+      editedCheckout: outTime,
       typeOfPresence: 'Present - client place',
       value: 1,
       halfDay: false,
-      totalHour: 0, // Will be recalculated
+      totalHour: workedHours,
       excessHour: 0,
       remarks: `${LOCATION_PUNCH_REMARK_PREFIX} ${clientPlaceName}`,
     };

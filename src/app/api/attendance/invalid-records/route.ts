@@ -4,6 +4,7 @@ import Attendance from '@/models/Attendance';
 import User from '@/models/User';
 import InvalidAttendanceNotification from '@/models/InvalidAttendanceNotification';
 import { getWorkingUnderPartnerForDate, lastDayOfMonthYear } from '@/lib/userFieldHistory';
+import { loadOpenEmployeeRequestsByUserDate } from '@/lib/openAttendanceRequestsForMonth';
 
 interface InvalidRecord {
   date: string;
@@ -13,6 +14,9 @@ interface InvalidRecord {
   monthYear: string;
   notificationCount?: number;
   lastNotifiedAt?: string;
+  requestRaised?: boolean;
+  requestStatus?: 'Pending' | 'PendingHr';
+  requestedStatus?: string;
 }
 
 interface EmployeeWithInvalidRecords {
@@ -51,7 +55,10 @@ export async function GET(request: NextRequest) {
 
     const partnerAsOf = lastDayOfMonthYear(monthYear);
 
-    const notificationLogs = await InvalidAttendanceNotification.find({ monthYear }).lean();
+    const [notificationLogs, openRequestsByUserDate] = await Promise.all([
+      InvalidAttendanceNotification.find({ monthYear }).lean(),
+      loadOpenEmployeeRequestsByUserDate(monthYear),
+    ]);
     const notificationByUserDate = new Map<string, { count: number; lastNotifiedAt: Date }>();
     for (const log of notificationLogs) {
       if (log.kind === 'missing-month') continue;
@@ -152,16 +159,25 @@ export async function GET(request: NextRequest) {
         let employeeNotificationCount = 0;
 
         const recordsWithNotifications = invalidRecords.map((rec) => {
-          const notif = notificationByUserDate.get(`${userIdStr}:${rec.date}`);
+          const key = `${userIdStr}:${rec.date}`;
+          const notif = notificationByUserDate.get(key);
+          const openReq = openRequestsByUserDate.get(key);
+          const enriched = { ...rec };
           if (notif) {
             employeeNotificationCount += notif.count;
-            return {
-              ...rec,
+            Object.assign(enriched, {
               notificationCount: notif.count,
               lastNotifiedAt: notif.lastNotifiedAt.toISOString(),
-            };
+            });
           }
-          return rec;
+          if (openReq) {
+            Object.assign(enriched, {
+              requestRaised: true,
+              requestStatus: openReq.status,
+              requestedStatus: openReq.requestedStatus,
+            });
+          }
+          return enriched;
         });
 
         const employeeLastNotifiedAt = recordsWithNotifications.reduce<Date | null>((latest, rec) => {

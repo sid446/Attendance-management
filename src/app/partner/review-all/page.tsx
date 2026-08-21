@@ -460,6 +460,11 @@ function ReviewAllPageContent() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {!loading && !error && requestGroups.length > 0 && (
+              <span className="hidden rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-amber-950 sm:inline-flex">
+                {requestGroups.length} pending
+              </span>
+            )}
             <div className="hidden sm:inline-flex rounded-lg border border-border bg-surface p-1 shadow-[inset_0_0_0_1px_rgba(147,197,253,0.18)]">
               <button
                 type="button"
@@ -507,6 +512,20 @@ function ReviewAllPageContent() {
           </div>
         ) : (
           <div className="space-y-4">
+            <div
+              className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-amber-950 shadow-sm"
+              role="status"
+              aria-live="polite"
+            >
+              <p className="text-sm font-bold tracking-tight">
+                {requestGroups.length} request{requestGroups.length === 1 ? '' : 's'} pending with you
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-amber-900/90">
+                Please review and approve or reject as soon as possible. Items waiting several days
+                block employee attendance updates.
+              </p>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 px-1 max-w-2xl lg:max-w-none">
               <select 
                 value={leaveTypeFilter} 

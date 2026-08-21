@@ -77,7 +77,13 @@ function styleListExportSheet(
   };
 }
 
-interface InvalidRecord {
+interface OpenRequestFields {
+  requestRaised?: boolean;
+  requestStatus?: 'Pending' | 'PendingHr';
+  requestedStatus?: string;
+}
+
+interface InvalidRecord extends OpenRequestFields {
   date: string;
   checkin: string;
   checkout: string;
@@ -99,7 +105,7 @@ interface EmployeeWithInvalidRecords {
   lastNotifiedAt?: string;
 }
 
-interface MissingDayRecord {
+interface MissingDayRecord extends OpenRequestFields {
   date: string;
   notificationCount?: number;
   lastNotifiedAt?: string;
@@ -399,6 +405,8 @@ export const InvalidAttendanceSection: React.FC<InvalidAttendanceSectionProps> =
         { header: 'Issue', key: 'issue', width: 28 },
         { header: 'Times notified', key: 'notificationCount', width: 16 },
         { header: 'Last notified', key: 'lastNotifiedAt', width: 22 },
+        { header: 'Request raised', key: 'requestRaised', width: 18 },
+        { header: 'Request status', key: 'requestStatus', width: 16 },
       ];
       for (const emp of filteredMissingMonth) {
         const days = emp.missingDays?.length
@@ -416,6 +424,12 @@ export const InvalidAttendanceSection: React.FC<InvalidAttendanceSectionProps> =
             notificationCount: day.notificationCount || 0,
             lastNotifiedAt: day.lastNotifiedAt
               ? new Date(day.lastNotifiedAt).toLocaleString()
+              : '',
+            requestRaised: day.requestRaised ? 'Yes' : 'No',
+            requestStatus: day.requestRaised
+              ? day.requestStatus === 'PendingHr'
+                ? 'Pending HR'
+                : 'Pending'
               : '',
           });
         }
@@ -456,6 +470,8 @@ export const InvalidAttendanceSection: React.FC<InvalidAttendanceSectionProps> =
         { header: 'Issue', key: 'issue', width: 20 },
         { header: 'Times notified', key: 'notificationCount', width: 16 },
         { header: 'Last notified', key: 'lastNotifiedAt', width: 22 },
+        { header: 'Request raised', key: 'requestRaised', width: 18 },
+        { header: 'Request status', key: 'requestStatus', width: 16 },
       ];
       for (const emp of filteredEmployees) {
         for (const rec of emp.invalidRecords) {
@@ -471,6 +487,12 @@ export const InvalidAttendanceSection: React.FC<InvalidAttendanceSectionProps> =
             notificationCount: rec.notificationCount || 0,
             lastNotifiedAt: rec.lastNotifiedAt
               ? new Date(rec.lastNotifiedAt).toLocaleString()
+              : '',
+            requestRaised: rec.requestRaised ? 'Yes' : 'No',
+            requestStatus: rec.requestRaised
+              ? rec.requestStatus === 'PendingHr'
+                ? 'Pending HR'
+                : 'Pending'
               : '',
           });
         }
@@ -529,6 +551,25 @@ export const InvalidAttendanceSection: React.FC<InvalidAttendanceSectionProps> =
       case 'missing-checkout':
         return 'border-orange-200 bg-orange-50 text-orange-950';
     }
+  };
+
+  const requestRaisedLabel = (status?: 'Pending' | 'PendingHr') =>
+    status === 'PendingHr' ? 'Request raised · Pending HR' : 'Request raised · Pending';
+
+  const requestRaisedBadge = (fields: OpenRequestFields) => {
+    if (!fields.requestRaised) return null;
+    return (
+      <span
+        className="rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-950"
+        title={
+          fields.requestedStatus
+            ? `Employee requested: ${fields.requestedStatus}`
+            : 'Employee has raised a request for this date'
+        }
+      >
+        {requestRaisedLabel(fields.requestStatus)}
+      </span>
+    );
   };
 
   const inputCls =
@@ -800,6 +841,15 @@ export const InvalidAttendanceSection: React.FC<InvalidAttendanceSectionProps> =
                                 Notified · {employee.notificationCount}×
                               </span>
                             )}
+                            {(employee.missingDays || []).some((d) => d.requestRaised) && (
+                              <span className="rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-950">
+                                Request raised ·{' '}
+                                {
+                                  (employee.missingDays || []).filter((d) => d.requestRaised)
+                                    .length
+                                }
+                              </span>
+                            )}
                             {employee.wholeMonthMissing && (
                               <span className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-900">
                                 No month file
@@ -850,6 +900,7 @@ export const InvalidAttendanceSection: React.FC<InvalidAttendanceSectionProps> =
                                     <span className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-medium text-red-900">
                                       Not recorded
                                     </span>
+                                    {requestRaisedBadge(day)}
                                     {(day.notificationCount || 0) > 0 && (
                                       <span
                                         className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-900"
@@ -1007,6 +1058,12 @@ export const InvalidAttendanceSection: React.FC<InvalidAttendanceSectionProps> =
                                 Notified · {employee.notificationCount}×
                               </span>
                             )}
+                            {employee.invalidRecords.some((r) => r.requestRaised) && (
+                              <span className="rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-medium text-sky-950">
+                                Request raised ·{' '}
+                                {employee.invalidRecords.filter((r) => r.requestRaised).length}
+                              </span>
+                            )}
                             <span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-sm font-medium text-amber-900">
                               {employee.invalidRecords.length} issues
                             </span>
@@ -1079,6 +1136,7 @@ export const InvalidAttendanceSection: React.FC<InvalidAttendanceSectionProps> =
                                     >
                                       {getIssueLabel(record.issue)}
                                     </span>
+                                    {requestRaisedBadge(record)}
                                     {(record.notificationCount || 0) > 0 && (
                                       <span
                                         className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-900"

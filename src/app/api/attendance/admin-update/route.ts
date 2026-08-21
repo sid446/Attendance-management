@@ -225,6 +225,8 @@ export async function POST(request: NextRequest) {
       } else {
         rec.totalHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
         rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
+        if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
+        if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
       }
     } else if (isType('Present - in office - weekdays') || isType('Present - in office')) {
       rec.totalHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
