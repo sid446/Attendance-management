@@ -1,7 +1,8 @@
 "use client";
 import React, { useState, useEffect, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Clock, Calendar, Loader2, CheckCircle, AlertTriangle, Send, ArrowLeft } from 'lucide-react';
+import { employeeCredentialsInit } from '@/lib/employeeCredentialsInit';
 
 interface InvalidRecord {
   date: string;
@@ -20,10 +21,13 @@ interface CorrectionData {
 }
 
 function FixAttendanceContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const userId = searchParams.get('userId');
-  const monthYear = searchParams.get('monthYear');
+  const monthYearParam = searchParams.get('monthYear');
+  const userIdParam = searchParams.get('userId');
 
+  const [userId, setUserId] = useState<string | null>(null);
+  const [monthYear, setMonthYear] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [invalidRecords, setInvalidRecords] = useState<InvalidRecord[]>([]);
@@ -34,45 +38,84 @@ function FixAttendanceContent() {
   const [submitResult, setSubmitResult] = useState<{ success: number; failed: number } | null>(null);
 
   useEffect(() => {
-    if (!userId || !monthYear) {
-      setError('Invalid link. Please use the link from your email.');
-      setLoading(false);
-      return;
-    }
-    fetchInvalidRecords();
-  }, [userId, monthYear]);
+    let cancelled = false;
 
-  const fetchInvalidRecords = async () => {
-    try {
-      const response = await fetch(`/api/employee/invalid-records?userId=${userId}&monthYear=${monthYear}`);
-      const result = await response.json();
-      
-      if (result.success) {
-        setInvalidRecords(result.data.records || []);
-        setUserName(result.data.userName || '');
-        
-        // Initialize corrections map
-        const initialCorrections = new Map<string, CorrectionData>();
-        for (const record of result.data.records || []) {
-          initialCorrections.set(record.date, {
-            date: record.date,
-            originalCheckin: record.checkin,
-            originalCheckout: record.checkout,
-            newCheckin: record.issue === 'missing-checkin' ? '' : record.checkin,
-            newCheckout: record.issue === 'missing-checkout' ? '' : record.checkout,
-            reason: ''
-          });
-        }
-        setCorrections(initialCorrections);
-      } else {
-        setError(result.error || 'Failed to fetch records');
+    const init = async () => {
+      const monthYear =
+        monthYearParam && /^\d{4}-\d{2}$/.test(monthYearParam) ? monthYearParam : null;
+      if (!monthYear) {
+        setError('Invalid link. Please use the link from your email.');
+        setLoading(false);
+        return;
       }
-    } catch (err) {
-      setError('Failed to fetch records. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
+
+      try {
+        const res = await fetch('/api/auth/employee-session', employeeCredentialsInit());
+        let sessionUser: { _id?: string; name?: string } | null = null;
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.data?._id) {
+            sessionUser = json.data;
+            localStorage.setItem('employeeUser', JSON.stringify(json.data));
+          }
+        }
+
+        if (!sessionUser?._id) {
+          const next = `/employee/fix-attendance?monthYear=${encodeURIComponent(monthYear)}`;
+          router.replace(`/employee/login?next=${encodeURIComponent(next)}`);
+          return;
+        }
+
+        // Prefer session user; ignore mismatched userId in the URL.
+        if (userIdParam && String(userIdParam) !== String(sessionUser._id)) {
+          setError('This fix link does not match your signed-in account.');
+          setLoading(false);
+          return;
+        }
+
+        if (cancelled) return;
+        setUserId(String(sessionUser._id));
+        setMonthYear(monthYear);
+        setUserName(String(sessionUser.name || ''));
+
+        const response = await fetch(
+          `/api/employee/invalid-records?userId=${encodeURIComponent(String(sessionUser._id))}&monthYear=${encodeURIComponent(monthYear)}`,
+          employeeCredentialsInit()
+        );
+        const result = await response.json();
+        if (cancelled) return;
+
+        if (result.success) {
+          setInvalidRecords(result.data.records || []);
+          setUserName(result.data.userName || String(sessionUser.name || ''));
+
+          const initialCorrections = new Map<string, CorrectionData>();
+          for (const record of result.data.records || []) {
+            initialCorrections.set(record.date, {
+              date: record.date,
+              originalCheckin: record.checkin,
+              originalCheckout: record.checkout,
+              newCheckin: record.issue === 'missing-checkin' ? '' : record.checkin,
+              newCheckout: record.issue === 'missing-checkout' ? '' : record.checkout,
+              reason: '',
+            });
+          }
+          setCorrections(initialCorrections);
+        } else {
+          setError(result.error || 'Failed to fetch records');
+        }
+      } catch {
+        if (!cancelled) setError('Failed to fetch records. Please try again.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    void init();
+    return () => {
+      cancelled = true;
+    };
+  }, [monthYearParam, userIdParam, router]);
 
   const updateCorrection = (date: string, field: 'newCheckin' | 'newCheckout' | 'reason', value: string) => {
     setCorrections(prev => {
@@ -86,6 +129,10 @@ function FixAttendanceContent() {
   };
 
   const handleSubmit = async () => {
+    if (!userId || !monthYear) {
+      setError('Please sign in again using the link from your email.');
+      return;
+    }
     // Validate that all required fields are filled
     const correctionsToSubmit: CorrectionData[] = [];
     
@@ -121,15 +168,18 @@ function FixAttendanceContent() {
     setError(null);
 
     try {
-      const response = await fetch('/api/employee/submit-corrections', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId,
-          monthYear,
-          corrections: correctionsToSubmit
+      const response = await fetch(
+        '/api/employee/submit-corrections',
+        employeeCredentialsInit({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId,
+            monthYear,
+            corrections: correctionsToSubmit,
+          }),
         })
-      });
+      );
 
       const result = await response.json();
 

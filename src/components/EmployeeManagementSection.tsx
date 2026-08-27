@@ -1712,6 +1712,7 @@ export const EmployeeManagementSection: React.FC<{
             balanceAsOfJan26: bf,
             earned: 0,
             used: 0,
+            leaveAdjLwp: 0,
             usedAfterJan26: 0,
             remaining: bf,
             lastUpdated: new Date(),
@@ -1953,8 +1954,14 @@ export const EmployeeManagementSection: React.FC<{
       // Find column indices - using safe string checks
       const nameIdx = headers.findIndex(h => h && h.includes('name') && !h.includes('tally'));
       const allowedIdx = headers.findIndex(h => h && (h.includes('allowed') || h.includes('earned') || h.includes('due')));
-      // Look specifically for "Total Leaves Taken" - must include "total" and "taken" to avoid "Transfer (Leaves taken in previous firm)"
-      const takenIdx = headers.findIndex(h => h && h.includes('total') && h.includes('taken'));
+      // Leave Adj/LWP (preferred) or legacy "Total Leaves Taken"
+      const takenIdx = headers.findIndex(
+        (h) =>
+          h &&
+          (h.includes('adj') ||
+            h.includes('lwp') ||
+            (h.includes('total') && h.includes('taken')))
+      );
 
       if (nameIdx === -1) {
         throw new Error('Could not find "Name" column');
@@ -1963,7 +1970,9 @@ export const EmployeeManagementSection: React.FC<{
         throw new Error('Could not find "Leaves Allowed" column');
       }
       if (takenIdx === -1) {
-        throw new Error('Could not find "Total Leaves Taken" column. Make sure the column header contains both "Total" and "Taken".');
+        throw new Error(
+          'Could not find "Leave Adj/LWP" (or legacy "Total Leaves Taken") column.'
+        );
       }
 
       const leaveData = [];
@@ -2133,14 +2142,15 @@ export const EmployeeManagementSection: React.FC<{
       { key: 'verticalTransfer2To', header: '2nd Vertical Transfer\nto', width: 16 },
       { key: 'verticalTransfer2FromDate', header: '2nd Vertical Transfer\nfrom (date)', width: 16 },
       { key: 'status', header: 'Status', width: 12 },
+      { key: 'dateOfLeaving', header: 'Date of Leaving', width: 16 },
     ];
 
     worksheet.columns = baseColumns;
 
-    // Helper to format date
-    const toDateString = (value?: string) => {
-      if (!value) return '';
-      const d = new Date(value);
+    // Helper to format date (accepts string or Date from inactiveAsOf / joiningDate / etc.)
+    const toDateString = (value?: string | Date | null) => {
+      if (value == null || value === '') return '';
+      const d = value instanceof Date ? value : new Date(value);
       if (isNaN(d.getTime())) return '';
       const dd = String(d.getDate()).padStart(2, '0');
       const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -2208,6 +2218,7 @@ export const EmployeeManagementSection: React.FC<{
         verticalTransfer2To: u.verticalTransfer2To || '',
         verticalTransfer2FromDate: toDateString(u.verticalTransfer2FromDate),
         status: inactive ? 'Inactive' : 'Active',
+        dateOfLeaving: inactive ? toDateString(u.inactiveAsOf) : '',
       };
 
       worksheet.addRow(rowData);
@@ -2227,7 +2238,7 @@ export const EmployeeManagementSection: React.FC<{
       bank: { start: 35, end: 40, color: 'FF00695C' }, // Bank
       salary: { start: 41, end: 49, color: 'FFC62828' }, // Salary / PF / ESI
       transfers: { start: 50, end: 55, color: 'FFD84315' }, // Vertical transfers
-      status: { start: 56, end: 56, color: 'FF37474F' }, // Status
+      status: { start: 56, end: 57, color: 'FF37474F' }, // Status + Date of Leaving
     };
 
     headerRow.eachCell((cell, colNumber) => {
@@ -6609,7 +6620,7 @@ export const EmployeeManagementSection: React.FC<{
                           Leaves Allowed <span className="text-emerald-800">*</span>
                         </span>
                         <span className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-                          Total Leaves Taken (Current+Previous Years) <span className="text-emerald-800">*</span>
+                          Leave Adj/LWP <span className="text-emerald-800">*</span>
                         </span>
                       </div>
                       <label

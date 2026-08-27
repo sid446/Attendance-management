@@ -163,6 +163,7 @@ export const InvalidAttendanceSection: React.FC<InvalidAttendanceSectionProps> =
   const fetchInvalidRecords = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setSuccessMessage(null);
     try {
       const [invalidRes, missingRes] = await Promise.all([
         fetch(`/api/attendance/invalid-records?monthYear=${selectedMonth}`),
@@ -173,6 +174,12 @@ export const InvalidAttendanceSection: React.FC<InvalidAttendanceSectionProps> =
 
       if (invalidResult.success) {
         setEmployees(invalidResult.data);
+        const repaired = invalidResult.equalPunchRepair?.daysFixed ?? 0;
+        if (repaired > 0) {
+          setSuccessMessage(
+            `Fixed ${repaired} day${repaired === 1 ? '' : 's'} where in and out were the same (16:00 rule applied).`
+          );
+        }
       } else {
         setError(invalidResult.error || 'Failed to fetch invalid records');
       }
@@ -1136,6 +1143,17 @@ export const InvalidAttendanceSection: React.FC<InvalidAttendanceSectionProps> =
                                     >
                                       {getIssueLabel(record.issue)}
                                     </span>
+                                    {record.checkin &&
+                                      record.checkout &&
+                                      record.checkin === record.checkout &&
+                                      record.checkin !== '00:00' && (
+                                        <span
+                                          className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-700"
+                                          title="In and out are the same punch — usually an exit-only machine row"
+                                        >
+                                          Same in/out punch
+                                        </span>
+                                      )}
                                     {requestRaisedBadge(record)}
                                     {(record.notificationCount || 0) > 0 && (
                                       <span

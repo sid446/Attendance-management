@@ -5,7 +5,7 @@
  *   base  = (# distinct attendance months >= 2026-01) * monthlyEarned (default 2)
  *   extra = sum of LeaveTransaction { type: 'earned', source: 'outstation-earned' }
  *   earned = base + extra
- * and remaining = balanceAsOfJan26 + earned - used - usedAfterJan26.
+ * and remaining = balanceAsOfJan26 + earned - usedAfterJan26 + leaveAdjLwp.
  *
  * It also backfills a canonical monthly-base earned ledger row ('monthly-earned')
  * for any attendance month >= 2026-01 that has no existing monthly-base earned tx,
@@ -62,7 +62,7 @@ async function main() {
 
     const monthlyEarned = user.leaveBalance?.monthlyEarned || 2;
     const balanceAsOfJan26 = user.leaveBalance?.balanceAsOfJan26 || 0;
-    const used = user.leaveBalance?.used || 0;
+    const leaveAdjLwp = user.leaveBalance?.leaveAdjLwp || 0;
     const usedAfterJan26 = user.leaveBalance?.usedAfterJan26 || 0;
     const currentEarned = user.leaveBalance?.earned || 0;
 
@@ -82,7 +82,7 @@ async function main() {
 
     const newEarned = round3(base + extra);
     // Balance can never go negative; floor at 0.
-    const newRemaining = Math.max(0, round3(balanceAsOfJan26 + newEarned - used - usedAfterJan26));
+    const newRemaining = Math.max(0, round3(balanceAsOfJan26 + newEarned - usedAfterJan26 + leaveAdjLwp));
 
     // Determine which attendance months lack a monthly-base earned tx (need backfill)
     const monthsWithBaseTx: string[] = await LeaveTransaction.distinct('monthYear', {

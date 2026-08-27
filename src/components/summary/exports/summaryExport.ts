@@ -3,12 +3,12 @@ import {
   formatHoursMinutes,
   getExtraWorkHoursTotalForPeriod,
   getWorkedHoursMatchingScheduledDays,
-  getExcessDeficitLikeSummary,
+  getDayExcessSumForPeriod,
   isWorkedOnHolidayRecord,
 } from '@/lib/attendanceSummaryMetrics';
 import { isDateOnOrAfterInactive } from '@/lib/attendanceInactiveFilter';
 import {
-  applyDayAllowanceToRawExcess,
+  lookupExcessDisplay,
   resolveDisplayExcess,
 } from '@/lib/excessHourAllowance';
 import {
@@ -42,50 +42,44 @@ function formatExportDate(value?: string | Date | null): string {
   return `${dd}-${mm}-${yyyy}`;
 }
 
-/** Excess for summary export — same cutoff as daywise (NA on/after inactiveAsOf). */
+/** Excess for summary export — same day-sum as Daywise / Summary table. */
 function resolveExportExcess(
   item: SummaryExportContext['filteredSummaries'][number],
   user: User | undefined,
   ctx: SummaryExportContext
 ): number {
+  if (typeof (item as { calcExcessDeficit?: number }).calcExcessDeficit === 'number') {
+    return Number((item as { calcExcessDeficit: number }).calcExcessDeficit);
+  }
+
   const periodDateList = Object.keys(item.recordDetails || {}).filter(
     (dateStr) => !(user?.inactiveAsOf && isDateOnOrAfterInactive(dateStr, user.inactiveAsOf))
   );
-  const workedTotal = user
-    ? getWorkedHoursMatchingScheduledDays(item, user, periodDateList)
-    : Number(item.summary.totalHour || 0);
-  const raw = user
-    ? getExcessDeficitLikeSummary(item, user, periodDateList, workedTotal)
-    : Number((workedTotal - Number(item.calcScheduled || 0)).toFixed(2));
-
-  if (user?.inactiveAsOf && ctx.excessDayAllowanceMap) {
-    const uid = String(item.userId || '');
-    const hasDayDecisions = Object.keys(ctx.excessDayAllowanceMap).some((k) =>
-      k.startsWith(`${uid}:`)
-    );
-    if (hasDayDecisions) {
-      let display = 0;
-      for (const dateStr of periodDateList) {
-        const rec = item.recordDetails?.[dateStr] as { excessHour?: number } | undefined;
-        const rawDay = Number(rec?.excessHour ?? 0);
-        display += applyDayAllowanceToRawExcess(
-          rawDay,
-          uid,
-          dateStr,
-          ctx.excessDayAllowanceMap
-        );
-      }
-      return Number(display.toFixed(2));
-    }
+  if (!user) {
+    const workedTotal = Number(item.summary.totalHour || 0);
+    const scheduledTotal = Number(item.calcScheduled || 0);
+    return Number((workedTotal - scheduledTotal).toFixed(2));
   }
 
-  // Ignore month display map when inactive — it may still include post-leave day deficits
+  const holidayDates = new Set((ctx.holidays || []).map((h) => h.date));
+  const withDays = getDayExcessSumForPeriod(item, user, periodDateList, {
+    holidayDates,
+    dayAllowanceMap: ctx.excessDayAllowanceMap,
+  });
+  const fromDays = lookupExcessDisplay(
+    user.inactiveAsOf ? null : ctx.excessDisplayMap ?? null,
+    String(item.userId || ''),
+    item.monthYear
+  );
+  if (fromDays != null && Math.abs(fromDays - withDays) <= 1) {
+    return fromDays;
+  }
   return resolveDisplayExcess(
-    raw,
+    withDays,
     String(item.userId || ''),
     item.monthYear,
     ctx.excessAllowanceMap ?? null,
-    user?.inactiveAsOf ? null : ctx.excessDisplayMap ?? null
+    null
   );
 }
 

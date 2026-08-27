@@ -13,7 +13,7 @@ import {
   recordHrAttendanceEditRequest,
 } from '@/lib/recordHrAttendanceEditRequest';
 import { applyAttendanceEditSource } from '@/lib/daywiseAttendanceSource';
-import { normalizeTimeToHHmm } from '@/lib/attendanceHours';
+import { normalizeTimeToHHmm, isValidPunchTime } from '@/lib/attendanceHours';
 
 function calculateDuration(start: string, end: string): number {
     if (!start || !end) return 0;
@@ -55,6 +55,24 @@ export async function POST(request: NextRequest) {
     if (!rec) {
       rec = { checkin: '', checkout: '', editedCheckin: '', editedCheckout: '', totalHour: 0, excessHour: 0, typeOfPresence: 'Absent', halfDay: false, value: 0, remarks: '' };
     }
+
+    // GPS location-punch days: never schedule-autofill edited* (keep punch times unless HR sends explicit times)
+    const priorCheckin = normalizeTimeToHHmm(String(rec.checkin || '')) || String(rec.checkin || '').trim();
+    const priorCheckout = normalizeTimeToHHmm(String(rec.checkout || '')) || String(rec.checkout || '').trim();
+    const priorIsGpsLocationPunch =
+      /location verified/i.test(String(rec.remarks || '')) &&
+      isValidPunchTime(priorCheckin) &&
+      isValidPunchTime(priorCheckout);
+
+    const fillEditedFromScheduleIfEmpty = (inTime: string, outTime: string) => {
+      if (priorIsGpsLocationPunch) {
+        if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = priorCheckin;
+        if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = priorCheckout;
+        return;
+      }
+      if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = inTime;
+      if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = outTime;
+    };
 
     // Update presence type
     rec.typeOfPresence = requestedStatus;
@@ -145,8 +163,8 @@ export async function POST(request: NextRequest) {
       } else {
         rec.totalHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
         rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
-        if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
-        if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
+        if (!rec.editedCheckin || rec.editedCheckin === '00:00') fillEditedFromScheduleIfEmpty(effectiveScheduledInTime, effectiveScheduledOutTime);
+        if (!rec.editedCheckout || rec.editedCheckout === '00:00') fillEditedFromScheduleIfEmpty(effectiveScheduledInTime, effectiveScheduledOutTime);
       }
     } else if (isType('WFH - weekoff')) {
       if (startTime && endTime && startTime !== '00:00' && endTime !== '00:00') {
@@ -161,8 +179,8 @@ export async function POST(request: NextRequest) {
       } else {
         rec.totalHour = 0;
         rec.excessHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
-        if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
-        if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
+        if (!rec.editedCheckin || rec.editedCheckin === '00:00') fillEditedFromScheduleIfEmpty(effectiveScheduledInTime, effectiveScheduledOutTime);
+        if (!rec.editedCheckout || rec.editedCheckout === '00:00') fillEditedFromScheduleIfEmpty(effectiveScheduledInTime, effectiveScheduledOutTime);
       }
     } else if (isType('Half Day - weekdays')) {
       if (startTime && endTime && startTime !== '00:00' && endTime !== '00:00') {
@@ -177,8 +195,8 @@ export async function POST(request: NextRequest) {
       } else {
         rec.totalHour = Number((0.5 * (effectiveScheduledMinutes / 60)).toFixed(2));
         rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
-        if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
-        if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
+        if (!rec.editedCheckin || rec.editedCheckin === '00:00') fillEditedFromScheduleIfEmpty(effectiveScheduledInTime, effectiveScheduledOutTime);
+        if (!rec.editedCheckout || rec.editedCheckout === '00:00') fillEditedFromScheduleIfEmpty(effectiveScheduledInTime, effectiveScheduledOutTime);
       }
     } else if (isType('Half Day - weekoff')) {
       if (startTime && endTime && startTime !== '00:00' && endTime !== '00:00') {
@@ -193,8 +211,8 @@ export async function POST(request: NextRequest) {
       } else {
         rec.totalHour = 0;
         rec.excessHour = Number((0.5 * (effectiveScheduledMinutes / 60)).toFixed(2));
-        if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
-        if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
+        if (!rec.editedCheckin || rec.editedCheckin === '00:00') fillEditedFromScheduleIfEmpty(effectiveScheduledInTime, effectiveScheduledOutTime);
+        if (!rec.editedCheckout || rec.editedCheckout === '00:00') fillEditedFromScheduleIfEmpty(effectiveScheduledInTime, effectiveScheduledOutTime);
       }
     } else if (isType('Present - Outstation (Weekdays)') || isType('Present - Outstation')) {
       if (startTime && endTime && startTime !== '00:00' && endTime !== '00:00') {
@@ -209,8 +227,8 @@ export async function POST(request: NextRequest) {
       } else {
         rec.totalHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
         rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
-        if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
-        if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
+        if (!rec.editedCheckin || rec.editedCheckin === '00:00') fillEditedFromScheduleIfEmpty(effectiveScheduledInTime, effectiveScheduledOutTime);
+        if (!rec.editedCheckout || rec.editedCheckout === '00:00') fillEditedFromScheduleIfEmpty(effectiveScheduledInTime, effectiveScheduledOutTime);
       }
     } else if (isType('Present - ClientPlace') || isType('Present - ClientPlace (Weekdays)') || isType('Present - client place')) {
       if (startTime && endTime && startTime !== '00:00' && endTime !== '00:00') {
@@ -222,17 +240,25 @@ export async function POST(request: NextRequest) {
           effectiveScheduledInTime,
           effectiveScheduledOutTime
         );
+      } else if (priorIsGpsLocationPunch) {
+        fillEditedFromScheduleIfEmpty(effectiveScheduledInTime, effectiveScheduledOutTime);
+        rec.totalHour = calculateDuration(String(rec.editedCheckin), String(rec.editedCheckout));
+        applyDayExcessToRecord(
+          rec,
+          userObj,
+          date,
+          effectiveScheduledInTime,
+          effectiveScheduledOutTime
+        );
       } else {
         rec.totalHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
         rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
-        if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
-        if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
+        fillEditedFromScheduleIfEmpty(effectiveScheduledInTime, effectiveScheduledOutTime);
       }
     } else if (isType('Present - in office - weekdays') || isType('Present - in office')) {
       rec.totalHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
       rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
-      if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
-      if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
+      fillEditedFromScheduleIfEmpty(effectiveScheduledInTime, effectiveScheduledOutTime);
     } else if (startTime && endTime && startTime !== '00:00' && endTime !== '00:00') {
       rec.totalHour = calculateDuration(startTime, endTime);
       applyDayExcessToRecord(

@@ -274,6 +274,13 @@ export async function POST(request: NextRequest) {
           let checkin = normalizeTimeToHHmm(rec.inTime || rec.actualInTime);
           let checkout = normalizeTimeToHHmm(rec.outTime || rec.actualOutTime);
 
+          // Capture Excel intent before merge: late single "in" with empty out is exit-only.
+          // Re-uploads can fill out from a prior remap (00:00/18:04), which would otherwise
+          // leave both sides as 18:04 and skip the anomaly handler below.
+          const incomingCheckoutMissing = checkout === '00:00' || checkout === '';
+          const incomingExitOnlyCandidate =
+            !isFixedDataUpload && checkin >= '16:00' && incomingCheckoutMissing;
+
           // MERGE LOGIC: If a record already exists for this date, merge raw times before processing
           // Keep earliest In, Latest Out
           let wasMerged = false;
@@ -302,15 +309,24 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          // Anomaly Detection: If checkin is late (>= 16:00) AND checkout is 00:00/empty,
-          // person likely only punched OUT, so the checkin value is actually the exit time.
-          // Swap: move checkin to checkout, set checkin to 00:00
+          // Anomaly Detection: late (>= 16:00) "in" is often an exit-only punch.
+          // Remap when: out still missing, in===out (duplicate), or re-upload of exit-only
+          // Excel that merge reintroduced a late value into checkin.
           const isCheckinLate = checkin >= '16:00';
           const isCheckoutMissing = checkout === '00:00' || checkout === '';
+          const equalLatePunches = isCheckinLate && checkin === checkout;
           let exitOnlyPunchDetected = false;
-          if (!isFixedDataUpload && isCheckinLate && isCheckoutMissing) {
-            // Swap: the "checkin" is actually the checkout time
+          if (!isFixedDataUpload && isCheckinLate && (isCheckoutMissing || equalLatePunches)) {
             checkout = checkin;
+            checkin = '00:00';
+            exitOnlyPunchDetected = true;
+          } else if (!isFixedDataUpload && incomingExitOnlyCandidate && isCheckinLate) {
+            // Re-upload: Excel had late in + empty out; merge may have filled out from a
+            // prior exit-only day (e.g. 00:00/19:00 → briefly 18:04/19:00). Clear the
+            // late "in" and keep the later out.
+            const exitTime =
+              checkout !== '00:00' && checkout !== '' && checkout > checkin ? checkout : checkin;
+            checkout = exitTime;
             checkin = '00:00';
             exitOnlyPunchDetected = true;
           }
@@ -634,7 +650,15 @@ export async function POST(request: NextRequest) {
           }
 
           const existingLoc = existingRecordBeforeUpdate;
-          if (existingLoc && isLocationPunchAttendanceRecord(existingLoc) && !isFixedDataUpload) {
+          const preserveLocationPunch =
+            !!existingLoc &&
+            isLocationPunchAttendanceRecord(existingLoc) &&
+            !isFixedDataUpload;
+          const preserveGpsLocationEdited =
+            preserveLocationPunch &&
+            /location verified/i.test(String(existingLoc.remarks || ''));
+
+          if (preserveLocationPunch) {
             const prevType = String(existingLoc.typeOfPresence || '').trim();
             typeOfPresence = prevType.toLowerCase().includes('client')
               ? prevType
@@ -645,11 +669,20 @@ export async function POST(request: NextRequest) {
             }
           }
 
+          const preservedEditedCheckin = preserveGpsLocationEdited
+            ? String(existingLoc.editedCheckin || existingLoc.checkin || '').trim() ||
+              finalEditedCheckin
+            : finalEditedCheckin;
+          const preservedEditedCheckout = preserveGpsLocationEdited
+            ? String(existingLoc.editedCheckout || existingLoc.checkout || '').trim() ||
+              finalEditedCheckout
+            : finalEditedCheckout;
+
           attendance.records.set(isoDate, {
             checkin: finalCheckin,
             checkout: finalCheckout,
-            editedCheckin: finalEditedCheckin,
-            editedCheckout: finalEditedCheckout,
+            editedCheckin: preservedEditedCheckin,
+            editedCheckout: preservedEditedCheckout,
             totalHour: finalTotalHour,
             excessHour: 0,
             typeOfPresence: typeOfPresence as any,
@@ -660,7 +693,7 @@ export async function POST(request: NextRequest) {
             existingRecordBeforeUpdate.extraWorkEntries.length > 0
               ? { extraWorkEntries: existingRecordBeforeUpdate.extraWorkEntries }
               : {}),
-            ...(existingLoc && isLocationPunchAttendanceRecord(existingLoc)
+            ...(preserveLocationPunch
               ? {
                   approvedBy: existingLoc.approvedBy || 'Location punch',
                   approvedByEmail: existingLoc.approvedByEmail,

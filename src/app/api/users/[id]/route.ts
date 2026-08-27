@@ -38,6 +38,10 @@ import {
   normalizeHalftimeDayRecord,
 } from '@/lib/halftimeAttendance';
 import {
+  isHalfDayAttendanceRecord,
+  shouldAutoMarkAttendanceHalfDayByHours,
+} from '@/lib/calculateDayExcessHour';
+import {
   applyManagedEffectiveHistories,
   ManagedEffectiveField,
   LEGACY_BASELINE_EFFECTIVE_FROM,
@@ -798,26 +802,33 @@ async function recalculateAttendanceFromDate(userId: string, fromDate: Date) {
       }
 
       // Recompute half-day with latest employment/schedule assumptions.
-      const isSunday = new Date(dateStr).getDay() === 0;
+      const isSunday = new Date(`${dateStr}T12:00:00`).getDay() === 0;
+      const typeIsExplicitHalfDay = isHalfDayAttendanceRecord({
+        typeOfPresence: record.typeOfPresence,
+      });
       if (record.typeOfPresence === 'Holiday' || isSunday) {
         record.halfDay = false;
       } else if (isHalftimeEmployeeForDate(user, dateStr)) {
         record.halfDay = false;
         normalizeHalftimeDayRecord(record, user, dateStr);
+      } else if (typeIsExplicitHalfDay) {
+        record.halfDay = true;
+      } else if ((inTime === '00:00' && outTime === '00:00') || (!inTime && !outTime)) {
+        record.halfDay = false;
+      } else if (isSinglePunch(inTime, outTime)) {
+        record.halfDay = true;
       } else {
-        const employmentType = (user as any).employmentType || 'fulltime';
-        const isArticle = isArticleEmployee(user);
-        const isAfter1PM = inTime ? inTime >= '13:00' : false;
-        if ((inTime === '00:00' && outTime === '00:00') || (!inTime && !outTime)) {
-          record.halfDay = false;
-        } else if (isSinglePunch(inTime, outTime)) {
-          record.halfDay = true;
-        } else if (employmentType === 'fulltime' && !isArticle) {
-          record.halfDay = record.totalHour < 6;
-        } else if (isArticle) {
-          record.halfDay = isAfter1PM || record.totalHour < 3.5;
-        }
+        record.halfDay = shouldAutoMarkAttendanceHalfDayByHours({
+          totalHour: record.totalHour,
+          scheduledInTime: scheduledIn,
+          scheduledOutTime: scheduledOut,
+          scheduleIsHalfDay: !!schedule.isHalfDay,
+          employmentType: (user as any).employmentType || 'fulltime',
+          isArticle: isArticleEmployee(user),
+          inTime,
+        });
       }
+      applyLateCheckinHalfDayRule(record, user, dateStr);
 
       if (record.halfDay) summary.totalHalfDay++;
       if (inTime && scheduledIn && isLaterThanScheduledIn(inTime, scheduledIn)) summary.totalLateArrival++;

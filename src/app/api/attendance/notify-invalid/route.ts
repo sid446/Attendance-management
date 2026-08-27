@@ -6,8 +6,25 @@ import InvalidAttendanceNotification from '@/models/InvalidAttendanceNotificatio
 import { transporter, mailOptions } from '@/lib/mailer';
 
 function buildEmployeeAttendanceLink(baseUrl: string, monthYear: string): string {
-  const destination = `/employee/dashboard?tab=attendance&monthYear=${encodeURIComponent(monthYear)}`;
-  return `${baseUrl}/employee/login?next=${encodeURIComponent(destination)}`;
+  const root = String(baseUrl || '').replace(/\/$/, '') || 'http://localhost:3000';
+  // Login first, then open the fix-invalid month view (session supplies userId).
+  const destination = `/employee/fix-attendance?monthYear=${encodeURIComponent(monthYear)}`;
+  return `${root}/employee/login?next=${encodeURIComponent(destination)}`;
+}
+
+function buildEmailCtaButton(href: string, label: string): string {
+  // Table-based CTA survives Outlook / Gmail stripping of CSS better than a lone <a>.
+  return `
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin: 32px auto 0;">
+          <tr>
+            <td align="center" bgcolor="#059669" style="border-radius: 8px;">
+              <a href="${href}" target="_blank" rel="noopener noreferrer"
+                 style="display: inline-block; padding: 14px 32px; background-color: #059669; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: 700; line-height: 1.2;">
+                ${label}
+              </a>
+            </td>
+          </tr>
+        </table>`;
 }
 
 interface InvalidRecord {
@@ -241,12 +258,12 @@ export async function POST(request: NextRequest) {
           ${mobileCards}
         </div>
 
-        <!-- CTA Button -->
-        <div style="text-align: center; margin-top: 32px;">
-          <a href="${fixLink}" style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3);">
-            View My Attendance
-          </a>
-        </div>
+        <!-- CTA Button: login → fix attendance month view -->
+        ${buildEmailCtaButton(fixLink, 'Login &amp; fix my attendance')}
+
+        <p style="margin: 16px 0 0 0; font-size: 12px; color: #9ca3af; text-align: center; line-height: 1.5;">
+          This opens the employee login, then your attendance for ${monthName} so you can correct missing times.
+        </p>
 
         <p style="margin: 24px 0 0 0; font-size: 12px; color: #9ca3af; text-align: center; line-height: 1.5;">
           When you submit corrections, they will be sent to your work partner for approval.

@@ -13,7 +13,7 @@ import {
 import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
 import { confirmMajorAction } from '@/lib/confirmMajorAction';
 
-type UploadRow = { name: string; balance: number };
+type UploadRow = { name: string; balance?: number; leaveAdjLwp?: number };
 
 type ReconcileUser = {
   userId: string;
@@ -21,6 +21,7 @@ type ReconcileUser = {
   isArticle: boolean;
   monthsWithAttendance: number;
   balanceAsOfJan26: number;
+  leaveAdjLwp?: number;
   earned: number;
   usedAfterJan26: number;
   remaining: number;
@@ -51,13 +52,16 @@ type ReconcileResult = {
 };
 
 type UploadPreview = {
+  kind: 'bf' | 'adj';
   mode: 'preview' | 'apply';
   matched: Array<{
     excelName: string;
     userId: string;
     userName: string;
-    currentBalanceAsOfJan26: number;
-    newBalanceAsOfJan26: number;
+    currentBalanceAsOfJan26?: number;
+    newBalanceAsOfJan26?: number;
+    currentLeaveAdjLwp?: number;
+    newLeaveAdjLwp?: number;
   }>;
   notFound: string[];
   ambiguous: Array<{ excelName: string; candidates: string[] }>;
@@ -74,7 +78,7 @@ interface LeaveBalance {
   employmentType?: string;
   balanceAsOfJan26: number;
   earned: number;
-  used: number; // Leaves taken before 1st Jan 2026
+  leaveAdjLwp: number; // HR Leave Adj/LWP (added into remaining)
   usedAfterJan26: number; // Leaves taken on or after 1st Jan 2026
   remaining: number;
   lastUpdated: Date;
@@ -129,6 +133,97 @@ function formatMonthLabel(monthYear: string): string {
   const date = new Date(parseInt(year, 10), parseInt(month, 10) - 1, 1);
   return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 }
+
+/** Editable Leave Adj/LWP cell — saves on blur, Enter, or Save button. */
+const LeaveAdjLwpInput: React.FC<{
+  userId: string;
+  value: number;
+  disabled?: boolean;
+  onSave: (userId: string, leaveAdjLwp: number) => Promise<void>;
+}> = ({ userId, value, disabled, onSave }) => {
+  const [draft, setDraft] = useState(formatLeaveValue(value));
+  const [dirty, setDirty] = useState(false);
+  const [localSaving, setLocalSaving] = useState(false);
+  const lastSaved = useRef(formatLeaveValue(value));
+
+  useEffect(() => {
+    if (localSaving || dirty) return;
+    const formatted = formatLeaveValue(value);
+    setDraft(formatted);
+    lastSaved.current = formatted;
+  }, [value, localSaving, dirty]);
+
+  const commitValue = async (raw: string) => {
+    const next = Number(String(raw).trim());
+    if (!Number.isFinite(next)) {
+      setDraft(lastSaved.current);
+      setDirty(false);
+      return;
+    }
+    const rounded = Number(next.toFixed(3));
+    const formatted = formatLeaveValue(rounded);
+    if (formatted === lastSaved.current) {
+      setDraft(formatted);
+      setDirty(false);
+      return;
+    }
+
+    setDraft(formatted);
+    setLocalSaving(true);
+    try {
+      await onSave(userId, rounded);
+      lastSaved.current = formatted;
+      setDirty(false);
+    } catch {
+      setDraft(lastSaved.current);
+      setDirty(false);
+    } finally {
+      setLocalSaving(false);
+    }
+  };
+
+  return (
+    <div className="inline-flex items-center justify-center gap-1">
+      <input
+        type="text"
+        inputMode="decimal"
+        value={draft}
+        disabled={disabled || localSaving}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          setDirty(true);
+        }}
+        onBlur={(e) => {
+          if (!dirty) return;
+          void commitValue(e.target.value);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            void commitValue((e.target as HTMLInputElement).value);
+          }
+          if (e.key === 'Escape') {
+            setDraft(lastSaved.current);
+            setDirty(false);
+            e.currentTarget.blur();
+          }
+        }}
+        aria-label="Leave Adj/LWP"
+        title="Leave Adj/LWP — added to balance. Enter or Save to persist."
+        className="w-20 rounded-md border border-violet-200 bg-violet-50 px-2 py-1 text-center text-xs font-medium tabular-nums text-violet-950 shadow-sm outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 disabled:opacity-50"
+      />
+      <button
+        type="button"
+        disabled={disabled || localSaving || !dirty}
+        onClick={() => void commitValue(draft)}
+        className="rounded-md border border-violet-300 bg-violet-600 px-1.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40"
+        title="Save Leave Adj/LWP"
+      >
+        {localSaving ? '…' : 'Save'}
+      </button>
+    </div>
+  );
+};
 
 const UploadPreviewDialog: React.FC<{
   preview: UploadPreview;
@@ -189,11 +284,11 @@ const UploadPreviewDialog: React.FC<{
           <p className="text-sm text-slate-600">
             Leave will be recalculated from <strong>{reconcile.fromMonth}</strong> to{' '}
             <strong>{reconcile.toMonth}</strong> as{' '}
-            <strong>B/F + earned after Jan − used before Jan − used after Jan</strong>, where earned
+            <strong>B/F + earned after Jan − used after Jan + Leave Adj/LWP</strong>, where earned
             is 2 per month with attendance (articles earn none). Days set by an approved employee
             request are kept exactly as they are. Employees not listed in the file are untouched.
             {reconcile.usersSkippedNoAttendance > 0 && (
-              <> {reconcile.usersSkippedNoAttendance} matched employee(s) have no attendance in this range and will only get the new opening balance.</>
+              <> {reconcile.usersSkippedNoAttendance} matched employee(s) have no attendance in this range and will only get the new {preview.kind === 'adj' ? 'Adj/LWP' : 'opening balance'}.</>
             )}
           </p>
 
@@ -224,7 +319,9 @@ const UploadPreviewDialog: React.FC<{
 
           {invalid.length > 0 && (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              <div className="mb-1 font-medium">{invalid.length} row(s) have an unusable B/F value</div>
+              <div className="mb-1 font-medium">
+                {invalid.length} row(s) have an unusable {preview.kind === 'adj' ? 'Adj/LWP' : 'B/F'} value
+              </div>
               <ul className="list-disc pl-5">
                 {invalid.map((r) => (
                   <li key={r.excelName}>
@@ -252,10 +349,10 @@ const UploadPreviewDialog: React.FC<{
                     Employee
                   </th>
                   <th className="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    B/F now
+                    {preview.kind === 'adj' ? 'Adj/LWP now' : 'B/F now'}
                   </th>
                   <th className="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    B/F new
+                    {preview.kind === 'adj' ? 'Adj/LWP new' : 'B/F new'}
                   </th>
                   <th className="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Earned after Jan
@@ -283,10 +380,14 @@ const UploadPreviewDialog: React.FC<{
                         )}
                       </td>
                       <td className="px-3 py-2 text-center tabular-nums text-slate-600">
-                        {formatLeaveValue(m.currentBalanceAsOfJan26)}
+                        {formatLeaveValue(
+                          preview.kind === 'adj' ? m.currentLeaveAdjLwp : m.currentBalanceAsOfJan26
+                        )}
                       </td>
                       <td className="px-3 py-2 text-center font-medium tabular-nums text-slate-900">
-                        {formatLeaveValue(m.newBalanceAsOfJan26)}
+                        {formatLeaveValue(
+                          preview.kind === 'adj' ? m.newLeaveAdjLwp : m.newBalanceAsOfJan26
+                        )}
                       </td>
                       <td className="px-3 py-2 text-center tabular-nums text-emerald-800">
                         {u ? (u.isArticle ? 'N/A' : `+${formatLeaveValue(u.earned)}`) : '—'}
@@ -368,16 +469,20 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
   const [loading, setLoading] = useState<boolean>(false);
   const [filterTeam, setFilterTeam] = useState<string>('all');
   const [monthFilter, setMonthFilter] = useState<string>(() => currentMonthYear());
-  const [sortBy, setSortBy] = useState<'name' | 'balanceAsOfJan26' | 'earned' | 'remaining' | 'used'>('earned');
+  const [sortBy, setSortBy] = useState<
+    'name' | 'balanceAsOfJan26' | 'earned' | 'remaining' | 'leaveAdjLwp'
+  >('earned');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'all' | 'articles' | 'employees'>('all');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const adjFileInputRef = useRef<HTMLInputElement>(null);
   const [uploadBusy, setUploadBusy] = useState<boolean>(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
   const [pendingRows, setPendingRows] = useState<UploadRow[] | null>(null);
   const [preview, setPreview] = useState<UploadPreview | null>(null);
+  const [savingAdjUserId, setSavingAdjUserId] = useState<string | null>(null);
 
   const monthOptions = leaveMonthOptions();
 
@@ -385,7 +490,11 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
     setLoading(true);
     try {
       const response = await fetch(
-        `/api/leave/balances?monthYear=${encodeURIComponent(monthYear)}`
+        `/api/leave/balances?monthYear=${encodeURIComponent(monthYear)}&_=${Date.now()}`,
+        hrCredentialsInit({
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache' },
+        })
       );
       if (!response.ok) {
         throw new Error('Failed to fetch leave balances');
@@ -429,8 +538,8 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
           return b.earned - a.earned;
         case 'remaining':
           return b.remaining - a.remaining;
-        case 'used':
-          return b.used - a.used;
+        case 'leaveAdjLwp':
+          return (b.leaveAdjLwp || 0) - (a.leaveAdjLwp || 0);
         case 'name':
         default:
           return a.userName.localeCompare(b.userName);
@@ -443,11 +552,17 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
     (acc, balance) => ({
       totalBalanceAsOfJan26: acc.totalBalanceAsOfJan26 + balance.balanceAsOfJan26,
       totalEarned: acc.totalEarned + balance.earned,
-      totalUsed: acc.totalUsed + balance.used,
+      totalLeaveAdjLwp: acc.totalLeaveAdjLwp + (balance.leaveAdjLwp || 0),
       totalUsedAfterJan26: acc.totalUsedAfterJan26 + (balance.usedAfterJan26 || 0),
       totalRemaining: acc.totalRemaining + balance.remaining,
     }),
-    { totalBalanceAsOfJan26: 0, totalEarned: 0, totalUsed: 0, totalUsedAfterJan26: 0, totalRemaining: 0 }
+    {
+      totalBalanceAsOfJan26: 0,
+      totalEarned: 0,
+      totalLeaveAdjLwp: 0,
+      totalUsedAfterJan26: 0,
+      totalRemaining: 0,
+    }
   );
 
   const selectCls =
@@ -529,7 +644,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
       }
 
       setPendingRows(rows);
-      setPreview(json.data as UploadPreview);
+      setPreview({ ...(json.data as Omit<UploadPreview, 'kind'>), kind: 'bf' });
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
@@ -538,17 +653,156 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
     }
   };
 
+  const handleAdjFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadBusy(true);
+    setUploadError(null);
+    setUploadNotice(null);
+    setPreview(null);
+    setPendingRows(null);
+
+    try {
+      const XLSX = await import('xlsx');
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { cellDates: false });
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const grid: unknown[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+      if (grid.length < 2) {
+        throw new Error('The file looks empty or has no header row.');
+      }
+
+      let headerRowIndex = -1;
+      for (let i = 0; i < Math.min(grid.length, 10); i++) {
+        const row = grid[i];
+        if (!Array.isArray(row)) continue;
+        const cells = row.map((c) => String(c ?? '').toLowerCase());
+        if (cells.some((c) => c.includes('name'))) {
+          headerRowIndex = i;
+          break;
+        }
+      }
+      if (headerRowIndex === -1) {
+        throw new Error('Could not find a header row containing "Employee Name".');
+      }
+
+      const headers = (grid[headerRowIndex] as unknown[]).map((h) =>
+        String(h ?? '').toLowerCase().trim()
+      );
+      const nameIdx = headers.findIndex((h) => h.includes('name'));
+      const adjIdx = headers.findIndex(
+        (h) =>
+          h.includes('adj') ||
+          h.includes('lwp') ||
+          (h.includes('leave') && h.includes('adjust'))
+      );
+
+      if (nameIdx === -1) throw new Error('Could not find an "Employee Name" column.');
+      if (adjIdx === -1) {
+        throw new Error('Could not find a "Leave Adj/LWP" column (header should include Adj or LWP).');
+      }
+
+      const rows: UploadRow[] = [];
+      for (let i = headerRowIndex + 1; i < grid.length; i++) {
+        const row = grid[i];
+        if (!Array.isArray(row)) continue;
+        const name = String(row[nameIdx] ?? '').trim();
+        if (!name) continue;
+        rows.push({ name, leaveAdjLwp: Number(row[adjIdx] ?? 0) });
+      }
+
+      if (rows.length === 0) throw new Error('No employee rows found in the file.');
+
+      const res = await fetch(
+        '/api/leave/upload-adj-lwp',
+        hrCredentialsInit({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rows, mode: 'preview' }),
+        })
+      );
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Could not read the uploaded Adj/LWP values.');
+      }
+
+      setPendingRows(rows);
+      setPreview({ ...(json.data as Omit<UploadPreview, 'kind'>), kind: 'adj' });
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploadBusy(false);
+      e.target.value = '';
+    }
+  };
+
+  const saveLeaveAdjLwp = async (userId: string, leaveAdjLwp: number) => {
+    setSavingAdjUserId(userId);
+    setUploadError(null);
+    setUploadNotice(null);
+    try {
+      const res = await fetch(
+        '/api/leave/adj-lwp',
+        hrCredentialsInit({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, leaveAdjLwp }),
+          cache: 'no-store',
+        })
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || `Could not save Leave Adj/LWP (${res.status}).`);
+      }
+
+      const savedAdj = Number(json.data?.leaveAdjLwp ?? leaveAdjLwp);
+      const savedRemaining = Number(json.data?.remaining);
+      setLeaveBalances((prev) =>
+        prev.map((row) =>
+          row.userId === userId
+            ? {
+                ...row,
+                leaveAdjLwp: savedAdj,
+                remaining: Number.isFinite(savedRemaining) ? savedRemaining : row.remaining,
+                lastUpdated: new Date(),
+              }
+            : row
+        )
+      );
+      setUploadNotice(`Saved Leave Adj/LWP ${formatLeaveValue(savedAdj)} to the database.`);
+      // Re-read from DB (cache-busted) so Refresh shows the same value.
+      await fetchLeaveBalances(monthFilter);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save Leave Adj/LWP';
+      setUploadError(message);
+      throw err instanceof Error ? err : new Error(message);
+    } finally {
+      setSavingAdjUserId(null);
+    }
+  };
+
   const applyUpload = async () => {
     if (!pendingRows || !preview) return;
 
+    const isAdj = preview.kind === 'adj';
+    const endpoint = isAdj ? '/api/leave/upload-adj-lwp' : '/api/leave/upload-opening-balance';
     const changes = preview.reconcile.recordsUpdated;
     if (
-      !confirmMajorAction('Save leaves B/F and recalculate leave from Jan 2026 to now', [
-        `${preview.matched.length} employee(s) will get a new opening balance.`,
-        `${changes} attendance day(s) will be switched between "On leave" and "Absent".`,
-        'Leave balances, the leave ledger and monthly snapshots will be rebuilt.',
-        'This cannot be undone.',
-      ])
+      !confirmMajorAction(
+        isAdj
+          ? 'Save Leave Adj/LWP and recalculate leave from Jan 2026 to now'
+          : 'Save leaves B/F and recalculate leave from Jan 2026 to now',
+        [
+          isAdj
+            ? `${preview.matched.length} employee(s) will get a new Leave Adj/LWP.`
+            : `${preview.matched.length} employee(s) will get a new opening balance.`,
+          `${changes} attendance day(s) will be switched between "On leave" and "Absent".`,
+          'Leave balances, the leave ledger and monthly snapshots will be rebuilt.',
+          'This cannot be undone.',
+        ]
+      )
     ) {
       return;
     }
@@ -557,7 +811,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
     setUploadError(null);
     try {
       const res = await fetch(
-        '/api/leave/upload-opening-balance',
+        endpoint,
         hrCredentialsInit({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -569,7 +823,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
         throw new Error(json.error || 'Could not save the balances.');
       }
 
-      const applied = json.data as UploadPreview;
+      const applied = json.data as Omit<UploadPreview, 'kind'>;
       setPreview(null);
       setPendingRows(null);
       setUploadNotice(
@@ -621,12 +875,19 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
             ))}
           </ol>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           <input
             ref={fileInputRef}
             type="file"
             accept=".xlsx,.xls"
             onChange={handleFileSelected}
+            className="hidden"
+          />
+          <input
+            ref={adjFileInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={handleAdjFileSelected}
             className="hidden"
           />
           <button
@@ -638,6 +899,16 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
           >
             <Upload className={`h-4 w-4 ${uploadBusy ? 'animate-pulse text-blue-600' : 'text-slate-600'}`} aria-hidden />
             {uploadBusy ? 'Working…' : 'Upload B/F'}
+          </button>
+          <button
+            type="button"
+            onClick={() => adjFileInputRef.current?.click()}
+            className="inline-flex shrink-0 items-center gap-2 rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50"
+            disabled={uploadBusy || loading || isLoading}
+            title='Excel with columns "Employee Name" and "Leave Adj/LWP"'
+          >
+            <Upload className={`h-4 w-4 ${uploadBusy ? 'animate-pulse text-blue-600' : 'text-slate-600'}`} aria-hidden />
+            Upload Adj/LWP
           </button>
           <button
             type="button"
@@ -733,13 +1004,13 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
 
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm">
           <div className="mb-2 flex items-center gap-2">
-            <TrendingDown className="h-5 w-5 text-rose-700" aria-hidden />
-            <span className="text-sm font-medium text-slate-700">Used (before 1 Jan)</span>
+            <TrendingUp className="h-5 w-5 text-violet-700" aria-hidden />
+            <span className="text-sm font-medium text-slate-700">Leave Adj/LWP</span>
           </div>
           <div className="text-2xl font-bold tabular-nums text-slate-900">
-            {formatLeaveValue(totalStats.totalUsed)}
+            {formatLeaveValue(totalStats.totalLeaveAdjLwp)}
           </div>
-          <div className="mt-1 text-xs text-slate-500">Leave before 1 Jan 2026</div>
+          <div className="mt-1 text-xs text-slate-500">Manual adjustment (added to balance)</div>
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm">
@@ -828,14 +1099,18 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
           <select
             id="leave-management-sort"
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as 'name' | 'balanceAsOfJan26' | 'earned' | 'remaining' | 'used')}
+            onChange={(e) =>
+              setSortBy(
+                e.target.value as 'name' | 'balanceAsOfJan26' | 'earned' | 'remaining' | 'leaveAdjLwp'
+              )
+            }
             className={selectCls}
           >
             <option value="name">Name</option>
             <option value="balanceAsOfJan26">Balance as of Jan 26</option>
             <option value="earned">Earned</option>
             <option value="remaining">Remaining</option>
-            <option value="used">Used (before Jan)</option>
+            <option value="leaveAdjLwp">Leave Adj/LWP</option>
           </select>
         </div>
       </div>
@@ -873,7 +1148,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
                   Earned (after Jan)
                 </th>
                 <th scope="col" className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Used (before 1 Jan)
+                  Leave Adj/LWP
                 </th>
                 <th scope="col" className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Used (after 1 Jan)
@@ -937,9 +1212,12 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
                       )}
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-0.5 text-xs font-medium tabular-nums text-rose-900">
-                        {formatLeaveValue(balance.used)}
-                      </span>
+                      <LeaveAdjLwpInput
+                        userId={balance.userId}
+                        value={balance.leaveAdjLwp ?? 0}
+                        disabled={savingAdjUserId === balance.userId || uploadBusy}
+                        onSave={saveLeaveAdjLwp}
+                      />
                     </td>
                     <td className="px-4 py-3 text-center">
                       <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-medium tabular-nums text-amber-950">

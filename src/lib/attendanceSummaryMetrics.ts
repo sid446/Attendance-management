@@ -17,7 +17,18 @@ import {
   sumExtraWorkEntryHours,
 } from './extraWorkRequest';
 import { isArticleEmployee } from './isArticleEmployee';
+import { resolveDayWorkedHours, typeIncludesClientPlace } from './resolveDayWorkedHours';
 
+/** Presence-type match used across absent/present metrics (includes spaced "client place"). */
+function isRemoteOrSpecialPresenceType(typeLower: string, halfDay?: boolean): boolean {
+  return (
+    typeLower.includes('wfh') ||
+    typeLower.includes('outstation') ||
+    typeIncludesClientPlace(typeLower) ||
+    typeLower.includes('half day') ||
+    !!halfDay
+  );
+}
 /**
  * Parse YYYY-MM-DD as a local calendar date (noon).
  * Bare `new Date('YYYY-MM-DD')` is UTC midnight (weekday can shift west of UTC) and
@@ -253,7 +264,7 @@ function isExemptFromSinglePunchAbsentRule(rec: any): boolean {
     typeLower.includes('weekoff') ||
     typeLower.includes('wfh') ||
     typeLower.includes('outstation') ||
-    typeLower.includes('clientplace')
+    typeIncludesClientPlace(typeLower)
   );
 }
 
@@ -341,6 +352,18 @@ export function isExcessEligibleRecord(dateStr: string, recAny: any): boolean {
   // already excluded above via includes('weekoff') / Sunday check.
   if (type === 'WFH - weekdays' || type === 'Work From Home (WFH)') {
     return true;
+  }
+
+  // Client place / outstation: day-credit types. Only count toward Sched/excess
+  // hour math when there are real punches or stored hours — value alone must not
+  // add a scheduled day with 0 worked (false multi-day deficit).
+  if (
+    typeIncludesClientPlace(type) ||
+    typeLower.includes('outstation') ||
+    typeLower.includes('onsite presence') ||
+    typeLower === 'os-p'
+  ) {
+    return hasValidInOutForExcess(rec) || Number(rec.totalHour || 0) > 0;
   }
 
   if (typeLower.includes('present')) {
@@ -463,11 +486,7 @@ export function getAbsentCountLikeSummary(
 
     // Presence types that shouldn't be absent even with 0 hours
     const typeLower = String(rec.typeOfPresence || '').toLowerCase();
-    const isPresenceType = typeLower.includes('wfh') || 
-                           typeLower.includes('outstation') || 
-                           typeLower.includes('clientplace') || 
-                           typeLower.includes('half day') ||
-                           rec.halfDay;
+    const isPresenceType = isRemoteOrSpecialPresenceType(typeLower, rec.halfDay);
 
     if (isPresenceType) return;
 
@@ -537,11 +556,7 @@ export function getTotalPresentLikeAdminSummary(
 
     const hasValidIn = checkin && checkin !== '00:00';
     const hasValidOut = checkout && checkout !== '00:00';
-    const isPresenceType = typeLower.includes('wfh') || 
-                           typeLower.includes('outstation') || 
-                           typeLower.includes('clientplace') || 
-                           typeLower.includes('half day') ||
-                           rec?.halfDay;
+    const isPresenceType = isRemoteOrSpecialPresenceType(typeLower, rec?.halfDay);
 
     if (isPresenceType || hasValidIn || hasValidOut || totalHour > 0) {
       totalPresent += 1;
@@ -588,7 +603,13 @@ export function getWorkedHoursMatchingScheduledDays(
   dateList.forEach((dateStr) => {
     const rec = item.recordDetails?.[dateStr];
     if (!isDayIncludedInScheduledCalc(user, dateStr, rec)) return;
-    total += Number(rec?.totalHour || 0);
+    const schedule = getScheduledTimes(user, dateStr);
+    // No value×schedule invention — keeps HR +/- aligned with prior summary behaviour.
+    total += resolveDayWorkedHours(rec as any, {
+      scheduledIn: schedule.inTime,
+      scheduledOut: schedule.outTime,
+      allowValueScheduleFallback: false,
+    });
   });
   return Number(total.toFixed(2));
 }
@@ -673,7 +694,12 @@ export function getDailyWorkedHoursSeries(
     for (const dateStr of dateList) {
       const rec = item.recordDetails?.[dateStr];
       if (!isDayIncludedInScheduledCalc(user, dateStr, rec)) continue;
-      const hours = Number(rec?.totalHour || 0);
+      const schedule = getScheduledTimes(user, dateStr);
+      const hours = resolveDayWorkedHours(rec as any, {
+        scheduledIn: schedule.inTime,
+        scheduledOut: schedule.outTime,
+        allowValueScheduleFallback: false,
+      });
       if (hours <= 0) continue;
       rows.push({ date: dateStr, hours });
     }
@@ -772,7 +798,7 @@ export function isWorkedOnHolidayRecord(
     typeLower.includes('half day') ||
     typeLower.includes('wfh') ||
     typeLower.includes('outstation') ||
-    typeLower.includes('clientplace') ||
+    typeIncludesClientPlace(typeLower) ||
     typeLower.includes('special allowance');
 
   return hasValidIn || hasValidOut || Number(rec.totalHour || 0) > 0 || workedType;
@@ -845,12 +871,7 @@ function isAbsentDayInRecords(
   }
 
   const typeLower = String(rec.typeOfPresence || '').toLowerCase();
-  const isPresenceType =
-    typeLower.includes('wfh') ||
-    typeLower.includes('outstation') ||
-    typeLower.includes('clientplace') ||
-    typeLower.includes('half day') ||
-    rec.halfDay;
+  const isPresenceType = isRemoteOrSpecialPresenceType(typeLower, rec.halfDay);
   if (isPresenceType) return false;
 
   const effectiveCheckin = rec.editedCheckin || rec.checkin;
@@ -880,12 +901,7 @@ function isPresentDayInRecords(recAny: unknown): boolean {
 
   const hasValidIn = checkin && checkin !== '00:00';
   const hasValidOut = checkout && checkout !== '00:00';
-  const isPresenceType =
-    typeLower.includes('wfh') ||
-    typeLower.includes('outstation') ||
-    typeLower.includes('clientplace') ||
-    typeLower.includes('half day') ||
-    rec?.halfDay;
+  const isPresenceType = isRemoteOrSpecialPresenceType(typeLower, rec?.halfDay);
 
   return !!(isPresenceType || hasValidIn || hasValidOut || totalHour > 0);
 }
@@ -1087,22 +1103,30 @@ export function getScheduledHoursNoLunchForMonth(
   return total;
 }
 
-/** Sum per-day article excess (early in / late out >30m) for dates in the period. */
-function resolveArticleDayExcessHour(
+/**
+ * Live per-day excess (same function daywise uses).
+ * Articles: early-in + late-out only when >30m past scheduled out.
+ * Staff: worked − scheduled for the day.
+ * Leave / Absent / Sunday / company holiday → 0.
+ */
+export function resolveLiveDayExcessHour(
   user: User,
   dateStr: string,
   rec: NonNullable<AttendanceSummaryView['recordDetails']>[string],
   scheduledInTime: string,
-  scheduledOutTime: string
+  scheduledOutTime: string,
+  options?: { isCompanyHoliday?: boolean }
 ): number {
-  const stored =
-    typeof rec.excessHour === 'number' && Number.isFinite(rec.excessHour)
-      ? rec.excessHour
-      : null;
-  return stored !== null
-    ? stored
-    : calculateDayExcessHour(user, dateStr, rec, scheduledInTime, scheduledOutTime);
+  return calculateDayExcessHour(
+    user,
+    dateStr,
+    rec,
+    scheduledInTime,
+    scheduledOutTime,
+    options
+  );
 }
+
 
 function formatPunchTime(value: string | undefined): string {
   const t = String(value ?? '').trim();
@@ -1110,11 +1134,20 @@ function formatPunchTime(value: string | undefined): string {
   return t;
 }
 
-export function getArticleExcessSumForPeriod(
+/**
+ * Sum of live day excess for the period — single source for Summary month total
+ * and Daywise month total (before partner month-cap; day allowances optional).
+ */
+export function getDayExcessSumForPeriod(
   item: AttendanceSummaryView,
   user: User,
-  dateList: string[]
+  dateList: string[],
+  options?: {
+    holidayDates?: Set<string> | null;
+    dayAllowanceMap?: ExcessDayAllowanceLookup | null;
+  }
 ): number {
+  const userId = String(item.userId || '');
   let total = 0;
   dateList.forEach((dateStr) => {
     if (user.inactiveAsOf && isDateOnOrAfterInactive(dateStr, user.inactiveAsOf)) return;
@@ -1122,18 +1155,35 @@ export function getArticleExcessSumForPeriod(
     if (!rec) return;
 
     const schedule = getScheduledTimes(user, dateStr);
-    total += resolveArticleDayExcessHour(
+    const isCompanyHoliday = Boolean(options?.holidayDates?.has(dateStr));
+    const raw = resolveLiveDayExcessHour(
       user,
       dateStr,
       rec,
       schedule.inTime || '',
-      schedule.outTime || ''
+      schedule.outTime || '',
+      { isCompanyHoliday }
+    );
+    total += applyDayAllowanceToRawExcess(
+      raw,
+      userId,
+      dateStr,
+      options?.dayAllowanceMap
     );
   });
   return Number(total.toFixed(2));
 }
 
-/** Date-wise article excess rows for summary detail modal (in/out + schedule + daily excess). */
+/** @deprecated Alias — same as getDayExcessSumForPeriod (all employment types). */
+export function getArticleExcessSumForPeriod(
+  item: AttendanceSummaryView,
+  user: User,
+  dateList: string[]
+): number {
+  return getDayExcessSumForPeriod(item, user, dateList);
+}
+
+/** Date-wise excess rows for summary detail modal (in/out + schedule + daily excess). */
 export function getArticleExcessBreakdownForPeriod(
   item: AttendanceSummaryView,
   user: User,
@@ -1141,13 +1191,17 @@ export function getArticleExcessBreakdownForPeriod(
   options?: {
     displayTotal?: number;
     dayAllowanceMap?: ExcessDayAllowanceLookup | null;
+    holidayDates?: Set<string> | null;
   }
 ): { date: string; info: string; subInfo?: string }[] {
   const userId = String(item.userId || '');
+  const isArticle = isArticleEmployee(user);
   const breakdown: { date: string; info: string; subInfo?: string }[] = [
     {
-      date: 'Article rule',
-      info: 'Early check-in counts as excess. Late check-out counts only when more than 30 minutes after scheduled out.',
+      date: isArticle ? 'Article rule' : 'Day excess rule',
+      info: isArticle
+        ? 'Early check-in counts as excess. Late check-out counts only when more than 30 minutes after scheduled out. Short days count as deficit.'
+        : 'Each day: worked hours − scheduled hours (same as Daywise). Leave / absent / Sunday / holiday = 0.',
     },
   ];
 
@@ -1172,12 +1226,13 @@ export function getArticleExcessBreakdownForPeriod(
       (rec as { extraWorkEntries?: Array<{ startTime?: string; endTime?: string }> }).extraWorkEntries
     );
 
-    const rawDayExcess = resolveArticleDayExcessHour(
+    const rawDayExcess = resolveLiveDayExcessHour(
       user,
       dateStr,
       rec,
       scheduledInTime,
-      scheduledOutTime
+      scheduledOutTime,
+      { isCompanyHoliday: Boolean(options?.holidayDates?.has(dateStr)) }
     );
     const dayExcess = applyDayAllowanceToRawExcess(
       rawDayExcess,
@@ -1213,7 +1268,10 @@ export function getArticleExcessBreakdownForPeriod(
   );
   breakdown.push(...datedRows);
 
-  const rawTotal = getArticleExcessSumForPeriod(item, user, dateList);
+  const rawTotal = getDayExcessSumForPeriod(item, user, dateList, {
+    holidayDates: options?.holidayDates,
+    dayAllowanceMap: null, // show raw vs displayTotal separately
+  });
   const displayTotal =
     options?.displayTotal != null && Number.isFinite(options.displayTotal)
       ? Number(Number(options.displayTotal).toFixed(2))
@@ -1243,14 +1301,23 @@ export function getExcessDeficitLikeSummary(
   item: AttendanceSummaryView,
   user: User | undefined,
   dateList: string[],
-  workedHours?: number
-): number {
-  if (user && isArticleEmployee(user)) {
-    return getArticleExcessSumForPeriod(item, user, dateList);
+  _workedHours?: number,
+  _scheduledHoursOverride?: number,
+  options?: {
+    holidayDates?: Set<string> | null;
+    dayAllowanceMap?: ExcessDayAllowanceLookup | null;
   }
-  const w = workedHours !== undefined ? workedHours : getTotalHourLikeAdminSummary(item, user, dateList);
-  const scheduledHours = Number(getScheduledHoursNoLunchForMonth(item, user, dateList) || 0);
-  return Number((w - scheduledHours).toFixed(2));
+): number {
+  if (!user) {
+    const w = _workedHours !== undefined ? _workedHours : Number(item.summary?.totalHour || 0);
+    const scheduledHours =
+      _scheduledHoursOverride !== undefined
+        ? Number(_scheduledHoursOverride)
+        : 0;
+    return Number((w - scheduledHours).toFixed(2));
+  }
+  // Same day-sum as Daywise (article 30m rule / staff work−schedule via calculateDayExcessHour).
+  return getDayExcessSumForPeriod(item, user, dateList, options);
 }
 
 export interface SummaryAlignedMetrics {
@@ -1295,23 +1362,36 @@ export function computeSummaryAlignedMetrics(
   const dateList = monthDateStrings(monthYear);
   const totalHour = getTotalHourLikeAdminSummary(item, user, dateList);
 
-  const rawExcess = getExcessDeficitLikeSummary(item, user, dateList, totalHour);
-  const fromDays = lookupExcessDisplay(
-    options?.excessDisplayMap ?? null,
-    String(item.userId || ''),
+  // Same day-sum as Daywise (live calculateDayExcessHour + day allowances).
+  const rawWithDays = getDayExcessSumForPeriod(item, user, dateList, {
+    holidayDates,
+    dayAllowanceMap: options?.excessDayAllowanceMap,
+  });
+  const uid = String(item.userId || '');
+  const hasDayDecisions = Object.keys(options?.excessDayAllowanceMap || {}).some((k) =>
+    k.startsWith(`${uid}:`)
+  );
+  const capFromMap = lookupExcessAllowance(
+    options?.excessAllowanceMap ?? null,
+    uid,
     monthYear
   );
+  const cap = options?.allowedExcessCap !== undefined ? options.allowedExcessCap : capFromMap;
+  // Month display map is often stale vs daywise; only keep it when it matches live day-sum.
+  const fromDays = lookupExcessDisplay(
+    options?.excessDisplayMap ?? null,
+    uid,
+    monthYear
+  );
+  const displayAgrees =
+    fromDays != null && Math.abs(fromDays - rawWithDays) <= 1;
   let calcExcessDeficit: number;
-  if (fromDays != null) {
-    calcExcessDeficit = fromDays;
+  if (displayAgrees) {
+    calcExcessDeficit = fromDays!;
+  } else if (hasDayDecisions) {
+    calcExcessDeficit = rawWithDays;
   } else {
-    const capFromMap = lookupExcessAllowance(
-      options?.excessAllowanceMap ?? null,
-      String(item.userId || ''),
-      monthYear
-    );
-    const cap = options?.allowedExcessCap !== undefined ? options.allowedExcessCap : capFromMap;
-    calcExcessDeficit = applyExcessHourAllowance(rawExcess, cap).displayExcess;
+    calcExcessDeficit = applyExcessHourAllowance(rawWithDays, cap).displayExcess;
   }
 
   const totalAbsent = getAbsentCountLikeSummary(item, holidayDates, options);

@@ -137,7 +137,10 @@ export interface IUser extends Document {
   leaveBalance?: {
     balanceAsOfJan26: number; // Opening balance as of 1st Jan 2026 (uploaded via Excel)
     earned: number; // Leave earned after 1st Jan 2026 (calculated from attendance uploads, only for non-articles)
-    used: number; // Leaves taken before 1st Jan 2026 (from Excel upload)
+    /** @deprecated Legacy pre-Jan-2026 used days; no longer in remaining formula. Prefer leaveAdjLwp. */
+    used: number;
+    /** HR manual adjustment / LWP credit (or debit if negative). remaining = B/F + earned − usedAfter + leaveAdjLwp */
+    leaveAdjLwp?: number;
     usedAfterJan26?: number; // Leaves taken on or after 1st Jan 2026 (calculated from attendance records)
     remaining: number; // Calculated dynamically
     lastUpdated: Date;
@@ -557,7 +560,8 @@ const UserSchema = new Schema(
     leaveBalance: {
       balanceAsOfJan26: { type: Number, default: 0 }, // Opening balance as of 1st Jan 2026 (uploaded via Excel)
       earned: { type: Number, default: 0 }, // Leave earned after 1st Jan 2026 (calculated from attendance uploads, only for non-articles)
-      used: { type: Number, default: 0 }, // Leaves taken before 1st Jan 2026 (from Excel upload)
+      used: { type: Number, default: 0 }, // Legacy; unused in remaining formula
+      leaveAdjLwp: { type: Number, default: 0 }, // HR Leave Adj/LWP (added into remaining)
       usedAfterJan26: { type: Number, default: 0 }, // Leaves taken on or after 1st Jan 2026 (calculated from attendance records)
       remaining: { type: Number, default: 0 }, // Calculated dynamically
       lastUpdated: { type: Date, default: Date.now },
@@ -609,7 +613,30 @@ const UserSchema = new Schema(
 
 // Note: attendanceEmail is automatically set to email in API routes when creating/updating users
 
+// Next.js / hot-reload can keep a previously compiled User model that predates
+// leaveAdjLwp. Ensure the path exists on whatever model instance is cached.
+function ensureLeaveAdjLwpPath(schema: mongoose.Schema): void {
+  try {
+    const leaveBalance = schema.path('leaveBalance') as
+      | (mongoose.SchemaType & { schema?: mongoose.Schema })
+      | undefined;
+    if (leaveBalance?.schema && !leaveBalance.schema.path('leaveAdjLwp')) {
+      leaveBalance.schema.add({
+        leaveAdjLwp: { type: Number, default: 0 },
+      });
+    }
+  } catch (e) {
+    console.warn('Could not ensure leaveBalance.leaveAdjLwp path on User schema', e);
+  }
+}
+
+ensureLeaveAdjLwpPath(UserSchema);
+
 const User: Model<IUser> =
   mongoose.models.User || mongoose.model<IUser>('User', UserSchema);
+
+if (mongoose.models.User) {
+  ensureLeaveAdjLwpPath(mongoose.models.User.schema);
+}
 
 export default User;

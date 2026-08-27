@@ -4,6 +4,7 @@ import {
   calculateArticleDayExcessMinutes,
   isArticleEmployee,
 } from '@/lib/isArticleEmployee';
+import { typeIncludesClientPlace } from '@/lib/resolveDayWorkedHours';
 
 export type DayExcessRecordLike = {
   checkin?: string;
@@ -15,10 +16,17 @@ export type DayExcessRecordLike = {
   halfDay?: boolean;
 };
 
+/** Prefer edited punch; empty string means “not edited”, so fall back to raw. */
+function pickEditedOrRaw(edited: string | undefined, raw: string | undefined): string {
+  const e = String(edited ?? '').trim();
+  if (e) return e;
+  return String(raw ?? '').trim();
+}
+
 function effectiveInOut(record: DayExcessRecordLike) {
   return {
-    inTime: String(record.editedCheckin ?? record.checkin ?? '').trim(),
-    outTime: String(record.editedCheckout ?? record.checkout ?? '').trim(),
+    inTime: pickEditedOrRaw(record.editedCheckin, record.checkin),
+    outTime: pickEditedOrRaw(record.editedCheckout, record.checkout),
   };
 }
 
@@ -43,6 +51,57 @@ export function isHalfDayAttendanceRecord(
     .toLowerCase();
   if (!t) return false;
   return t.includes('half day') || t.includes('halfday') || t === 'hd';
+}
+
+/**
+ * Auto half-day from worked hours (fulltime/article).
+ * Does NOT use a flat 6h cutoff alone — short scheduled days (e.g. Saturday
+ * 10:45–16:15 = 5.5h) are full days when the employee works the schedule.
+ * If the schedule slot is already marked isHalfDay, hour-based HD is skipped
+ * (shorter in/out already encode the half day).
+ */
+export function shouldAutoMarkAttendanceHalfDayByHours(options: {
+  totalHour: number;
+  scheduledInTime: string;
+  scheduledOutTime: string;
+  scheduleIsHalfDay: boolean;
+  employmentType: string;
+  isArticle: boolean;
+  inTime: string;
+}): boolean {
+  const {
+    totalHour,
+    scheduledInTime,
+    scheduledOutTime,
+    scheduleIsHalfDay,
+    employmentType,
+    isArticle,
+    inTime,
+  } = options;
+
+  if (scheduleIsHalfDay) return false;
+
+  const emp = String(employmentType || 'fulltime').toLowerCase();
+  if (emp === 'fulltime' && !isArticle) {
+    const rawMins =
+      scheduledInTime &&
+      scheduledOutTime &&
+      scheduledInTime !== '00:00' &&
+      scheduledOutTime !== '00:00'
+        ? scheduledMinutesBetween(scheduledInTime, scheduledOutTime)
+        : 0;
+    const scheduledHours = rawMins > 0 ? rawMins / 60 : 6;
+    // Cap at 6h legacy threshold, but never above the day's scheduled length
+    const threshold = Math.min(6, scheduledHours);
+    return totalHour < threshold;
+  }
+
+  if (isArticle) {
+    const isAfter1PM = Boolean(inTime && inTime >= '13:00');
+    return isAfter1PM || totalHour < 3.5;
+  }
+
+  return false;
 }
 
 /**
@@ -83,7 +142,7 @@ export function isNonWorkingDayRecord(
   typeOfPresence: string,
   dateStr: string
 ): boolean {
-  const isSundayDate = new Date(dateStr).getDay() === 0;
+  const isSundayDate = new Date(`${dateStr}T12:00:00`).getDay() === 0;
   return (
     typeOfPresence === 'Holiday' ||
     typeOfPresence === 'Sunday' ||
@@ -93,18 +152,45 @@ export function isNonWorkingDayRecord(
   );
 }
 
+/**
+ * Day-credit / remote presence types must not get a full-day deficit when
+ * punches are empty (CP-P / OS-P / WFH). They use day value, not hour shortfall.
+ */
+function isValueBasedPresentForExcess(record: DayExcessRecordLike): boolean {
+  const t = String(record.typeOfPresence || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+  if (!t) return false;
+  if (typeIncludesClientPlace(t)) return true;
+  if (
+    t.includes('outstation') ||
+    t.includes('onsite presence') ||
+    t === 'os-p' ||
+    t.includes('(os-p)')
+  ) {
+    return true;
+  }
+  if (t.includes('wfh') || t.includes('work from home')) return true;
+  return false;
+}
+
 function isPresentForExcess(
   record: DayExcessRecordLike,
   inTime: string,
   outTime: string
 ): boolean {
-  return (
-    record.typeOfPresence === 'Present - outstation' ||
-    record.typeOfPresence === 'WFH - weekdays' ||
-    record.typeOfPresence === 'WFH - weekoff' ||
-    (inTime !== '00:00' && outTime !== '00:00' && !!inTime && !!outTime)
-  );
+  if (isValueBasedPresentForExcess(record)) return true;
+  return inTime !== '00:00' && outTime !== '00:00' && !!inTime && !!outTime;
 }
+
+export type CalculateDayExcessOptions = {
+  /**
+   * Company holiday (weekday). Excess/deficit is 0 — same as daywise
+   * “worked on holiday” (schedule matched to work / no day excess).
+   */
+  isCompanyHoliday?: boolean;
+};
 
 /** Per-day excess hours from schedule vs punch times (article rules when applicable). */
 export function calculateDayExcessHour(
@@ -112,10 +198,20 @@ export function calculateDayExcessHour(
   dateStr: string,
   record: DayExcessRecordLike,
   scheduledInTime: string,
-  scheduledOutTime: string
+  scheduledOutTime: string,
+  options?: CalculateDayExcessOptions
 ): number {
   const typeOfPresence = String(record.typeOfPresence || '');
-  if (isNonWorkingDayRecord(typeOfPresence, dateStr)) {
+  if (options?.isCompanyHoliday || isNonWorkingDayRecord(typeOfPresence, dateStr)) {
+    return 0;
+  }
+  const typeLower = typeOfPresence.toLowerCase();
+  if (
+    typeOfPresence === 'Absent' ||
+    typeOfPresence === 'On leave' ||
+    typeOfPresence === 'Leave' ||
+    typeLower.includes('on leave')
+  ) {
     return 0;
   }
 
@@ -141,6 +237,7 @@ export function calculateDayExcessHour(
     return -dayScheduledHours;
   }
 
+  // CP-P / OS-P / WFH with no punches: day credit only — zero hour excess/deficit.
   if (!inTime || !outTime || inTime === '00:00' || outTime === '00:00') {
     return 0;
   }
@@ -152,8 +249,6 @@ export function calculateDayExcessHour(
     dayExcess = -(scheduledMinutes - actualMinutes) / 60;
   } else if (actualMinutes > scheduledMinutes) {
     if (isArticleEmployee(user)) {
-      // Article early-in / late-out rules still use full schedule window;
-      // shortfall vs expected hours uses half schedule above.
       const excessMinutes = calculateArticleDayExcessMinutes(
         scheduledInTime,
         scheduledOutTime,
@@ -167,9 +262,7 @@ export function calculateDayExcessHour(
   }
 
   if (isSinglePunch(inTime, outTime) && dayScheduledHours > 0) {
-    dayExcess = Number(
-      ((record.totalHour ?? 0) - dayScheduledHours).toFixed(2)
-    );
+    dayExcess = Number(((record.totalHour ?? 0) - dayScheduledHours).toFixed(2));
   }
 
   return Number(dayExcess.toFixed(2));

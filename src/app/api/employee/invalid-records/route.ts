@@ -3,6 +3,7 @@ import dbConnect from '@/lib/mongodb';
 import Attendance from '@/models/Attendance';
 import User from '@/models/User';
 import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAuth';
+import { repairEqualPunchesForMonth } from '@/lib/repairEqualPunchTimes';
 
 interface InvalidRecord {
   date: string;
@@ -40,6 +41,9 @@ export async function GET(request: NextRequest) {
         error: 'User not found'
       }, { status: 404 });
     }
+
+    // Fix this user's equal in/out punches before listing
+    await repairEqualPunchesForMonth(monthYear, { userId });
 
     // Get attendance for this user
     const attendance = await Attendance.findOne({ userId, monthYear }).lean();
@@ -84,6 +88,12 @@ export async function GET(request: NextRequest) {
 
       const isCheckinInvalid = !checkin || checkin === '00:00' || checkin === '';
       const isCheckoutInvalid = !checkout || checkout === '00:00' || checkout === '';
+
+      // Equal punches (e.g. 18:04/18:04) — treat as missing check-in / exit-only remnant
+      if (!isCheckinInvalid && !isCheckoutInvalid && checkin === checkout) {
+        invalidRecords.push({ date, checkin, checkout, issue: 'missing-checkin' });
+        continue;
+      }
 
       if (!isCheckinInvalid && !isCheckoutInvalid) continue;
 

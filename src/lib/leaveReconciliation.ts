@@ -6,9 +6,9 @@
  * 1. User.leaveBalance
  *    - balanceAsOfJan26: opening balance (Excel)
  *    - earned: +2 per calendar month with attendance (from 2026-01, non-articles)
- *    - used: leave taken before Jan 2026 (Excel)
+ *    - leaveAdjLwp: HR Leave Adj/LWP (manual/upload; added into remaining)
  *    - usedAfterJan26: leave consumed from 2026 onward (ledger-driven)
- *    - remaining = balanceAsOfJan26 + earned - used - usedAfterJan26
+ *    - remaining = balanceAsOfJan26 + earned - usedAfterJan26 + leaveAdjLwp
  *
  * 2. LeaveTransaction (ledger): earned | used | adjust
  *
@@ -107,6 +107,10 @@ export interface LeaveReconcileOptions {
    * dry run preview the effect of balances that have not been saved yet.
    */
   openingBalanceOverrides?: Record<string, number>;
+  /**
+   * userId → Leave Adj/LWP to use instead of the stored `leaveAdjLwp`.
+   */
+  leaveAdjLwpOverrides?: Record<string, number>;
 }
 
 export interface LeaveReconcileDayChange {
@@ -126,7 +130,7 @@ export interface LeaveReconcileUserResult {
   isArticle: boolean;
   monthsWithAttendance: number;
   balanceAsOfJan26: number;
-  usedBeforeJan26: number;
+  leaveAdjLwp: number;
   earned: number;
   startingBalance: number;
   usedAfterJan26: number;
@@ -427,7 +431,10 @@ export async function reconcileLeaveFromAttendance(
     const balanceAsOfJan26 = Number(
       override !== undefined ? override : user.leaveBalance?.balanceAsOfJan26 || 0
     );
-    const usedBeforeJan26 = Number(user.leaveBalance?.used || 0);
+    const adjOverride = options.leaveAdjLwpOverrides?.[uid];
+    const leaveAdjLwp = Number(
+      adjOverride !== undefined ? adjOverride : user.leaveBalance?.leaveAdjLwp || 0
+    );
 
     const monthsWithAttendance = new Set<string>();
     const leaveCandidates: Array<{ date: string; monthYear: string; rec: DayRecord }> = [];
@@ -456,7 +463,7 @@ export async function reconcileLeaveFromAttendance(
     }
 
     const earnedTotal = isArticle ? 0 : monthsWithAttendance.size * MONTHLY_EARN;
-    const startingBalance = balanceAsOfJan26 + earnedTotal - usedBeforeJan26;
+    const startingBalance = balanceAsOfJan26 + earnedTotal + leaveAdjLwp;
 
     const leaveDates = leaveCandidates.map((c) => c.date);
     const { allocations, endingBalance: afterFullDays } = allocateLeaveDays(
@@ -485,7 +492,7 @@ export async function reconcileLeaveFromAttendance(
 
     const newRemaining = Math.max(
       0,
-      Math.round((balanceAsOfJan26 + earnedTotal - usedBeforeJan26 - totalUsedAfter) * 1000) / 1000
+      Math.round((balanceAsOfJan26 + earnedTotal - totalUsedAfter + leaveAdjLwp) * 1000) / 1000
     );
 
     let userRecordChanges = 0;
@@ -518,7 +525,7 @@ export async function reconcileLeaveFromAttendance(
       isArticle,
       monthsWithAttendance: monthsWithAttendance.size,
       balanceAsOfJan26,
-      usedBeforeJan26,
+      leaveAdjLwp,
       earned: earnedTotal,
       startingBalance,
       usedAfterJan26: totalUsedAfter,

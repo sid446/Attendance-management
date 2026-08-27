@@ -13,6 +13,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { employeeCredentialsInit } from "@/lib/employeeCredentialsInit";
+import { EmployeeSummaryMonthPicker } from "@/components/EmployeeSummaryMonthPicker";
 import { istDateString } from "@/lib/attendanceRequestWindow";
 import {
   DAILY_UPDATE_GROUP_META,
@@ -46,6 +47,47 @@ function shiftIstDate(date: string, deltaDays: number): string {
   if (Number.isNaN(parsed.getTime())) return istDateString();
   parsed.setDate(parsed.getDate() + deltaDays);
   return istDateString(parsed);
+}
+
+function clampDateToMonthYear(date: string, monthYear: string): string {
+  if (!/^\d{4}-\d{2}$/.test(monthYear)) return date;
+  const dayNum = parseInt(date.slice(8, 10), 10);
+  const day = Number.isFinite(dayNum) && dayNum >= 1 ? dayNum : 1;
+  const [ys, ms] = monthYear.split("-");
+  const y = parseInt(ys, 10);
+  const m = parseInt(ms, 10);
+  const lastDay = new Date(y, m, 0).getDate();
+  return `${monthYear}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
+}
+
+function istWeekdayIndex(date: string): number {
+  const label = new Date(`${date}T12:00:00+05:30`).toLocaleDateString("en-US", {
+    weekday: "short",
+    timeZone: "Asia/Kolkata",
+  });
+  const order = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const idx = order.indexOf(label);
+  return idx >= 0 ? idx : 0;
+}
+
+function startOfIstWeek(date: string): string {
+  const weekday = istWeekdayIndex(date);
+  const mondayOffset = weekday === 0 ? -6 : 1 - weekday;
+  return shiftIstDate(date, mondayOffset);
+}
+
+function formatWeekdayShort(date: string): string {
+  return new Date(`${date}T12:00:00+05:30`).toLocaleDateString("en-IN", {
+    weekday: "short",
+    timeZone: "Asia/Kolkata",
+  });
+}
+
+function formatDayNum(date: string): string {
+  return new Date(`${date}T12:00:00+05:30`).toLocaleDateString("en-IN", {
+    day: "numeric",
+    timeZone: "Asia/Kolkata",
+  });
 }
 
 function formatDateHeading(date: string): string {
@@ -187,36 +229,100 @@ export function TeamDailyUpdatesSection({
 
   const visibleGroups = DISPLAY_ORDER.filter((key) => grouped[key].length > 0);
 
-  const datePicker = (
-    <div className="flex flex-wrap items-center gap-1 rounded-lg border border-border bg-background p-1">
-      <button
-        type="button"
-        onClick={() => setDate((d) => shiftIstDate(d, -1))}
-        className="rounded-md p-2 text-muted-foreground hover:bg-surface hover:text-foreground"
-        aria-label="Previous day"
-      >
-        <ChevronLeft className="h-4 w-4" />
-      </button>
-      <div className="min-w-[11rem] px-2 text-center text-sm font-medium text-foreground">
-        {formatDateHeading(date)}
+  const today = istDateString();
+  const weekDates = useMemo(() => {
+    const start = startOfIstWeek(date);
+    return Array.from({ length: 7 }, (_, i) => shiftIstDate(start, i));
+  }, [date]);
+
+  const periodSelection = (
+    <div className="space-y-3">
+      <EmployeeSummaryMonthPicker
+        monthYear={date.slice(0, 7)}
+        onMonthYearChange={(monthYear) => setDate((current) => clampDateToMonthYear(current, monthYear))}
+        disabled={loading}
+        label="Period"
+      />
+      <div className="rounded-xl border border-border bg-surface p-3 sm:p-4">
+        <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          Day
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setDate((d) => shiftIstDate(d, -1))}
+            disabled={loading}
+            className="rounded-lg border border-border bg-background p-2 text-foreground hover:bg-surface/70 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Previous day"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <label className="sr-only" htmlFor="daily-updates-date">
+            Select date
+          </label>
+          <input
+            id="daily-updates-date"
+            type="date"
+            value={date}
+            onChange={(e) => {
+              const next = e.target.value;
+              if (/^\d{4}-\d{2}-\d{2}$/.test(next)) setDate(next);
+            }}
+            disabled={loading}
+            className="rounded-lg border border-border bg-background px-2 py-2 text-sm text-foreground disabled:opacity-50"
+          />
+          <button
+            type="button"
+            onClick={() => setDate((d) => shiftIstDate(d, 1))}
+            disabled={loading}
+            className="rounded-lg border border-border bg-background p-2 text-foreground hover:bg-surface/70 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Next day"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+          {date !== today && (
+            <button
+              type="button"
+              onClick={() => setDate(today)}
+              disabled={loading}
+              className="rounded-lg border border-border bg-background px-2.5 py-2 text-xs font-medium text-foreground hover:bg-surface/70 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Today
+            </button>
+          )}
+          <p className="min-w-0 flex-1 text-sm font-medium text-foreground sm:text-right">
+            {formatDateHeading(date)}
+          </p>
+        </div>
+        <div className="mt-3 grid grid-cols-7 gap-1" role="group" aria-label="Week">
+          {weekDates.map((weekDate) => {
+            const selected = weekDate === date;
+            const isToday = weekDate === today;
+            return (
+              <button
+                key={weekDate}
+                type="button"
+                onClick={() => setDate(weekDate)}
+                disabled={loading}
+                className={`rounded-lg border px-1 py-2 text-center disabled:cursor-not-allowed disabled:opacity-50 ${
+                  selected
+                    ? "border-sky-500/50 bg-sky-950/30 text-foreground shadow-sm"
+                    : isToday
+                      ? "border-border bg-background text-foreground hover:bg-surface/70"
+                      : "border-transparent bg-background/60 text-muted-foreground hover:border-border hover:bg-surface/70 hover:text-foreground"
+                }`}
+                aria-pressed={selected}
+                aria-label={formatDateHeading(weekDate)}
+              >
+                <span className="block text-[10px] font-medium uppercase tracking-wide">
+                  {formatWeekdayShort(weekDate)}
+                </span>
+                <span className="mt-0.5 block text-sm font-semibold">{formatDayNum(weekDate)}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
-      <button
-        type="button"
-        onClick={() => setDate((d) => shiftIstDate(d, 1))}
-        className="rounded-md p-2 text-muted-foreground hover:bg-surface hover:text-foreground"
-        aria-label="Next day"
-      >
-        <ChevronRight className="h-4 w-4" />
-      </button>
-      {date !== istDateString() && (
-        <button
-          type="button"
-          onClick={() => setDate(istDateString())}
-          className="ml-1 rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface"
-        >
-          Today
-        </button>
-      )}
     </div>
   );
 
@@ -322,7 +428,7 @@ export function TeamDailyUpdatesSection({
   if (!showHeader) {
     return (
       <div className="space-y-4">
-        {datePicker}
+        {periodSelection}
         {body}
       </div>
     );
@@ -331,16 +437,12 @@ export function TeamDailyUpdatesSection({
   return (
     <section className="rounded-xl border border-border bg-surface shadow-[inset_0_0_0_1px_rgba(147,197,253,0.18)]">
       <header className="border-b border-border bg-background/60 px-4 py-4 sm:px-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="text-lg font-semibold tracking-tight text-foreground">Daily updates</h2>
-            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Who on your team is on leave, WFH, outstation, or has an approved or pending request
-              for the selected day (IST).
-            </p>
-          </div>
-          {datePicker}
-        </div>
+        <h2 className="text-lg font-semibold tracking-tight text-foreground">Daily updates</h2>
+        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+          Who on your team is on leave, WFH, outstation, or has an approved or pending request
+          for the selected day (IST).
+        </p>
+        <div className="mt-4">{periodSelection}</div>
       </header>
       {body}
     </section>

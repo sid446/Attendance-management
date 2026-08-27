@@ -158,3 +158,28 @@ export async function exportHistoricalLogToExcel(
   const base = String(exportFileName || 'Upload_Errors').replace(/\.xlsx$/i, '');
   await downloadSheetAsExcel(wsData, `${base}.xlsx`);
 }
+
+/** One workbook with every historical upload-error log row. */
+export async function exportAllHistoricalLogsToExcel(
+  logs: Array<{ fileName?: string; uploadDate?: string | Date; errorDetails?: GroupedUploadError[] }>,
+  exportFileName = 'All_Upload_Errors.xlsx'
+): Promise<void> {
+  const wsData: Record<string, string | number>[] = [];
+  for (const log of logs) {
+    const details = Array.isArray(log.errorDetails) ? log.errorDetails : [];
+    const fileName = String(log.fileName || 'upload');
+    const uploadDate = log.uploadDate
+      ? new Date(log.uploadDate).toLocaleString('en-GB')
+      : '';
+    for (const e of details) {
+      wsData.push({
+        'File Name': fileName,
+        'Upload Date': uploadDate,
+        'Error Message': e.message,
+        Occurrences: e.count,
+        'Sample Records (Max 5)': (e.sampleRows || []).join(', '),
+      });
+    }
+  }
+  await downloadSheetAsExcel(wsData, exportFileName, 'All Errors');
+}

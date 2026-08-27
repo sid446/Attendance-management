@@ -10,9 +10,25 @@ export interface LeaveBalance {
   balanceAsOfJan26: number;
   earned: number;
   used: number;
+  leaveAdjLwp?: number;
+  usedAfterJan26?: number;
   remaining: number;
   lastUpdated: Date;
   monthlyEarned: number;
+}
+
+/** remaining = B/F + earned − usedAfterJan26 + leaveAdjLwp (floored at 0). */
+export function computeLeaveRemaining(parts: {
+  balanceAsOfJan26?: number | null;
+  earned?: number | null;
+  usedAfterJan26?: number | null;
+  leaveAdjLwp?: number | null;
+}): number {
+  const bf = Number(parts.balanceAsOfJan26 || 0);
+  const earned = Number(parts.earned || 0);
+  const usedAfter = Number(parts.usedAfterJan26 || 0);
+  const adj = Number(parts.leaveAdjLwp || 0);
+  return Math.max(0, Number((bf + earned - usedAfter + adj).toFixed(3)));
 }
 
 export interface LeaveTransaction {
@@ -25,12 +41,12 @@ export interface LeaveTransaction {
 }
 
 function getCurrentUserRemaining(user: any): number {
-  return (
-    (user?.leaveBalance?.balanceAsOfJan26 || 0) +
-    (user?.leaveBalance?.earned || 0) -
-    (user?.leaveBalance?.used || 0) -
-    (user?.leaveBalance?.usedAfterJan26 || 0)
-  );
+  return computeLeaveRemaining({
+    balanceAsOfJan26: user?.leaveBalance?.balanceAsOfJan26,
+    earned: user?.leaveBalance?.earned,
+    usedAfterJan26: user?.leaveBalance?.usedAfterJan26,
+    leaveAdjLwp: user?.leaveBalance?.leaveAdjLwp,
+  });
 }
 
 async function getEffectiveRemainingForMonth(
@@ -143,15 +159,17 @@ export async function creditMonthlyEarnedIfNeeded(
     const monthlyEarned = user.leaveBalance?.monthlyEarned || 2;
     const currentEarned = user.leaveBalance?.earned || 0;
     const currentBalanceAsOfJan26 = user.leaveBalance?.balanceAsOfJan26 || 0;
-    const currentUsed = user.leaveBalance?.used || 0;
     const currentUsedAfterJan26 = user.leaveBalance?.usedAfterJan26 || 0;
+    const leaveAdjLwp = user.leaveBalance?.leaveAdjLwp || 0;
 
     const newEarned = Number((currentEarned + monthlyEarned).toFixed(3));
     // Balance can never go negative; floor at 0.
-    const newRemaining = Math.max(
-      0,
-      Number((currentBalanceAsOfJan26 + newEarned - currentUsed - currentUsedAfterJan26).toFixed(3))
-    );
+    const newRemaining = computeLeaveRemaining({
+      balanceAsOfJan26: currentBalanceAsOfJan26,
+      earned: newEarned,
+      usedAfterJan26: currentUsedAfterJan26,
+      leaveAdjLwp,
+    });
 
     await User.findByIdAndUpdate(user._id, {
       'leaveBalance.earned': newEarned,
@@ -379,7 +397,7 @@ export async function updateLeaveBalanceOnApproval(
         const currentUsedAfterJan26 = user.leaveBalance?.usedAfterJan26 || 0;
         const currentBalanceAsOfJan26 = user.leaveBalance?.balanceAsOfJan26 || 0;
         const currentEarned = user.leaveBalance?.earned || 0;
-        const currentUsed = user.leaveBalance?.used || 0;
+        const leaveAdjLwp = user.leaveBalance?.leaveAdjLwp || 0;
         const monthYear = (dateOrDetails && dateOrDetails.length >= 7) ? dateOrDetails.slice(0,7) : undefined;
         const effectiveRemainingForMonth = await getEffectiveRemainingForMonth(
           userId,
@@ -395,8 +413,12 @@ export async function updateLeaveBalanceOnApproval(
         }
 
         const newUsedAfterJan26 = currentUsedAfterJan26 + 1;
-        const calculatedRemaining = currentBalanceAsOfJan26 + currentEarned - currentUsed - newUsedAfterJan26;
-        const safeRemaining = Math.max(0, calculatedRemaining);
+        const safeRemaining = computeLeaveRemaining({
+          balanceAsOfJan26: currentBalanceAsOfJan26,
+          earned: currentEarned,
+          usedAfterJan26: newUsedAfterJan26,
+          leaveAdjLwp,
+        });
 
         await User.findByIdAndUpdate(userId, {
           'leaveBalance.usedAfterJan26': newUsedAfterJan26,
@@ -457,7 +479,7 @@ export async function updateLeaveBalanceOnApproval(
     const currentUsedAfterJan26 = user.leaveBalance?.usedAfterJan26 || 0;
     const currentBalanceAsOfJan26 = user.leaveBalance?.balanceAsOfJan26 || 0;
     const currentEarned = user.leaveBalance?.earned || 0;
-    const currentUsed = user.leaveBalance?.used || 0;
+    const leaveAdjLwp = user.leaveBalance?.leaveAdjLwp || 0;
 
     // Determine paid capacity month-wise using snapshot-aware effective remaining.
     const paidByMonth = new Map<string, Array<{ date: string; isPaidLeave: boolean; value: number }>>();
@@ -486,8 +508,12 @@ export async function updateLeaveBalanceOnApproval(
     }
 
     const newUsedAfterJan26 = currentUsedAfterJan26 + paidCount;
-    const calculatedRemaining = currentBalanceAsOfJan26 + currentEarned - currentUsed - newUsedAfterJan26;
-    const safeRemaining = Math.max(0, calculatedRemaining);
+    const safeRemaining = computeLeaveRemaining({
+      balanceAsOfJan26: currentBalanceAsOfJan26,
+      earned: currentEarned,
+      usedAfterJan26: newUsedAfterJan26,
+      leaveAdjLwp,
+    });
     await User.findByIdAndUpdate(userId, {
       'leaveBalance.usedAfterJan26': newUsedAfterJan26,
       'leaveBalance.remaining': safeRemaining,
@@ -551,11 +577,19 @@ export async function reconcilePartialLeaveFromAttendance(
 
     const balanceAsOfJan26 = user.leaveBalance?.balanceAsOfJan26 || 0;
     const currentEarned = user.leaveBalance?.earned || 0;
-    const currentUsed = user.leaveBalance?.used || 0;
+    const leaveAdjLwp = user.leaveBalance?.leaveAdjLwp || 0;
     let currentUsedAfterJan26 = round2(user.leaveBalance?.usedAfterJan26 || 0);
 
     const affectedMonths = new Set<string>();
-    const computeRemaining = () => round2(balanceAsOfJan26 + currentEarned - currentUsed - currentUsedAfterJan26);
+    const computeRemaining = () =>
+      round2(
+        computeLeaveRemaining({
+          balanceAsOfJan26,
+          earned: currentEarned,
+          usedAfterJan26: currentUsedAfterJan26,
+          leaveAdjLwp,
+        })
+      );
 
     for (const entry of entries) {
       const date = String(entry?.date || '').trim();
@@ -621,7 +655,7 @@ export async function reconcilePartialLeaveFromAttendance(
       }
     }
 
-    const safeRemaining = Math.max(0, round2(balanceAsOfJan26 + currentEarned - currentUsed - currentUsedAfterJan26));
+    const safeRemaining = computeRemaining();
     await User.findByIdAndUpdate(userId, {
       'leaveBalance.usedAfterJan26': currentUsedAfterJan26,
       'leaveBalance.remaining': safeRemaining,
@@ -668,6 +702,7 @@ export async function resetLeaveBalance(userId: mongoose.Types.ObjectId): Promis
     await User.findByIdAndUpdate(userId, {
       'leaveBalance.earned': 0,
       'leaveBalance.used': 0,
+      'leaveBalance.leaveAdjLwp': 0,
       'leaveBalance.remaining': 0,
       'leaveBalance.lastUpdated': new Date(),
     });
@@ -787,8 +822,13 @@ export async function removePaidLeaveForDate(
 
     const balanceAsOfJan26 = Number(user.leaveBalance?.balanceAsOfJan26 || 0);
     const currentEarned = Number(user.leaveBalance?.earned || 0);
-    const currentUsed = Number(user.leaveBalance?.used || 0);
-    const newRemaining = Math.max(0, Number((balanceAsOfJan26 + currentEarned - currentUsed - newUsedAfter).toFixed(3)));
+    const leaveAdjLwp = Number(user.leaveBalance?.leaveAdjLwp || 0);
+    const newRemaining = computeLeaveRemaining({
+      balanceAsOfJan26,
+      earned: currentEarned,
+      usedAfterJan26: newUsedAfter,
+      leaveAdjLwp,
+    });
 
     await User.findByIdAndUpdate(userId, {
       'leaveBalance.usedAfterJan26': newUsedAfter,

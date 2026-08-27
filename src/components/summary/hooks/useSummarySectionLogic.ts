@@ -9,7 +9,7 @@ import {
   getExtraWorkHoursTotalForPeriod,
   isExcessEligibleRecord,
   getWorkedHoursMatchingScheduledDays,
-  getExcessDeficitLikeSummary,
+  getDayExcessSumForPeriod,
   getArticleExcessBreakdownForPeriod,
   isDayIncludedInScheduledCalc,
   isWorkedOnHolidayRecord,
@@ -24,7 +24,7 @@ import {
   getRecordPunchTimeRange,
   sumExtraWorkEntryHours,
 } from '@/lib/extraWorkRequest';
-import { isArticleEmployee } from '@/lib/isArticleEmployee';
+import { resolveDayWorkedHours, typeIncludesClientPlace } from '@/lib/resolveDayWorkedHours';
 import {
   getDesignationForDate,
   getDesignationForSummary,
@@ -43,8 +43,8 @@ import type { SummaryExportContext } from '../exports/exportTypes';
 import type { EnrichedSummary, SummarySectionProps } from '../types';
 import {
   applyExcessHourAllowance,
-  applyDayAllowanceToRawExcess,
   lookupExcessAllowance,
+  lookupExcessDisplay,
   resolveDisplayExcess,
   type ExcessAllowanceLookup,
   type ExcessDayAllowanceLookup,
@@ -329,8 +329,7 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
         // Presence types that shouldn't be absent even with 0 hours
         const isPresenceType = typeLower.includes('wfh') || 
                                typeLower.includes('outstation') || 
-                               typeLower.includes('clientplace') ||
-                               typeLower.includes('client place') ||
+                               typeIncludesClientPlace(typeLower) ||
                                typeLower.includes('half day') ||
                                rec.halfDay;
 
@@ -433,7 +432,13 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
       dateList.forEach((date) => {
           const rec = records[date];
           if (!user || !isDayIncludedInScheduledCalc(user, date, rec)) return;
-          if (!rec || Number(rec.totalHour || 0) <= 0) return;
+          const schedule = getScheduledTimes(user, date);
+          const dayHours = resolveDayWorkedHours(rec as any, {
+            scheduledIn: schedule.inTime,
+            scheduledOut: schedule.outTime,
+            allowValueScheduleFallback: false,
+          });
+          if (!rec || dayHours <= 0) return;
 
           const extraHours = sumExtraWorkEntryHours(
             (rec as { extraWorkEntries?: Array<{ hours?: number; startTime?: string; endTime?: string }> })
@@ -450,9 +455,9 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
 
           let info = `Punch ${formatHoursMinutes(punchHours)}`;
           if (extraHours > 0) {
-            info += ` + Extra ${formatHoursMinutes(extraHours)} = ${formatHoursMinutes(rec.totalHour)}`;
+            info += ` + Extra ${formatHoursMinutes(extraHours)} = ${formatHoursMinutes(dayHours)}`;
           } else {
-            info = formatHoursMinutes(rec.totalHour);
+            info = formatHoursMinutes(dayHours);
           }
 
           const subParts = [`In/out: ${punchRange}`];
@@ -503,8 +508,7 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
         const typeLower = String(rec.typeOfPresence || '').toLowerCase();
         const isPresenceType = typeLower.includes('wfh') || 
                                typeLower.includes('outstation') || 
-                               typeLower.includes('clientplace') ||
-                               typeLower.includes('client place') ||
+                               typeIncludesClientPlace(typeLower) ||
                                typeLower.includes('half day') ||
                                rec.halfDay;
 
@@ -600,8 +604,7 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
                   const typeLower = String(rec.typeOfPresence || '').toLowerCase();
                   const isPresenceType = typeLower.includes('wfh') || 
                                          typeLower.includes('outstation') || 
-                                         typeLower.includes('clientplace') ||
-                                         typeLower.includes('client place') ||
+                                         typeIncludesClientPlace(typeLower) ||
                                          typeLower.includes('half day') ||
                                          rec.halfDay;
 
@@ -1252,89 +1255,59 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
     const dateList = getExcessDateListForCurrentPeriod().filter(
       (d) => !(user?.inactiveAsOf && isDateOnOrAfterInactive(d, user.inactiveAsOf))
     );
-    const workedHours = user
-      ? getWorkedHoursMatchingScheduledDays(item, user, dateList)
-      : Number(item.summary?.totalHour || 0);
-    const scheduledHours = Number(calculateScheduledHoursNoLunch(item) || 0);
+    const holidayDates = new Set(holidays.map((h) => h.date));
     const rawTotal = user
-      ? getExcessDeficitLikeSummary(item, user, dateList, workedHours)
-      : Number((workedHours - scheduledHours).toFixed(2));
+      ? getDayExcessSumForPeriod(item, user, dateList, { holidayDates })
+      : 0;
+    const withDays = user
+      ? getDayExcessSumForPeriod(item, user, dateList, {
+          holidayDates,
+          dayAllowanceMap: excessDayAllowanceMap,
+        })
+      : 0;
+    const fromDays = lookupExcessDisplay(
+      user?.inactiveAsOf ? null : excessDisplayMap,
+      String(item.userId || ''),
+      item.monthYear
+    );
+    const displayAgrees = fromDays != null && Math.abs(fromDays - withDays) <= 1;
     const displayTotal =
       typeof enriched.calcExcessDeficit === 'number'
         ? enriched.calcExcessDeficit
-        : resolveDisplayExcess(
-            rawTotal,
-            item.userId,
-            item.monthYear,
-            excessAllowanceMap,
-            user?.inactiveAsOf ? null : excessDisplayMap
-          );
+        : displayAgrees
+          ? fromDays!
+          : resolveDisplayExcess(
+              withDays,
+              item.userId,
+              item.monthYear,
+              excessAllowanceMap,
+              null
+            );
 
-    if (user && isArticleEmployee(user)) {
+    if (user) {
       return {
         total: displayTotal,
         breakdown: getArticleExcessBreakdownForPeriod(item, user, dateList, {
           displayTotal,
           dayAllowanceMap: excessDayAllowanceMap,
+          holidayDates,
         }),
       };
     }
 
-    const breakdown: { date: string; info: string; subInfo?: string }[] = [
-      { date: 'Worked Hours', info: formatHoursMinutes(workedHours) },
-      { date: 'Scheduled Hours', info: formatHoursMinutes(scheduledHours) },
-    ];
-
-    const extraWorkTotal = getExtraWorkHoursTotalForPeriod(item, dateList);
-    if (extraWorkTotal > 0) {
-      const punchWorked = Number((workedHours - extraWorkTotal).toFixed(2));
-      breakdown.splice(1, 0, {
-        date: 'Punch hours',
-        info: formatHoursMinutes(punchWorked),
-        subInfo: 'From check-in / check-out only',
-      });
-      breakdown.splice(2, 0, {
-        date: 'Extra work hours',
-        info: `+${formatHoursMinutes(extraWorkTotal)}`,
-        subInfo: 'Approved extra-work slots',
-      });
-    }
-
-    dateList.forEach((dateStr) => {
-      const rec = item.recordDetails?.[dateStr];
-      if (!user || !isDayIncludedInScheduledCalc(user, dateStr, rec)) return;
-      const extraHours = sumExtraWorkEntryHours(
-        (rec as { extraWorkEntries?: Array<{ hours?: number; startTime?: string; endTime?: string }> } | undefined)
-          ?.extraWorkEntries
-      );
-      if (extraHours <= 0 && !getRecordPunchTimeRange(rec).inTime) return;
-
-      const punchRange = formatRecordPunchTimeRange(rec);
-      const extraTimes = formatExtraWorkEntriesTimeSummary(
-        (rec as { extraWorkEntries?: Array<{ startTime?: string; endTime?: string }> } | undefined)
-          ?.extraWorkEntries
-      );
-      const punchHours = getRecordPunchHours(rec);
-      let info = `Punch ${punchRange}`;
-      if (extraHours > 0) {
-        info += ` · Extra +${formatHoursMinutes(extraHours)}`;
-        if (extraTimes) info += ` (${extraTimes})`;
-      }
-      breakdown.push({
-        date: dateStr,
-        info,
-        subInfo: `Worked ${formatHoursMinutes(Number(rec?.totalHour || 0))}`,
-      });
-    });
-
-    breakdown.push({
-      date: 'Excess (Worked - Scheduled)',
-      info: `${displayTotal >= 0 ? '+' : '-'}${formatHoursMinutes(Math.abs(displayTotal))}`,
-      subInfo:
-        displayTotal !== rawTotal ? `Calculated ${formatHoursMinutes(rawTotal)} before allowance` : undefined,
-    });
-
-    return { total: displayTotal, breakdown };
+    return {
+      total: displayTotal,
+      breakdown: [
+        {
+          date: 'Excess',
+          info: `${displayTotal >= 0 ? '+' : '-'}${formatHoursMinutes(Math.abs(displayTotal))}`,
+          subInfo:
+            displayTotal !== rawTotal
+              ? `Calculated ${formatHoursMinutes(rawTotal)} before allowance`
+              : undefined,
+        },
+      ],
+    };
   };
 
   const filteredSummaries = useMemo(() => {
@@ -1421,34 +1394,39 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
             };
           });
         }
-        // Employees: worked − scheduled on the same day set. Articles: per-day article excess sum.
+        // Live day-sum (same as Daywise): calculateDayExcessHour per day + day allowances.
+        const holidayDatesSetForExcess = holidayDatesSet;
         const rawExcessDeficit = user
-          ? getExcessDeficitLikeSummary(item, user, periodDateList, workedTotal)
+          ? getDayExcessSumForPeriod(item, user, periodDateList, {
+              holidayDates: holidayDatesSetForExcess,
+              dayAllowanceMap: null,
+            })
           : Number((workedTotal - sched).toFixed(2));
 
         let calcExcessDeficit: number;
-        if (user?.inactiveAsOf) {
-          // Match daywise: never count on/after inactiveAsOf. Prefer day approvals before cutoff;
-          // ignore month display map (may still include post-leave stored deficits).
-          const uid = String(item.userId || '');
-          const hasDayDecisions = Object.keys(excessDayAllowanceMap || {}).some((k) =>
-            k.startsWith(`${uid}:`)
+        const uid = String(item.userId || '');
+        const hasDayDecisions = Object.keys(excessDayAllowanceMap || {}).some((k) =>
+          k.startsWith(`${uid}:`)
+        );
+        if (user) {
+          const withDays = getDayExcessSumForPeriod(item, user, periodDateList, {
+            holidayDates: holidayDatesSetForExcess,
+            dayAllowanceMap: excessDayAllowanceMap,
+          });
+          const fromDays = lookupExcessDisplay(
+            user.inactiveAsOf ? null : excessDisplayMap,
+            uid,
+            item.monthYear
           );
-          if (hasDayDecisions) {
-            let display = 0;
-            for (const dateStr of periodDateList) {
-              const rec = item.recordDetails?.[dateStr] as { excessHour?: number } | undefined;
-              display += applyDayAllowanceToRawExcess(
-                Number(rec?.excessHour ?? 0),
-                uid,
-                dateStr,
-                excessDayAllowanceMap
-              );
-            }
-            calcExcessDeficit = Number(display.toFixed(2));
+          const displayAgrees =
+            fromDays != null && Math.abs(fromDays - withDays) <= 1;
+          if (displayAgrees) {
+            calcExcessDeficit = fromDays!;
+          } else if (hasDayDecisions || user.inactiveAsOf) {
+            calcExcessDeficit = withDays;
           } else {
             calcExcessDeficit = resolveDisplayExcess(
-              rawExcessDeficit,
+              withDays,
               item.userId,
               item.monthYear,
               excessAllowanceMap,
@@ -1461,7 +1439,7 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
             item.userId,
             item.monthYear,
             excessAllowanceMap,
-            excessDisplayMap
+            null
           );
         }
         const cap = lookupExcessAllowance(excessAllowanceMap, item.userId, item.monthYear);
@@ -1506,8 +1484,7 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
           const typeLower = String(rec.typeOfPresence || '').toLowerCase();
           const isPresenceType = typeLower.includes('wfh') || 
                                  typeLower.includes('outstation') || 
-                                 typeLower.includes('clientplace') ||
-                                 typeLower.includes('client place') ||
+                                 typeIncludesClientPlace(typeLower) ||
                                  typeLower.includes('half day') ||
                                  rec.halfDay;
 
@@ -1529,7 +1506,7 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
           const type = String(rec.typeOfPresence || '').toLowerCase();
           
           if ((effectiveCheckin && effectiveCheckin !== '00:00') || (rec.halfDay && !isBothZero) || 
-              ((type.includes('wfh') || type.includes('outstation') || type.includes('clientplace') || type.includes('client place')) && (rec.value > 0 || !isBothZero))) {
+              ((type.includes('wfh') || type.includes('outstation') || typeIncludesClientPlace(type)) && (rec.value > 0 || !isBothZero))) {
             calcPresent += 1;
           }
         });

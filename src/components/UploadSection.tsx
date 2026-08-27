@@ -4,6 +4,7 @@ import { confirmMajorAction } from '@/lib/confirmMajorAction';
 import {
   exportGroupedErrorsToExcel,
   exportHistoricalLogToExcel,
+  exportAllHistoricalLogsToExcel,
   sanitizeDownloadFileName,
 } from '@/lib/uploadErrorLogUtils';
 
@@ -221,6 +222,20 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
     } catch (err) {
       console.error('Failed to export historical upload errors:', err);
       alert(err instanceof Error ? err.message : 'Failed to download error report');
+    }
+  };
+
+  const exportAllHistoricalLogs = async () => {
+    if (logs.length === 0) return;
+    try {
+      const stamp = new Date().toISOString().slice(0, 10);
+      await exportAllHistoricalLogsToExcel(
+        logs,
+        sanitizeDownloadFileName(`All_Upload_Errors_${stamp}.xlsx`)
+      );
+    } catch (err) {
+      console.error('Failed to export all upload error logs:', err);
+      alert(err instanceof Error ? err.message : 'Failed to download all error logs');
     }
   };
 
@@ -892,16 +907,29 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
       </div>
 
       <div className="mt-6 border-t border-slate-200 pt-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="text-lg font-semibold text-slate-800">Upload History & Logs</h3>
-          <button
-            type="button"
-            onClick={() => setShowLogs(!showLogs)}
-            className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
-          >
-            <History className="h-4 w-4" />
-            {showLogs ? 'Hide Logs' : 'View Past Logs'}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {showLogs && logs.length > 0 && (
+              <button
+                type="button"
+                onClick={() => void exportAllHistoricalLogs()}
+                className="inline-flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-800 hover:bg-red-100 transition-colors"
+                title="Download every past upload error log in one Excel file"
+              >
+                <Download className="h-4 w-4" />
+                Download all errors
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowLogs(!showLogs)}
+              className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              <History className="h-4 w-4" />
+              {showLogs ? 'Hide Logs' : 'View Past Logs'}
+            </button>
+          </div>
         </div>
 
         {uploadErrors.length > 0 && !showLogs && (

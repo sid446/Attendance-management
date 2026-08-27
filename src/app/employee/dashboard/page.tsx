@@ -288,6 +288,7 @@ function mapEmployeeDayStatus(
     typeLower.includes('wfh') ||
     typeLower.includes('outstation') ||
     typeLower.includes('clientplace') ||
+    typeLower.includes('client place') ||
     typeLower.includes('half day') ||
     typeLower.includes('present - in office') ||
     typeLower.includes('present in office') ||
@@ -2780,7 +2781,7 @@ export default function EmployeeDashboard() {
               <div>
                 <h3 className="text-sm font-semibold text-foreground sm:text-base">Daily updates</h3>
                 <p className="text-xs text-muted-foreground">
-                  Team leave, WFH, travel &amp; requests · IST
+                  Team leave, WFH, travel &amp; requests · pick a period (IST)
                 </p>
               </div>
               <button

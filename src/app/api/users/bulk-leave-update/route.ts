@@ -79,18 +79,18 @@ export async function POST(request: NextRequest) {
 
       try {
         const leavesAllowed = parseFloat(item.leavesAllowed) || 0;
-        const leavesTaken = Math.abs(parseFloat(item.leavesTaken) || 0); // Ensure used is always positive
+        const leavesTaken = parseFloat(item.leavesTaken) || 0; // Leave Adj/LWP (may be negative)
 
         // Update leave balance
         // 'balanceAsOfJan26' stores the opening balance as of 1st Jan 2026 (from Excel)
         // 'earned' is calculated from attendance uploads after Jan 2026
-        // 'used' field stores leaves taken BEFORE 1st Jan 2026 (from Excel)
+        // 'leaveAdjLwp' is HR Leave Adj/LWP (added into remaining)
         // 'usedAfterJan26' is calculated dynamically from attendance records
         // 'remaining' is calculated dynamically
         await User.findByIdAndUpdate(matchedUser._id, {
           $set: {
             'leaveBalance.balanceAsOfJan26': leavesAllowed,
-            'leaveBalance.used': leavesTaken, // Leaves before 1st Jan 2026
+            'leaveBalance.leaveAdjLwp': leavesTaken, // Leave Adj/LWP from Excel
             'leaveBalance.lastUpdated': new Date()
           }
         });

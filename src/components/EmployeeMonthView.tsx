@@ -989,6 +989,21 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
     if (STATUS_USE_SCHEDULE.has(status)) {
       setFormValue(1);
       if (dateStr) {
+        // Keep GPS punch times for location-verified days — do not snap to schedule
+        const stored = employeeDays.find((r) => String(r.date || '').slice(0, 10) === dateStr);
+        const gpsIn = String(stored?.checkin || '').trim();
+        const gpsOut = String(stored?.checkout || '').trim();
+        const isGpsLocationDay =
+          status === 'Present - client place' &&
+          !!stored &&
+          /location verified/i.test(String(stored.remarks || '')) &&
+          isValidPunchTime(gpsIn) &&
+          isValidPunchTime(gpsOut);
+        if (isGpsLocationDay) {
+          setFormStartTime(gpsIn);
+          setFormEndTime(gpsOut);
+          return;
+        }
         const sch = getScheduledTimesForDate(dateStr);
         if (sch.inTime) setFormStartTime(sch.inTime);
         if (sch.outTime) setFormEndTime(sch.outTime);

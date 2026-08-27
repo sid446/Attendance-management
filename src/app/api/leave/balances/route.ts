@@ -3,6 +3,9 @@ import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
 import LeaveTransaction from '@/models/LeaveTransaction';
 import { getWorkingUnderPartnerForDate, lastDayOfMonthYear } from '@/lib/userFieldHistory';
+import { computeLeaveRemaining } from '@/lib/leaveManagement';
+
+export const dynamic = 'force-dynamic';
 
 function ymdFromDate(d: Date): string {
   const y = d.getFullYear();
@@ -42,10 +45,12 @@ export async function GET(request: NextRequest) {
         ? todayYmd
         : monthEndYmd(monthYear);
 
-    // Fetch all users with their leave balance information
+    // lean() so nested fields like leaveAdjLwp are returned even if a stale
+    // in-memory Mongoose model was compiled before the schema path existed.
     const users = await User.find({ isActive: true })
       .select('name employeeCode team workingUnderPartner fieldHistories leaveBalance joiningDate employmentType')
-      .sort({ name: 1 });
+      .sort({ name: 1 })
+      .lean();
 
     // Used leave on/after 1 Jan 2026, through asOfDate for the selected month.
     const usedTxAgg = await LeaveTransaction.aggregate([
@@ -100,9 +105,9 @@ export async function GET(request: NextRequest) {
 
     // Transform the data to include user information with leave balances
     const leaveBalances = users.map((user) => {
-      const usedAfterJan26 = usedAfterJan26Map.get(user._id.toString()) || 0;
+      const usedAfterJan26 = usedAfterJan26Map.get(String(user._id)) || 0;
       const balanceAsOfJan26 = user.leaveBalance?.balanceAsOfJan26 || 0;
-      const ledgerEarned = earnedFromLedgerMap.get(user._id.toString());
+      const ledgerEarned = earnedFromLedgerMap.get(String(user._id));
       const liveEarned = user.leaveBalance?.earned || 0;
       const earned =
         ledgerEarned !== undefined
@@ -110,25 +115,27 @@ export async function GET(request: NextRequest) {
           : useLiveEarnedFallback
             ? liveEarned
             : 0;
-      const used = user.leaveBalance?.used || 0;
-      // Compute remaining from its components so the row is internally consistent
-      // (balanceAsOfJan26 + earned - used - usedAfterJan26). Balance can never
-      // go negative; floor at 0.
-      const remaining = Math.max(
-        0,
-        Number((balanceAsOfJan26 + earned - used - usedAfterJan26).toFixed(3))
+      // Read adj from lean doc; treat missing as 0 (do not fall back to legacy `used`).
+      const leaveAdjLwp = Number(
+        (user.leaveBalance as { leaveAdjLwp?: number } | undefined)?.leaveAdjLwp ?? 0
       );
+      const remaining = computeLeaveRemaining({
+        balanceAsOfJan26,
+        earned,
+        usedAfterJan26,
+        leaveAdjLwp,
+      });
 
       return {
-        userId: user._id.toString(),
+        userId: String(user._id),
         userName: user.name,
         employeeCode: user.employeeCode,
-        team: getWorkingUnderPartnerForDate(user, lastDayOfMonthYear(monthYear)),
+        team: getWorkingUnderPartnerForDate(user as any, lastDayOfMonthYear(monthYear)),
         employmentType: user.employmentType,
         balanceAsOfJan26: balanceAsOfJan26,
         earned: earned,
-        used: used, // Leaves before 1st Jan 2026 (from Excel)
-        usedAfterJan26: usedAfterJan26, // Sum of used leave on/after 1 Jan 2026 through asOfDate
+        leaveAdjLwp,
+        usedAfterJan26: usedAfterJan26,
         remaining: remaining,
         lastUpdated: user.leaveBalance?.lastUpdated || user.joiningDate || new Date(),
         monthlyEarned: user.leaveBalance?.monthlyEarned || 2,
@@ -142,6 +149,10 @@ export async function GET(request: NextRequest) {
       data: leaveBalances,
       monthYear,
       asOfDate,
+    }, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+      },
     });
   } catch (error) {
     console.error('Error fetching leave balances:', error);

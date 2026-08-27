@@ -6,13 +6,17 @@ import { isArticleEmployee } from '@/lib/isArticleEmployee';
 import {
   calculateDayExcessHour,
   effectiveScheduledMinutesForDay,
+  isHalfDayAttendanceRecord,
   isNonWorkingDayRecord,
+  shouldAutoMarkAttendanceHalfDayByHours,
 } from '@/lib/calculateDayExcessHour';
 import { applyLateCheckinAbsentRule, applyLateCheckinHalfDayRule } from '@/lib/lateCheckinAbsentRule';
 import {
   isHalftimeEmployeeForDate,
   normalizeHalftimeDayRecord,
 } from '@/lib/halftimeAttendance';
+
+import { isValueBasedPresenceHoursType } from '@/lib/resolveDayWorkedHours';
 
 export type AttendanceRecordForSummary = {
   checkin: string;
@@ -62,25 +66,6 @@ export function shouldExcludeFromSummaryHours(
   return excluded.has(typeOfPresence);
 }
 
-/** Types that store day-credit via `value` and may have 00:00 punches (CP-P / OS-P / WFH). */
-function isValueBasedPresenceHoursType(typeOfPresence: string): boolean {
-  const t = String(typeOfPresence || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ');
-  if (!t) return false;
-  return (
-    t.includes('client place') ||
-    t.includes('clientplace') ||
-    t.includes('outstation') ||
-    t.includes('onsite presence') ||
-    t === 'os-p' ||
-    t.includes('(os-p)') ||
-    t.includes('wfh') ||
-    t.includes('work from home')
-  );
-}
-
 export function calculateSummary(
   records: Map<string, AttendanceRecordForSummary>,
   user?: IUser | null
@@ -102,14 +87,16 @@ export function calculateSummary(
 
     let scheduledInTime = '';
     let scheduledOutTime = '';
+    let scheduleIsHalfDay = false;
     if (user) {
       const schedule = getScheduledTimes(user, dateStr);
       scheduledInTime = schedule.inTime;
       scheduledOutTime = schedule.outTime;
+      scheduleIsHalfDay = !!schedule.isHalfDay;
     }
 
-    const inTime = String(record.editedCheckin ?? record.checkin ?? '').trim();
-    const outTime = String(record.editedCheckout ?? record.checkout ?? '').trim();
+    const inTime = String(record.editedCheckin || record.checkin || '').trim();
+    const outTime = String(record.editedCheckout || record.checkout || '').trim();
 
     let dayScheduledHours = 0;
     if (
@@ -128,28 +115,23 @@ export function calculateSummary(
 
     const isNonWorking = isNonWorkingDayRecord(record.typeOfPresence, dateStr);
 
-    record.totalHour = calculateTotalHours(inTime, outTime, {
+    const punchHours = calculateTotalHours(inTime, outTime, {
       scheduledIn: scheduledInTime,
       scheduledOut: scheduledOutTime,
     });
 
-    // CP-P / OS-P / WFH often keep day credit in `value` with 00:00 punches.
-    // Don't wipe scheduled/value-based hours when punch duration is 0.
-    if (
-      Number(record.totalHour || 0) <= 0 &&
+    // Prefer real punches. For CP-P / OS-P / WFH with 00:00 punches, do not invent
+    // value×schedule hours here (that skewed summary HR +/-). Only preserve an
+    // already-stored positive totalHour so approve/admin writes are not wiped.
+    if (punchHours > 0) {
+      record.totalHour = punchHours;
+    } else if (
       isValueBasedPresenceHoursType(record.typeOfPresence) &&
-      dayScheduledHours > 0
+      Number(record.totalHour || 0) > 0
     ) {
-      const dayValue = Number(record.value);
-      if (Number.isFinite(dayValue) && dayValue > 0) {
-        record.totalHour = Number((dayValue * dayScheduledHours).toFixed(2));
-        if (!inTime || inTime === '00:00') {
-          record.editedCheckin = scheduledInTime;
-        }
-        if (!outTime || outTime === '00:00') {
-          record.editedCheckout = scheduledOutTime;
-        }
-      }
+      // keep stored totalHour
+    } else {
+      record.totalHour = 0;
     }
 
     record.excessHour = isNonWorking
@@ -174,12 +156,17 @@ export function calculateSummary(
 
     const employmentType = String(user?.employmentType || 'fulltime').toLowerCase();
     const isHalftime = isHalftimeEmployeeForDate(user, dateStr);
+    const typeIsExplicitHalfDay = isHalfDayAttendanceRecord({
+      typeOfPresence: record.typeOfPresence,
+    });
 
-    let calculatedHalfDay = record.halfDay || false;
+    // Always recompute hour-based HD (do not sticky-keep a prior wrong halfDay).
+    // Explicit Half Day* types stay HD; late-checkin rule may set HD after this.
+    let calculatedHalfDay = typeIsExplicitHalfDay;
 
-    if (isHalftime) {
+    if (isHalftime || isNonWorking) {
       calculatedHalfDay = false;
-    } else if (!record.halfDay && !isNonWorking) {
+    } else if (!typeIsExplicitHalfDay) {
       if (isSinglePunch(inTime, outTime)) {
         calculatedHalfDay = true;
       } else if (
@@ -188,13 +175,15 @@ export function calculateSummary(
       ) {
         calculatedHalfDay = false;
       } else {
-        const isArticle = isArticleEmployee(user);
-        const isAfter1PM = inTime ? inTime >= '13:00' : false;
-        if (employmentType === 'fulltime' && !isArticle) {
-          calculatedHalfDay = record.totalHour < 6;
-        } else if (isArticle) {
-          calculatedHalfDay = isAfter1PM || record.totalHour < 3.5;
-        }
+        calculatedHalfDay = shouldAutoMarkAttendanceHalfDayByHours({
+          totalHour: record.totalHour,
+          scheduledInTime,
+          scheduledOutTime,
+          scheduleIsHalfDay,
+          employmentType,
+          isArticle: isArticleEmployee(user),
+          inTime,
+        });
       }
     }
 
@@ -262,7 +251,13 @@ export function calculateSummary(
     }
   });
 
-  excessHour = Number((totalHour - totalScheduledHour).toFixed(2));
+  // Month excess = sum of per-day excess (same as Summary / Daywise), not
+  // totalHour − totalScheduledHour (which excluded CP-P and diverged).
+  excessHour = 0;
+  records.forEach((record) => {
+    excessHour += Number(record.excessHour || 0);
+  });
+  excessHour = Number(excessHour.toFixed(2));
 
   return {
     totalHour,

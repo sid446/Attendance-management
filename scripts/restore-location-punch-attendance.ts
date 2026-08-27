@@ -15,6 +15,7 @@ import ClientPlace from '../src/models/ClientPlace';
 import User from '../src/models/User';
 import { calculateSummary } from '../src/lib/attendanceSummaryCalculation';
 import { applyAttendanceEditSource } from '../src/lib/daywiseAttendanceSource';
+import { calculateTotalHours } from '../src/lib/attendanceHours';
 import {
   LOCATION_PUNCH_REMARK_PREFIX,
   LOCATION_PUNCH_SOURCE,
@@ -58,12 +59,22 @@ async function main() {
       continue;
     }
 
+    const inTime =
+      punch.inPunch?.time || (existing as { checkin?: string } | undefined)?.checkin || '';
+    const outTime =
+      punch.outPunch?.time || (existing as { checkout?: string } | undefined)?.checkout || '';
+    const workedHours = calculateTotalHours(inTime, outTime);
+
     const rec: Record<string, unknown> = {
       ...(existing && typeof (existing as { toObject?: () => object }).toObject === 'function'
         ? (existing as { toObject: () => object }).toObject()
         : { ...(existing || {}) }),
-      checkin: punch.inPunch?.time || (existing as { checkin?: string } | undefined)?.checkin || '',
-      checkout: punch.outPunch?.time || (existing as { checkout?: string } | undefined)?.checkout || '',
+      checkin: inTime,
+      checkout: outTime,
+      editedCheckin: inTime,
+      editedCheckout: outTime,
+      totalHour: workedHours,
+      excessHour: 0,
       typeOfPresence: 'Present - client place',
       value: 1,
       halfDay: false,

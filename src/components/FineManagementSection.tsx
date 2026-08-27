@@ -15,8 +15,11 @@ import {
   AlertCircle,
   FileText,
   Search,
+  Mail,
 } from 'lucide-react';
 import { getWorkingUnderPartnerForDate, lastDayOfMonthYear } from '@/lib/userFieldHistory';
+import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
+import { confirmMajorAction } from '@/lib/confirmMajorAction';
 
 interface FineRecord {
   serialNo: string;
@@ -56,7 +59,11 @@ interface FineManagementProps {
   selectedYear?: number;
 }
 
-const FINE_MANAGEMENT_WORKFLOW_STEPS = ['Pick month & run calc', 'Filter or impose manual', 'Update status or export'] as const;
+const FINE_MANAGEMENT_WORKFLOW_STEPS = [
+  'Pick month & run calc',
+  'Filter or impose manual',
+  'Email / update status / export',
+] as const;
 
 export const FineManagementSection: React.FC<FineManagementProps> = ({
   selectedMonth = new Date().getMonth() + 1,
@@ -79,6 +86,10 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
   const [teamFilter, setTeamFilter] = useState('all');
   const [month, setMonth] = useState(selectedMonth);
   const [year, setYear] = useState(selectedYear);
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
+  const [emailBusy, setEmailBusy] = useState(false);
+  const [emailingUserId, setEmailingUserId] = useState<string | null>(null);
+  const [emailNotice, setEmailNotice] = useState<string | null>(null);
 
   const monthYear = `${year}-${String(month).padStart(2, '0')}`;
 
@@ -189,6 +200,8 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
 
   useEffect(() => {
     fetchFines();
+    setSelectedUserIds(new Set());
+    setEmailNotice(null);
   }, [monthYear]);
 
   // Toggle row expansion
@@ -201,6 +214,18 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
         newSet.add(fineId);
       }
       return newSet;
+    });
+  };
+
+  const getFineUserId = (fine: Fine): string => String(fine.userId?._id || '');
+
+  const toggleSelectUser = (userId: string) => {
+    if (!userId) return;
+    setSelectedUserIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
     });
   };
 
@@ -233,7 +258,77 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
       }
       return true;
     });
-  }, [fines, searchTerm, categoryFilter, statusFilter, teamFilter]);
+  }, [fines, searchTerm, categoryFilter, statusFilter, teamFilter, monthYear]);
+
+  const filteredUserIds = useMemo(
+    () => filteredFines.map(getFineUserId).filter(Boolean),
+    [filteredFines]
+  );
+
+  const allFilteredSelected =
+    filteredUserIds.length > 0 && filteredUserIds.every((id) => selectedUserIds.has(id));
+
+  const toggleSelectAllFiltered = () => {
+    setSelectedUserIds((prev) => {
+      if (allFilteredSelected) {
+        const next = new Set(prev);
+        for (const id of filteredUserIds) next.delete(id);
+        return next;
+      }
+      const next = new Set(prev);
+      for (const id of filteredUserIds) next.add(id);
+      return next;
+    });
+  };
+
+  const emailFineNotices = async (employeeIds: string[], label: string) => {
+    const ids = [...new Set(employeeIds.filter(Boolean))];
+    if (ids.length === 0) return;
+
+    if (ids.length > 1) {
+      if (
+        !confirmMajorAction(`Email pending fine notices (${label})`, [
+          `${ids.length} employee(s) will be emailed.`,
+          'Only pending fines/warnings are included.',
+          'Employees without an Asija email or with no pending items will be skipped.',
+        ])
+      ) {
+        return;
+      }
+    }
+
+    setEmailBusy(true);
+    setEmailingUserId(ids.length === 1 ? ids[0] : null);
+    setError(null);
+    setEmailNotice(null);
+    try {
+      const response = await fetch(
+        '/api/fines/notify',
+        hrCredentialsInit({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ employeeIds: ids, monthYear }),
+        })
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || `Failed to send fine notices (${response.status})`);
+      }
+      const sent = Number(data.sentCount || 0);
+      const skipped = Number(data.skippedCount || 0);
+      const errList: string[] = Array.isArray(data.errors) ? data.errors : [];
+      let notice = `Sent ${sent} fine notice${sent === 1 ? '' : 's'}. Skipped ${skipped}.`;
+      if (errList.length > 0) {
+        notice += ` ${errList.slice(0, 3).join(' · ')}${errList.length > 3 ? '…' : ''}`;
+      }
+      setEmailNotice(notice);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send fine notices');
+    } finally {
+      setEmailBusy(false);
+      setEmailingUserId(null);
+    }
+  };
 
   // Calculate totals
   const totals = useMemo(() => {
@@ -833,6 +928,28 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
             <Download className="h-4 w-4 text-slate-600" aria-hidden />
             Export Excel
           </button>
+          <button
+            type="button"
+            onClick={() =>
+              void emailFineNotices([...selectedUserIds], 'selected employees')
+            }
+            disabled={emailBusy || selectedUserIds.size === 0}
+            className="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-900 shadow-sm transition-colors hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-500/25 disabled:opacity-50"
+            title="Email pending fine notices to selected employees"
+          >
+            <Mail className={`h-4 w-4 ${emailBusy ? 'animate-pulse' : ''}`} aria-hidden />
+            Email selected ({selectedUserIds.size})
+          </button>
+          <button
+            type="button"
+            onClick={() => void emailFineNotices(filteredUserIds, 'all filtered')}
+            disabled={emailBusy || filteredUserIds.length === 0}
+            className="inline-flex items-center gap-2 rounded-lg bg-rose-700 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-rose-800 focus:outline-none focus:ring-2 focus:ring-rose-500/30 disabled:opacity-50"
+            title="Email pending fine notices to all employees in the current filter"
+          >
+            <Mail className={`h-4 w-4 ${emailBusy ? 'animate-pulse' : ''}`} aria-hidden />
+            Email all filtered ({filteredUserIds.length})
+          </button>
         </div>
       </header>
 
@@ -1088,6 +1205,15 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
           <span>{error}</span>
         </div>
       )}
+      {emailNotice && (
+        <div
+          role="status"
+          className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900 shadow-sm"
+        >
+          <Mail className="h-5 w-5 shrink-0 text-emerald-700" aria-hidden />
+          <span>{emailNotice}</span>
+        </div>
+      )}
 
       {loading && (
         <div className="flex items-center justify-center py-12" aria-live="polite">
@@ -1101,6 +1227,16 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
           <table className="w-full">
             <thead className="border-b border-slate-200 bg-slate-50">
               <tr>
+                <th className={`${thBase} w-10 text-center`} scope="col">
+                  <input
+                    type="checkbox"
+                    checked={allFilteredSelected}
+                    onChange={toggleSelectAllFiltered}
+                    disabled={filteredUserIds.length === 0 || emailBusy}
+                    aria-label="Select all filtered employees"
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500/30"
+                  />
+                </th>
                 <th className={`${thBase} w-8 text-left`} scope="col">
                   <span className="sr-only">Expand</span>
                 </th>
@@ -1130,14 +1266,18 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
             <tbody className="divide-y divide-slate-100">
               {filteredFines.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-600">
+                  <td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-600">
                     {fines.length === 0
                       ? 'No fine records found. Click “Calculate fines” to generate.'
                       : 'No matching records found.'}
                   </td>
                 </tr>
               ) : (
-                filteredFines.map((fine) => (
+                filteredFines.map((fine) => {
+                  const userId = getFineUserId(fine);
+                  const pendingCount = fine.fineRecords.filter((r) => r.status === 'pending').length;
+                  const rowEmailing = emailBusy && emailingUserId === userId;
+                  return (
                   <React.Fragment key={fine._id}>
                     <tr
                       className={`cursor-pointer transition-colors hover:bg-slate-50 ${
@@ -1145,6 +1285,16 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
                       }`}
                       onClick={() => toggleRow(fine._id)}
                     >
+                      <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={userId ? selectedUserIds.has(userId) : false}
+                          onChange={() => toggleSelectUser(userId)}
+                          disabled={!userId || emailBusy}
+                          aria-label={`Select ${fine.userId?.name || 'employee'}`}
+                          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500/30"
+                        />
+                      </td>
                       <td className="px-4 py-3">
                         {expandedRows.has(fine._id) ? (
                           <ChevronUp className="h-4 w-4 text-slate-500" aria-hidden />
@@ -1190,27 +1340,40 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
                           <span className="text-slate-500">₹0</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-center">
-                        {fine.fineRecords.filter((r) => !r.isWarning).length > 0 && (
+                      <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                        <div className="inline-flex flex-wrap items-center justify-center gap-1">
                           <button
                             type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              generateAllPenaltySlips(fine);
-                            }}
-                            className="mx-auto inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1 text-xs font-medium text-violet-900 transition-colors hover:bg-violet-100 focus:outline-none focus:ring-2 focus:ring-violet-500/25"
-                            title="Generate all penalty slips"
+                            onClick={() => void emailFineNotices([userId], fine.userId?.name || 'employee')}
+                            disabled={!userId || emailBusy || pendingCount === 0}
+                            className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-900 transition-colors hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-500/25 disabled:opacity-50"
+                            title={
+                              pendingCount === 0
+                                ? 'No pending fines/warnings to email'
+                                : 'Email pending fine notice to this employee'
+                            }
                           >
-                            <FileText className="h-3 w-3" aria-hidden />
-                            Generate slips
+                            <Mail className={`h-3 w-3 ${rowEmailing ? 'animate-pulse' : ''}`} aria-hidden />
+                            {rowEmailing ? 'Sending…' : 'Email'}
                           </button>
-                        )}
+                          {fine.fineRecords.filter((r) => !r.isWarning).length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => generateAllPenaltySlips(fine)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1 text-xs font-medium text-violet-900 transition-colors hover:bg-violet-100 focus:outline-none focus:ring-2 focus:ring-violet-500/25"
+                              title="Generate all penalty slips"
+                            >
+                              <FileText className="h-3 w-3" aria-hidden />
+                              Slips
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
 
                     {expandedRows.has(fine._id) && (
                       <tr className="bg-slate-50">
-                        <td colSpan={8} className="border-t border-slate-100 px-4 py-4">
+                        <td colSpan={9} className="border-t border-slate-100 px-4 py-4">
                           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
                             {fine.fineRecords.map((record, idx) => (
                               <div
@@ -1337,7 +1500,8 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
                       </tr>
                     )}
                   </React.Fragment>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>

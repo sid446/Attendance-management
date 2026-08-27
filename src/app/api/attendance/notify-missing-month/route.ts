@@ -13,8 +13,23 @@ import {
 } from '@/lib/employeeMisExceptions';
 
 function buildEmployeeAttendanceLink(baseUrl: string, monthYear: string): string {
+  const root = String(baseUrl || '').replace(/\/$/, '') || 'http://localhost:3000';
   const destination = `/employee/dashboard?tab=attendance&monthYear=${encodeURIComponent(monthYear)}`;
-  return `${baseUrl}/employee/login?next=${encodeURIComponent(destination)}`;
+  return `${root}/employee/login?next=${encodeURIComponent(destination)}`;
+}
+
+function buildEmailCtaButton(href: string, label: string): string {
+  return `
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin: 32px auto 0;">
+          <tr>
+            <td align="center" bgcolor="#059669" style="border-radius: 8px;">
+              <a href="${href}" target="_blank" rel="noopener noreferrer"
+                 style="display: inline-block; padding: 14px 32px; background-color: #059669; color: #ffffff !important; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: 700; line-height: 1.2;">
+                ${label}
+              </a>
+            </td>
+          </tr>
+        </table>`;
 }
 
 function formatDateLabel(dateStr: string): string {
@@ -156,11 +171,10 @@ export async function POST(request: NextRequest) {
             ${dateRows}
           </tbody>
         </table>
-        <div style="text-align: center; margin-top: 32px;">
-          <a href="${fixLink}" style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3);">
-            View My Attendance
-          </a>
-        </div>
+        ${buildEmailCtaButton(fixLink, 'Login &amp; open my attendance')}
+        <p style="margin: 16px 0 0 0; font-size: 12px; color: #9ca3af; text-align: center; line-height: 1.5;">
+          This opens the employee login, then your attendance month view.
+        </p>
         <p style="margin: 24px 0 0 0; font-size: 12px; color: #9ca3af; text-align: center; line-height: 1.5;">
           If you already punched, your records may not have been uploaded yet. Please follow up with your work partner or HR.
         </p>

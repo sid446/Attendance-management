@@ -5,6 +5,7 @@ import User from '@/models/User';
 import InvalidAttendanceNotification from '@/models/InvalidAttendanceNotification';
 import { getWorkingUnderPartnerForDate, lastDayOfMonthYear } from '@/lib/userFieldHistory';
 import { loadOpenEmployeeRequestsByUserDate } from '@/lib/openAttendanceRequestsForMonth';
+import { repairEqualPunchesForMonth } from '@/lib/repairEqualPunchTimes';
 
 interface InvalidRecord {
   date: string;
@@ -44,6 +45,9 @@ export async function GET(request: NextRequest) {
         error: 'monthYear parameter is required'
       }, { status: 400 });
     }
+
+    // Fix stored equal in/out punches (16:00 exit-only / morning entry-only) before listing
+    const equalPunchRepair = await repairEqualPunchesForMonth(monthYear);
 
     // Fetch all attendance records for the specified month
     const attendanceRecords = await Attendance.find({ monthYear })
@@ -115,6 +119,18 @@ export async function GET(request: NextRequest) {
 
         const isCheckinInvalid = !checkin || checkin === '00:00' || checkin === '';
         const isCheckoutInvalid = !checkout || checkout === '00:00' || checkout === '';
+
+        // Equal punches (e.g. 18:04/18:04 from exit-only re-upload merge) — treat as missing check-in
+        if (!isCheckinInvalid && !isCheckoutInvalid && checkin === checkout) {
+          invalidRecords.push({
+            date,
+            checkin,
+            checkout,
+            issue: 'missing-checkin',
+            monthYear
+          });
+          continue;
+        }
 
         // Both times are valid - skip
         if (!isCheckinInvalid && !isCheckoutInvalid) {
@@ -205,7 +221,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: employeesWithInvalidRecords
+      data: employeesWithInvalidRecords,
+      equalPunchRepair,
     });
   } catch (error) {
     console.error('Error fetching invalid records:', error);

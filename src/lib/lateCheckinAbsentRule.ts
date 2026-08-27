@@ -80,9 +80,12 @@ export function shouldMarkHalfDayForLateCheckin(
     employmentType?: string;
     typeOfPresence?: string;
     dateStr?: string;
+    outTime?: string;
   }
 ): boolean {
   if (!isLateCheckinRuleEligible(inTime, options)) return false;
+  const out = normalizeTimeToHHmm(options.outTime || '');
+  if (out && out !== '00:00' && out === inTime) return false;
   return inTime >= LATE_CHECKIN_HALFDAY_START && inTime < LATE_CHECKIN_ABSENT_THRESHOLD;
 }
 
@@ -92,10 +95,14 @@ export function shouldMarkAbsentForLateCheckin(
     employmentType?: string;
     typeOfPresence?: string;
     dateStr?: string;
+    /** When in and out are the same punch, this is exit/entry-only — not a late arrival. */
+    outTime?: string;
   }
 ): boolean {
   if (!inTime || inTime === '00:00') return false;
   if (inTime < LATE_CHECKIN_ABSENT_THRESHOLD) return false;
+  const out = normalizeTimeToHHmm(options.outTime || '');
+  if (out && out !== '00:00' && out === inTime) return false;
   return isLateCheckinRuleEligible(inTime, options);
 }
 
@@ -148,6 +155,7 @@ export function applyLateCheckinHalfDayRule(
       employmentType,
       typeOfPresence: record.typeOfPresence,
       dateStr,
+      outTime: record.editedCheckout ?? record.checkout,
     })
   ) {
     return false;
@@ -185,6 +193,7 @@ export function applyLateCheckinAbsentRule(
       employmentType,
       typeOfPresence: record.typeOfPresence,
       dateStr,
+      outTime: record.editedCheckout ?? record.checkout,
     })
   ) {
     return false;
