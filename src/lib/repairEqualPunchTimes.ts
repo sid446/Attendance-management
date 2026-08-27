@@ -164,10 +164,11 @@ export async function repairEqualPunchesForMonth(
       if (!repairEqualPunchDayRecord(plain)) continue;
       daysFixed += 1;
       changed = true;
-      if (typeof (doc.records as Map<string, DayRecordLike>).set === 'function') {
-        (doc.records as Map<string, DayRecordLike>).set(date, plain);
-      } else {
-        (doc.records as Record<string, DayRecordLike>)[date] = plain;
+      const records = doc.records as unknown;
+      if (records && typeof (records as Map<string, unknown>).set === 'function') {
+        (records as Map<string, unknown>).set(date, plain);
+      } else if (records && typeof records === 'object') {
+        (records as Record<string, unknown>)[date] = plain;
       }
     }
 
