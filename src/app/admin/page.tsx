@@ -29,6 +29,7 @@ import { HolidayManagement } from '@/components/HolidayManagement';
 import { BackupManagementSection } from '@/components/BackupManagementSection';
 import { LeaveManagementSection } from '@/components/LeaveManagementSection';
 import { FineManagementSection } from '@/components/FineManagementSection';
+import { SalarySection } from '@/components/SalarySection';
 import { InvalidAttendanceSection } from '@/components/InvalidAttendanceSection';
 import { EmployeeMisExceptionsSection } from '@/components/EmployeeMisExceptionsSection';
 import { DaywiseCompareSection } from '@/components/DaywiseCompareSection';
@@ -1978,6 +1979,8 @@ export default function AttendanceUpload() {
                 onRefresh={() => {}}
               />
             )}
+
+            {activeSection === 'salaryPayroll' && <SalarySection />}
 
             {/* Fine Management Section */}
             {activeSection === 'fines' && (

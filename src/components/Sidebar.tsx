@@ -78,6 +78,7 @@ const NAV_CATEGORIES: NavCategory[] = [
     label: 'Leave & payroll',
     items: [
       { id: 'leave', label: 'Leave Management', icon: TrendingUp },
+      { id: 'salaryPayroll', label: 'Salary', icon: IndianRupee },
       { id: 'articleCredits', label: 'Article Credits', icon: FileSpreadsheet },
       { id: 'fines', label: 'Fine Management', icon: IndianRupee },
       { id: 'holidays', label: 'Holiday Management', icon: Calendar },

@@ -13,6 +13,7 @@ export const HR_CONSOLE_SECTION_IDS = [
   'holidays',
   'backup',
   'leave',
+  'salaryPayroll',
   'fines',
   'articleCredits',
   'invalid',

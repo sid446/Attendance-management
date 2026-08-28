@@ -24,6 +24,7 @@ const SECTION_LABELS: Record<HrConsoleSectionId, string> = {
   holidays: 'Holiday Management',
   backup: 'Database Backup',
   leave: 'Leave Management',
+  salaryPayroll: 'Salary',
   fines: 'Fine Management',
   articleCredits: 'Article Credits',
   invalid: 'Invalid Attendance',
