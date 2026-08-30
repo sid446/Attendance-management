@@ -262,10 +262,11 @@ async function mergeLocationPunchIntoAttendance(
     }
 
     const existingRaw = attendance.records.get(date);
+    const existingDoc = existingRaw as unknown as { toObject?: () => Record<string, unknown> } | undefined;
     const existing =
-      existingRaw && typeof (existingRaw as { toObject?: () => Record<string, unknown> }).toObject === 'function'
-        ? (existingRaw as { toObject: () => Record<string, unknown> }).toObject()
-        : (existingRaw as Record<string, unknown> | undefined);
+      existingDoc && typeof existingDoc.toObject === 'function'
+        ? existingDoc.toObject()
+        : (existingRaw as unknown as Record<string, unknown> | undefined);
     let checkin = existingPunchTime(existing?.checkin);
     let checkout = existingPunchTime(existing?.checkout);
     let editedCheckin = existingPunchTime(existing?.editedCheckin, checkin);
