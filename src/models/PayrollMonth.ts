@@ -1,5 +1,5 @@
 import mongoose, { Schema, Document, Model, Types } from 'mongoose';
-import type { PayrollGroup, PayrollOverrides, ArticleshipYear, PayrollExtraField } from '@/lib/salaryCalculation';
+import type { PayrollGroup, PayrollOverrides, ArticleshipYear, PayrollExtraKind } from '@/lib/salaryCalculation';
 
 export interface IPayrollLine {
   userId: Types.ObjectId;
@@ -91,7 +91,7 @@ export interface IPayrollMonth extends Document {
   status: 'draft' | 'finalized';
   calendar: { totalDays: number; sundays: number; ohd: number };
   lines: IPayrollLine[];
-  extraFields: PayrollExtraField[];
+  extraFields: Array<{ extraId: string; label: string; kind: PayrollExtraKind }>;
   generatedAt: Date;
   generatedBy?: string;
   finalizedAt?: Date | null;

@@ -76,10 +76,9 @@ export async function PATCH(request: NextRequest) {
         }
         applyPayrollLineOverrides(line, overrides, doc.calendar, monthYear, nextFields);
       }
-      doc.extraFields = stored as typeof doc.extraFields;
-      doc.markModified('extraFields');
       doc.markModified('lines');
       await doc.save();
+      await PayrollMonth.updateOne({ monthYear }, { $set: { extraFields: stored } });
       const saved = await PayrollMonth.findOne({ monthYear }).lean();
       return NextResponse.json({ success: true, data: saved });
     }

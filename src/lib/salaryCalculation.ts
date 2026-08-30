@@ -141,7 +141,11 @@ export function normalizePayrollExtraFields(raw: unknown): PayrollExtraField[] {
   return out;
 }
 
-export function extraFieldsForStore(fields: PayrollExtraField[]) {
+export function extraFieldsForStore(fields: PayrollExtraField[]): Array<{
+  extraId: string;
+  label: string;
+  kind: PayrollExtraKind;
+}> {
   return fields.map((f) => ({ extraId: f.id, label: f.label, kind: f.kind }));
 }
 
