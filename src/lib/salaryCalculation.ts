@@ -3,6 +3,42 @@ import type { SalaryAttendanceDays } from '@/lib/salaryAttendanceDays';
 
 export type PayrollGroup = 'fixed' | 'partner' | 'staff' | 'admin' | 'article';
 
+export type PayrollExtraKind = 'earning' | 'deduction';
+
+export type PayrollExtraField = {
+  id: string;
+  label: string;
+  kind: PayrollExtraKind;
+};
+
+export const PAYROLL_BULK_BUILTIN_FIELDS = [
+  'tds',
+  'advances',
+  'otherExtra',
+  'esiEmployer',
+  'esiEmployee',
+  'off',
+  'taReimbursement',
+  'lcReimbursement',
+  'laptopAdjustment',
+  'additionInOffDue',
+] as const;
+
+export type PayrollBulkBuiltinField = (typeof PAYROLL_BULK_BUILTIN_FIELDS)[number];
+
+export const PAYROLL_BULK_BUILTIN_LABELS: Record<PayrollBulkBuiltinField, string> = {
+  tds: 'TDS',
+  advances: 'Advances',
+  otherExtra: 'Other extra',
+  esiEmployer: 'ESI employer',
+  esiEmployee: 'ESI employee',
+  off: 'OFF',
+  taReimbursement: 'TA reimbursement',
+  lcReimbursement: 'LC reimbursement',
+  laptopAdjustment: 'Laptop adjustment',
+  additionInOffDue: 'Addition in off due',
+};
+
 export type PayrollOverrides = {
   overtimeDays?: number | null;
   netWorkingDays?: number | null;
@@ -15,12 +51,12 @@ export type PayrollOverrides = {
   tds?: number | null;
   advances?: number | null;
   off?: number | null;
-  penalty?: number | null;
   taReimbursement?: number | null;
   lcReimbursement?: number | null;
   laptopAdjustment?: number | null;
   remarks?: string;
   group?: PayrollGroup;
+  customAmounts?: Record<string, number | null>;
 };
 
 export type ArticleshipYear = 'I' | 'II' | 'III' | '';
@@ -37,8 +73,8 @@ export type SalaryCalcInput = {
   monthlyEarnedRate?: number;
   basicSalary: number;
   laptopAllowance: number;
-  suggestedPenalty: number;
   overrides?: PayrollOverrides;
+  extraFields?: PayrollExtraField[];
   calendar: { totalDays: number; sundays: number; ohd: number };
 };
 
@@ -68,15 +104,80 @@ export type SalaryCalcResult = {
   tds: number;
   advances: number;
   off: number;
-  penalty: number;
   taReimbursement: number;
   lcReimbursement: number;
   laptopAdjustment: number;
+  customEarnings: number;
+  customDeductions: number;
   bankPayment: number;
   cashOff: number;
   diff: number;
   netSalary: number;
 };
+
+export function newPayrollExtraId(): string {
+  return `ex_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function normalizePayrollExtraFields(raw: unknown): PayrollExtraField[] {
+  if (!Array.isArray(raw)) return [];
+  const out: PayrollExtraField[] = [];
+  for (const item of raw) {
+    const o =
+      item && typeof (item as { toObject?: () => PayrollExtraField }).toObject === 'function'
+        ? (item as { toObject: () => PayrollExtraField }).toObject()
+        : (item as PayrollExtraField);
+    const extraId = String(
+      (o as { extraId?: string }).extraId || (o as { id?: string }).id || ''
+    ).trim();
+    const label = String(o?.label || '').trim();
+    if (!label) continue;
+    out.push({
+      id: extraId || `legacy_${label.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
+      label,
+      kind: o?.kind === 'deduction' ? 'deduction' : 'earning',
+    });
+  }
+  return out;
+}
+
+export function extraFieldsForStore(fields: PayrollExtraField[]) {
+  return fields.map((f) => ({ extraId: f.id, label: f.label, kind: f.kind }));
+}
+
+export function sumCustomExtras(
+  extraFields: PayrollExtraField[] | undefined,
+  amounts: Record<string, number | null | undefined> | undefined
+): { earnings: number; deductions: number } {
+  let earnings = 0;
+  let deductions = 0;
+  const map = amounts || {};
+  for (const f of extraFields || []) {
+    const n = Number(map[f.id] ?? 0);
+    if (!Number.isFinite(n) || n === 0) continue;
+    if (f.kind === 'deduction') deductions += n;
+    else earnings += n;
+  }
+  return { earnings, deductions };
+}
+
+export function plainCustomAmounts(raw: unknown): Record<string, number | null> {
+  if (!raw || typeof raw !== 'object') return {};
+  const src =
+    typeof (raw as { toObject?: () => Record<string, unknown> }).toObject === 'function'
+      ? (raw as { toObject: () => Record<string, unknown> }).toObject()
+      : (raw as Record<string, unknown>);
+  const out: Record<string, number | null> = {};
+  for (const [k, v] of Object.entries(src)) {
+    if (v == null || v === '') {
+      out[k] = null;
+      continue;
+    }
+    const n = Number(v);
+    out[k] = Number.isFinite(n) ? n : null;
+  }
+  return out;
+}
 
 const ARTICLE_STIPEND_I = 5250;
 const ARTICLE_STIPEND_II_III = 6250;
@@ -265,7 +366,14 @@ export function computeSalaryLine(input: SalaryCalcInput): SalaryCalcResult {
   }
   const leavesCf = round3(Number(input.leavesBf || 0) + leavesEarned - leavesConsumed);
 
-  const overtimeDays = isArticle ? 0 : overrideNum(o.overtimeDays, days.overtimeSuggested);
+  // Non-articles: converted OT is a suggestion only. It enters pay when HR sets overtimeDays.
+  let overtimeDays = 0;
+  if (!isArticle) {
+    const otOverride = o.overtimeDays;
+    if (otOverride != null && Number.isFinite(Number(otOverride))) {
+      overtimeDays = Math.max(0, Number(otOverride));
+    }
+  }
 
   let netWorkingDays: number;
   if (o.netWorkingDays != null && Number.isFinite(Number(o.netWorkingDays))) {
@@ -302,18 +410,22 @@ export function computeSalaryLine(input: SalaryCalcInput): SalaryCalcResult {
   const tds = overrideNum(o.tds, 0);
   const advances = overrideNum(o.advances, 0);
   const off = overrideNum(o.off, 0);
-  const penalty = overrideNum(o.penalty, input.suggestedPenalty || 0);
   const taReimbursement = overrideNum(o.taReimbursement, 0);
   const lcReimbursement = overrideNum(o.lcReimbursement, 0);
   const laptopAdjustment = overrideNum(o.laptopAdjustment, 0);
+  const { earnings: customEarnings, deductions: customDeductions } = sumCustomExtras(
+    input.extraFields,
+    o.customAmounts
+  );
 
-  const extrasForBank = otherExtra + esiEmployer + esiEmployee + tds + advances + penalty;
+  const extrasForBank =
+    otherExtra + esiEmployer + esiEmployee + tds + advances + customEarnings + customDeductions;
   const bankPayment = dueInTally + extrasForBank;
   const cashOff = cashOffDue + off;
   const diff = bankPayment + cashOff - payableMonth - extrasForBank - off;
 
-  const income = payableBasic + payableLaptop + taReimbursement + lcReimbursement;
-  const deductions = penalty + advances + laptopAdjustment;
+  const income = payableBasic + payableLaptop + taReimbursement + lcReimbursement + customEarnings;
+  const deductions = advances + laptopAdjustment + customDeductions;
   const netSalary = income - deductions;
 
   return {
@@ -342,10 +454,11 @@ export function computeSalaryLine(input: SalaryCalcInput): SalaryCalcResult {
     tds,
     advances,
     off,
-    penalty,
     taReimbursement,
     lcReimbursement,
     laptopAdjustment,
+    customEarnings,
+    customDeductions,
     bankPayment,
     cashOff,
     diff: round3(diff),

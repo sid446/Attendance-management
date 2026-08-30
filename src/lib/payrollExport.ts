@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
 import type { IPayrollLine, IPayrollMonth } from '@/models/PayrollMonth';
-import { formatMonthLabel } from '@/lib/salaryCalculation';
+import { formatMonthLabel, normalizePayrollExtraFields, plainCustomAmounts } from '@/lib/salaryCalculation';
 
 const GROUP_LABEL: Record<string, string> = {
   fixed: 'Fixed Salary',
@@ -28,6 +28,8 @@ export async function buildPayrollWorkbook(doc: IPayrollMonth): Promise<Buffer> 
   const last = new Date(y, m, 0).getDate();
   const end = `${String(last).padStart(2, '0')}.${String(m).padStart(2, '0')}.${y}`;
 
+  const extraFields = normalizePayrollExtraFields(doc.extraFields);
+  const extraHeaders = extraFields.map((f) => `${f.label} (${f.kind === 'deduction' ? 'deduction' : 'earning'})`);
   const headers1 = [
     '',
     'Paid From',
@@ -81,6 +83,7 @@ export async function buildPayrollWorkbook(doc: IPayrollMonth): Promise<Buffer> 
     'Cash Off',
     'Diff',
     'Email',
+    ...extraHeaders,
   ];
 
   ws.mergeCells('A1:H1');
@@ -103,7 +106,15 @@ export async function buildPayrollWorkbook(doc: IPayrollMonth): Promise<Buffer> 
     grouped.get(g)!.push(line);
   }
 
-  const moneyCols = new Set([35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50]);
+  const moneyCols = new Set([
+    35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50,
+    ...extraFields.map((_, i) => 53 + i),
+  ]);
+
+  const extraAmounts = (line: IPayrollLine) => {
+    const amounts = plainCustomAmounts(line.overrides?.customAmounts);
+    return extraFields.map((f) => Number(amounts[f.id] || 0));
+  };
 
   const addLine = (line: IPayrollLine, fill?: string) => {
     const tallyName = line.tallyName || `${line.name}${line.isArticle ? ' - Stipend' : ' - Staff Salary'}`;
@@ -160,6 +171,7 @@ export async function buildPayrollWorkbook(doc: IPayrollMonth): Promise<Buffer> 
       line.cashOff,
       line.diff,
       line.email || line.attendanceEmail,
+      ...extraAmounts(line),
     ]);
     row.eachCell((cell, col) => {
       cell.font = { size: 9 };
@@ -229,6 +241,9 @@ export async function buildPayrollWorkbook(doc: IPayrollMonth): Promise<Buffer> 
       sum((l) => l.cashOff),
       sum((l) => l.diff),
       '',
+      ...extraFields.map((f) =>
+        rows.reduce((s, l) => s + Number(plainCustomAmounts(l.overrides?.customAmounts)[f.id] || 0), 0)
+      ),
     ]);
     row.eachCell((cell, col) => {
       cell.font = { bold: true, size: 9 };

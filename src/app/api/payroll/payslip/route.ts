@@ -6,8 +6,10 @@ import { loadHrConsolePermissionDoc } from '@/lib/hrConsolePermissionDb';
 import { assertHrSection, effectiveFromDoc } from '@/lib/hrConsolePermissionUtils';
 import { transporter, mailOptions } from '@/lib/mailer';
 import { getServiceAdminEmail } from '@/lib/hrServiceEmail';
-import { buildPayslipHtml, buildPayslipPdf, payslipRecipient } from '@/lib/payrollPayslip';
-import { formatMonthLabel } from '@/lib/salaryCalculation';
+import User from '@/models/User';
+import { buildPayslipHtml, buildPayslipPdf, payslipFileName, payslipRecipient } from '@/lib/payrollPayslip';
+import { formatMonthLabel, parseMoney } from '@/lib/salaryCalculation';
+import type { IPayrollLine } from '@/models/PayrollMonth';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -40,6 +42,10 @@ export async function POST(request: NextRequest) {
     const bcc = getServiceAdminEmail();
     const sent: string[] = [];
     const failed: { name: string; error: string }[] = [];
+    const users = await User.find({ _id: { $in: employeeIds } })
+      .select('esi otherAllowance')
+      .lean();
+    const userById = new Map(users.map((u) => [String(u._id), u]));
 
     for (const id of employeeIds) {
       const idx = doc.lines.findIndex((l) => String(l.userId) === id);
@@ -54,16 +60,22 @@ export async function POST(request: NextRequest) {
         continue;
       }
       try {
-        const pdf = buildPayslipPdf(line, monthYear);
+        const master = userById.get(String(line.userId));
+        const hydrated = {
+          ...(typeof line.toObject === 'function' ? line.toObject() : line),
+          esiNumber: line.esiNumber || String(master?.esi || ''),
+          otherAllowance: line.otherAllowance || parseMoney(master?.otherAllowance),
+        } as IPayrollLine;
+        const pdf = buildPayslipPdf(hydrated, monthYear, doc.calendar);
         await transporter.sendMail({
           ...mailOptions,
           to,
           bcc: operatorEmail || bcc,
           subject: `Salary Slip — ${period}`,
-          html: buildPayslipHtml(line, monthYear),
+          html: buildPayslipHtml(hydrated, monthYear, doc.calendar),
           attachments: [
             {
-              filename: `Salary-Slip-${String(line.name).replace(/\s+/g, '_')}-${monthYear}.pdf`,
+              filename: payslipFileName(hydrated, monthYear),
               content: pdf,
               contentType: 'application/pdf',
             },

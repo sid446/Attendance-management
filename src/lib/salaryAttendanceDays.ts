@@ -173,7 +173,6 @@ export function countSalaryAttendanceDays(
   let presentWfhActual = 0;
   let wfhWeekoffActual = 0;
   let presentOrWfhCount = 0;
-  let thumbExcessHours = 0;
 
   for (const dateStr of keys) {
     const rec = recs[dateStr];
@@ -260,14 +259,6 @@ export function countSalaryAttendanceDays(
     if (isPIO(rec) || isOSP(rec) || isWFHWeekday(rec) || t === 'Present') {
       presentOrWfhCount += 1;
     }
-
-    if (
-      !isAbsentRecord &&
-      typeLower.includes('thumbmachine') &&
-      typeof rec.excessHour === 'number'
-    ) {
-      thumbExcessHours += rec.excessHour;
-    }
   }
 
   const wfhMaxAllowed = round3(wfhWeekdayCount * 0.75);
@@ -278,12 +269,10 @@ export function countSalaryAttendanceDays(
   const leavesTaken = round3(absent + (wfhWeekdayCount - presentWfh) + hd / 2);
   const weekoffWorking = round3(woPio + weekoffHd / 2 + wfhWeekoffActual);
 
-  const thumbOvertimeDays = weekdayHours > 0 ? thumbExcessHours / weekdayHours : 0;
   const periodExcess = Math.max(0, Number(options?.periodExcessHours || 0));
-  const blocks = !options?.isArticle && periodExcess >= 6 ? Math.floor(periodExcess / 6) : 0;
   const overtimeSuggested = options?.isArticle
     ? 0
-    : round3(Math.max(0, thumbOvertimeDays) + blocks);
+    : round3(weekdayHours > 0 ? periodExcess / weekdayHours : 0);
 
   return {
     pio: round3(pio),

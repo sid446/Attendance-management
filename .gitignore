@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Calibri is loaded from Windows Fonts or this folder at runtime; do not commit the TTF files
+/fonts/*.ttf

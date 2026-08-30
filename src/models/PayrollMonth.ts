@@ -1,5 +1,5 @@
 import mongoose, { Schema, Document, Model, Types } from 'mongoose';
-import type { PayrollGroup, PayrollOverrides, ArticleshipYear } from '@/lib/salaryCalculation';
+import type { PayrollGroup, PayrollOverrides, ArticleshipYear, PayrollExtraField } from '@/lib/salaryCalculation';
 
 export interface IPayrollLine {
   userId: Types.ObjectId;
@@ -23,6 +23,8 @@ export interface IPayrollLine {
   ifscCode: string;
   accountHolderName: string;
   mobileNumber: string;
+  esiNumber: string;
+  otherAllowance: number;
   group: PayrollGroup;
   isNewJoin: boolean;
   isArticle: boolean;
@@ -51,6 +53,8 @@ export interface IPayrollLine {
   weekoffWorking: number;
   overtimeSuggested: number;
   overtimeDays: number;
+  excessHours: number;
+  weekdayHours: number;
   netWorkingDays: number;
   officeWorkingDays: number;
   checking: number;
@@ -68,11 +72,11 @@ export interface IPayrollLine {
   tds: number;
   advances: number;
   off: number;
-  penalty: number;
-  suggestedPenalty: number;
   taReimbursement: number;
   lcReimbursement: number;
   laptopAdjustment: number;
+  customEarnings: number;
+  customDeductions: number;
   bankPayment: number;
   cashOff: number;
   diff: number;
@@ -87,6 +91,7 @@ export interface IPayrollMonth extends Document {
   status: 'draft' | 'finalized';
   calendar: { totalDays: number; sundays: number; ohd: number };
   lines: IPayrollLine[];
+  extraFields: PayrollExtraField[];
   generatedAt: Date;
   generatedBy?: string;
   finalizedAt?: Date | null;
@@ -108,14 +113,23 @@ const OverridesSchema = new Schema(
     tds: { type: Number, default: null },
     advances: { type: Number, default: null },
     off: { type: Number, default: null },
-    penalty: { type: Number, default: null },
     taReimbursement: { type: Number, default: null },
     lcReimbursement: { type: Number, default: null },
     laptopAdjustment: { type: Number, default: null },
     remarks: { type: String, default: '' },
     group: { type: String, default: null },
+    customAmounts: { type: Schema.Types.Mixed, default: () => ({}) },
   },
   { _id: false }
+);
+
+const ExtraFieldSchema = new Schema(
+  {
+    extraId: { type: String, required: true },
+    label: { type: String, default: '' },
+    kind: { type: String, enum: ['earning', 'deduction'], default: 'earning' },
+  },
+  { _id: false, id: false }
 );
 
 const PayrollLineSchema = new Schema(
@@ -141,6 +155,8 @@ const PayrollLineSchema = new Schema(
     ifscCode: { type: String, default: '' },
     accountHolderName: { type: String, default: '' },
     mobileNumber: { type: String, default: '' },
+    esiNumber: { type: String, default: '' },
+    otherAllowance: { type: Number, default: 0 },
     group: { type: String, default: 'staff' },
     isNewJoin: { type: Boolean, default: false },
     isArticle: { type: Boolean, default: false },
@@ -169,6 +185,8 @@ const PayrollLineSchema = new Schema(
     weekoffWorking: { type: Number, default: 0 },
     overtimeSuggested: { type: Number, default: 0 },
     overtimeDays: { type: Number, default: 0 },
+    excessHours: { type: Number, default: 0 },
+    weekdayHours: { type: Number, default: 8 },
     netWorkingDays: { type: Number, default: 0 },
     officeWorkingDays: { type: Number, default: 0 },
     checking: { type: Number, default: 0 },
@@ -186,11 +204,11 @@ const PayrollLineSchema = new Schema(
     tds: { type: Number, default: 0 },
     advances: { type: Number, default: 0 },
     off: { type: Number, default: 0 },
-    penalty: { type: Number, default: 0 },
-    suggestedPenalty: { type: Number, default: 0 },
     taReimbursement: { type: Number, default: 0 },
     lcReimbursement: { type: Number, default: 0 },
     laptopAdjustment: { type: Number, default: 0 },
+    customEarnings: { type: Number, default: 0 },
+    customDeductions: { type: Number, default: 0 },
     bankPayment: { type: Number, default: 0 },
     cashOff: { type: Number, default: 0 },
     diff: { type: Number, default: 0 },
@@ -212,6 +230,7 @@ const PayrollMonthSchema = new Schema<IPayrollMonth>(
       ohd: { type: Number, default: 0 },
     },
     lines: { type: [PayrollLineSchema], default: [] },
+    extraFields: { type: [ExtraFieldSchema], default: [] },
     generatedAt: { type: Date, default: Date.now },
     generatedBy: { type: String, default: '' },
     finalizedAt: { type: Date, default: null },
@@ -220,7 +239,10 @@ const PayrollMonthSchema = new Schema<IPayrollMonth>(
   { timestamps: true }
 );
 
-const PayrollMonth: Model<IPayrollMonth> =
-  mongoose.models.PayrollMonth || mongoose.model<IPayrollMonth>('PayrollMonth', PayrollMonthSchema);
+if (mongoose.models.PayrollMonth) {
+  delete mongoose.models.PayrollMonth;
+}
+
+const PayrollMonth: Model<IPayrollMonth> = mongoose.model<IPayrollMonth>('PayrollMonth', PayrollMonthSchema);
 
 export default PayrollMonth;

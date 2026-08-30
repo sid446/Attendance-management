@@ -13,10 +13,23 @@ import {
   ChevronUp,
   Users,
   AlertCircle,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
 import { confirmMajorAction } from '@/lib/confirmMajorAction';
-import { formatMonthLabel, inr, type PayrollGroup, type PayrollOverrides } from '@/lib/salaryCalculation';
+import {
+  formatMonthLabel,
+  inr,
+  PAYROLL_BULK_BUILTIN_FIELDS,
+  PAYROLL_BULK_BUILTIN_LABELS,
+  normalizePayrollExtraFields,
+  type PayrollExtraField,
+  type PayrollExtraKind,
+  type PayrollGroup,
+  type PayrollOverrides,
+} from '@/lib/salaryCalculation';
+import { formatHoursMinutes } from '@/lib/attendanceSummaryMetrics';
 
 type PayrollLine = {
   userId: string;
@@ -47,6 +60,8 @@ type PayrollLine = {
   weekoffWorking: number;
   overtimeDays: number;
   overtimeSuggested: number;
+  excessHours?: number;
+  weekdayHours?: number;
   netWorkingDays: number;
   officeWorkingDays: number;
   checking: number;
@@ -64,7 +79,11 @@ type PayrollLine = {
   tds: number;
   advances: number;
   off: number;
-  penalty: number;
+  taReimbursement?: number;
+  lcReimbursement?: number;
+  laptopAdjustment?: number;
+  customEarnings?: number;
+  customDeductions?: number;
   bankPayment: number;
   cashOff: number;
   diff: number;
@@ -78,6 +97,7 @@ type PayrollDoc = {
   status: 'draft' | 'finalized';
   calendar: { totalDays: number; sundays: number; ohd: number };
   lines: PayrollLine[];
+  extraFields?: PayrollExtraField[];
   generatedAt?: string;
   finalizedAt?: string | null;
 };
@@ -98,6 +118,16 @@ function uid(line: PayrollLine): string {
   return typeof line.userId === 'string' ? line.userId : String((line.userId as { _id?: string })?._id || line.userId);
 }
 
+/** Stored excess, or the hours implied by converted OT days when the stored field is missing. */
+function payrollExcessHours(line: PayrollLine): number {
+  const stored = Number(line.excessHours);
+  if (Number.isFinite(stored) && Math.abs(stored) > 0.0001) return stored;
+  const suggested = Number(line.overtimeSuggested || 0);
+  const dayLen = Number(line.weekdayHours || 8);
+  if (suggested > 0 && dayLen > 0) return Number((suggested * dayLen).toFixed(2));
+  return 0;
+}
+
 export const SalarySection: React.FC = () => {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -114,6 +144,13 @@ export const SalarySection: React.FC = () => {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [emailBusy, setEmailBusy] = useState(false);
   const [draftOverrides, setDraftOverrides] = useState<PayrollOverrides>({});
+  const [extraLabel, setExtraLabel] = useState('');
+  const [extraKind, setExtraKind] = useState<PayrollExtraKind>('earning');
+  const [bulkField, setBulkField] = useState<string>('tds');
+  const [bulkAmount, setBulkAmount] = useState('');
+  const [bulkScope, setBulkScope] = useState<'all' | 'selected' | 'designation'>('all');
+  const [bulkDesignation, setBulkDesignation] = useState('');
+  const [extrasBusy, setExtrasBusy] = useState(false);
 
   const monthYear = `${year}-${String(month).padStart(2, '0')}`;
   const finalized = doc?.status === 'finalized';
@@ -173,6 +210,15 @@ export const SalarySection: React.FC = () => {
   };
 
   const lines = doc?.lines || [];
+  const extraFields = useMemo(() => normalizePayrollExtraFields(doc?.extraFields), [doc]);
+  const designations = useMemo(() => {
+    const set = new Set<string>();
+    for (const l of lines) {
+      const d = String(l.designation || '').trim();
+      if (d) set.add(d);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [lines]);
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return lines.filter((l) => {
@@ -209,7 +255,7 @@ export const SalarySection: React.FC = () => {
     setSelected(new Set(filtered.map(uid)));
   };
 
-  const saveOverrides = async (line: PayrollLine) => {
+  const saveLineOverrides = async (line: PayrollLine, overrides: PayrollOverrides, noticeMsg: string) => {
     const id = uid(line);
     setSavingId(id);
     setError(null);
@@ -219,7 +265,7 @@ export const SalarySection: React.FC = () => {
         hrCredentialsInit({
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ monthYear, userId: id, overrides: draftOverrides }),
+          body: JSON.stringify({ monthYear, userId: id, overrides }),
         })
       );
       const json = await res.json();
@@ -227,18 +273,164 @@ export const SalarySection: React.FC = () => {
         setError(json.error || 'Save failed');
         return;
       }
+      const saved = json.data as PayrollLine;
       setDoc((prev) => {
         if (!prev) return prev;
         return {
           ...prev,
-          lines: prev.lines.map((l) => (uid(l) === id ? { ...l, ...json.data } : l)),
+          lines: prev.lines.map((l) => (uid(l) === id ? { ...l, ...saved } : l)),
         };
       });
-      setNotice(`Saved overrides for ${line.name}.`);
+      setDraftOverrides({ ...(saved.overrides || {}) });
+      setNotice(noticeMsg);
     } catch {
       setError('Save failed');
     } finally {
       setSavingId(null);
+    }
+  };
+
+  const saveOverrides = async (line: PayrollLine) => {
+    await saveLineOverrides(line, draftOverrides, `Saved overrides for ${line.name}.`);
+  };
+
+  const addExtraField = async () => {
+    const label = extraLabel.trim();
+    if (!label) {
+      setError('Enter a name for the extra, for example TDS or Senior Software Engineer allowance.');
+      return;
+    }
+    setExtrasBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        '/api/payroll/extras',
+        hrCredentialsInit({
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ monthYear, action: 'add', label, kind: extraKind }),
+        })
+      );
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        setError(json.error || 'Could not add extra');
+        return;
+      }
+      setDoc(json.data);
+      setExtraLabel('');
+      setNotice(`Added “${label}” for every employee.`);
+    } catch {
+      setError('Could not add extra');
+    } finally {
+      setExtrasBusy(false);
+    }
+  };
+
+  const removeExtraField = async (extra: PayrollExtraField) => {
+    if (
+      !confirmMajorAction(
+        `Remove “${extra.label}”`,
+        'This extra is removed from every employee and its amounts are cleared.'
+      )
+    ) {
+      return;
+    }
+    setExtrasBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        '/api/payroll/extras',
+        hrCredentialsInit({
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ monthYear, action: 'remove', extraId: extra.id }),
+        })
+      );
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        setError(json.error || 'Could not remove extra');
+        return;
+      }
+      setDoc(json.data);
+      setNotice(`Removed “${extra.label}”.`);
+      if (bulkField === extra.id) setBulkField('tds');
+    } catch {
+      setError('Could not remove extra');
+    } finally {
+      setExtrasBusy(false);
+    }
+  };
+
+  const applyBulkExtra = async (clear = false) => {
+    const amount = clear ? 0 : Number(bulkAmount);
+    if (!bulkField) {
+      setError('Pick a field.');
+      return;
+    }
+    if (!clear && !Number.isFinite(amount)) {
+      setError('Enter an amount to apply.');
+      return;
+    }
+    if (bulkScope === 'selected' && selected.size === 0) {
+      setError('Select at least one employee, or choose All / Designation.');
+      return;
+    }
+    if (bulkScope === 'designation' && !bulkDesignation) {
+      setError('Pick a designation.');
+      return;
+    }
+    const who =
+      bulkScope === 'all'
+        ? 'every employee this month'
+        : bulkScope === 'selected'
+          ? `${selected.size} selected employee(s)`
+          : `everyone with designation ${bulkDesignation}`;
+    const fieldLabel =
+      PAYROLL_BULK_BUILTIN_LABELS[bulkField as keyof typeof PAYROLL_BULK_BUILTIN_LABELS] ||
+      extraFields.find((f) => f.id === bulkField)?.label ||
+      bulkField;
+    if (
+      !confirmMajorAction(
+        clear ? `Remove ${fieldLabel}` : 'Apply extra amount',
+        clear ? `${fieldLabel} will be cleared for ${who}.` : `${amount} will be set for ${who}.`
+      )
+    ) {
+      return;
+    }
+    setExtrasBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        '/api/payroll/bulk',
+        hrCredentialsInit({
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            monthYear,
+            field: bulkField,
+            amount: clear ? 0 : amount,
+            clear,
+            scope: bulkScope,
+            userIds: [...selected],
+            designation: bulkDesignation,
+          }),
+        })
+      );
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        setError(json.error || (clear ? 'Could not remove extra' : 'Could not apply extra'));
+        return;
+      }
+      setDoc(json.data);
+      setNotice(
+        clear
+          ? `Removed ${fieldLabel} from ${json.updated || 0} employee(s).`
+          : `Applied to ${json.updated || 0} employee(s).`
+      );
+    } catch {
+      setError(clear ? 'Could not remove extra' : 'Could not apply extra');
+    } finally {
+      setExtrasBusy(false);
     }
   };
 
@@ -331,7 +523,8 @@ export const SalarySection: React.FC = () => {
             Salary
           </h2>
           <p className="text-sm text-slate-600">
-            Monthly payroll from attendance, leave, and the employee master — same rules as the Salary sheet.
+            Monthly payroll from attendance, leave, and the employee master. For non-articles, Summary excess hours
+            convert to overtime days; they are added to pay only after you approve them. Articles get no overtime.
           </p>
           <ol className="flex flex-wrap gap-2" aria-label="Workflow">
             {WORKFLOW.map((label, i) => (
@@ -439,6 +632,171 @@ export const SalarySection: React.FC = () => {
         </p>
       )}
 
+      {doc && (
+        <div className="grid gap-4 rounded-xl border border-blue-200/65 bg-panel p-4 shadow-sm lg:grid-cols-2">
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold text-slate-900">Edit extras</h3>
+            <p className="text-xs text-slate-500">
+              Add a named extra (TDS, advances, a designation allowance). It appears on every employee. Earnings
+              increase net pay; deductions reduce it.
+            </p>
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="min-w-[12rem] flex-1 text-xs text-slate-600">
+                Name
+                <input
+                  className={`${inputCls} mt-1`}
+                  disabled={finalized || extrasBusy}
+                  placeholder="e.g. Senior Software Engineer allowance"
+                  value={extraLabel}
+                  onChange={(e) => setExtraLabel(e.target.value)}
+                />
+              </label>
+              <label className="text-xs text-slate-600">
+                Type
+                <select
+                  className={`${selectCls} mt-1`}
+                  disabled={finalized || extrasBusy}
+                  value={extraKind}
+                  onChange={(e) => setExtraKind(e.target.value as PayrollExtraKind)}
+                >
+                  <option value="earning">Earning</option>
+                  <option value="deduction">Deduction</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                disabled={finalized || extrasBusy}
+                onClick={() => void addExtraField()}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+              >
+                <Plus className="h-4 w-4" />
+                Add for everyone
+              </button>
+            </div>
+            {extraFields.length === 0 ? (
+              <p className="text-xs text-slate-500">No custom extras this month. Built-in TDS, advances, ESI still apply.</p>
+            ) : (
+              <ul className="space-y-1">
+                {extraFields.map((f) => (
+                  <li
+                    key={f.id}
+                    className="flex items-center justify-between rounded-md border border-slate-200 bg-white px-2 py-1 text-xs"
+                  >
+                    <span>
+                      {f.label}{' '}
+                      <span className="text-slate-400">({f.kind})</span>
+                    </span>
+                    <button
+                      type="button"
+                      disabled={finalized || extrasBusy}
+                      onClick={() => void removeExtraField(f)}
+                      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      Remove extra
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {extraFields.length > 0 && (
+              <p className="text-xs text-slate-500">
+                Open any employee (chevron on the right) to type an amount, or use Apply to people.
+              </p>
+            )}
+          </div>
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold text-slate-900">Apply to people</h3>
+            <p className="text-xs text-slate-500">
+              Set or clear the same amount on all employees, the selected rows, or one designation.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="text-xs text-slate-600">
+                Field
+                <select
+                  className={`${selectCls} mt-1 w-full`}
+                  disabled={finalized || extrasBusy}
+                  value={bulkField}
+                  onChange={(e) => setBulkField(e.target.value)}
+                >
+                  {PAYROLL_BULK_BUILTIN_FIELDS.map((key) => (
+                    <option key={key} value={key}>
+                      {PAYROLL_BULK_BUILTIN_LABELS[key]}
+                    </option>
+                  ))}
+                  {extraFields.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-xs text-slate-600">
+                Amount
+                <input
+                  type="number"
+                  step="0.01"
+                  className={`${inputCls} mt-1`}
+                  disabled={finalized || extrasBusy}
+                  value={bulkAmount}
+                  onChange={(e) => setBulkAmount(e.target.value)}
+                />
+              </label>
+              <label className="text-xs text-slate-600">
+                Apply to
+                <select
+                  className={`${selectCls} mt-1 w-full`}
+                  disabled={finalized || extrasBusy}
+                  value={bulkScope}
+                  onChange={(e) => setBulkScope(e.target.value as 'all' | 'selected' | 'designation')}
+                >
+                  <option value="all">All employees</option>
+                  <option value="selected">Selected rows ({selected.size})</option>
+                  <option value="designation">One designation</option>
+                </select>
+              </label>
+              {bulkScope === 'designation' && (
+                <label className="text-xs text-slate-600">
+                  Designation
+                  <select
+                    className={`${selectCls} mt-1 w-full`}
+                    disabled={finalized || extrasBusy}
+                    value={bulkDesignation}
+                    onChange={(e) => setBulkDesignation(e.target.value)}
+                  >
+                    <option value="">Pick designation</option>
+                    {designations.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={finalized || extrasBusy || !doc}
+                onClick={() => void applyBulkExtra(false)}
+                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {extrasBusy ? 'Working…' : 'Apply amount'}
+              </button>
+              <button
+                type="button"
+                disabled={finalized || extrasBusy || !doc || !bulkField}
+                onClick={() => void applyBulkExtra(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-900 disabled:opacity-50"
+              >
+                <Trash2 className="h-4 w-4" />
+                Remove amount
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[16rem] flex-1">
           <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
@@ -525,6 +883,19 @@ export const SalarySection: React.FC = () => {
                             {line.designation || line.category} · {line.verticalHead || line.team || '—'}
                             {line.isNewJoin ? ' · New join' : ''}
                             {line.isArticle && line.articleshipYear ? ` · Year ${line.articleshipYear}` : ''}
+                            {(() => {
+                              if (line.isArticle) return '';
+                              const excess = payrollExcessHours(line);
+                              const suggested = Number(line.overtimeSuggested || 0);
+                              const inPay = Number(line.overtimeDays || 0);
+                              if (inPay > 0) {
+                                return ` · OT ${inPay}d in pay (${formatHoursMinutes(excess)} excess)`;
+                              }
+                              if (suggested > 0 || excess > 0) {
+                                return ` · ${formatHoursMinutes(excess)} excess → ${suggested}d OT (not in pay)`;
+                              }
+                              return '';
+                            })()}
                           </div>
                         </td>
                         <td className="px-3 py-2">{line.weekdaysWorking}</td>
@@ -544,7 +915,10 @@ export const SalarySection: React.FC = () => {
                             type="button"
                             onClick={() => {
                               setExpanded(open ? null : id);
-                              setDraftOverrides({ ...(line.overrides || {}) });
+                              setDraftOverrides({
+                                ...(line.overrides || {}),
+                                customAmounts: { ...(line.overrides?.customAmounts || {}) },
+                              });
                             }}
                             className="rounded-md border border-slate-200 p-1 text-slate-600 hover:bg-slate-50"
                           >
@@ -557,11 +931,26 @@ export const SalarySection: React.FC = () => {
                           <td colSpan={10} className="px-4 py-4">
                             <OverrideForm
                               line={line}
+                              extraFields={extraFields}
                               draft={draftOverrides}
                               setDraft={setDraftOverrides}
                               disabled={finalized}
                               saving={savingId === id}
                               onSave={() => void saveOverrides(line)}
+                              onApproveOvertime={() =>
+                                void saveLineOverrides(
+                                  line,
+                                  { ...draftOverrides, overtimeDays: Number(line.overtimeSuggested || 0) },
+                                  `Overtime added to pay for ${line.name}.`
+                                )
+                              }
+                              onRemoveOvertime={() =>
+                                void saveLineOverrides(
+                                  line,
+                                  { ...draftOverrides, overtimeDays: null },
+                                  `Overtime removed from pay for ${line.name}.`
+                                )
+                              }
                               inputCls={inputCls}
                             />
                           </td>
@@ -579,21 +968,41 @@ export const SalarySection: React.FC = () => {
   );
 };
 
+function BreakdownRow({ label, value, inPay }: { label: string; value: string; inPay: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-0.5 text-xs">
+      <span className="text-slate-600">{label}</span>
+      <span className={`tabular-nums font-medium ${inPay ? 'text-slate-900' : 'text-slate-500'}`}>
+        {value}
+        <span className={`ml-2 text-[10px] font-semibold uppercase tracking-wide ${inPay ? 'text-emerald-700' : 'text-slate-400'}`}>
+          {inPay ? 'in pay' : 'not in pay'}
+        </span>
+      </span>
+    </div>
+  );
+}
+
 function OverrideForm({
   line,
+  extraFields,
   draft,
   setDraft,
   disabled,
   saving,
   onSave,
+  onApproveOvertime,
+  onRemoveOvertime,
   inputCls,
 }: {
   line: PayrollLine;
+  extraFields: PayrollExtraField[];
   draft: PayrollOverrides;
   setDraft: (o: PayrollOverrides) => void;
   disabled: boolean;
   saving: boolean;
   onSave: () => void;
+  onApproveOvertime: () => void;
+  onRemoveOvertime: () => void;
   inputCls: string;
 }) {
   const set = (key: keyof PayrollOverrides, raw: string) => {
@@ -618,20 +1027,104 @@ function OverrideForm({
       />
     </label>
   );
+  const otSuggested = Number(line.overtimeSuggested || 0);
+  const otInPay = Number(line.overtimeDays || 0);
+  const weekdayHours = Number(line.weekdayHours || 8);
+  const excessHours = payrollExcessHours(line);
+  const excessLabel = formatHoursMinutes(excessHours);
+  const otApproved = !line.isArticle && otInPay > 0;
+  const netWithoutOt = Number(
+    (Number(line.weekdaysWorking || 0) + Number(line.leavesConsumed || 0) + Number(line.weekoffWorking || 0)).toFixed(3)
+  );
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Days in this salary</p>
+          <BreakdownRow label="Weekdays working" value={String(line.weekdaysWorking)} inPay />
+          <BreakdownRow
+            label="Leave consumed"
+            value={line.isArticle ? '0 (articles)' : String(line.leavesConsumed)}
+            inPay={!line.isArticle}
+          />
+          <BreakdownRow label="Weekoff working" value={String(line.weekoffWorking)} inPay />
+          <BreakdownRow
+            label="Overtime from excess hours"
+            value={line.isArticle ? '0 (articles)' : String(otInPay)}
+            inPay={!line.isArticle && otInPay > 0}
+          />
+          <div className="mt-1 flex items-baseline justify-between border-t border-slate-100 pt-1 text-xs font-semibold">
+            <span>Net working days</span>
+            <span className="tabular-nums">{line.netWorkingDays}</span>
+          </div>
+          <p className="mt-1 text-[11px] text-slate-500">
+            {line.isArticle
+              ? 'Articles: weekdays + weekoff only. No overtime.'
+              : otApproved
+                ? `Base days ${netWithoutOt} + approved OT ${otInPay}`
+                : `Base days ${netWithoutOt}. Converted OT is not in pay until you approve it.`}
+          </p>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Excess-hour overtime</p>
+          <BreakdownRow
+            label="Monday schedule (day length)"
+            value={line.isArticle ? '—' : `${weekdayHours} h`}
+            inPay={false}
+          />
+          <BreakdownRow
+            label="Excess (same as Summary)"
+            value={line.isArticle ? '0 (articles)' : excessLabel}
+            inPay={false}
+          />
+          <BreakdownRow
+            label="Converted to overtime days"
+            value={line.isArticle ? '0 (articles)' : `${otSuggested} d`}
+            inPay={otApproved && otSuggested > 0 && otInPay === otSuggested}
+          />
+          <p className="mt-2 text-[11px] text-slate-500">
+            {line.isArticle
+              ? 'Articles get no overtime.'
+              : 'Summary excess ÷ Monday scheduled hours. Approve overtime to add those days to payable net days.'}
+          </p>
+          {!line.isArticle && otSuggested > 0 && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={disabled || saving || (otApproved && otInPay === otSuggested)}
+                onClick={onApproveOvertime}
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+              >
+                {otApproved && otInPay === otSuggested
+                  ? 'Overtime in pay'
+                  : `Approve overtime (${otSuggested} d)`}
+              </button>
+              {otApproved && (
+                <button
+                  type="button"
+                  disabled={disabled || saving}
+                  onClick={onRemoveOvertime}
+                  className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-50"
+                >
+                  Remove from pay
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
       <p className="text-xs text-slate-500">
-        Weekdays {line.weekdaysWorking} · Leave taken {line.leavesTaken} (consumed {line.leavesConsumed}, C/F {line.leavesCf}) ·
-        Weekoff {line.weekoffWorking} · OT suggested {line.overtimeSuggested} · Office days {line.officeWorkingDays} · Checking{' '}
-        {line.checking}
+        Leave taken {line.leavesTaken} · C/F {line.leavesCf} · Office days {line.officeWorkingDays} · Checking {line.checking}
+        {Math.abs(Number(line.checking || 0)) > 0.05 ? ' (should be 0)' : ''}
       </p>
       <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {field('overtimeDays', 'Overtime days', line.overtimeSuggested)}
+        {!line.isArticle && field('overtimeDays', 'Overtime days override', line.overtimeSuggested)}
         {field('netWorkingDays', 'Net working days override', line.netWorkingDays)}
         {field('officeWorkingDays', 'Office working days override', line.officeWorkingDays)}
         {field('dueInTally', 'Due in tally', line.payableMonth)}
         {field('additionInOffDue', 'Addition in off due', 0)}
-        {field('penalty', 'Penalty', line.penalty)}
         {field('advances', 'Advances', 0)}
         {field('tds', 'TDS', 0)}
         {field('esiEmployee', 'ESI employee', 0)}
@@ -641,6 +1134,36 @@ function OverrideForm({
         {field('taReimbursement', 'TA reimbursement', 0)}
         {field('lcReimbursement', 'LC reimbursement', 0)}
         {field('laptopAdjustment', 'Laptop adjustment', 0)}
+        {extraFields.length > 0 && (
+          <p className="sm:col-span-3 lg:col-span-4 mt-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Custom extras
+          </p>
+        )}
+        {extraFields.map((ex) => (
+          <label key={ex.id} className="block text-xs text-slate-600">
+            {ex.label} ({ex.kind})
+            <input
+              type="number"
+              step="0.01"
+              disabled={disabled}
+              className={`${inputCls} mt-1`}
+              value={
+                draft.customAmounts?.[ex.id] == null || draft.customAmounts?.[ex.id] === undefined
+                  ? ''
+                  : String(draft.customAmounts[ex.id])
+              }
+              placeholder="0"
+              onChange={(e) => {
+                const raw = e.target.value;
+                const n = raw === '' ? null : Number(raw);
+                setDraft({
+                  ...draft,
+                  customAmounts: { ...(draft.customAmounts || {}), [ex.id]: n },
+                });
+              }}
+            />
+          </label>
+        ))}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <button
@@ -651,7 +1174,9 @@ function OverrideForm({
         >
           {saving ? 'Saving…' : 'Save overrides'}
         </button>
-        <span className="text-xs text-slate-500">Blank fields keep the calculated value.</span>
+        <span className="text-xs text-slate-500">
+          Overtime stays out of pay until you approve it. Other blank fields keep the calculated value.
+        </span>
       </div>
     </div>
   );

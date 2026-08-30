@@ -4,8 +4,8 @@ import PayrollMonth from '@/models/PayrollMonth';
 import { getHrOperatorEmailFromRequest } from '@/lib/hrAuthServer';
 import { loadHrConsolePermissionDoc } from '@/lib/hrConsolePermissionDb';
 import { assertHrSection, effectiveFromDoc } from '@/lib/hrConsolePermissionUtils';
-import { recomputeLineFromOverrides } from '@/lib/payrollGenerate';
-import type { PayrollOverrides } from '@/lib/salaryCalculation';
+import { applyPayrollLineOverrides, mergePayrollOverrides, plainPayrollOverrides } from '@/lib/payrollGenerate';
+import { normalizePayrollExtraFields, type PayrollOverrides } from '@/lib/salaryCalculation';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,8 +43,11 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Employee not in this payroll' }, { status: 404 });
     }
 
-    const merged: PayrollOverrides = { ...(doc.lines[idx].overrides || {}), ...overrides };
-    doc.lines[idx] = recomputeLineFromOverrides(doc.lines[idx], merged, doc.calendar, monthYear);
+    const current = doc.lines[idx];
+    const extraFields = normalizePayrollExtraFields(doc.extraFields);
+    const existing = plainPayrollOverrides(current.overrides);
+    const merged = mergePayrollOverrides(existing, overrides);
+    applyPayrollLineOverrides(current, merged, doc.calendar, monthYear, extraFields);
     doc.markModified('lines');
     await doc.save();
 

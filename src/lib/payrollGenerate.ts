@@ -2,13 +2,16 @@ import User, { IUser } from '@/models/User';
 import Attendance from '@/models/Attendance';
 import Holiday from '@/models/Holiday';
 import LeaveSnapshot from '@/models/LeaveSnapshot';
-import Fine from '@/models/Fine';
 import PayrollMonth, { IPayrollLine } from '@/models/PayrollMonth';
 import { countSalaryAttendanceDays, type SalaryDayRecord } from '@/lib/salaryAttendanceDays';
 import {
   computeSalaryLine,
   monthCalendar,
   parseMoney,
+  normalizePayrollExtraFields,
+  extraFieldsForStore,
+  plainCustomAmounts,
+  type PayrollExtraField,
   type PayrollOverrides,
 } from '@/lib/salaryCalculation';
 import {
@@ -17,41 +20,75 @@ import {
   getWorkingUnderPartnerForDate,
   lastDayOfMonthYear,
 } from '@/lib/userFieldHistory';
-import { getEmploymentTypeForDate } from '@/lib/attendanceSummaryMetrics';
+import { getEmploymentTypeForDate, getDayExcessSumForPeriod, monthDateStrings } from '@/lib/attendanceSummaryMetrics';
+import { scheduledMinutesBetween } from '@/lib/calculateDayExcessHour';
+import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { isArticleEmployee } from '@/lib/isArticleEmployee';
 import { filterRecordsByInactiveCutoff, toYmd } from '@/lib/attendanceInactiveFilter';
+import {
+  fetchDayApprovalsForUsersMonth,
+  fetchExcessAllowanceLookup,
+  fetchExcessDisplayLookup,
+} from '@/lib/excessHourAllowanceDb';
+import {
+  lookupExcessDisplay,
+  type ExcessAllowanceLookup,
+  type ExcessDayAllowanceLookup,
+  type ExcessDisplayLookup,
+} from '@/lib/excessHourAllowance';
+import type { AttendanceSummaryView, User as UiUser } from '@/types/ui';
 
 function recordsToObject(records: unknown): Record<string, SalaryDayRecord> {
   const out: Record<string, SalaryDayRecord> = {};
+  const put = (key: string, value: unknown) => {
+    const r = (value || {}) as SalaryDayRecord & { inTime?: string; outTime?: string };
+    out[String(key)] = {
+      ...r,
+      checkin: r.checkin || r.inTime || '',
+      checkout: r.checkout || r.outTime || '',
+    };
+  };
   if (!records) return out;
   if (records instanceof Map) {
-    for (const [k, v] of records.entries()) {
-      out[String(k)] = (v || {}) as SalaryDayRecord;
+    for (const [k, v] of records.entries()) put(String(k), v);
+    return out;
+  }
+  if (Array.isArray(records)) {
+    for (const item of records) {
+      if (Array.isArray(item) && item.length >= 2) put(String(item[0]), item[1]);
     }
     return out;
   }
   if (typeof records === 'object') {
-    for (const [k, v] of Object.entries(records as Record<string, unknown>)) {
-      out[k] = (v || {}) as SalaryDayRecord;
-    }
+    for (const [k, v] of Object.entries(records as Record<string, unknown>)) put(k, v);
   }
   return out;
 }
 
-function weekdayHoursFromUser(user: IUser | null | undefined, asOf: Date): number {
+function attendanceUserId(doc: { userId?: unknown }): string {
+  const u = doc.userId as { _id?: unknown } | string | undefined;
+  if (u && typeof u === 'object' && u._id) return String(u._id);
+  return String(u || '');
+}
+
+/** First Monday of the payroll month, as YYYY-MM-DD. */
+function firstMondayOfMonth(monthYear: string): string {
+  const [y, m] = monthYear.split('-').map(Number);
+  const d = new Date(y, (m || 1) - 1, 1);
+  while (d.getDay() !== 1) d.setDate(d.getDate() + 1);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
+/** Monday in–out length from the same schedule source Summary uses. */
+function weekdayHoursFromUser(user: IUser | null | undefined, monthYear: string): number {
   try {
-    const schedules = user?.schedules;
-    if (schedules && Array.isArray(schedules) && schedules.length > 0) {
-      const applicable = schedules
-        .filter((s) => s?.effectiveFrom && new Date(s.effectiveFrom) <= asOf)
-        .sort((a, b) => new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime());
-      const monday = applicable[0]?.daily?.monday;
-      if (monday?.inTime && monday?.outTime) {
-        const [inH, inM] = monday.inTime.split(':').map(Number);
-        const [outH, outM] = monday.outTime.split(':').map(Number);
-        const calc = outH + outM / 60 - (inH + inM / 60);
-        if (calc > 0) return calc;
-      }
+    const monday = firstMondayOfMonth(monthYear);
+    const sch = getScheduledTimes(user, monday);
+    if (sch?.inTime && sch?.outTime && sch.inTime !== '00:00' && sch.outTime !== '00:00') {
+      const hours = scheduledMinutesBetween(sch.inTime, sch.outTime) / 60;
+      if (hours > 0) return hours;
     }
   } catch {
     // fall through
@@ -59,31 +96,68 @@ function weekdayHoursFromUser(user: IUser | null | undefined, asOf: Date): numbe
   return 8;
 }
 
-function periodExcessHours(records: Record<string, SalaryDayRecord>): number {
+function storedDailyExcess(records: Record<string, SalaryDayRecord>): number {
   let sum = 0;
   for (const rec of Object.values(records)) {
     const ex = Number(rec?.excessHour || 0);
     if (Number.isFinite(ex)) sum += ex;
   }
-  return sum;
+  return Number(sum.toFixed(2));
 }
 
-function suggestedPenaltyFromFine(fine: {
-  fineRecords?: Array<{ isWarning?: boolean; status?: string; paymentMode?: string; fineAmount?: number }>;
-  totalFine?: number;
-} | null): number {
-  if (!fine) return 0;
-  const records = fine.fineRecords || [];
-  const salaryDeduction = records.filter(
-    (r) =>
-      !r.isWarning &&
-      r.status === 'pending' &&
-      (r.paymentMode === 'salary_deduction' || !r.paymentMode)
-  );
-  if (salaryDeduction.length > 0) {
-    return salaryDeduction.reduce((s, r) => s + Number(r.fineAmount || 0), 0);
-  }
-  return Number(fine.totalFine || 0);
+function summaryViewFromRecords(
+  uid: string,
+  name: string,
+  monthYear: string,
+  records: Record<string, SalaryDayRecord>
+): AttendanceSummaryView {
+  return {
+    id: uid,
+    userId: uid,
+    userName: name,
+    monthYear,
+    recordDetails: records as AttendanceSummaryView['recordDetails'],
+    summary: {
+      scheduledHours: '',
+      shortHours: '',
+      excessHours: '',
+      totalHour: 0,
+      totalLateArrival: 0,
+      excessHour: 0,
+      totalHalfDay: 0,
+      totalPresent: 0,
+      totalAbsent: 0,
+      totalLeave: 0,
+    },
+  };
+}
+
+/** Same month excess hours as Attendance Summary. Uses live day excess; falls back to stored figures. */
+function summaryExcessHours(
+  user: IUser,
+  uid: string,
+  monthYear: string,
+  records: Record<string, SalaryDayRecord>,
+  holidaySet: Set<string>,
+  maps: {
+    dayMap: ExcessDayAllowanceLookup;
+    displayMap: ExcessDisplayLookup;
+    allowanceMap: ExcessAllowanceLookup;
+  },
+  storedMonthExcess: number
+): number {
+  const item = summaryViewFromRecords(uid, String(user.name || ''), monthYear, records);
+  const dateList = monthDateStrings(monthYear);
+  const uiUser = user as unknown as UiUser;
+  const live = getDayExcessSumForPeriod(item, uiUser, dateList, {
+    holidayDates: holidaySet,
+    dayAllowanceMap: maps.dayMap,
+  });
+  const fromDays = lookupExcessDisplay(maps.displayMap, uid, monthYear);
+  if (live !== 0) return live;
+  if (fromDays != null && fromDays !== 0) return fromDays;
+  if (storedMonthExcess !== 0) return storedMonthExcess;
+  return storedDailyExcess(records);
 }
 
 function userShouldAppear(
@@ -108,12 +182,11 @@ export async function generatePayrollMonth(monthYear: string, generatedBy: strin
 
   const periodEnd = lastDayOfMonthYear(monthYear);
 
-  const [users, attendanceDocs, holidays, snapshots, fines, existing] = await Promise.all([
+  const [users, attendanceDocs, holidays, snapshots, existing] = await Promise.all([
     User.find({}).lean(),
     Attendance.find({ monthYear }).lean(),
     Holiday.find({ isActive: true }).select('date').lean(),
     LeaveSnapshot.find({ monthYear }).lean(),
-    Fine.find({ monthYear }).lean(),
     PayrollMonth.findOne({ monthYear }),
   ]);
 
@@ -126,9 +199,11 @@ export async function generatePayrollMonth(monthYear: string, generatedBy: strin
   const calendar = monthCalendar(monthYear, holidayDates);
 
   const attByUser = new Map<string, Record<string, SalaryDayRecord>>();
+  const attMonthExcess = new Map<string, number>();
   for (const doc of attendanceDocs) {
-    const uid = String(doc.userId);
+    const uid = attendanceUserId(doc);
     attByUser.set(uid, recordsToObject(doc.records));
+    attMonthExcess.set(uid, Number((doc as { summary?: { excessHour?: number } }).summary?.excessHour || 0));
   }
 
   const snapByUser = new Map<string, (typeof snapshots)[number]>();
@@ -136,20 +211,24 @@ export async function generatePayrollMonth(monthYear: string, generatedBy: strin
     snapByUser.set(String(s.userId), s);
   }
 
-  const fineByUser = new Map<string, (typeof fines)[number]>();
-  for (const f of fines) {
-    fineByUser.set(String(f.userId), f);
-  }
-
   const prevOverrides = new Map<string, PayrollOverrides>();
   const prevSent = new Map<string, { payslipSentAt?: Date | null; payslipSentTo?: string }>();
+  const extraFields = normalizePayrollExtraFields(existing?.extraFields);
   if (existing) {
     for (const line of existing.lines || []) {
       const id = String(line.userId);
-      prevOverrides.set(id, (line.overrides || {}) as PayrollOverrides);
+      prevOverrides.set(id, plainPayrollOverrides(line.overrides));
       prevSent.set(id, { payslipSentAt: line.payslipSentAt, payslipSentTo: line.payslipSentTo });
     }
   }
+
+  const userIds = users.map((u) => String((u as { _id?: unknown })._id || ''));
+  const [displayMap, dayMap, allowanceMap] = await Promise.all([
+    fetchExcessDisplayLookup(userIds, monthYear),
+    fetchDayApprovalsForUsersMonth(userIds, monthYear),
+    fetchExcessAllowanceLookup(userIds.map((userId) => ({ userId, monthYear }))),
+  ]);
+  const excessMaps = { dayMap, displayMap, allowanceMap };
 
   const lines: IPayrollLine[] = [];
 
@@ -169,10 +248,23 @@ export async function generatePayrollMonth(monthYear: string, generatedBy: strin
       designation,
       category: user.category,
     });
+    const weekdayHours = weekdayHoursFromUser(user, monthYear);
+    const rawExcess = isArticle
+      ? 0
+      : summaryExcessHours(
+          user,
+          uid,
+          monthYear,
+          records,
+          holidaySet,
+          excessMaps,
+          attMonthExcess.get(uid) || 0
+        );
+    const excessHours = Number(Math.max(0, rawExcess).toFixed(2));
     const days = countSalaryAttendanceDays(records, holidaySet, {
       employmentType,
-      weekdayHours: weekdayHoursFromUser(user, periodEnd),
-      periodExcessHours: periodExcessHours(records),
+      weekdayHours,
+      periodExcessHours: excessHours,
       isArticle,
     });
 
@@ -190,7 +282,6 @@ export async function generatePayrollMonth(monthYear: string, generatedBy: strin
     const laptopAllowance = parseMoney(
       getManagedFieldValueForDate(user, 'laptopAllowance', periodEnd) || user.laptopAllowance
     );
-    const suggestedPenalty = suggestedPenaltyFromFine(fineByUser.get(uid) || null);
     const overrides = prevOverrides.get(uid) || {};
 
     const calc = computeSalaryLine({
@@ -205,8 +296,8 @@ export async function generatePayrollMonth(monthYear: string, generatedBy: strin
       monthlyEarnedRate: Number(user.leaveBalance?.monthlyEarned || 2),
       basicSalary,
       laptopAllowance,
-      suggestedPenalty,
       overrides,
+      extraFields,
       calendar,
     });
 
@@ -234,6 +325,8 @@ export async function generatePayrollMonth(monthYear: string, generatedBy: strin
       ifscCode: String(user.ifscCode || ''),
       accountHolderName: String(user.accountHolderName || ''),
       mobileNumber: String(user.mobileNumber || ''),
+      esiNumber: String(user.esi || ''),
+      otherAllowance: parseMoney(user.otherAllowance),
       group: calc.group,
       isNewJoin: calc.isNewJoin,
       isArticle: calc.isArticle,
@@ -262,6 +355,8 @@ export async function generatePayrollMonth(monthYear: string, generatedBy: strin
       weekoffWorking: days.weekoffWorking,
       overtimeSuggested: days.overtimeSuggested,
       overtimeDays: calc.overtimeDays,
+      excessHours,
+      weekdayHours,
       netWorkingDays: calc.netWorkingDays,
       officeWorkingDays: calc.officeWorkingDays,
       checking: calc.checking,
@@ -279,11 +374,11 @@ export async function generatePayrollMonth(monthYear: string, generatedBy: strin
       tds: calc.tds,
       advances: calc.advances,
       off: calc.off,
-      penalty: calc.penalty,
-      suggestedPenalty,
       taReimbursement: calc.taReimbursement,
       lcReimbursement: calc.lcReimbursement,
       laptopAdjustment: calc.laptopAdjustment,
+      customEarnings: calc.customEarnings,
+      customDeductions: calc.customDeductions,
       bankPayment: calc.bankPayment,
       cashOff: calc.cashOff,
       diff: calc.diff,
@@ -312,6 +407,7 @@ export async function generatePayrollMonth(monthYear: string, generatedBy: strin
     status: 'draft' as const,
     calendar,
     lines,
+    extraFields: extraFieldsForStore(extraFields),
     generatedAt: new Date(),
     generatedBy,
   };
@@ -324,53 +420,97 @@ export async function generatePayrollMonth(monthYear: string, generatedBy: strin
   return doc;
 }
 
+function payrollLinePlain(line: IPayrollLine): IPayrollLine {
+  const asDoc = line as IPayrollLine & { toObject?: (opts?: { depopulate?: boolean }) => IPayrollLine };
+  if (typeof asDoc.toObject === 'function') {
+    return asDoc.toObject({ depopulate: true });
+  }
+  return { ...line };
+}
+
+export function plainPayrollOverrides(raw: unknown): PayrollOverrides {
+  if (!raw || typeof raw !== 'object') return {};
+  const asDoc = raw as PayrollOverrides & { toObject?: () => PayrollOverrides; penalty?: unknown };
+  const obj = typeof asDoc.toObject === 'function' ? asDoc.toObject() : { ...asDoc };
+  const { penalty: _removed, ...kept } = obj as PayrollOverrides & { penalty?: unknown };
+  kept.customAmounts = plainCustomAmounts(kept.customAmounts);
+  return kept;
+}
+
+export function mergePayrollOverrides(existing: PayrollOverrides, patch: PayrollOverrides): PayrollOverrides {
+  const merged: PayrollOverrides = { ...existing, ...patch };
+  delete (merged as { penalty?: unknown }).penalty;
+  merged.customAmounts = {
+    ...plainCustomAmounts(existing.customAmounts),
+    ...plainCustomAmounts(patch.customAmounts),
+  };
+  return merged;
+}
+
 export function recomputeLineFromOverrides(
   line: IPayrollLine,
   overrides: PayrollOverrides,
   calendar: { totalDays: number; sundays: number; ohd: number },
-  monthYear: string
+  monthYear: string,
+  extraFields: PayrollExtraField[] = []
 ): IPayrollLine {
+  const base = payrollLinePlain(line);
   const days = {
-    pio: line.pio,
-    woPio: line.woPio,
-    osP: line.osP,
-    absent: line.absent,
-    hd: line.hd,
-    weekoffHd: line.weekoffHd,
-    weekoffs: line.weekoffs,
-    sun: line.sun,
-    ohd: line.ohd,
-    wfhWeekoff: line.wfhWeekoff,
-    wfhWeekday: line.wfhWeekday,
-    wfhMaxAllowed: line.wfhMaxAllowed,
-    absentWfh: line.absentWfh,
-    presentWfhActual: line.presentWfhActual,
-    absentWfhMaxActual: line.absentWfhMaxActual,
-    weekdaysWorking: line.weekdaysWorking,
-    leavesTaken: line.leavesTaken,
-    weekoffWorking: line.weekoffWorking,
-    overtimeSuggested: line.overtimeSuggested,
-    presentOrWfhCount: line.pio + line.wfhWeekday,
+    pio: base.pio,
+    woPio: base.woPio,
+    osP: base.osP,
+    absent: base.absent,
+    hd: base.hd,
+    weekoffHd: base.weekoffHd,
+    weekoffs: base.weekoffs,
+    sun: base.sun,
+    ohd: base.ohd,
+    wfhWeekoff: base.wfhWeekoff,
+    wfhWeekday: base.wfhWeekday,
+    wfhMaxAllowed: base.wfhMaxAllowed,
+    absentWfh: base.absentWfh,
+    presentWfhActual: base.presentWfhActual,
+    absentWfhMaxActual: base.absentWfhMaxActual,
+    weekdaysWorking: base.weekdaysWorking,
+    leavesTaken: base.leavesTaken,
+    weekoffWorking: base.weekoffWorking,
+    overtimeSuggested: base.overtimeSuggested,
+    presentOrWfhCount: base.pio + base.wfhWeekday,
     hasAnyRecord: true,
   };
   const calc = computeSalaryLine({
-    category: line.category,
-    designation: line.designation,
-    employmentType: line.employmentType,
-    joiningDate: line.joiningDate,
-    articleshipStartDate: line.articleshipStartDate,
+    category: base.category,
+    designation: base.designation,
+    employmentType: base.employmentType,
+    joiningDate: base.joiningDate,
+    articleshipStartDate: base.articleshipStartDate,
     monthYear,
     days,
-    leavesBf: line.leavesBf,
-    basicSalary: line.isArticle ? 0 : line.basic,
-    laptopAllowance: line.laptop,
-    suggestedPenalty: line.suggestedPenalty,
+    leavesBf: base.leavesBf,
+    basicSalary: base.isArticle ? 0 : base.basic,
+    laptopAllowance: base.laptop,
     overrides,
+    extraFields,
     calendar,
   });
   return {
-    ...line,
+    ...base,
     ...calc,
+    userId: base.userId,
     overrides,
   };
+}
+
+export function applyPayrollLineOverrides(
+  current: IPayrollLine,
+  overrides: PayrollOverrides,
+  calendar: { totalDays: number; sundays: number; ohd: number },
+  monthYear: string,
+  extraFields: PayrollExtraField[] = []
+): void {
+  const keptUserId = current.userId;
+  const next = recomputeLineFromOverrides(current, overrides, calendar, monthYear, extraFields);
+  Object.assign(current, next);
+  current.userId = keptUserId;
+  current.overrides = overrides;
 }
