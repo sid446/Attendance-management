@@ -133,6 +133,32 @@ export async function getVisibleTeamMembersForViewer(
   return { members, includeViewerSelf };
 }
 
+function teamAccessRuleAllowsApproval(rule: { canApproveRequests?: boolean } | null | undefined): boolean {
+  return !rule || rule.canApproveRequests !== false;
+}
+
+export async function viewerAccessAllowsRequestApproval(viewerUserId: string): Promise<boolean> {
+  if (!viewerUserId) return true;
+  const rule = await TeamAttendanceAccess.findOne({ viewerUserId }).lean();
+  return teamAccessRuleAllowsApproval(rule);
+}
+
+/**
+ * Members whose attendance requests this viewer may review/approve.
+ * Official attendance-email inbox is always included.
+ * Extra Team Attendance Access people are included only when canApproveRequests is on.
+ */
+export async function getApprovableTeamMembersForViewer(
+  viewerUserId: string
+): Promise<VisibleTeamMember[]> {
+  const rule = await TeamAttendanceAccess.findOne({ viewerUserId }).lean();
+  if (teamAccessRuleAllowsApproval(rule)) {
+    const { members } = await getVisibleTeamMembersForViewer(viewerUserId);
+    return members;
+  }
+  return getApproverInboxMembersForViewer(viewerUserId);
+}
+
 /** Employees whose attendanceEmail matches the viewer's login email. */
 export async function getApproverInboxMembersForViewer(
   viewerUserId: string

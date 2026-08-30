@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
-import { MapPin, Clock, Check, X, AlertCircle, Loader2, Navigation, RefreshCw } from 'lucide-react';
+import { MapPin, Check, X, AlertCircle, Loader2, Navigation, RefreshCw } from 'lucide-react';
 import { istDateString } from '@/lib/attendanceRequestWindow';
 import { employeeCredentialsInit } from '@/lib/employeeCredentialsInit';
 import { formatDistanceMeters } from '@/lib/geoDistance';
@@ -67,10 +67,10 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
   const [error, setError] = useState<string | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<ClientPlace | null>(null);
   const [markingAttendance, setMarkingAttendance] = useState(false);
+  const [punchBusyType, setPunchBusyType] = useState<'in' | 'out' | null>(null);
   const [gettingLocation, setGettingLocation] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<GpsFix | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
-  const [punchType, setPunchType] = useState<'in' | 'out'>('in');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Fetch assigned client places and today's records
@@ -161,28 +161,36 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
     });
   };
 
-  // Mark attendance with location
-  const handleMarkAttendance = async () => {
+  const handleMarkAttendance = async (type: 'in' | 'out') => {
     if (!selectedPlace) {
       setMessage({ type: 'error', text: 'Please select a client place' });
       return;
     }
 
+    const confirmed =
+      type === 'out'
+        ? window.confirm(
+            "This sets today's out-time only. Thumb-machine in-time is uploaded later and will be kept."
+          )
+        : window.confirm(
+            "This sets today's in-time from this location. If you already punched in on the thumb machine, cancel and use Check-out instead so that in-time is not replaced."
+          );
+    if (!confirmed) return;
+
     try {
       setMarkingAttendance(true);
+      setPunchBusyType(type);
       setMessage(null);
 
-      // Get current location
       const fix = await getCurrentLocation();
 
-      // Mark attendance
       const response = await fetch('/api/employee/location-attendance', employeeCredentialsInit({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId,
           clientPlaceId: selectedPlace._id,
-          punchType,
+          punchType: type,
           coordinates: { lat: fix.lat, lng: fix.lng },
           accuracyMeters: fix.accuracyMeters ?? undefined
         })
@@ -192,30 +200,31 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
 
       if (result.success) {
         setMessage({ type: 'success', text: result.message });
-        fetchData(); // Refresh data
+        fetchData();
         setSelectedPlace(null);
       } else {
         setMessage({ type: 'error', text: result.error || 'Failed to mark attendance' });
       }
-    } catch (err: any) {
-      setMessage({ type: 'error', text: err.message || 'Failed to mark attendance' });
+    } catch (err: unknown) {
+      setMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to mark attendance' });
     } finally {
       setMarkingAttendance(false);
+      setPunchBusyType(null);
     }
   };
 
   // Get record for a specific client place
   const getRecordForPlace = (placeId: string): LocationAttendanceRecord | undefined => {
-    return todayRecords.find(r => r.clientPlaceId._id === placeId);
+    return todayRecords.find(
+      (r) => String(r.clientPlaceId?._id || '') === String(placeId)
+    );
   };
 
-  // Determine what punch type is available for a place
-  const getAvailablePunchType = (placeId: string): 'in' | 'out' | 'done' => {
+  const placePunchSides = (placeId: string): { hasIn: boolean; hasOut: boolean; done: boolean } => {
     const record = getRecordForPlace(placeId);
-    if (!record) return 'in';
-    if (record.inPunch && !record.outPunch) return 'out';
-    if (record.inPunch && record.outPunch) return 'done';
-    return 'in';
+    const hasIn = !!record?.inPunch;
+    const hasOut = !!record?.outPunch;
+    return { hasIn, hasOut, done: hasIn && hasOut };
   };
 
   if (loading) {
@@ -265,7 +274,7 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
         <div className="flex items-center gap-2">
           <MapPin className="h-5 w-5 text-emerald-400" />
           <h3 className="font-semibold text-foreground">
-            {embedded ? 'Mark in / out at site' : 'Mark attendance — client place & outstation'}
+            {embedded ? 'Mark Check-in / Check-out at site' : 'Mark attendance — client place & outstation'}
           </h3>
         </div>
         <button
@@ -276,6 +285,24 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
         >
           <RefreshCw className="h-4 w-4" />
         </button>
+      </div>
+
+      {/* How it works */}
+      <div className="m-4 flex gap-2 rounded-lg border border-amber-500/30 bg-amber-900/20 p-3 text-sm text-amber-100">
+        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+        <div className="space-y-1.5">
+          <p className="font-medium text-amber-50">Check-in and Check-out are separate</p>
+          <ul className="list-disc space-y-1 pl-4 text-amber-100/90">
+            <li>
+              Punched in on the thumb machine (even if it is not in the app yet)? Use{' '}
+              <strong>Check-out</strong> only. In-time is applied when the machine file is uploaded
+              later. Do not Check-in here or this GPS time becomes today&apos;s in-time.
+            </li>
+            <li>Need GPS in-time (no thumb in, or already out on the machine)? Use Check-in.</li>
+            <li>At the client all day? Check-in on arrival and Check-out when leaving.</li>
+            <li>Hours stay incomplete until both sides exist (GPS and/or later thumb upload).</li>
+          </ul>
+        </div>
       </div>
 
       {/* Error Display */}
@@ -304,14 +331,15 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
       {/* Assigned Places List */}
       <div className="space-y-3 p-4">
         <p className="mb-3 text-sm text-muted-foreground">
-          Select a client location to mark your attendance. You must be within{' '}
+          Select a client location, then Check-in or Check-out. You must be within{' '}
           {assignedPlaces[0]?.radiusMeters || 500}m of the location.
         </p>
 
         {assignedPlaces.map(place => {
           const record = getRecordForPlace(place._id);
-          const availablePunch = getAvailablePunchType(place._id);
+          const { hasIn, hasOut, done } = placePunchSides(place._id);
           const isSelected = selectedPlace?._id === place._id;
+          const busy = markingAttendance || gettingLocation;
 
           return (
             <div
@@ -322,10 +350,7 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
                   : 'border-border bg-background hover:bg-surface/70'
               }`}
               onClick={() => {
-                if (availablePunch !== 'done') {
-                  setSelectedPlace(place);
-                  setPunchType(availablePunch);
-                }
+                if (!done) setSelectedPlace(place);
               }}
             >
               <div className="flex items-start justify-between gap-3">
@@ -334,7 +359,6 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
                   <p className="truncate text-sm text-muted-foreground">{place.address}</p>
                 </div>
 
-                {/* Status Badge */}
                 {record ? (
                   <div className="flex flex-col items-end gap-1">
                     {record.inPunch && (
@@ -368,8 +392,7 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
                 )}
               </div>
 
-              {/* Action Buttons (when selected) */}
-              {isSelected && availablePunch !== 'done' && (
+              {isSelected && !done && (
                 <div className="mt-4 border-t border-border pt-4">
                   {locationError && (
                     <div className="mb-3 flex items-center gap-2 text-sm text-amber-300 bg-amber-900/20 p-2 rounded">
@@ -378,30 +401,50 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
                     </div>
                   )}
 
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleMarkAttendance();
-                    }}
-                    disabled={markingAttendance || gettingLocation}
-                    className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-medium transition-colors ${
-                      availablePunch === 'in'
-                        ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
-                        : 'bg-rose-600 hover:bg-rose-500 text-white'
-                    } disabled:opacity-50 disabled:cursor-not-allowed`}
-                  >
-                    {(markingAttendance || gettingLocation) ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        {gettingLocation ? 'Getting Location...' : 'Marking...'}
-                      </>
-                    ) : (
-                      <>
-                        <Navigation className="w-4 h-4" />
-                        Mark {availablePunch === 'in' ? 'In' : 'Out'} Time
-                      </>
-                    )}
-                  </button>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleMarkAttendance('in');
+                      }}
+                      disabled={busy || hasIn}
+                      className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 font-medium text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {busy && punchBusyType === 'in' ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          {gettingLocation ? 'Getting Location...' : 'Marking...'}
+                        </>
+                      ) : (
+                        <>
+                          <Navigation className="w-4 h-4" />
+                          {hasIn ? 'Check-in marked' : 'Check in'}
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleMarkAttendance('out');
+                      }}
+                      disabled={busy || hasOut}
+                      className="flex w-full items-center justify-center gap-2 rounded-lg bg-rose-600 px-4 py-2.5 font-medium text-white transition-colors hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {busy && punchBusyType === 'out' ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          {gettingLocation ? 'Getting Location...' : 'Marking...'}
+                        </>
+                      ) : (
+                        <>
+                          <Navigation className="w-4 h-4" />
+                          {hasOut ? 'Check-out marked' : 'Check out'}
+                        </>
+                      )}
+                    </button>
+                  </div>
 
                   <p className="mt-2 text-center text-xs text-muted-foreground">
                     Your current location will be verified against the client place coordinates
@@ -417,7 +460,7 @@ export const LocationAttendanceSection: React.FC<LocationAttendanceSectionProps>
                 </div>
               )}
 
-              {availablePunch === 'done' && (
+              {done && (
                 <div className="mt-3 border-t border-border pt-3">
                   <div className="flex items-center gap-2 text-sm text-emerald-400">
                     <Check className="w-4 h-4" />

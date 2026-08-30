@@ -68,6 +68,7 @@ export async function POST(request: NextRequest) {
       includeOwnTeam: body?.includeOwnTeam !== false,
       extraUserIds: normalizeObjectIdArray(body?.extraUserIds),
       extraPartnerNames: normalizeStringArray(body?.extraPartnerNames),
+      canApproveRequests: body?.canApproveRequests !== false,
       isActive: body?.isActive !== false,
     };
 

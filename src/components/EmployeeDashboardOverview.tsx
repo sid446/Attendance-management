@@ -19,6 +19,7 @@ import {
 } from "@/lib/attendanceSummaryMetrics";
 import { EmployeeDashboardCharts } from "@/components/EmployeeDashboardCharts";
 import { EmployeeSummaryMonthPicker } from "@/components/EmployeeSummaryMonthPicker";
+import { EmployeeFineSummaryCard } from "@/components/EmployeeFineSection";
 import type { EmployeeAttendanceRequest } from "@/types/employeeAttendanceRequest";
 import { isExtraWorkRequest } from "@/lib/extraWorkRequest";
 
@@ -74,6 +75,8 @@ export interface EmployeeDashboardOverviewProps {
   isLoadingMetrics: boolean;
   /** Open team member profile + month calendar (Team attendance tab). */
   onSelectTeamMember?: (userId: string) => void;
+  /** Open the employee My fines tab. */
+  onOpenFines?: () => void;
 }
 
 export function EmployeeDashboardOverview({
@@ -90,6 +93,7 @@ export function EmployeeDashboardOverview({
   teamMembersLoading = false,
   isLoadingMetrics,
   onSelectTeamMember,
+  onOpenFines,
 }: EmployeeDashboardOverviewProps) {
   const periodLabel = formatMonthLabel(monthYear);
   const [activeMetric, setActiveMetric] = useState<SummaryMetricDayKind | null>(null);
@@ -388,9 +392,14 @@ export function EmployeeDashboardOverview({
             Loading summary…
           </div>
         ) : !m ? (
-          <p className="rounded-lg border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
-            No attendance data for this month yet.
-          </p>
+          <div className="space-y-3">
+            <p className="rounded-lg border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
+              No attendance data for this month yet.
+            </p>
+            {onOpenFines && (
+              <EmployeeFineSummaryCard monthYear={monthYear} onViewDetails={onOpenFines} />
+            )}
+          </div>
         ) : (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
             {cell("total-days", "Total days", String(m.totalDaysInMonth), "Calendar days this month")}
@@ -455,6 +464,11 @@ export function EmployeeDashboardOverview({
                   <Inbox className="h-4 w-4 text-muted-foreground" aria-hidden />
                   0
                 </p>
+              </div>
+            )}
+            {onOpenFines && (
+              <div className="col-span-2 sm:col-span-3 lg:col-span-4">
+                <EmployeeFineSummaryCard monthYear={monthYear} onViewDetails={onOpenFines} />
               </div>
             )}
             <div className="col-span-2 sm:col-span-3 lg:col-span-4">

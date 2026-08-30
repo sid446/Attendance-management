@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import AttendanceRequest from '@/models/AttendanceRequest';
 import { requireEmployeeSession } from '@/lib/employeeRouteAuth';
-import { getVisibleTeamMembersForViewer } from '@/lib/teamVisibilityForViewer';
+import { getApprovableTeamMembersForViewer } from '@/lib/teamVisibilityForViewer';
 import { enrichAttendanceRequestsWithOriginalTimes } from '@/lib/enrichAttendanceRequests';
 
 export async function GET(request: NextRequest) {
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     const userId = searchParams.get('userId');
     const monthYear = searchParams.get('monthYear');
 
-    const { members } = await getVisibleTeamMembersForViewer(auth.userId);
+    const members = await getApprovableTeamMembersForViewer(auth.userId);
     if (members.length === 0) {
       return NextResponse.json({ success: true, data: [] });
     }

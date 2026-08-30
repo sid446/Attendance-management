@@ -5,7 +5,7 @@ import ClientPlace from '@/models/ClientPlace';
 import Attendance from '@/models/Attendance';
 import User from '@/models/User';
 import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
-import { calculateTotalHours } from '@/lib/attendanceHours';
+import { calculateTotalHours, isValidPunchTime } from '@/lib/attendanceHours';
 import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAuth';
 import { istDateString, istTimeString } from '@/lib/attendanceRequestWindow';
 import { geodesicDistanceMeters, isValidCoordinates } from '@/lib/geoDistance';
@@ -175,69 +175,49 @@ export async function POST(req: NextRequest) {
     };
     
     if (!record) {
-      // Create new record
-      if (punchType === 'out') {
-        return NextResponse.json(
-          { success: false, error: 'You must mark in-time before marking out-time' },
-          { status: 400 }
-        );
-      }
-      
       record = new LocationAttendance({
         userId,
         clientPlaceId,
         date: todayDate,
-        inPunch: punchData,
-        status: 'partial'
+        ...(punchType === 'in' ? { inPunch: punchData } : { outPunch: punchData }),
+        status: 'partial',
       });
-    } else {
-      // Update existing record
-      if (punchType === 'in') {
-        // Check if in-time already marked
-        if (record.inPunch) {
-          return NextResponse.json(
-            { success: false, error: 'In-time already marked for today. You can only mark out-time now.' },
-            { status: 400 }
-          );
-        }
-        record.inPunch = punchData;
-        record.status = 'partial';
-      } else {
-        // Out punch
-        if (!record.inPunch) {
-          return NextResponse.json(
-            { success: false, error: 'You must mark in-time before marking out-time' },
-            { status: 400 }
-          );
-        }
-        if (record.outPunch) {
-          return NextResponse.json(
-            { success: false, error: 'Out-time already marked for today' },
-            { status: 400 }
-          );
-        }
-        
-        record.outPunch = punchData;
-        
-        // Calculate total hours
-        if (record.inPunch.time) {
-          record.totalHours = calculateTotalHours(record.inPunch.time, currentTime);
-        }
-        
-        // Both punches are approved (since we check range at start), so mark as complete
-        record.status = 'complete';
-        
-        // Also update the main attendance record since both punches are approved
-        await updateMainAttendanceRecord(
-          userId,
-          todayDate,
-          record.inPunch.time,
-          currentTime,
-          clientPlace.name
+    } else if (punchType === 'in') {
+      if (record.inPunch) {
+        return NextResponse.json(
+          { success: false, error: 'In-time already marked for today at this location.' },
+          { status: 400 }
         );
       }
+      record.inPunch = punchData;
+    } else {
+      if (record.outPunch) {
+        return NextResponse.json(
+          { success: false, error: 'Out-time already marked for today at this location.' },
+          { status: 400 }
+        );
+      }
+      record.outPunch = punchData;
     }
-    
+
+    const gpsInTime = record.inPunch?.time ? String(record.inPunch.time) : '';
+    const gpsOutTime = record.outPunch?.time ? String(record.outPunch.time) : '';
+    if (record.inPunch && record.outPunch) {
+      record.totalHours = calculateTotalHours(gpsInTime, gpsOutTime);
+      record.status = 'complete';
+    } else {
+      record.status = 'partial';
+      record.totalHours = undefined;
+    }
+
+    await mergeLocationPunchIntoAttendance(
+      userId,
+      todayDate,
+      punchType,
+      currentTime,
+      clientPlace.name
+    );
+
     await record.save();
     await record.populate('clientPlaceId', 'name address');
     
@@ -252,45 +232,69 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Helper function to update main attendance record
-async function updateMainAttendanceRecord(
+function existingPunchTime(...candidates: unknown[]): string {
+  for (const candidate of candidates) {
+    const t = String(candidate ?? '').trim();
+    if (isValidPunchTime(t)) return t;
+  }
+  return '';
+}
+
+/** Write only the GPS side that was punched; keep the other side for later thumb upload. */
+async function mergeLocationPunchIntoAttendance(
   userId: string,
   date: string,
-  inTime: string,
-  outTime: string,
+  punchType: 'in' | 'out',
+  punchTime: string,
   clientPlaceName: string
 ) {
   try {
     const monthYear = date.substring(0, 7); // YYYY-MM
-    
-    // Find the main attendance record
+
     let attendance = await Attendance.findOne({ userId, monthYear });
-    
+
     if (!attendance) {
-      // Create new attendance record if doesn't exist
       attendance = new Attendance({
         userId,
         monthYear,
-        records: {}
+        records: {},
       });
     }
-    
-    // Update the record for this date
-    const workedHours = calculateTotalHours(inTime, outTime);
+
+    const existingRaw = attendance.records.get(date);
+    const existing =
+      existingRaw && typeof (existingRaw as { toObject?: () => Record<string, unknown> }).toObject === 'function'
+        ? (existingRaw as { toObject: () => Record<string, unknown> }).toObject()
+        : (existingRaw as Record<string, unknown> | undefined);
+    let checkin = existingPunchTime(existing?.checkin);
+    let checkout = existingPunchTime(existing?.checkout);
+    let editedCheckin = existingPunchTime(existing?.editedCheckin, checkin);
+    let editedCheckout = existingPunchTime(existing?.editedCheckout, checkout);
+
+    if (punchType === 'in') {
+      checkin = punchTime;
+      editedCheckin = punchTime;
+    } else {
+      checkout = punchTime;
+      editedCheckout = punchTime;
+    }
+
+    const workedHours = calculateTotalHours(editedCheckin, editedCheckout);
     const rec: Record<string, unknown> = {
-      checkin: inTime,
-      checkout: outTime,
-      editedCheckin: inTime,
-      editedCheckout: outTime,
+      ...(existing || {}),
+      checkin,
+      checkout,
+      editedCheckin,
+      editedCheckout,
       typeOfPresence: 'Present - client place',
-      value: 1,
+      value: workedHours > 0 ? 1 : 0,
       halfDay: false,
       totalHour: workedHours,
-      excessHour: 0,
+      excessHour: existing?.excessHour ?? 0,
       remarks: `${LOCATION_PUNCH_REMARK_PREFIX} ${clientPlaceName}`,
     };
     applyAttendanceEditSource(rec, { approvedBy: LOCATION_PUNCH_SOURCE });
-    attendance.records.set(date, rec as any);
+    attendance.records.set(date, rec);
 
     const user = await User.findById(userId);
     if (user) {

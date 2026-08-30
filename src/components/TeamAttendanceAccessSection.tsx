@@ -12,6 +12,7 @@ interface TeamAttendanceAccessRule {
   includeOwnTeam: boolean;
   extraUserIds?: Array<string | User | { _id: string; name?: string }>;
   extraPartnerNames?: string[];
+  canApproveRequests: boolean;
   isActive: boolean;
 }
 
@@ -32,6 +33,7 @@ export const TeamAttendanceAccessSection: React.FC<TeamAttendanceAccessSectionPr
   const [rules, setRules] = useState<TeamAttendanceAccessRule[]>([]);
   const [selectedViewerId, setSelectedViewerId] = useState('');
   const [includeOwnTeam, setIncludeOwnTeam] = useState(true);
+  const [canApproveRequests, setCanApproveRequests] = useState(false);
   const [isActive, setIsActive] = useState(true);
   const [extraUserIds, setExtraUserIds] = useState<string[]>([]);
   const [extraPartnerNames, setExtraPartnerNames] = useState<string[]>([]);
@@ -162,6 +164,7 @@ export const TeamAttendanceAccessSection: React.FC<TeamAttendanceAccessSectionPr
     if (!selectedViewerId) return;
     if (!selectedRule) {
       setIncludeOwnTeam(true);
+      setCanApproveRequests(false);
       setIsActive(true);
       setExtraUserIds([]);
       setExtraPartnerNames([]);
@@ -169,6 +172,7 @@ export const TeamAttendanceAccessSection: React.FC<TeamAttendanceAccessSectionPr
     }
 
     setIncludeOwnTeam(selectedRule.includeOwnTeam !== false);
+    setCanApproveRequests(selectedRule.canApproveRequests !== false);
     setIsActive(selectedRule.isActive !== false);
     setExtraUserIds((selectedRule.extraUserIds || []).map(getEntityId).filter(Boolean));
     setExtraPartnerNames(selectedRule.extraPartnerNames || []);
@@ -208,6 +212,7 @@ export const TeamAttendanceAccessSection: React.FC<TeamAttendanceAccessSectionPr
           includeOwnTeam,
           extraUserIds,
           extraPartnerNames,
+          canApproveRequests,
           isActive,
         }),
       });
@@ -259,7 +264,7 @@ export const TeamAttendanceAccessSection: React.FC<TeamAttendanceAccessSectionPr
           </div>
           <h2 className="text-xl font-semibold text-slate-900">Team Attendance Access</h2>
           <p className="mt-1 max-w-3xl text-sm text-slate-600">
-            Control who can view extra employees in the employee dashboard Team Attendance tab without changing attendance approver emails.
+            Control who can view extra employees in the employee dashboard Team Attendance tab. Tick “Can approve their requests” if this viewer should also review and approve those people’s attendance requests.
           </p>
         </div>
         <button
@@ -333,6 +338,20 @@ export const TeamAttendanceAccessSection: React.FC<TeamAttendanceAccessSectionPr
             <span>
               <span className="block font-medium text-slate-900">Include own team</span>
               Employees whose Working Under Partner matches {selectedViewer?.name || 'this viewer'}.
+            </span>
+          </label>
+
+          <label className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={canApproveRequests}
+              onChange={(e) => setCanApproveRequests(e.target.checked)}
+              disabled={!isActive}
+              className="mt-1 h-4 w-4 rounded border-slate-300"
+            />
+            <span>
+              <span className="block font-medium text-slate-900">Can approve their requests</span>
+              Allow this viewer to review and approve attendance requests for the team and employees they can see. When unchecked, they can still view Team Attendance, but the request section stays hidden on their dashboard (unless they are the official attendance-email approver).
             </span>
           </label>
 
@@ -433,6 +452,11 @@ export const TeamAttendanceAccessSection: React.FC<TeamAttendanceAccessSectionPr
           <Users className="h-4 w-4 text-blue-700" />
           <h3 className="text-sm font-semibold text-blue-950">
             Preview: {selectedViewer?.name || 'Selected viewer'} can view {previewUsers.length} employee{previewUsers.length === 1 ? '' : 's'}
+            {isActive
+              ? canApproveRequests
+                ? ' and can approve their requests'
+                : ' (view only — cannot approve their requests)'
+              : ''}
           </h3>
           {loading && <Loader2 className="h-4 w-4 animate-spin text-blue-700" />}
         </div>

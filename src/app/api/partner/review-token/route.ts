@@ -3,7 +3,7 @@ import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
 import { createPartnerReviewToken } from '@/lib/partnerReviewToken';
 import { requireEmployeeSession } from '@/lib/employeeRouteAuth';
-import { getVisibleTeamMembersForViewer } from '@/lib/teamVisibilityForViewer';
+import { getApprovableTeamMembersForViewer } from '@/lib/teamVisibilityForViewer';
 import { formatPartnerNameForReview } from '@/lib/selfApproveAttendanceRequests';
 
 export async function POST(request: NextRequest) {
@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
     }
 
-    const { members } = await getVisibleTeamMembersForViewer(auth.userId);
+    const members = await getApprovableTeamMembersForViewer(auth.userId);
     if (members.length === 0) {
       return NextResponse.json(
         { success: false, error: 'You do not have permission to review team attendance requests' },

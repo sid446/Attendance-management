@@ -5,6 +5,8 @@ export interface ITeamAttendanceAccess extends Document {
   includeOwnTeam: boolean;
   extraUserIds: mongoose.Types.ObjectId[];
   extraPartnerNames: string[];
+  /** When true, viewer may approve attendance requests for people they can see. */
+  canApproveRequests: boolean;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -35,6 +37,10 @@ const TeamAttendanceAccessSchema = new Schema(
         trim: true,
       },
     ],
+    canApproveRequests: {
+      type: Boolean,
+      default: true,
+    },
     isActive: {
       type: Boolean,
       default: true,
@@ -48,5 +54,11 @@ const TeamAttendanceAccessSchema = new Schema(
 const TeamAttendanceAccess: Model<ITeamAttendanceAccess> =
   mongoose.models.TeamAttendanceAccess ||
   mongoose.model<ITeamAttendanceAccess>('TeamAttendanceAccess', TeamAttendanceAccessSchema);
+
+if (!TeamAttendanceAccess.schema.path('canApproveRequests')) {
+  TeamAttendanceAccess.schema.add({
+    canApproveRequests: { type: Boolean, default: true },
+  });
+}
 
 export default TeamAttendanceAccess;

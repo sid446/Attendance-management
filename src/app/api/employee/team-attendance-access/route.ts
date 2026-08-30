@@ -58,12 +58,14 @@ export async function GET(request: NextRequest) {
           extraUserCount: 0,
           extraPartnerNames: [],
           approverInboxCount,
+          canApproveRequests: false,
           disabled: true,
         },
       });
     }
 
     const includeOwnTeam = rule ? rule.includeOwnTeam !== false : true;
+    const canApproveRequests = rule ? rule.canApproveRequests !== false : true;
     const viewerData = viewer as VisibleUser;
     const visible = new Map<string, VisibleUser>();
 
@@ -149,6 +151,7 @@ export async function GET(request: NextRequest) {
         extraUserCount: extraUserIds.length,
         extraPartnerNames,
         approverInboxCount,
+        canApproveRequests,
       },
     });
   } catch (error) {

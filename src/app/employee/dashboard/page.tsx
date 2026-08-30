@@ -12,6 +12,7 @@ import { EmployeeDashboardOverview } from '@/components/EmployeeDashboardOvervie
 import { EmployeeSummaryMonthPicker } from '@/components/EmployeeSummaryMonthPicker';
 import { TeamAttendanceSkeleton } from '@/components/TeamAttendanceSkeleton';
 import { TeamFineSection } from '@/components/TeamFineSection';
+import { EmployeeFineSection } from '@/components/EmployeeFineSection';
 import {
   PartnerTeamOverview,
   type PartnerTeamRow,
@@ -19,6 +20,7 @@ import {
 import { ManageAttendanceApproverSection } from '@/components/ManageAttendanceApproverSection';
 import { ManageExcessHourAllowanceSection } from '@/components/ManageExcessHourAllowanceSection';
 import { TeamDailyUpdatesSection } from '@/components/TeamDailyUpdatesSection';
+import { TeamAttendanceRequestsSection } from '@/components/TeamAttendanceRequestsSection';
 import { SummarySection } from '@/components/SummarySection';
 import {
   computeSummaryAlignedMetrics,
@@ -137,24 +139,28 @@ type TeamAccessFetchResult = {
   members: User[];
   includeViewerSelf: boolean;
   approverInboxCount: number;
+  canApproveRequests: boolean;
 };
 
 // Helper to fetch people visible in Team tab.
 async function fetchSubordinates(viewerUserId: string): Promise<TeamAccessFetchResult> {
-  if (!viewerUserId) return { members: [], includeViewerSelf: false, approverInboxCount: 0 };
+  if (!viewerUserId) {
+    return { members: [], includeViewerSelf: false, approverInboxCount: 0, canApproveRequests: false };
+  }
   const res = await fetch(
     `/api/employee/team-attendance-access?viewerUserId=${encodeURIComponent(viewerUserId)}`,
     employeeCredentialsInit({ cache: 'no-store' })
   );
   const json = await res.json();
   if (!json.success || !Array.isArray(json.data)) {
-    return { members: [], includeViewerSelf: false, approverInboxCount: 0 };
+    return { members: [], includeViewerSelf: false, approverInboxCount: 0, canApproveRequests: false };
   }
   return {
     members: json.data.map((user: User) => normalizeSubordinateUser(user)),
     includeViewerSelf: json.access?.includeViewerSelf === true,
     approverInboxCount:
       typeof json.access?.approverInboxCount === 'number' ? json.access.approverInboxCount : 0,
+    canApproveRequests: json.access?.canApproveRequests !== false,
   };
 }
 
@@ -712,6 +718,7 @@ type EmployeeDashboardTab =
   | 'dashboard'
   | 'attendance'
   | 'clientPunch'
+  | 'fines'
   | 'employees'
   | 'manageApprovers'
   | 'manageExcessHours';
@@ -720,6 +727,7 @@ const EMPLOYEE_DASHBOARD_TABS = new Set<EmployeeDashboardTab>([
   'dashboard',
   'attendance',
   'clientPunch',
+  'fines',
   'employees',
   'manageApprovers',
   'manageExcessHours',
@@ -764,6 +772,8 @@ export default function EmployeeDashboard() {
   const [ownTeamCount, setOwnTeamCount] = useState(0);
   /** Employees whose attendanceEmail is this user's login email. */
   const [approverInboxCount, setApproverInboxCount] = useState(0);
+  /** Team Attendance Access rule allows this viewer to approve requests for people they can see. */
+  const [teamAccessCanApproveRequests, setTeamAccessCanApproveRequests] = useState(false);
   const [showTeamExportModal, setShowTeamExportModal] = useState(false);
   const [subordinateAttendance, setSubordinateAttendance] = useState<Record<string, SubordinateAttendancePack>>({});
   const [subordinatesListLoading, setSubordinatesListLoading] = useState(false);
@@ -775,7 +785,7 @@ export default function EmployeeDashboard() {
   const partnerReviewTokenRef = useRef<string | null>(null);
   const partnerPendingCountFetchedAtRef = useRef(0);
   const subordinateRequestsLoadedRef = useRef(new Set<string>());
-  const [teamPanelView, setTeamPanelView] = useState<'attendance' | 'fines'>('attendance');
+  const [teamPanelView, setTeamPanelView] = useState<'attendance' | 'fines' | 'requests'>('attendance');
   /** Team tab: scroll here after picking someone from the leaderboard (or overview). */
   const teamSubordinateCalendarRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -787,6 +797,9 @@ export default function EmployeeDashboard() {
   /** Team leave / WFH / pending items for today (IST). */
   const [teamDailyUpdatesCount, setTeamDailyUpdatesCount] = useState(0);
   const [showDailyUpdatesModal, setShowDailyUpdatesModal] = useState(false);
+
+  const canReviewTeamRequests =
+    subordinates.length > 0 && (teamAccessCanApproveRequests || approverInboxCount > 0);
 
   const fetchPartnerReviewAccessToken = useCallback(async () => {
     if (partnerReviewTokenRef.current) return partnerReviewTokenRef.current;
@@ -881,12 +894,12 @@ export default function EmployeeDashboard() {
   }, [user?._id, subordinates.length, fetchTeamDailyUpdatesCount]);
 
   useEffect(() => {
-    if (!user?._id || subordinates.length === 0) {
+    if (!user?._id || !canReviewTeamRequests) {
       setPartnerPendingReviewCount(0);
       return;
     }
     void fetchPartnerPendingReviewCount(true);
-  }, [user?._id, subordinates.length, fetchPartnerPendingReviewCount]);
+  }, [user?._id, canReviewTeamRequests, fetchPartnerPendingReviewCount]);
 
   useEffect(() => {
     if (!user?._id) {
@@ -912,7 +925,7 @@ export default function EmployeeDashboard() {
   }, [user?._id]);
 
   useEffect(() => {
-    if (!user?._id || subordinates.length === 0) return;
+    if (!user?._id || !canReviewTeamRequests) return;
     const onVis = () => {
       if (document.visibilityState === 'visible') {
         void fetchPartnerPendingReviewCount(false);
@@ -920,7 +933,7 @@ export default function EmployeeDashboard() {
     };
     document.addEventListener('visibilitychange', onVis);
     return () => document.removeEventListener('visibilitychange', onVis);
-  }, [user?._id, subordinates.length, fetchPartnerPendingReviewCount]);
+  }, [user?._id, canReviewTeamRequests, fetchPartnerPendingReviewCount]);
 
   // Attendance Data State
   const [summary, setSummary] = useState<AttendanceSummaryView | null>(null);
@@ -1214,10 +1227,12 @@ export default function EmployeeDashboard() {
         setSubordinates(teamAccess.members);
         setTeamAccessIncludeViewerSelf(teamAccess.includeViewerSelf);
         setApproverInboxCount(teamAccess.approverInboxCount);
+        setTeamAccessCanApproveRequests(teamAccess.canApproveRequests);
       } catch {
         setSubordinates([]);
         setTeamAccessIncludeViewerSelf(false);
         setApproverInboxCount(0);
+        setTeamAccessCanApproveRequests(false);
       } finally {
         setSubordinatesListLoading(false);
         setLoading(false);
@@ -2014,6 +2029,12 @@ export default function EmployeeDashboard() {
   const canManageExcessHours = approverInboxCount > 0 || ownTeamCount > 0;
 
   useEffect(() => {
+    if (!canReviewTeamRequests && teamPanelView === 'requests') {
+      setTeamPanelView('attendance');
+    }
+  }, [canReviewTeamRequests, teamPanelView]);
+
+  useEffect(() => {
     if (!user?._id) return;
     const ids = [user._id];
     if (teamAttendanceLoadedMonth === monthYear && subordinates.length > 0) {
@@ -2220,11 +2241,13 @@ export default function EmployeeDashboard() {
                     ? 'Attendance'
                     : activeTab === 'clientPunch'
                       ? 'Client location punch'
-                      : activeTab === 'manageApprovers'
-                        ? 'Manage approvers'
-                        : activeTab === 'manageExcessHours'
-                          ? 'Excess hours by day'
-                        : 'Team'}
+                      : activeTab === 'fines'
+                        ? 'My fines'
+                        : activeTab === 'manageApprovers'
+                          ? 'Manage approvers'
+                          : activeTab === 'manageExcessHours'
+                            ? 'Excess hours by day'
+                            : 'Team'}
               </h1>
               <p className="truncate text-[11px] text-muted-foreground sm:text-xs">
                 <span className="hidden sm:inline">Asija and Associates LLP · </span>
@@ -2270,7 +2293,7 @@ export default function EmployeeDashboard() {
                 <span className="hidden sm:inline">Daily updates</span>
               </button>
             )}
-            {canManageTeam && (
+            {canReviewTeamRequests && (
               <button
                 type="button"
                 className="relative hidden md:inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium text-foreground hover:bg-surface/80 sm:text-sm"
@@ -2424,6 +2447,19 @@ export default function EmployeeDashboard() {
             <span className={desktopSidebarCollapsed ? 'md:sr-only' : ''}>Client punch</span>
           </button>
 
+          <button
+            type="button"
+            className={navItemClass(activeTab === 'fines')}
+            onClick={() => {
+              setActiveTab('fines');
+              setSidebarOpen(false);
+            }}
+            title="My fines"
+          >
+            <IndianRupee className="h-5 w-5 shrink-0 opacity-90" aria-hidden />
+            <span className={desktopSidebarCollapsed ? 'md:sr-only' : ''}>My fines</span>
+          </button>
+
           {canManageTeam && (
             <button
               type="button"
@@ -2469,7 +2505,7 @@ export default function EmployeeDashboard() {
             </button>
           )}
 
-          {canManageTeam && (
+          {canReviewTeamRequests && (
             <button
               type="button"
               className={`${navItemClass(false)} mt-1`}
@@ -2510,6 +2546,10 @@ export default function EmployeeDashboard() {
                 teamMembersLoading={subordinatesListLoading}
                 isLoadingMetrics={fetchLoading}
                 onSelectTeamMember={handleSelectTeamMember}
+                onOpenFines={() => {
+                  setActiveTab('fines');
+                  setSidebarOpen(false);
+                }}
               />
             )}
 
@@ -2570,6 +2610,14 @@ export default function EmployeeDashboard() {
               </section>
             )}
 
+            {activeTab === 'fines' && (
+              <EmployeeFineSection
+                monthYear={monthYear}
+                onMonthYearChange={handleMonthChange}
+                userCategory={attendanceUser?.category ?? user.category}
+              />
+            )}
+
             {activeTab === 'clientPunch' && (
               <section
                 aria-labelledby="client-location-punch-heading"
@@ -2583,7 +2631,7 @@ export default function EmployeeDashboard() {
                     Client location punch
                   </h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Mark in/out when visiting assigned client sites today (GPS must be on).
+                    Check-in or Check-out separately at assigned client sites today (GPS must be on).
                   </p>
                 </header>
                 <div className="p-4 sm:p-5">
@@ -2601,7 +2649,9 @@ export default function EmployeeDashboard() {
                       <p className="mt-1 text-sm text-muted-foreground">
                         {teamPanelView === 'attendance'
                           ? 'View monthly calendars for people reporting to you.'
-                          : 'Late-arrival fines and warnings for your team.'}
+                          : teamPanelView === 'fines'
+                            ? 'Late-arrival fines and warnings for your team.'
+                            : 'Review and approve attendance requests for people you are allowed to approve.'}
                       </p>
                     </div>
                     <div
@@ -2637,6 +2687,27 @@ export default function EmployeeDashboard() {
                         <IndianRupee className="h-4 w-4" aria-hidden />
                         Fines
                       </button>
+                      {canReviewTeamRequests && (
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={teamPanelView === 'requests'}
+                          onClick={() => setTeamPanelView('requests')}
+                          className={`inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                            teamPanelView === 'requests'
+                              ? 'bg-surface text-foreground shadow-sm'
+                              : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          <ClipboardList className="h-4 w-4" aria-hidden />
+                          Requests
+                          {partnerPendingReviewCount > 0 && (
+                            <span className="rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                              {partnerPendingReviewCount > 99 ? '99+' : partnerPendingReviewCount}
+                            </span>
+                          )}
+                        </button>
+                      )}
                     </div>
                   </div>
                   <EmployeeSummaryMonthPicker
@@ -2647,6 +2718,12 @@ export default function EmployeeDashboard() {
                 </div>
                 {teamPanelView === 'fines' && !subordinatesListLoading && subordinates.length > 0 && (
                   <TeamFineSection monthYear={monthYear} teamMembers={subordinates} />
+                )}
+                {teamPanelView === 'requests' && canReviewTeamRequests && (
+                  <TeamAttendanceRequestsSection
+                    monthYear={monthYear}
+                    onActionComplete={() => void fetchPartnerPendingReviewCount(true)}
+                  />
                 )}
                 {teamPanelView === 'attendance' && (subordinatesListLoading || teamAttendanceLoading) && (
                   <TeamAttendanceSkeleton />

@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 function buildEmployeeDashboardLink(baseUrl: string, monthYear: string): string {
-  const destination = `/employee/dashboard?tab=attendance&monthYear=${encodeURIComponent(monthYear)}`;
+  const destination = `/employee/dashboard?tab=fines&monthYear=${encodeURIComponent(monthYear)}`;
   return `${baseUrl}/employee/login?next=${encodeURIComponent(destination)}`;
 }
 

@@ -9,10 +9,11 @@ import {
   filterSelfApprovablePendingRequestIds,
 } from '@/lib/selfApproveAttendanceRequests';
 import {
-  getVisibleTeamMemberIdSet,
+  getApprovableTeamMemberIdSet,
   normalizePartnerName,
   resolveViewerUserIdFromPartnerEmail,
 } from '@/lib/teamRequestAuthorization';
+import { viewerAccessAllowsRequestApproval } from '@/lib/teamVisibilityForViewer';
 import { enrichAttendanceRequestsWithOriginalTimes } from '@/lib/enrichAttendanceRequests';
 import { isArticleEmployee } from '@/lib/isArticleEmployee';
 
@@ -52,15 +53,22 @@ export async function GET(request: NextRequest) {
       '';
 
     const visibleIds = resolvedViewerUserId
-      ? Array.from(await getVisibleTeamMemberIdSet(resolvedViewerUserId))
+      ? Array.from(await getApprovableTeamMemberIdSet(resolvedViewerUserId))
       : [];
+    const accessAllowsApproval = resolvedViewerUserId
+      ? await viewerAccessAllowsRequestApproval(resolvedViewerUserId)
+      : true;
 
     const partnerRegex = new RegExp(
       `^${normalizePartnerName(partnerName).replace(/[.*+?^${}()|[\\]\\]/g, '\\\\$&')}$`,
       'i'
     );
 
-    const orConditions: Record<string, unknown>[] = [{ partnerName: { $regex: partnerRegex } }];
+    const orConditions: Record<string, unknown>[] = [];
+
+    if (accessAllowsApproval) {
+      orConditions.push({ partnerName: { $regex: partnerRegex } });
+    }
 
     if (partnerEmail) {
       const emailRegex = new RegExp(
@@ -77,6 +85,17 @@ export async function GET(request: NextRequest) {
             .filter((id) => mongoose.Types.ObjectId.isValid(id))
             .map((id) => new mongoose.Types.ObjectId(id)),
         },
+      });
+    }
+
+    if (orConditions.length === 0) {
+      return NextResponse.json({
+        success: true,
+        actor: {
+          partnerName,
+          partnerEmail,
+        },
+        data: [],
       });
     }
 

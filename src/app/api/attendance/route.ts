@@ -281,12 +281,43 @@ export async function POST(request: NextRequest) {
           const incomingExitOnlyCandidate =
             !isFixedDataUpload && checkin >= '16:00' && incomingCheckoutMissing;
 
+          const existingIsGpsLocationPunch =
+            !!existingRecordBeforeUpdate &&
+            isLocationPunchAttendanceRecord(existingRecordBeforeUpdate) &&
+            /location verified/i.test(String(existingRecordBeforeUpdate.remarks || ''));
+          const existingGpsCheckin = existingIsGpsLocationPunch
+            ? String(
+                existingRecordBeforeUpdate.editedCheckin ||
+                  existingRecordBeforeUpdate.checkin ||
+                  ''
+              ).trim()
+            : '';
+          const existingGpsCheckout = existingIsGpsLocationPunch
+            ? String(
+                existingRecordBeforeUpdate.editedCheckout ||
+                  existingRecordBeforeUpdate.checkout ||
+                  ''
+              ).trim()
+            : '';
+          const skipExitOnlyRemap =
+            existingIsGpsLocationPunch &&
+            (isValidPunchTime(existingGpsCheckin) || isValidPunchTime(existingGpsCheckout));
+
           // MERGE LOGIC: If a record already exists for this date, merge raw times before processing
-          // Keep earliest In, Latest Out
+          // Keep earliest In, Latest Out. GPS location-punch days use edited* so a
+          // GPS-out-only day still supplies out-time when thumb in is uploaded later.
           let wasMerged = false;
           if (existingRecordBeforeUpdate) {
-            const oldIn = existingRecordBeforeUpdate.checkin || '00:00';
-            const oldOut = existingRecordBeforeUpdate.checkout || '00:00';
+            const oldIn = (
+              existingIsGpsLocationPunch
+                ? existingGpsCheckin || existingRecordBeforeUpdate.checkin
+                : existingRecordBeforeUpdate.checkin
+            ) || '00:00';
+            const oldOut = (
+              existingIsGpsLocationPunch
+                ? existingGpsCheckout || existingRecordBeforeUpdate.checkout
+                : existingRecordBeforeUpdate.checkout
+            ) || '00:00';
             
             if (oldIn !== '00:00' && (checkin === '00:00' || oldIn < checkin)) {
               checkin = oldIn;
@@ -312,15 +343,26 @@ export async function POST(request: NextRequest) {
           // Anomaly Detection: late (>= 16:00) "in" is often an exit-only punch.
           // Remap when: out still missing, in===out (duplicate), or re-upload of exit-only
           // Excel that merge reintroduced a late value into checkin.
+          // Skip when a GPS location punch already holds a real in or out (thumb in later).
           const isCheckinLate = checkin >= '16:00';
           const isCheckoutMissing = checkout === '00:00' || checkout === '';
           const equalLatePunches = isCheckinLate && checkin === checkout;
           let exitOnlyPunchDetected = false;
-          if (!isFixedDataUpload && isCheckinLate && (isCheckoutMissing || equalLatePunches)) {
+          if (
+            !skipExitOnlyRemap &&
+            !isFixedDataUpload &&
+            isCheckinLate &&
+            (isCheckoutMissing || equalLatePunches)
+          ) {
             checkout = checkin;
             checkin = '00:00';
             exitOnlyPunchDetected = true;
-          } else if (!isFixedDataUpload && incomingExitOnlyCandidate && isCheckinLate) {
+          } else if (
+            !skipExitOnlyRemap &&
+            !isFixedDataUpload &&
+            incomingExitOnlyCandidate &&
+            isCheckinLate
+          ) {
             // Re-upload: Excel had late in + empty out; merge may have filled out from a
             // prior exit-only day (e.g. 00:00/19:00 → briefly 18:04/19:00). Clear the
             // late "in" and keep the later out.
@@ -670,13 +712,49 @@ export async function POST(request: NextRequest) {
           }
 
           const preservedEditedCheckin = preserveGpsLocationEdited
-            ? String(existingLoc.editedCheckin || existingLoc.checkin || '').trim() ||
-              finalEditedCheckin
+            ? (isValidPunchTime(String(existingLoc.editedCheckin || existingLoc.checkin || '').trim())
+                ? String(existingLoc.editedCheckin || existingLoc.checkin || '').trim()
+                : finalEditedCheckin)
             : finalEditedCheckin;
           const preservedEditedCheckout = preserveGpsLocationEdited
-            ? String(existingLoc.editedCheckout || existingLoc.checkout || '').trim() ||
-              finalEditedCheckout
+            ? (isValidPunchTime(String(existingLoc.editedCheckout || existingLoc.checkout || '').trim())
+                ? String(existingLoc.editedCheckout || existingLoc.checkout || '').trim()
+                : finalEditedCheckout)
             : finalEditedCheckout;
+
+          if (preserveGpsLocationEdited) {
+            const gpsHadIn = isValidPunchTime(
+              String(existingLoc.editedCheckin || existingLoc.checkin || '')
+            );
+            const gpsHadOut = isValidPunchTime(
+              String(existingLoc.editedCheckout || existingLoc.checkout || '')
+            );
+            // Keep the GPS-punched side; fill the other from the later thumb file.
+            if (gpsHadIn) {
+              finalCheckin = preservedEditedCheckin;
+            } else if (isValidPunchTime(preservedEditedCheckin)) {
+              finalCheckin = preservedEditedCheckin;
+            }
+            if (gpsHadOut) {
+              finalCheckout = preservedEditedCheckout;
+            } else if (isValidPunchTime(preservedEditedCheckout)) {
+              finalCheckout = preservedEditedCheckout;
+            }
+
+            const mergedHours = calculateTotalHours(
+              preservedEditedCheckin,
+              preservedEditedCheckout,
+              scheduleHourOpts
+            );
+            if (
+              isValidPunchTime(preservedEditedCheckin) &&
+              isValidPunchTime(preservedEditedCheckout)
+            ) {
+              finalTotalHour = mergedHours;
+              finalHalfDay = false;
+              finalValue = mergedHours > 0 ? 1 : 0;
+            }
+          }
 
           attendance.records.set(isoDate, {
             checkin: finalCheckin,
