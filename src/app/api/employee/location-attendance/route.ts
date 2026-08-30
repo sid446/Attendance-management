@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import LocationAttendance from '@/models/LocationAttendance';
 import ClientPlace from '@/models/ClientPlace';
-import Attendance from '@/models/Attendance';
+import Attendance, { type IDailyRecord } from '@/models/Attendance';
 import User from '@/models/User';
 import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
 import { calculateTotalHours, isValidPunchTime } from '@/lib/attendanceHours';
@@ -262,11 +262,11 @@ async function mergeLocationPunchIntoAttendance(
     }
 
     const existingRaw = attendance.records.get(date);
-    const existingDoc = existingRaw as unknown as { toObject?: () => Record<string, unknown> } | undefined;
-    const existing =
+    const existingDoc = existingRaw as unknown as { toObject?: () => IDailyRecord } | undefined;
+    const existing: IDailyRecord | undefined =
       existingDoc && typeof existingDoc.toObject === 'function'
         ? existingDoc.toObject()
-        : (existingRaw as unknown as Record<string, unknown> | undefined);
+        : existingRaw ?? undefined;
     let checkin = existingPunchTime(existing?.checkin);
     let checkout = existingPunchTime(existing?.checkout);
     let editedCheckin = existingPunchTime(existing?.editedCheckin, checkin);
@@ -281,8 +281,16 @@ async function mergeLocationPunchIntoAttendance(
     }
 
     const workedHours = calculateTotalHours(editedCheckin, editedCheckout);
-    const rec: Record<string, unknown> = {
-      ...(existing || {}),
+    const rec: IDailyRecord = {
+      ...(existing ?? {
+        checkin: '',
+        checkout: '',
+        totalHour: 0,
+        excessHour: 0,
+        typeOfPresence: 'Present - client place',
+        halfDay: false,
+        value: 0,
+      }),
       checkin,
       checkout,
       editedCheckin,
@@ -294,7 +302,9 @@ async function mergeLocationPunchIntoAttendance(
       excessHour: existing?.excessHour ?? 0,
       remarks: `${LOCATION_PUNCH_REMARK_PREFIX} ${clientPlaceName}`,
     };
-    applyAttendanceEditSource(rec, { approvedBy: LOCATION_PUNCH_SOURCE });
+    applyAttendanceEditSource(rec as unknown as Record<string, unknown>, {
+      approvedBy: LOCATION_PUNCH_SOURCE,
+    });
     attendance.records.set(date, rec);
 
     const user = await User.findById(userId);
