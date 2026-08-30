@@ -420,7 +420,7 @@ export async function generatePayrollMonth(monthYear: string, generatedBy: strin
   return doc;
 }
 
-function payrollLinePlain(line: IPayrollLine): IPayrollLine {
+export function payrollLinePlain(line: IPayrollLine): IPayrollLine {
   const asDoc = line as IPayrollLine & { toObject?: (opts?: { depopulate?: boolean }) => IPayrollLine };
   if (typeof asDoc.toObject === 'function') {
     return asDoc.toObject({ depopulate: true });

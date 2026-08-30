@@ -9,6 +9,7 @@ import { getServiceAdminEmail } from '@/lib/hrServiceEmail';
 import User from '@/models/User';
 import { buildPayslipHtml, buildPayslipPdf, payslipFileName, payslipRecipient } from '@/lib/payrollPayslip';
 import { formatMonthLabel, parseMoney } from '@/lib/salaryCalculation';
+import { payrollLinePlain } from '@/lib/payrollGenerate';
 import type { IPayrollLine } from '@/models/PayrollMonth';
 
 export const dynamic = 'force-dynamic';
@@ -61,11 +62,11 @@ export async function POST(request: NextRequest) {
       }
       try {
         const master = userById.get(String(line.userId));
-        const hydrated = {
-          ...(typeof line.toObject === 'function' ? line.toObject() : line),
+        const hydrated: IPayrollLine = {
+          ...payrollLinePlain(line),
           esiNumber: line.esiNumber || String(master?.esi || ''),
           otherAllowance: line.otherAllowance || parseMoney(master?.otherAllowance),
-        } as IPayrollLine;
+        };
         const pdf = buildPayslipPdf(hydrated, monthYear, doc.calendar);
         await transporter.sendMail({
           ...mailOptions,
