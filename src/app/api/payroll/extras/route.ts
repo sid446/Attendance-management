@@ -69,6 +69,7 @@ export async function PATCH(request: NextRequest) {
       }
       const stored = extraFieldsForStore(nextFields);
       for (const line of doc.lines || []) {
+        if (line.frozen) continue;
         const overrides = plainPayrollOverrides(line.overrides);
         if (overrides.customAmounts && extraId in overrides.customAmounts) {
           const { [extraId]: _removed, ...rest } = overrides.customAmounts;

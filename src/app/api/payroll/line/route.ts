@@ -44,6 +44,12 @@ export async function PATCH(request: NextRequest) {
     }
 
     const current = doc.lines[idx];
+    if (current.frozen) {
+      return NextResponse.json(
+        { success: false, error: `${current.name || 'This employee'} is frozen. Unfreeze them to edit.` },
+        { status: 409 }
+      );
+    }
     const extraFields = normalizePayrollExtraFields(doc.extraFields);
     const existing = plainPayrollOverrides(current.overrides);
     const merged = mergePayrollOverrides(existing, overrides);

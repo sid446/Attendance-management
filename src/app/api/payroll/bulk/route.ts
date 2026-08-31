@@ -80,6 +80,7 @@ export async function PATCH(request: NextRequest) {
             ? selected.has(String(line.userId))
             : String(line.designation || '').trim().toLowerCase() === designationLower;
       if (!matches) continue;
+      if (line.frozen) continue;
 
       const existing = plainPayrollOverrides(line.overrides);
       const value = clear ? null : amount;

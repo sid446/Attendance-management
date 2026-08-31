@@ -24,6 +24,7 @@ import {
   PAYROLL_BULK_BUILTIN_FIELDS,
   PAYROLL_BULK_BUILTIN_LABELS,
   normalizePayrollExtraFields,
+  isPayrollLineFrozen,
   type PayrollExtraField,
   type PayrollExtraKind,
   type PayrollGroup,
@@ -90,6 +91,9 @@ type PayrollLine = {
   netSalary: number;
   overrides?: PayrollOverrides;
   payslipSentAt?: string | null;
+  frozen?: boolean;
+  frozenAt?: string | null;
+  frozenBy?: string;
 };
 
 type PayrollDoc = {
@@ -151,6 +155,7 @@ export const SalarySection: React.FC = () => {
   const [bulkScope, setBulkScope] = useState<'all' | 'selected' | 'designation'>('all');
   const [bulkDesignation, setBulkDesignation] = useState('');
   const [extrasBusy, setExtrasBusy] = useState(false);
+  const [freezeBusy, setFreezeBusy] = useState<string | 'selected' | null>(null);
 
   const monthYear = `${year}-${String(month).padStart(2, '0')}`;
   const finalized = doc?.status === 'finalized';
@@ -239,7 +244,8 @@ export const SalarySection: React.FC = () => {
     const bank = filtered.reduce((s, l) => s + Number(l.bankPayment || 0), 0);
     const cash = filtered.reduce((s, l) => s + Number(l.cashOff || 0), 0);
     const unsent = filtered.filter((l) => !l.payslipSentAt).length;
-    return { headcount, payable, bank, cash, unsent };
+    const frozen = filtered.filter((l) => l.frozen).length;
+    return { headcount, payable, bank, cash, unsent, frozen };
   }, [filtered]);
 
   const toggleSelect = (id: string) => {
@@ -256,6 +262,10 @@ export const SalarySection: React.FC = () => {
   };
 
   const saveLineOverrides = async (line: PayrollLine, overrides: PayrollOverrides, noticeMsg: string) => {
+    if (isPayrollLineFrozen(line, doc?.status)) {
+      setError(`${line.name} is frozen. Unfreeze them to edit.`);
+      return;
+    }
     const id = uid(line);
     setSavingId(id);
     setError(null);
@@ -456,6 +466,51 @@ export const SalarySection: React.FC = () => {
     await load();
   };
 
+  const setLineFreeze = async (ids: string[], action: 'finalize' | 'reopen', label: string) => {
+    if (ids.length === 0) {
+      setError(action === 'finalize' ? 'Select employees who are not already frozen.' : 'Select frozen employees to unfreeze.');
+      return;
+    }
+    const ok = confirmMajorAction(
+      action === 'finalize' ? `Freeze salary for ${label}` : `Unfreeze salary for ${label}`,
+      action === 'finalize'
+        ? 'This employee’s numbers stay locked. Generate and bulk extras will skip them until you unfreeze.'
+        : 'HR can edit this employee again. Generate will recalculate them next time.'
+    );
+    if (!ok) return;
+    setFreezeBusy(ids.length === 1 ? ids[0] : 'selected');
+    setError(null);
+    try {
+      const res = await fetch(
+        '/api/payroll/finalize',
+        hrCredentialsInit({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ monthYear, action, userIds: ids }),
+        })
+      );
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        setError(json.error || 'Could not update freeze');
+        return;
+      }
+      if (json.data?.lines) {
+        setDoc(json.data as PayrollDoc);
+      } else {
+        await load();
+      }
+      setNotice(
+        action === 'finalize'
+          ? `Frozen ${json.updated || ids.length} employee(s).`
+          : `Unfrozen ${json.updated || ids.length} employee(s).`
+      );
+    } catch {
+      setError('Could not update freeze');
+    } finally {
+      setFreezeBusy(null);
+    }
+  };
+
   const exportExcel = async () => {
     try {
       const res = await fetch(`/api/payroll/export?monthYear=${encodeURIComponent(monthYear)}`, hrCredentialsInit());
@@ -609,13 +664,14 @@ export const SalarySection: React.FC = () => {
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</div>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {[
           { label: 'People', value: String(stats.headcount), icon: Users },
           { label: 'Gross payable', value: inr(stats.payable), icon: IndianRupee },
           { label: 'Bank payment', value: inr(stats.bank), icon: IndianRupee },
           { label: 'Cash off', value: inr(stats.cash), icon: IndianRupee },
           { label: 'Unsent slips', value: String(stats.unsent), icon: Mail },
+          { label: 'Frozen', value: String(stats.frozen), icon: Lock },
         ].map((c) => (
           <div key={c.label} className="rounded-xl border border-blue-200/65 bg-panel p-4 shadow-sm">
             <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{c.label}</p>
@@ -629,6 +685,7 @@ export const SalarySection: React.FC = () => {
           Calendar: {doc.calendar.totalDays} days · {doc.calendar.sundays} Sundays · {doc.calendar.ohd} OHD · office
           working {Math.max(0, doc.calendar.totalDays - doc.calendar.sundays - doc.calendar.ohd)}
           {finalized ? ' · Finalized' : ' · Draft'}
+          {stats.frozen > 0 ? ` · ${stats.frozen} employee${stats.frozen === 1 ? '' : 's'} frozen` : ''}
         </p>
       )}
 
@@ -836,6 +893,36 @@ export const SalarySection: React.FC = () => {
           <Mail className="h-4 w-4" />
           Email filtered ({filtered.length})
         </button>
+        <button
+          type="button"
+          onClick={() =>
+            void setLineFreeze(
+              [...selected].filter((id) => !lines.find((l) => uid(l) === id)?.frozen),
+              'finalize',
+              `${selected.size} selected`
+            )
+          }
+          disabled={finalized || freezeBusy !== null || selected.size === 0}
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-800 disabled:opacity-50"
+        >
+          <Lock className="h-4 w-4" />
+          Freeze selected
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            void setLineFreeze(
+              [...selected].filter((id) => Boolean(lines.find((l) => uid(l) === id)?.frozen)),
+              'reopen',
+              'selected frozen employees'
+            )
+          }
+          disabled={finalized || freezeBusy !== null || selected.size === 0}
+          className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 disabled:opacity-50"
+        >
+          <Unlock className="h-4 w-4" />
+          Unfreeze selected
+        </button>
       </div>
 
       {loading && <p className="text-sm text-slate-500">Loading…</p>}
@@ -871,14 +958,23 @@ export const SalarySection: React.FC = () => {
                   const id = uid(line);
                   const open = expanded === id;
                   const checkWarn = Math.abs(Number(line.checking || 0)) > 0.05;
+                  const lineLocked = isPayrollLineFrozen(line, doc?.status);
                   return (
                     <React.Fragment key={id}>
-                      <tr className="border-b border-slate-100 hover:bg-slate-50/80">
+                      <tr className={`border-b border-slate-100 hover:bg-slate-50/80 ${line.frozen ? 'bg-slate-50' : ''}`}>
                         <td className="px-3 py-2">
                           <input type="checkbox" checked={selected.has(id)} onChange={() => toggleSelect(id)} />
                         </td>
                         <td className="px-3 py-2">
-                          <div className="font-medium text-slate-900">{line.name}</div>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="font-medium text-slate-900">{line.name}</span>
+                            {line.frozen ? (
+                              <span className="inline-flex items-center gap-0.5 rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                                <Lock className="h-2.5 w-2.5" />
+                                Frozen
+                              </span>
+                            ) : null}
+                          </div>
                           <div className="text-xs text-slate-500">
                             {line.designation || line.category} · {line.verticalHead || line.team || '—'}
                             {line.isNewJoin ? ' · New join' : ''}
@@ -911,30 +1007,56 @@ export const SalarySection: React.FC = () => {
                           {checkWarn ? <span className="ml-1 text-amber-700">check</span> : null}
                         </td>
                         <td className="px-3 py-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setExpanded(open ? null : id);
-                              setDraftOverrides({
-                                ...(line.overrides || {}),
-                                customAmounts: { ...(line.overrides?.customAmounts || {}) },
-                              });
-                            }}
-                            className="rounded-md border border-slate-200 p-1 text-slate-600 hover:bg-slate-50"
-                          >
-                            {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                          </button>
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              type="button"
+                              title={line.frozen ? 'Unfreeze this employee' : 'Freeze this employee'}
+                              disabled={finalized || freezeBusy !== null}
+                              onClick={() =>
+                                void setLineFreeze(
+                                  [id],
+                                  line.frozen ? 'reopen' : 'finalize',
+                                  line.name
+                                )
+                              }
+                              className={`rounded-md border p-1 disabled:opacity-50 ${
+                                line.frozen
+                                  ? 'border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100'
+                                  : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                              }`}
+                            >
+                              {line.frozen ? <Unlock className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setExpanded(open ? null : id);
+                                setDraftOverrides({
+                                  ...(line.overrides || {}),
+                                  customAmounts: { ...(line.overrides?.customAmounts || {}) },
+                                });
+                              }}
+                              className="rounded-md border border-slate-200 p-1 text-slate-600 hover:bg-slate-50"
+                            >
+                              {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                       {open && (
                         <tr className="bg-slate-50/70">
                           <td colSpan={10} className="px-4 py-4">
+                            {line.frozen ? (
+                              <p className="mb-3 text-xs text-amber-800">
+                                This employee is frozen. Unfreeze to edit numbers. Generate and bulk extras skip them.
+                              </p>
+                            ) : null}
                             <OverrideForm
                               line={line}
                               extraFields={extraFields}
                               draft={draftOverrides}
                               setDraft={setDraftOverrides}
-                              disabled={finalized}
+                              disabled={lineLocked}
                               saving={savingId === id}
                               onSave={() => void saveOverrides(line)}
                               onApproveOvertime={() =>

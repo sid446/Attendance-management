@@ -26,6 +26,15 @@ export const PAYROLL_BULK_BUILTIN_FIELDS = [
 
 export type PayrollBulkBuiltinField = (typeof PAYROLL_BULK_BUILTIN_FIELDS)[number];
 
+/** Month lock freezes everyone; otherwise only employees with `frozen` on their line. */
+export function isPayrollLineFrozen(
+  line: { frozen?: boolean | null },
+  monthStatus?: string | null
+): boolean {
+  if (monthStatus === 'finalized') return true;
+  return Boolean(line.frozen);
+}
+
 export const PAYROLL_BULK_BUILTIN_LABELS: Record<PayrollBulkBuiltinField, string> = {
   tds: 'TDS',
   advances: 'Advances',

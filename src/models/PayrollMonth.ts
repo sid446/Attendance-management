@@ -84,6 +84,9 @@ export interface IPayrollLine {
   overrides: PayrollOverrides;
   payslipSentAt?: Date | null;
   payslipSentTo?: string;
+  frozen?: boolean;
+  frozenAt?: Date | null;
+  frozenBy?: string;
 }
 
 export interface IPayrollMonth extends Document {
@@ -216,6 +219,9 @@ const PayrollLineSchema = new Schema(
     overrides: { type: OverridesSchema, default: () => ({}) },
     payslipSentAt: { type: Date, default: null },
     payslipSentTo: { type: String, default: '' },
+    frozen: { type: Boolean, default: false },
+    frozenAt: { type: Date, default: null },
+    frozenBy: { type: String, default: '' },
   },
   { _id: false }
 );

@@ -31,6 +31,47 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Payroll not generated for this month' }, { status: 404 });
     }
 
+    const userIds = Array.isArray(body?.userIds)
+      ? body.userIds.map((id: unknown) => String(id || '').trim()).filter(Boolean)
+      : body?.userId
+        ? [String(body.userId).trim()]
+        : [];
+
+    if (userIds.length > 0) {
+      if (action === 'reopen' && doc.status === 'finalized') {
+        return NextResponse.json(
+          { success: false, error: 'Re-open the month before unfreezing an employee.' },
+          { status: 409 }
+        );
+      }
+
+      const wanted = new Set(userIds);
+      let updated = 0;
+      for (const line of doc.lines || []) {
+        if (!wanted.has(String(line.userId))) continue;
+        if (action === 'reopen') {
+          line.frozen = false;
+          line.frozenAt = null;
+          line.frozenBy = '';
+        } else {
+          line.frozen = true;
+          line.frozenAt = new Date();
+          line.frozenBy = operatorEmail;
+        }
+        updated += 1;
+      }
+      if (updated === 0) {
+        return NextResponse.json({ success: false, error: 'Employee not in this payroll' }, { status: 404 });
+      }
+      doc.markModified('lines');
+      await doc.save();
+      return NextResponse.json({
+        success: true,
+        updated,
+        data: doc,
+      });
+    }
+
     if (action === 'reopen') {
       doc.status = 'draft';
       doc.finalizedAt = null;

@@ -213,12 +213,16 @@ export async function generatePayrollMonth(monthYear: string, generatedBy: strin
 
   const prevOverrides = new Map<string, PayrollOverrides>();
   const prevSent = new Map<string, { payslipSentAt?: Date | null; payslipSentTo?: string }>();
+  const prevFrozenLines = new Map<string, IPayrollLine>();
   const extraFields = normalizePayrollExtraFields(existing?.extraFields);
   if (existing) {
     for (const line of existing.lines || []) {
       const id = String(line.userId);
       prevOverrides.set(id, plainPayrollOverrides(line.overrides));
       prevSent.set(id, { payslipSentAt: line.payslipSentAt, payslipSentTo: line.payslipSentTo });
+      if (line.frozen) {
+        prevFrozenLines.set(id, payrollLinePlain(line));
+      }
     }
   }
 
@@ -239,6 +243,17 @@ export async function generatePayrollMonth(monthYear: string, generatedBy: strin
     const records = filterRecordsByInactiveCutoff(rawRecords, user.inactiveAsOf);
     const hasAttendance = Object.keys(records).length > 0;
     if (!userShouldAppear(user, monthYear, hasAttendance)) continue;
+
+    const frozenSnapshot = prevFrozenLines.get(uid);
+    if (frozenSnapshot) {
+      lines.push({
+        ...frozenSnapshot,
+        frozen: true,
+        frozenAt: frozenSnapshot.frozenAt || existing?.updatedAt || new Date(),
+        frozenBy: frozenSnapshot.frozenBy || '',
+      } as IPayrollLine);
+      continue;
+    }
 
     const designation = getDesignationForDate(user, periodEnd) || String(user.designation || '');
     const employmentType =
@@ -386,6 +401,9 @@ export async function generatePayrollMonth(monthYear: string, generatedBy: strin
       overrides,
       payslipSentAt: sent.payslipSentAt || null,
       payslipSentTo: sent.payslipSentTo || '',
+      frozen: false,
+      frozenAt: null,
+      frozenBy: '',
     } as IPayrollLine);
   }
 
