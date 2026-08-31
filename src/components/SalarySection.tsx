@@ -14,6 +14,7 @@ import {
   Users,
   AlertCircle,
   AlertTriangle,
+  Calendar,
   Plus,
   Trash2,
 } from 'lucide-react';
@@ -123,6 +124,34 @@ function uid(line: PayrollLine): string {
   return typeof line.userId === 'string' ? line.userId : String((line.userId as { _id?: string })?._id || line.userId);
 }
 
+type InvalidDayIssue = {
+  date: string;
+  checkin: string;
+  checkout: string;
+  issue: 'missing-checkin' | 'missing-checkout';
+};
+
+type EmptyDayIssue = {
+  dates: string[];
+  wholeMonthMissing: boolean;
+};
+
+type IssuePanelKind = 'invalid' | 'empty';
+
+function formatIssueDate(ymd: string): string {
+  const [y, m, d] = String(ymd).slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return ymd;
+  return new Date(y, m - 1, d).toLocaleDateString('en-IN', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
+}
+
+function invalidIssueLabel(issue: InvalidDayIssue['issue']): string {
+  return issue === 'missing-checkin' ? 'Missing check-in' : 'Missing check-out';
+}
+
 /** Stored excess, or the hours implied by converted OT days when the stored field is missing. */
 function payrollExcessHours(line: PayrollLine): number {
   const stored = Number(line.excessHours);
@@ -157,7 +186,9 @@ export const SalarySection: React.FC = () => {
   const [bulkDesignation, setBulkDesignation] = useState('');
   const [extrasBusy, setExtrasBusy] = useState(false);
   const [freezeBusy, setFreezeBusy] = useState<string | 'selected' | null>(null);
-  const [invalidByUser, setInvalidByUser] = useState<Map<string, number>>(new Map());
+  const [invalidByUser, setInvalidByUser] = useState<Map<string, InvalidDayIssue[]>>(new Map());
+  const [emptyByUser, setEmptyByUser] = useState<Map<string, EmptyDayIssue>>(new Map());
+  const [issuePanel, setIssuePanel] = useState<{ id: string; kind: IssuePanelKind } | null>(null);
 
   const monthYear = `${year}-${String(month).padStart(2, '0')}`;
   const finalized = doc?.status === 'finalized';
@@ -165,24 +196,65 @@ export const SalarySection: React.FC = () => {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setIssuePanel(null);
     try {
-      const [res, invalidRes] = await Promise.all([
+      const [res, invalidRes, emptyRes] = await Promise.all([
         fetch(`/api/payroll?monthYear=${encodeURIComponent(monthYear)}`, hrCredentialsInit()),
         fetch(
           `/api/attendance/invalid-records?monthYear=${encodeURIComponent(monthYear)}`,
           hrCredentialsInit()
         ),
+        fetch(
+          `/api/attendance/missing-month?monthYear=${encodeURIComponent(monthYear)}`,
+          hrCredentialsInit()
+        ),
       ]);
 
       const invalidJson = await invalidRes.json().catch(() => null);
-      const nextInvalid = new Map<string, number>();
+      const nextInvalid = new Map<string, InvalidDayIssue[]>();
       if (invalidJson?.success && Array.isArray(invalidJson.data)) {
-        for (const emp of invalidJson.data as Array<{ userId?: string; invalidRecords?: unknown[] }>) {
-          const n = Array.isArray(emp.invalidRecords) ? emp.invalidRecords.length : 0;
-          if (n > 0 && emp.userId) nextInvalid.set(String(emp.userId), n);
+        for (const emp of invalidJson.data as Array<{
+          userId?: string;
+          invalidRecords?: Array<{
+            date?: string;
+            checkin?: string;
+            checkout?: string;
+            issue?: string;
+          }>;
+        }>) {
+          const days = (emp.invalidRecords || [])
+            .filter((r) => r.date && (r.issue === 'missing-checkin' || r.issue === 'missing-checkout'))
+            .map((r) => ({
+              date: String(r.date).slice(0, 10),
+              checkin: String(r.checkin || ''),
+              checkout: String(r.checkout || ''),
+              issue: r.issue as InvalidDayIssue['issue'],
+            }));
+          if (days.length > 0 && emp.userId) nextInvalid.set(String(emp.userId), days);
         }
       }
       setInvalidByUser(nextInvalid);
+
+      const emptyJson = await emptyRes.json().catch(() => null);
+      const nextEmpty = new Map<string, EmptyDayIssue>();
+      if (emptyJson?.success && Array.isArray(emptyJson.data)) {
+        for (const emp of emptyJson.data as Array<{
+          userId?: string;
+          wholeMonthMissing?: boolean;
+          missingDays?: Array<{ date?: string }>;
+        }>) {
+          const dates = (emp.missingDays || [])
+            .map((d) => String(d.date || '').slice(0, 10))
+            .filter(Boolean);
+          if (dates.length > 0 && emp.userId) {
+            nextEmpty.set(String(emp.userId), {
+              dates,
+              wholeMonthMissing: Boolean(emp.wholeMonthMissing),
+            });
+          }
+        }
+      }
+      setEmptyByUser(nextEmpty);
 
       const json = await res.json();
       if (!res.ok || !json.success) {
@@ -195,6 +267,7 @@ export const SalarySection: React.FC = () => {
       setError('Failed to load payroll');
       setDoc(null);
       setInvalidByUser(new Map());
+      setEmptyByUser(new Map());
     } finally {
       setLoading(false);
     }
@@ -265,9 +338,10 @@ export const SalarySection: React.FC = () => {
     const cash = filtered.reduce((s, l) => s + Number(l.cashOff || 0), 0);
     const unsent = filtered.filter((l) => !l.payslipSentAt).length;
     const frozen = filtered.filter((l) => l.frozen).length;
-    const withInvalid = filtered.filter((l) => (invalidByUser.get(uid(l)) || 0) > 0).length;
-    return { headcount, payable, bank, cash, unsent, frozen, withInvalid };
-  }, [filtered, invalidByUser]);
+    const withInvalid = filtered.filter((l) => (invalidByUser.get(uid(l))?.length || 0) > 0).length;
+    const withEmpty = filtered.filter((l) => (emptyByUser.get(uid(l))?.dates.length || 0) > 0).length;
+    return { headcount, payable, bank, cash, unsent, frozen, withInvalid, withEmpty };
+  }, [filtered, invalidByUser, emptyByUser]);
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
@@ -694,23 +768,30 @@ export const SalarySection: React.FC = () => {
           { label: 'Unsent slips', value: String(stats.unsent), icon: Mail },
           { label: 'Frozen', value: String(stats.frozen), icon: Lock },
           { label: 'Invalid / missed', value: String(stats.withInvalid), icon: AlertTriangle, warn: stats.withInvalid > 0 },
-        ].map((c) => (
+          { label: 'No entry', value: String(stats.withEmpty), icon: Calendar, empty: stats.withEmpty > 0 },
+        ].map((c) => {
+          const warn = 'warn' in c && c.warn;
+          const empty = 'empty' in c && c.empty;
+          return (
           <div
             key={c.label}
             className={`rounded-xl border p-4 shadow-sm ${
-              'warn' in c && c.warn
+              warn
                 ? 'border-amber-300 bg-amber-50'
-                : 'border-blue-200/65 bg-panel'
+                : empty
+                  ? 'border-rose-300 bg-rose-50'
+                  : 'border-blue-200/65 bg-panel'
             }`}
           >
-            <p className={`text-xs font-medium uppercase tracking-wide ${'warn' in c && c.warn ? 'text-amber-800' : 'text-slate-500'}`}>
+            <p className={`text-xs font-medium uppercase tracking-wide ${warn ? 'text-amber-800' : empty ? 'text-rose-800' : 'text-slate-500'}`}>
               {c.label}
             </p>
-            <p className={`mt-1 text-lg font-semibold ${'warn' in c && c.warn ? 'text-amber-900' : 'text-slate-900'}`}>
+            <p className={`mt-1 text-lg font-semibold ${warn ? 'text-amber-900' : empty ? 'text-rose-900' : 'text-slate-900'}`}>
               {c.value}
             </p>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {doc?.calendar && (
@@ -722,6 +803,7 @@ export const SalarySection: React.FC = () => {
           {stats.withInvalid > 0
             ? ` · ${stats.withInvalid} with invalid / missed entry dates`
             : ''}
+          {stats.withEmpty > 0 ? ` · ${stats.withEmpty} with empty dates (no entry)` : ''}
         </p>
       )}
 
@@ -995,15 +1077,27 @@ export const SalarySection: React.FC = () => {
                   const open = expanded === id;
                   const checkWarn = Math.abs(Number(line.checking || 0)) > 0.05;
                   const lineLocked = isPayrollLineFrozen(line, doc?.status);
-                  const invalidCount = invalidByUser.get(id) || 0;
-                  const hasInvalid = invalidCount > 0;
+                  const invalidDays = invalidByUser.get(id) || [];
+                  const emptyIssue = emptyByUser.get(id);
+                  const emptyDates = emptyIssue?.dates || [];
+                  const hasInvalid = invalidDays.length > 0;
+                  const hasEmpty = emptyDates.length > 0;
+                  const invalidOpen = issuePanel?.id === id && issuePanel.kind === 'invalid';
+                  const emptyOpen = issuePanel?.id === id && issuePanel.kind === 'empty';
+                  const toggleIssue = (kind: IssuePanelKind) => {
+                    setIssuePanel((prev) =>
+                      prev?.id === id && prev.kind === kind ? null : { id, kind }
+                    );
+                  };
                   return (
                     <React.Fragment key={id}>
                       <tr
                         className={`border-b ${
                           hasInvalid
                             ? 'border-amber-200 bg-amber-50 hover:bg-amber-100/80'
-                            : `border-slate-100 hover:bg-slate-50/80 ${line.frozen ? 'bg-slate-50' : ''}`
+                            : hasEmpty
+                              ? 'border-rose-200 bg-rose-50 hover:bg-rose-100/80'
+                              : `border-slate-100 hover:bg-slate-50/80 ${line.frozen ? 'bg-slate-50' : ''}`
                         }`}
                       >
                         <td className="px-3 py-2">
@@ -1019,13 +1113,32 @@ export const SalarySection: React.FC = () => {
                               </span>
                             ) : null}
                             {hasInvalid ? (
-                              <span
-                                title={`${invalidCount} invalid or missed-entry day${invalidCount === 1 ? '' : 's'} this month`}
-                                className="inline-flex items-center gap-0.5 rounded bg-amber-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white"
+                              <button
+                                type="button"
+                                title="Show invalid / missed-entry dates"
+                                onClick={() => toggleIssue('invalid')}
+                                aria-expanded={invalidOpen}
+                                className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white ${
+                                  invalidOpen ? 'bg-amber-800' : 'bg-amber-600 hover:bg-amber-700'
+                                }`}
                               >
                                 <AlertTriangle className="h-2.5 w-2.5" />
-                                {invalidCount} invalid
-                              </span>
+                                {invalidDays.length} invalid
+                              </button>
+                            ) : null}
+                            {hasEmpty ? (
+                              <button
+                                type="button"
+                                title="Show dates with no attendance entry"
+                                onClick={() => toggleIssue('empty')}
+                                aria-expanded={emptyOpen}
+                                className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white ${
+                                  emptyOpen ? 'bg-rose-800' : 'bg-rose-600 hover:bg-rose-700'
+                                }`}
+                              >
+                                <Calendar className="h-2.5 w-2.5" />
+                                {emptyDates.length} no entry
+                              </button>
                             ) : null}
                           </div>
                           <div className="text-xs text-slate-500">
@@ -1096,6 +1209,77 @@ export const SalarySection: React.FC = () => {
                           </div>
                         </td>
                       </tr>
+                      {(invalidOpen || emptyOpen) && (
+                        <tr className={invalidOpen ? 'bg-amber-50/90' : 'bg-rose-50/90'}>
+                          <td colSpan={10} className="px-4 py-3">
+                            {invalidOpen ? (
+                              <div>
+                                <p className="mb-2 text-xs font-semibold text-amber-900">
+                                  Invalid / missed-entry days for {line.name}
+                                </p>
+                                <ul className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+                                  {invalidDays.map((day) => (
+                                    <li
+                                      key={day.date}
+                                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs"
+                                    >
+                                      <span className="font-medium text-slate-900">
+                                        {formatIssueDate(day.date)}
+                                        <span className="ml-1.5 font-mono text-slate-500">{day.date}</span>
+                                      </span>
+                                      <span className="text-slate-600">
+                                        In:{' '}
+                                        <span
+                                          className={
+                                            day.issue === 'missing-checkin' ? 'font-semibold text-rose-700' : ''
+                                          }
+                                        >
+                                          {day.checkin || '—'}
+                                        </span>
+                                        {' / '}
+                                        Out:{' '}
+                                        <span
+                                          className={
+                                            day.issue === 'missing-checkout' ? 'font-semibold text-rose-700' : ''
+                                          }
+                                        >
+                                          {day.checkout || '—'}
+                                        </span>
+                                      </span>
+                                      <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 font-medium text-amber-900">
+                                        {invalidIssueLabel(day.issue)}
+                                      </span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : (
+                              <div>
+                                <p className="mb-2 text-xs font-semibold text-rose-900">
+                                  Empty dates (no entry) for {line.name}
+                                  {emptyIssue?.wholeMonthMissing ? ' · whole month missing' : ''}
+                                </p>
+                                <ul className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+                                  {emptyDates.map((date) => (
+                                    <li
+                                      key={date}
+                                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs"
+                                    >
+                                      <span className="font-medium text-slate-900">
+                                        {formatIssueDate(date)}
+                                        <span className="ml-1.5 font-mono text-slate-500">{date}</span>
+                                      </span>
+                                      <span className="rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 font-medium text-rose-900">
+                                        No entry
+                                      </span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )}
                       {open && (
                         <tr className="bg-slate-50/70">
                           <td colSpan={10} className="px-4 py-4">
@@ -1106,8 +1290,14 @@ export const SalarySection: React.FC = () => {
                             ) : null}
                             {hasInvalid ? (
                               <p className="mb-3 text-xs text-amber-800">
-                                {invalidCount} invalid or missed-entry day{invalidCount === 1 ? '' : 's'} this month
-                                (missing in or out punch). Fix attendance before freezing or sending the payslip.
+                                {invalidDays.length} invalid or missed-entry day{invalidDays.length === 1 ? '' : 's'} this
+                                month. Tap the Invalid badge to see each date.
+                              </p>
+                            ) : null}
+                            {hasEmpty ? (
+                              <p className="mb-3 text-xs text-rose-800">
+                                {emptyDates.length} empty date{emptyDates.length === 1 ? '' : 's'} with no attendance
+                                entry. Tap the No entry badge to see each date.
                               </p>
                             ) : null}
                             <OverrideForm
