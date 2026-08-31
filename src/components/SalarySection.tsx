@@ -13,6 +13,7 @@ import {
   ChevronUp,
   Users,
   AlertCircle,
+  AlertTriangle,
   Plus,
   Trash2,
 } from 'lucide-react';
@@ -156,6 +157,7 @@ export const SalarySection: React.FC = () => {
   const [bulkDesignation, setBulkDesignation] = useState('');
   const [extrasBusy, setExtrasBusy] = useState(false);
   const [freezeBusy, setFreezeBusy] = useState<string | 'selected' | null>(null);
+  const [invalidByUser, setInvalidByUser] = useState<Map<string, number>>(new Map());
 
   const monthYear = `${year}-${String(month).padStart(2, '0')}`;
   const finalized = doc?.status === 'finalized';
@@ -164,7 +166,24 @@ export const SalarySection: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/payroll?monthYear=${encodeURIComponent(monthYear)}`, hrCredentialsInit());
+      const [res, invalidRes] = await Promise.all([
+        fetch(`/api/payroll?monthYear=${encodeURIComponent(monthYear)}`, hrCredentialsInit()),
+        fetch(
+          `/api/attendance/invalid-records?monthYear=${encodeURIComponent(monthYear)}`,
+          hrCredentialsInit()
+        ),
+      ]);
+
+      const invalidJson = await invalidRes.json().catch(() => null);
+      const nextInvalid = new Map<string, number>();
+      if (invalidJson?.success && Array.isArray(invalidJson.data)) {
+        for (const emp of invalidJson.data as Array<{ userId?: string; invalidRecords?: unknown[] }>) {
+          const n = Array.isArray(emp.invalidRecords) ? emp.invalidRecords.length : 0;
+          if (n > 0 && emp.userId) nextInvalid.set(String(emp.userId), n);
+        }
+      }
+      setInvalidByUser(nextInvalid);
+
       const json = await res.json();
       if (!res.ok || !json.success) {
         setDoc(null);
@@ -175,6 +194,7 @@ export const SalarySection: React.FC = () => {
     } catch {
       setError('Failed to load payroll');
       setDoc(null);
+      setInvalidByUser(new Map());
     } finally {
       setLoading(false);
     }
@@ -245,8 +265,9 @@ export const SalarySection: React.FC = () => {
     const cash = filtered.reduce((s, l) => s + Number(l.cashOff || 0), 0);
     const unsent = filtered.filter((l) => !l.payslipSentAt).length;
     const frozen = filtered.filter((l) => l.frozen).length;
-    return { headcount, payable, bank, cash, unsent, frozen };
-  }, [filtered]);
+    const withInvalid = filtered.filter((l) => (invalidByUser.get(uid(l)) || 0) > 0).length;
+    return { headcount, payable, bank, cash, unsent, frozen, withInvalid };
+  }, [filtered, invalidByUser]);
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
@@ -664,7 +685,7 @@ export const SalarySection: React.FC = () => {
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</div>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {[
           { label: 'People', value: String(stats.headcount), icon: Users },
           { label: 'Gross payable', value: inr(stats.payable), icon: IndianRupee },
@@ -672,10 +693,22 @@ export const SalarySection: React.FC = () => {
           { label: 'Cash off', value: inr(stats.cash), icon: IndianRupee },
           { label: 'Unsent slips', value: String(stats.unsent), icon: Mail },
           { label: 'Frozen', value: String(stats.frozen), icon: Lock },
+          { label: 'Invalid / missed', value: String(stats.withInvalid), icon: AlertTriangle, warn: stats.withInvalid > 0 },
         ].map((c) => (
-          <div key={c.label} className="rounded-xl border border-blue-200/65 bg-panel p-4 shadow-sm">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{c.label}</p>
-            <p className="mt-1 text-lg font-semibold text-slate-900">{c.value}</p>
+          <div
+            key={c.label}
+            className={`rounded-xl border p-4 shadow-sm ${
+              'warn' in c && c.warn
+                ? 'border-amber-300 bg-amber-50'
+                : 'border-blue-200/65 bg-panel'
+            }`}
+          >
+            <p className={`text-xs font-medium uppercase tracking-wide ${'warn' in c && c.warn ? 'text-amber-800' : 'text-slate-500'}`}>
+              {c.label}
+            </p>
+            <p className={`mt-1 text-lg font-semibold ${'warn' in c && c.warn ? 'text-amber-900' : 'text-slate-900'}`}>
+              {c.value}
+            </p>
           </div>
         ))}
       </div>
@@ -686,6 +719,9 @@ export const SalarySection: React.FC = () => {
           working {Math.max(0, doc.calendar.totalDays - doc.calendar.sundays - doc.calendar.ohd)}
           {finalized ? ' · Finalized' : ' · Draft'}
           {stats.frozen > 0 ? ` · ${stats.frozen} employee${stats.frozen === 1 ? '' : 's'} frozen` : ''}
+          {stats.withInvalid > 0
+            ? ` · ${stats.withInvalid} with invalid / missed entry dates`
+            : ''}
         </p>
       )}
 
@@ -959,9 +995,17 @@ export const SalarySection: React.FC = () => {
                   const open = expanded === id;
                   const checkWarn = Math.abs(Number(line.checking || 0)) > 0.05;
                   const lineLocked = isPayrollLineFrozen(line, doc?.status);
+                  const invalidCount = invalidByUser.get(id) || 0;
+                  const hasInvalid = invalidCount > 0;
                   return (
                     <React.Fragment key={id}>
-                      <tr className={`border-b border-slate-100 hover:bg-slate-50/80 ${line.frozen ? 'bg-slate-50' : ''}`}>
+                      <tr
+                        className={`border-b ${
+                          hasInvalid
+                            ? 'border-amber-200 bg-amber-50 hover:bg-amber-100/80'
+                            : `border-slate-100 hover:bg-slate-50/80 ${line.frozen ? 'bg-slate-50' : ''}`
+                        }`}
+                      >
                         <td className="px-3 py-2">
                           <input type="checkbox" checked={selected.has(id)} onChange={() => toggleSelect(id)} />
                         </td>
@@ -972,6 +1016,15 @@ export const SalarySection: React.FC = () => {
                               <span className="inline-flex items-center gap-0.5 rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
                                 <Lock className="h-2.5 w-2.5" />
                                 Frozen
+                              </span>
+                            ) : null}
+                            {hasInvalid ? (
+                              <span
+                                title={`${invalidCount} invalid or missed-entry day${invalidCount === 1 ? '' : 's'} this month`}
+                                className="inline-flex items-center gap-0.5 rounded bg-amber-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white"
+                              >
+                                <AlertTriangle className="h-2.5 w-2.5" />
+                                {invalidCount} invalid
                               </span>
                             ) : null}
                           </div>
@@ -1049,6 +1102,12 @@ export const SalarySection: React.FC = () => {
                             {line.frozen ? (
                               <p className="mb-3 text-xs text-amber-800">
                                 This employee is frozen. Unfreeze to edit numbers. Generate and bulk extras skip them.
+                              </p>
+                            ) : null}
+                            {hasInvalid ? (
+                              <p className="mb-3 text-xs text-amber-800">
+                                {invalidCount} invalid or missed-entry day{invalidCount === 1 ? '' : 's'} this month
+                                (missing in or out punch). Fix attendance before freezing or sending the payslip.
                               </p>
                             ) : null}
                             <OverrideForm
