@@ -3,14 +3,6 @@ import dbConnect from '@/lib/mongodb';
 import AttendanceRequest from '@/models/AttendanceRequest';
 import Attendance from '@/models/Attendance';
 import User from '@/models/User';
-import { transporter, mailOptions } from '@/lib/mailer';
-import { createPartnerReviewAllLink } from '@/lib/partnerReviewToken';
-import {
-  buildAttendanceRequestEmailHtml,
-  buildCorrectionMobileCards,
-  buildCorrectionTableRows,
-  escapeHtml,
-} from '@/lib/attendanceRequestEmail';
 import {
   isDateWithinRequestWindow,
   requestWindowRejectionMessage,
@@ -20,9 +12,7 @@ import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAut
 import { autoApproveSelfRequests } from '@/lib/selfApproveAttendanceRequests';
 import {
   EXTRA_WORK_REQUEST_STATUS,
-  formatExtraWorkHoursLabel,
   formatExtraWorkSlotsReasonSummary,
-  formatExtraWorkSlotsTimeRange,
   isExtraWorkRequest,
   sumExtraWorkSlotHours,
   validateExtraWorkSlots,
@@ -83,7 +73,6 @@ export async function POST(request: NextRequest) {
     const validatedSlots = validation.slots;
     const extraHours = sumExtraWorkSlotHours(validatedSlots);
     const summaryReason = formatExtraWorkSlotsReasonSummary(validatedSlots);
-    const summaryTimeRange = formatExtraWorkSlotsTimeRange(validatedSlots);
 
     const requestWindowBounds = await getEffectiveRequestWindowBoundsForUser(userId);
     if (!isDateWithinRequestWindow(date, requestWindowBounds.config)) {
@@ -207,59 +196,14 @@ export async function POST(request: NextRequest) {
       user,
       baseUrl
     );
-    const reviewAllLink = createPartnerReviewAllLink(baseUrl, partnerName, approverNotificationEmail);
-
-    const pendingRequests = await AttendanceRequest.find({
-      partnerName,
-      status: 'Pending',
-    }).sort({ createdAt: 1 });
-
-    const emailRows = pendingRequests.map((req) => ({
-      id: String(req._id),
-      userName: req.userName,
-      date: req.date,
-      requestedStatus: req.requestedStatus,
-      startTime: req.startTime,
-      endTime: req.endTime,
-      reason: req.reason,
-    }));
-
-    const hoursLabel = formatExtraWorkHoursLabel(extraHours);
-    const emailHtml = buildAttendanceRequestEmailHtml({
-      title: 'Attendance & extra work requests',
-      reviewAllLink,
-      infoHtml: `<strong style="color:#0f172a;">New extra work request from:</strong> ${escapeHtml(user.name)}<br/><span style="font-size:14px;color:#475569;">${escapeHtml(hoursLabel)} extra on ${escapeHtml(date)} (${escapeHtml(summaryTimeRange)}). All pending requests are listed below.</span>`,
-      description:
-        'Extra work requests are labelled <strong>Extra work hours</strong>. Tap <strong>Review request</strong> to approve or reject.',
-      tableBodyHtml: buildCorrectionTableRows(emailRows, baseUrl),
-      mobileCardsHtml: buildCorrectionMobileCards(emailRows, baseUrl),
-      showReviewColumn: true,
-    });
-
-    let emailSent = true;
-    let emailWarning: string | undefined;
-    try {
-      await transporter.sendMail({
-        ...mailOptions,
-        to: approverNotificationEmail,
-        subject: `Extra Work Request: ${user.name} (${hoursLabel} on ${date})`,
-        html: emailHtml,
-      });
-    } catch (emailError) {
-      emailSent = false;
-      emailWarning = 'Request saved, but partner email could not be delivered right now.';
-      console.error('Failed to send extra work request email:', emailError);
-    }
 
     return NextResponse.json({
       success: true,
       message:
         autoApprovedIds.length > 0
           ? 'Extra work request auto-approved (self approver)'
-          : 'Extra work request sent to your partner',
+          : 'Request submitted. Your partner will be notified in the next morning digest.',
       sentTo: approverNotificationEmail,
-      emailSent,
-      warning: emailWarning,
       autoApproved: autoApprovedIds.length > 0,
       extraHours,
     });

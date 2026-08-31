@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { getCronSecret, isCronAuthorized } from '@/lib/cronAuth';
-import { sendPendingRequestDigestEmails } from '@/lib/pendingRequestDigest';
+import { sendDailyRequestDigestEmails } from '@/lib/dailyRequestDigest';
 
 /**
- * Saturday (or any day) pending-request digest for attendance approvers.
+ * Daily digest of yesterday's still-pending attendance requests (one email per partner).
  *
  * Auth: Authorization: Bearer <CRON_SECRET>
  *   or  x-cron-secret: <CRON_SECRET>
@@ -12,9 +12,9 @@ import { sendPendingRequestDigestEmails } from '@/lib/pendingRequestDigest';
  *
  * Query:
  *   dryRun=1 — build recipient list without sending mail
+ *   sampleTo=email — send one preview to that address
  *
- * Suggested schedule (IST): every Saturday 08:00
- *   Example (cron-job.org / Task Scheduler calling this URL with the secret).
+ * Suggested schedule (IST): every day 08:00
  */
 async function handle(request: NextRequest) {
   if (!getCronSecret()) {
@@ -45,7 +45,7 @@ async function handle(request: NextRequest) {
       request.headers.get('origin') ||
       'https://attendance.asija.in';
 
-    const result = await sendPendingRequestDigestEmails({ baseUrl, dryRun, sampleTo });
+    const result = await sendDailyRequestDigestEmails({ baseUrl, dryRun, sampleTo });
 
     return NextResponse.json({
       success: true,
@@ -54,14 +54,14 @@ async function handle(request: NextRequest) {
       message: dryRun
         ? 'Dry run complete — no emails sent'
         : sampleTo
-          ? `Sample digest sent to ${sampleTo}`
-          : `Sent ${result.sentCount} digest email(s)`,
+          ? `Sample daily digest sent to ${sampleTo}`
+          : `Sent ${result.sentCount} daily digest email(s)`,
       ...result,
     });
   } catch (error) {
-    console.error('Pending request digest cron failed:', error);
+    console.error('Daily request digest cron failed:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to send pending request digests' },
+      { success: false, error: 'Failed to send daily request digests' },
       { status: 500 }
     );
   }

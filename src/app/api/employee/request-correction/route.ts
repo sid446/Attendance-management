@@ -2,14 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import AttendanceRequest from '@/models/AttendanceRequest';
 import User from '@/models/User';
-import { transporter, mailOptions } from '@/lib/mailer';
-import { createPartnerReviewAllLink } from '@/lib/partnerReviewToken';
-import {
-  buildAttendanceRequestEmailHtml,
-  buildCorrectionMobileCards,
-  buildCorrectionTableRows,
-  escapeHtml,
-} from '@/lib/attendanceRequestEmail';
 import {
   isDateWithinRequestWindow,
   requestWindowRejectionMessage,
@@ -198,56 +190,14 @@ export async function POST(request: NextRequest) {
       user,
       baseUrl
     );
-    const reviewAllLink = createPartnerReviewAllLink(baseUrl, partnerName, approverNotificationEmail);
-
-    // Fetch all pending requests assigned to this partner (across all employees)
-    const pendingRequests = await AttendanceRequest.find({ partnerName: partnerName, status: 'Pending' }).sort({ createdAt: 1 });
-
-    const emailRows = pendingRequests.map((req: any) => ({
-      id: String(req._id),
-      userName: req.userName,
-      date: req.date,
-      requestedStatus: req.requestedStatus,
-      startTime: req.startTime,
-      endTime: req.endTime,
-      reason: req.reason,
-    }));
-
-    const emailHtml = buildAttendanceRequestEmailHtml({
-      title: 'Attendance correction requests',
-      reviewAllLink,
-      infoHtml: `<strong style="color:#0f172a;">New request from:</strong> ${escapeHtml(user.name)}<br/><span style="font-size:14px;color:#475569;">All pending correction requests assigned to you are listed below.</span>`,
-      description:
-        'Tap <strong>Review request</strong> on a card (mobile) or use the table on desktop. You can approve or reject with optional remarks.',
-      tableBodyHtml: buildCorrectionTableRows(emailRows, baseUrl),
-      mobileCardsHtml: buildCorrectionMobileCards(emailRows, baseUrl),
-      showReviewColumn: true,
-    });
-
-    let emailSent = true;
-    let emailWarning: string | undefined;
-    try {
-      await transporter.sendMail({
-        ...mailOptions,
-        to: approverNotificationEmail,
-        subject: `Attendance Correction Requests: ${user.name}`,
-        html: emailHtml,
-      });
-    } catch (emailError) {
-      emailSent = false;
-      emailWarning = 'Request saved, but partner email could not be delivered right now.';
-      console.error('Failed to send correction request email:', emailError);
-    }
 
     return NextResponse.json({
       success: true,
       message:
         autoApprovedIds.length > 0
           ? 'Request auto-approved (self approver)'
-          : 'Request sent to partner',
+          : 'Request submitted. Your partner will be notified in the next morning digest.',
       sentTo: approverNotificationEmail,
-      emailSent,
-      warning: emailWarning,
       autoApproved: autoApprovedIds.length > 0,
     });
   } catch (error) {

@@ -37,7 +37,8 @@
     "fix:location-punch-edited": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/repair-location-punch-edited-times.ts --apply",
     "fix:halfday-threshold:dry": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/recalculate-halfday-threshold.ts",
     "fix:halfday-threshold": "cross-env NODE_OPTIONS=\"--require ./dns-patch.js --dns-result-order=ipv4first\" tsx --env-file=.env.local scripts/recalculate-halfday-threshold.ts --apply",
-    "cron:pending-digest:dry": "echo Use GET/POST /api/cron/pending-request-digest?dryRun=1 with Authorization Bearer CRON_SECRET — see CRON_PENDING_DIGEST.md"
+    "cron:pending-digest:dry": "echo Use GET/POST /api/cron/pending-request-digest?dryRun=1 with Authorization Bearer CRON_SECRET — see CRON_PENDING_DIGEST.md",
+    "cron:daily-digest:dry": "echo Use GET/POST /api/cron/daily-request-digest?dryRun=1 with Authorization Bearer CRON_SECRET — see CRON_PENDING_DIGEST.md"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

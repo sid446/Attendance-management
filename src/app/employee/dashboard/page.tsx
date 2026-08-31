@@ -1680,7 +1680,9 @@ export default function EmployeeDashboard() {
         if (json.autoApproved) {
           alert('Extra work request auto-approved.');
         } else {
-          alert(`Extra work request (${formatExtraWorkHoursLabel(totalHours)}) sent to ${json.sentTo}!`);
+          alert(
+            `Extra work request (${formatExtraWorkHoursLabel(totalHours)}) submitted. Your partner will get one email tomorrow morning with yesterday's requests.`
+          );
         }
         closeDayRequestModal();
         fetchAttendance(user._id, monthYear, user);
@@ -1793,7 +1795,9 @@ export default function EmployeeDashboard() {
         if (json.autoApproved) {
           alert('Request auto-approved.');
         } else {
-          alert(`Request sent successfully to ${json.sentTo}!`);
+          alert(
+            'Request submitted. Your partner will get one email tomorrow morning with yesterday’s requests.'
+          );
         }
         closeDayRequestModal();
         fetchAttendance(user._id, monthYear, user);
@@ -1920,7 +1924,9 @@ export default function EmployeeDashboard() {
               : `Future request auto-approved (${json.count} day${json.count === 1 ? '' : 's'}).`
           );
         } else {
-          alert(`Future request sent successfully! Created ${json.count} requests.`);
+          alert(
+            `Request submitted (${json.count} day${json.count === 1 ? '' : 's'}). Your partner will get one email tomorrow morning with yesterday’s requests.`
+          );
         }
         setShowFutureModal(false);
         setFutureStartDate('');

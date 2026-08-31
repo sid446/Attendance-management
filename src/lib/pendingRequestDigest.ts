@@ -26,7 +26,7 @@ export type DigestPendingRow = {
   attendanceEmail?: string;
 };
 
-type DigestRecipientBucket = {
+export type DigestRecipientBucket = {
   email: string;
   partnerNameForLink: string;
   rows: DigestPendingRow[];
@@ -92,8 +92,19 @@ function addRowToBucket(
 }
 
 /** Load Pending attendance requests (partner-actionable only). */
-export async function loadPendingDigestRows(): Promise<DigestPendingRow[]> {
-  const pending = await AttendanceRequest.find({ status: 'Pending' })
+export async function loadPendingDigestRows(opts?: {
+  createdAtFrom?: Date;
+  createdAtTo?: Date;
+}): Promise<DigestPendingRow[]> {
+  const query: Record<string, unknown> = { status: 'Pending' };
+  if (opts?.createdAtFrom || opts?.createdAtTo) {
+    query.createdAt = {
+      ...(opts.createdAtFrom ? { $gte: opts.createdAtFrom } : {}),
+      ...(opts.createdAtTo ? { $lt: opts.createdAtTo } : {}),
+    };
+  }
+
+  const pending = await AttendanceRequest.find(query)
     .sort({ createdAt: 1 })
     .select(
       '_id userId userName date requestedStatus startTime endTime reason partnerName createdAt requestType'

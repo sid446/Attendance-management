@@ -235,8 +235,7 @@ function FixAttendanceContent() {
           </div>
           <h1 className="text-2xl font-bold text-white mb-2">Corrections Submitted!</h1>
           <p className="text-zinc-400 mb-6">
-            {submitResult?.success} correction{submitResult?.success !== 1 ? 's' : ''} have been sent to your work partner for approval.
-            You will be notified once they are reviewed.
+            {submitResult?.success} correction{submitResult?.success !== 1 ? 's' : ''} submitted. Your partner will get one email tomorrow morning with yesterday’s requests.
           </p>
           <a
             href="/employee/dashboard"

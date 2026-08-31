@@ -3,15 +3,6 @@ import dbConnect from '@/lib/mongodb';
 import Attendance from '@/models/Attendance';
 import AttendanceRequest, { TYPE_OF_PRESENCE_ENUM } from '@/models/AttendanceRequest';
 import User from '@/models/User';
-import { transporter, mailOptions } from '@/lib/mailer';
-import { createPartnerReviewAllLink } from '@/lib/partnerReviewToken';
-import {
-  buildAttendanceRequestEmailHtml,
-  buildGroupedMobileCards,
-  buildGroupedTableRows,
-  escapeHtml,
-  groupPendingRequestsForEmail,
-} from '@/lib/attendanceRequestEmail';
 import {
   isDateWithinRequestWindow,
   requestWindowRejectionMessage,
@@ -255,48 +246,16 @@ export async function POST(request: NextRequest) {
       baseUrl
     );
 
-    // Notify each work partner who received at least one day in this range
-    const notifiedEmails: string[] = [];
-    for (const [partnerName, approverNotificationEmail] of partnerEmails) {
-      const pendingRequests = await AttendanceRequest.find({
-        partnerName,
-        status: 'Pending',
-      }).sort({ createdAt: 1 });
-
-      const groupedRows = groupPendingRequestsForEmail(pendingRequests);
-      const reviewAllLink = createPartnerReviewAllLink(baseUrl, partnerName, approverNotificationEmail);
-
-      const emailHtml = buildAttendanceRequestEmailHtml({
-        title: 'Future leave requests',
-        reviewAllLink,
-        infoHtml: `<strong style="color:#0f172a;">New request from:</strong> ${escapeHtml(user.name)}<br/><span style="font-size:14px;color:#475569;">Dates requested: ${escapeHtml(startDate)} to ${escapeHtml(endDate)}</span>`,
-        description:
-          'Pending leave and attendance requests are listed below. Use <strong>Review all pending</strong> to open the review page.',
-        tableBodyHtml: buildGroupedTableRows(groupedRows),
-        mobileCardsHtml: buildGroupedMobileCards(groupedRows),
-        showReviewColumn: false,
-        noteHtml: `<strong style="color:#14532d;">Tip:</strong> Use the review link above to approve or reject requests in one place.`,
-      });
-
-      try {
-        await transporter.sendMail({
-          ...mailOptions,
-          to: approverNotificationEmail,
-          subject: `Future Leave Requests: ${user.name}`,
-          html: emailHtml,
-        });
-        notifiedEmails.push(approverNotificationEmail);
-      } catch (emailError) {
-        console.error('Failed to send email:', emailError);
-      }
-    }
-
     return NextResponse.json({
       success: true,
       count: createdRequests.length,
-      sentTo: notifiedEmails.join(', ') || Array.from(partnerEmails.values()).join(', '),
+      sentTo: Array.from(partnerEmails.values()).join(', '),
       autoApprovedCount: autoApprovedIds.length,
       autoApproved: autoApprovedIds.length > 0,
+      message:
+        autoApprovedIds.length > 0
+          ? 'Request auto-approved (self approver)'
+          : 'Request submitted. Your partner will be notified in the next morning digest.',
     });
 
   } catch (error) {
