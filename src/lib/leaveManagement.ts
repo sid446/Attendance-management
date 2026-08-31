@@ -200,6 +200,24 @@ export async function creditMonthlyEarnedIfNeeded(
 }
 
 /**
+ * Credit monthly earn for each distinct month, then reload the user so remaining
+ * includes the current month's +2 before paid/unpaid leave is decided.
+ */
+async function creditMonthsAndReloadUser(
+  userId: mongoose.Types.ObjectId | string,
+  monthYears: Iterable<string>
+): Promise<any | null> {
+  const seen = new Set<string>();
+  for (const raw of monthYears) {
+    const monthYear = String(raw || '').slice(0, 7);
+    if (!monthYear || monthYear < '2026-01' || seen.has(monthYear)) continue;
+    seen.add(monthYear);
+    await creditMonthlyEarnedIfNeeded(userId, monthYear);
+  }
+  return User.findById(userId);
+}
+
+/**
  * Increment monthly earned leave for all active users who have attendance for the month.
  * Delegates to creditMonthlyEarnedIfNeeded, which is idempotent per user+month.
  * @param monthYear Optional month-year string (YYYY-MM) to increment for a specific month
@@ -270,6 +288,14 @@ export async function calculateLeaveUsageForMultipleDays(
       return { leaveDetails };
     }
 
+    // Credit each involved month's +2 before allocation so July leave is not
+    // classified against June-only remaining.
+    const reloaded = await creditMonthsAndReloadUser(
+      userId,
+      dates.map((d) => String(d).slice(0, 7))
+    );
+    const userForBalance = reloaded || user;
+
     // For other employees, calculate how many can be paid vs unpaid based on balance.
     // Use month-aware effective remaining (snapshot-aware) so monthly earned credit is considered.
     const leaveDetails = [];
@@ -278,7 +304,7 @@ export async function calculateLeaveUsageForMultipleDays(
     for (const date of dates) {
       const monthYear = String(date).slice(0, 7);
       if (!remainingByMonth.has(monthYear)) {
-        const effective = await getEffectiveRemainingForMonth(userId, user, monthYear);
+        const effective = await getEffectiveRemainingForMonth(userId, userForBalance, monthYear);
         remainingByMonth.set(monthYear, effective);
       }
 
@@ -331,7 +357,6 @@ export async function calculateLeaveUsage(
     }
 
     const monthYear = String(date || '').slice(0, 7);
-    const remainingLeave = await getEffectiveRemainingForMonth(userId, user, monthYear);
 
     // Check if this is a leave request
     const isLeaveRequest = requestedStatus.toLowerCase().includes('leave') ||
@@ -348,6 +373,9 @@ export async function calculateLeaveUsage(
       // Articles always get value 0 for leave (no paid leave)
       return { isPaidLeave: false, value: 0 };
     }
+
+    const userForBalance = (await creditMonthsAndReloadUser(userId, [monthYear])) || user;
+    const remainingLeave = await getEffectiveRemainingForMonth(userId, userForBalance, monthYear);
 
     // For other employees, determine if it's paid or unpaid based on balance
     if (remainingLeave >= 1) {
@@ -575,10 +603,16 @@ export async function reconcilePartialLeaveFromAttendance(
     const round2 = (n: number) => Math.round(n * 100) / 100;
     const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 
-    const balanceAsOfJan26 = user.leaveBalance?.balanceAsOfJan26 || 0;
-    const currentEarned = user.leaveBalance?.earned || 0;
-    const leaveAdjLwp = user.leaveBalance?.leaveAdjLwp || 0;
-    let currentUsedAfterJan26 = round2(user.leaveBalance?.usedAfterJan26 || 0);
+    const userForBalance =
+      (await creditMonthsAndReloadUser(
+        userId,
+        entries.map((e) => String(e?.date || '').slice(0, 7))
+      )) || user;
+
+    const balanceAsOfJan26 = userForBalance.leaveBalance?.balanceAsOfJan26 || 0;
+    const currentEarned = userForBalance.leaveBalance?.earned || 0;
+    const leaveAdjLwp = userForBalance.leaveBalance?.leaveAdjLwp || 0;
+    let currentUsedAfterJan26 = round2(userForBalance.leaveBalance?.usedAfterJan26 || 0);
 
     const affectedMonths = new Set<string>();
     const computeRemaining = () =>

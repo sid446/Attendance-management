@@ -869,8 +869,11 @@ export default function EmployeeDashboard() {
   }, [user?._id, subordinates.length]);
 
   const handleDailyUpdatesLoaded = useCallback(
-    (payload: { date: string; summary: { total: number } }) => {
-      if (payload.date === istDateString()) {
+    (payload: { date: string; from?: string; to?: string; summary: { total: number } }) => {
+      const today = istDateString();
+      const from = payload.from ?? payload.date;
+      const to = payload.to ?? payload.date;
+      if (from === today && to === today) {
         setTeamDailyUpdatesCount(payload.summary.total);
       }
     },
@@ -2864,7 +2867,7 @@ export default function EmployeeDashboard() {
               <div>
                 <h3 className="text-sm font-semibold text-foreground sm:text-base">Daily updates</h3>
                 <p className="text-xs text-muted-foreground">
-                  Team leave, WFH, travel &amp; requests · pick a period (IST)
+                  Team leave, WFH, travel &amp; requests · pick dates (IST)
                 </p>
               </div>
               <button

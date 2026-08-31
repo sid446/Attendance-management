@@ -479,6 +479,145 @@ export function computeSalaryLine(input: SalaryCalcInput): SalaryCalcResult {
   };
 }
 
+export type PayrollAmountPreview = Pick<
+  SalaryCalcResult,
+  | 'overtimeDays'
+  | 'netWorkingDays'
+  | 'officeWorkingDays'
+  | 'payableBasic'
+  | 'payableLaptop'
+  | 'payableMonth'
+  | 'dueInTally'
+  | 'additionInOffDue'
+  | 'cashOffDue'
+  | 'otherExtra'
+  | 'esiEmployer'
+  | 'esiEmployee'
+  | 'tds'
+  | 'advances'
+  | 'off'
+  | 'taReimbursement'
+  | 'lcReimbursement'
+  | 'laptopAdjustment'
+  | 'customEarnings'
+  | 'customDeductions'
+  | 'bankPayment'
+  | 'cashOff'
+  | 'diff'
+  | 'netSalary'
+>;
+
+/**
+ * Live totals from a saved payroll line plus unsaved override drafts.
+ * Does not persist. Uses the saved line's basic/laptop/leave days so article
+ * stipend and attendance stay as already generated.
+ */
+export function previewPayrollLineFromOverrides(
+  line: {
+    isArticle: boolean;
+    weekdaysWorking: number;
+    leavesConsumed: number;
+    weekoffWorking: number;
+    overtimeSuggested?: number;
+    basic: number;
+    laptop: number;
+  },
+  overrides: PayrollOverrides | undefined,
+  extraFields: PayrollExtraField[] | undefined,
+  calendar: { totalDays: number; sundays: number; ohd: number }
+): PayrollAmountPreview {
+  const o = overrides || {};
+  const isArticle = Boolean(line.isArticle);
+
+  const officeWorkingDays = overrideNum(
+    o.officeWorkingDays,
+    Math.max(0, calendar.totalDays - calendar.sundays - calendar.ohd)
+  );
+
+  let overtimeDays = 0;
+  if (!isArticle) {
+    const otOverride = o.overtimeDays;
+    if (otOverride != null && Number.isFinite(Number(otOverride))) {
+      overtimeDays = Math.max(0, Number(otOverride));
+    }
+  }
+
+  const leavesConsumed = isArticle ? 0 : Number(line.leavesConsumed || 0);
+  let netWorkingDays: number;
+  if (o.netWorkingDays != null && Number.isFinite(Number(o.netWorkingDays))) {
+    netWorkingDays = Number(o.netWorkingDays);
+  } else if (isArticle) {
+    netWorkingDays = round3(Number(line.weekdaysWorking || 0) + Number(line.weekoffWorking || 0));
+  } else {
+    netWorkingDays = round3(
+      Number(line.weekdaysWorking || 0) + leavesConsumed + Number(line.weekoffWorking || 0) + overtimeDays
+    );
+  }
+
+  const basic = Number(line.basic || 0);
+  const laptop = Number(line.laptop || 0);
+  const payableBasic =
+    officeWorkingDays > 0 ? roundToTen((basic * netWorkingDays) / officeWorkingDays) : 0;
+  const payableLaptop =
+    officeWorkingDays > 0 ? roundToTen((laptop * netWorkingDays) / officeWorkingDays) : 0;
+  const payableMonth = payableBasic + payableLaptop;
+
+  const dueInTally = overrideNum(o.dueInTally, payableMonth);
+  const additionInOffDue = overrideNum(o.additionInOffDue, 0);
+  const cashOffDue = payableMonth - dueInTally + additionInOffDue;
+
+  const otherExtra = overrideNum(o.otherExtra, 0);
+  const esiEmployer = overrideNum(o.esiEmployer, 0);
+  const esiEmployee = overrideNum(o.esiEmployee, 0);
+  const tds = overrideNum(o.tds, 0);
+  const advances = overrideNum(o.advances, 0);
+  const off = overrideNum(o.off, 0);
+  const taReimbursement = overrideNum(o.taReimbursement, 0);
+  const lcReimbursement = overrideNum(o.lcReimbursement, 0);
+  const laptopAdjustment = overrideNum(o.laptopAdjustment, 0);
+  const { earnings: customEarnings, deductions: customDeductions } = sumCustomExtras(
+    extraFields,
+    o.customAmounts
+  );
+
+  const extrasForBank =
+    otherExtra + esiEmployer + esiEmployee + tds + advances + customEarnings + customDeductions;
+  const bankPayment = dueInTally + extrasForBank;
+  const cashOff = cashOffDue + off;
+  const diff = bankPayment + cashOff - payableMonth - extrasForBank - off;
+
+  const income = payableBasic + payableLaptop + taReimbursement + lcReimbursement + customEarnings;
+  const deductions = advances + laptopAdjustment + customDeductions;
+  const netSalary = income - deductions;
+
+  return {
+    overtimeDays: round3(overtimeDays),
+    netWorkingDays: round3(netWorkingDays),
+    officeWorkingDays: round3(officeWorkingDays),
+    payableBasic,
+    payableLaptop,
+    payableMonth,
+    dueInTally,
+    additionInOffDue,
+    cashOffDue,
+    otherExtra,
+    esiEmployer,
+    esiEmployee,
+    tds,
+    advances,
+    off,
+    taReimbursement,
+    lcReimbursement,
+    laptopAdjustment,
+    customEarnings,
+    customDeductions,
+    bankPayment,
+    cashOff,
+    diff: round3(diff),
+    netSalary,
+  };
+}
+
 export function monthCalendar(monthYear: string, holidayDates: string[]): {
   totalDays: number;
   sundays: number;

@@ -96,19 +96,22 @@ export async function createMonthlySnapshots(monthYear?: string) {
     // Fetch user to read balanceAsOfJan26 as a fallback and employment info
     const user = await User.findById(uid).select('leaveBalance employmentType designation');
     const balanceAsOfJan26 = user?.leaveBalance?.balanceAsOfJan26 || 0;
+    const leaveAdjLwp = Number(user?.leaveBalance?.leaveAdjLwp || 0);
+    // Adj/LWP is a live scalar (not always a dated ledger row). Include it in the
+    // Jan-2026 opening so month-start B/F matches remaining = B/F + earned − used + adj.
+    const openingBaseline = balanceAsOfJan26 + leaveAdjLwp;
 
     // Try to read previous snapshot for canonical carry-forward
-    let balanceAsOfMonth = balanceAsOfJan26;
+    let balanceAsOfMonth = openingBaseline;
     try {
       const prevSnap = await LeaveSnapshot.findOne({ userId: uid, monthYear: prev });
       if (prevSnap) {
         balanceAsOfMonth = prevSnap.remainingAfter;
       } else {
-        // fallback to Jan-2026 baseline only when prev snapshot missing
-        balanceAsOfMonth = balanceAsOfJan26;
+        balanceAsOfMonth = openingBaseline;
       }
     } catch (e) {
-      balanceAsOfMonth = balanceAsOfJan26;
+      balanceAsOfMonth = openingBaseline;
     }
 
     let earnedThisMonth = monthVals.earned || 0;

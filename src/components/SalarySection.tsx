@@ -27,6 +27,8 @@ import {
   PAYROLL_BULK_BUILTIN_LABELS,
   normalizePayrollExtraFields,
   isPayrollLineFrozen,
+  previewPayrollLineFromOverrides,
+  type PayrollAmountPreview,
   type PayrollExtraField,
   type PayrollExtraKind,
   type PayrollGroup,
@@ -122,6 +124,40 @@ const WORKFLOW = ['Pick month & generate', 'Review or override', 'Export / email
 
 function uid(line: PayrollLine): string {
   return typeof line.userId === 'string' ? line.userId : String((line.userId as { _id?: string })?._id || line.userId);
+}
+
+function overrideSigValue(v: unknown): string {
+  if (v === null || v === undefined || v === '') return '';
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  return String(v);
+}
+
+function payrollOverridesSignature(o: PayrollOverrides | undefined): string {
+  const src = o || {};
+  const keys: Array<keyof PayrollOverrides> = [
+    'overtimeDays',
+    'netWorkingDays',
+    'officeWorkingDays',
+    'dueInTally',
+    'additionInOffDue',
+    'otherExtra',
+    'esiEmployer',
+    'esiEmployee',
+    'tds',
+    'advances',
+    'off',
+    'taReimbursement',
+    'lcReimbursement',
+    'laptopAdjustment',
+    'remarks',
+    'group',
+  ];
+  const parts = keys.map((k) => `${k}:${overrideSigValue(src[k])}`);
+  const custom = Object.entries(src.customAmounts || {})
+    .filter(([, v]) => v != null && v !== ('' as unknown))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `c:${k}:${overrideSigValue(v)}`);
+  return [...parts, ...custom].join('|');
 }
 
 type InvalidDayIssue = {
@@ -331,17 +367,49 @@ export const SalarySection: React.FC = () => {
     });
   }, [lines, search, groupFilter]);
 
+  const expandedLine = useMemo(
+    () => (expanded ? lines.find((l) => uid(l) === expanded) : undefined),
+    [expanded, lines]
+  );
+
+  const draftPreview = useMemo((): PayrollAmountPreview | null => {
+    if (!expandedLine || !doc?.calendar) return null;
+    return previewPayrollLineFromOverrides(
+      expandedLine,
+      draftOverrides,
+      extraFields,
+      doc.calendar
+    );
+  }, [expandedLine, draftOverrides, extraFields, doc?.calendar]);
+
+  const draftUnsaved = Boolean(
+    expandedLine &&
+      payrollOverridesSignature(draftOverrides) !== payrollOverridesSignature(expandedLine.overrides)
+  );
+
+  const displayLines = useMemo(() => {
+    if (!expanded || !draftPreview) return filtered;
+    return filtered.map((l) =>
+      uid(l) === expanded
+        ? {
+            ...l,
+            ...draftPreview,
+          }
+        : l
+    );
+  }, [filtered, expanded, draftPreview]);
+
   const stats = useMemo(() => {
-    const headcount = filtered.length;
-    const payable = filtered.reduce((s, l) => s + Number(l.payableMonth || 0), 0);
-    const bank = filtered.reduce((s, l) => s + Number(l.bankPayment || 0), 0);
-    const cash = filtered.reduce((s, l) => s + Number(l.cashOff || 0), 0);
-    const unsent = filtered.filter((l) => !l.payslipSentAt).length;
-    const frozen = filtered.filter((l) => l.frozen).length;
-    const withInvalid = filtered.filter((l) => (invalidByUser.get(uid(l))?.length || 0) > 0).length;
-    const withEmpty = filtered.filter((l) => (emptyByUser.get(uid(l))?.dates.length || 0) > 0).length;
+    const headcount = displayLines.length;
+    const payable = displayLines.reduce((s, l) => s + Number(l.payableMonth || 0), 0);
+    const bank = displayLines.reduce((s, l) => s + Number(l.bankPayment || 0), 0);
+    const cash = displayLines.reduce((s, l) => s + Number(l.cashOff || 0), 0);
+    const unsent = displayLines.filter((l) => !l.payslipSentAt).length;
+    const frozen = displayLines.filter((l) => l.frozen).length;
+    const withInvalid = displayLines.filter((l) => (invalidByUser.get(uid(l))?.length || 0) > 0).length;
+    const withEmpty = displayLines.filter((l) => (emptyByUser.get(uid(l))?.dates.length || 0) > 0).length;
     return { headcount, payable, bank, cash, unsent, frozen, withInvalid, withEmpty };
-  }, [filtered, invalidByUser, emptyByUser]);
+  }, [displayLines, invalidByUser, emptyByUser]);
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
@@ -662,7 +730,7 @@ export const SalarySection: React.FC = () => {
 
   const grouped = GROUPS.map((g) => ({
     group: g,
-    rows: filtered.filter((l) => l.group === g),
+    rows: displayLines.filter((l) => l.group === g),
   })).filter((g) => g.rows.length > 0);
 
   return (
@@ -762,9 +830,9 @@ export const SalarySection: React.FC = () => {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {[
           { label: 'People', value: String(stats.headcount), icon: Users },
-          { label: 'Gross payable', value: inr(stats.payable), icon: IndianRupee },
-          { label: 'Bank payment', value: inr(stats.bank), icon: IndianRupee },
-          { label: 'Cash off', value: inr(stats.cash), icon: IndianRupee },
+          { label: 'Gross payable', value: inr(stats.payable), icon: IndianRupee, preview: draftUnsaved },
+          { label: 'Bank payment', value: inr(stats.bank), icon: IndianRupee, preview: draftUnsaved },
+          { label: 'Cash off', value: inr(stats.cash), icon: IndianRupee, preview: draftUnsaved },
           { label: 'Unsent slips', value: String(stats.unsent), icon: Mail },
           { label: 'Frozen', value: String(stats.frozen), icon: Lock },
           { label: 'Invalid / missed', value: String(stats.withInvalid), icon: AlertTriangle, warn: stats.withInvalid > 0 },
@@ -772,6 +840,7 @@ export const SalarySection: React.FC = () => {
         ].map((c) => {
           const warn = 'warn' in c && c.warn;
           const empty = 'empty' in c && c.empty;
+          const preview = 'preview' in c && c.preview;
           return (
           <div
             key={c.label}
@@ -780,11 +849,14 @@ export const SalarySection: React.FC = () => {
                 ? 'border-amber-300 bg-amber-50'
                 : empty
                   ? 'border-rose-300 bg-rose-50'
-                  : 'border-blue-200/65 bg-panel'
+                  : preview
+                    ? 'border-amber-200 bg-amber-50/60'
+                    : 'border-blue-200/65 bg-panel'
             }`}
           >
             <p className={`text-xs font-medium uppercase tracking-wide ${warn ? 'text-amber-800' : empty ? 'text-rose-800' : 'text-slate-500'}`}>
               {c.label}
+              {preview ? <span className="ml-1 font-normal normal-case text-amber-800">· not saved</span> : null}
             </p>
             <p className={`mt-1 text-lg font-semibold ${warn ? 'text-amber-900' : empty ? 'text-rose-900' : 'text-slate-900'}`}>
               {c.value}
@@ -1075,6 +1147,7 @@ export const SalarySection: React.FC = () => {
                 {rows.map((line) => {
                   const id = uid(line);
                   const open = expanded === id;
+                  const unsavedRow = open && draftUnsaved;
                   const checkWarn = Math.abs(Number(line.checking || 0)) > 0.05;
                   const lineLocked = isPayrollLineFrozen(line, doc?.status);
                   const invalidDays = invalidByUser.get(id) || [];
@@ -1161,10 +1234,16 @@ export const SalarySection: React.FC = () => {
                           </div>
                         </td>
                         <td className="px-3 py-2">{line.weekdaysWorking}</td>
-                        <td className="px-3 py-2">{line.netWorkingDays}</td>
+                        <td className={`px-3 py-2 ${open && unsavedRow ? 'font-medium text-amber-900' : ''}`}>
+                          {line.netWorkingDays}
+                        </td>
                         <td className="px-3 py-2">{inr(line.basic)}</td>
-                        <td className="px-3 py-2 font-medium">{inr(line.payableMonth)}</td>
-                        <td className="px-3 py-2">{inr(line.bankPayment)}</td>
+                        <td className={`px-3 py-2 font-medium ${open && unsavedRow ? 'text-amber-900' : ''}`}>
+                          {inr(line.payableMonth)}
+                        </td>
+                        <td className={`px-3 py-2 ${open && unsavedRow ? 'font-medium text-amber-900' : ''}`}>
+                          {inr(line.bankPayment)}
+                        </td>
                         <td className={`px-3 py-2 ${Math.abs(line.diff) > 0.5 ? 'text-rose-700' : 'text-slate-500'}`}>
                           {line.diff}
                         </td>
@@ -1305,6 +1384,8 @@ export const SalarySection: React.FC = () => {
                               extraFields={extraFields}
                               draft={draftOverrides}
                               setDraft={setDraftOverrides}
+                              preview={uid(line) === expanded ? draftPreview : null}
+                              unsaved={uid(line) === expanded && draftUnsaved}
                               disabled={lineLocked}
                               saving={savingId === id}
                               onSave={() => void saveOverrides(line)}
@@ -1358,6 +1439,8 @@ function OverrideForm({
   extraFields,
   draft,
   setDraft,
+  preview,
+  unsaved,
   disabled,
   saving,
   onSave,
@@ -1369,6 +1452,8 @@ function OverrideForm({
   extraFields: PayrollExtraField[];
   draft: PayrollOverrides;
   setDraft: (o: PayrollOverrides) => void;
+  preview: PayrollAmountPreview | null;
+  unsaved: boolean;
   disabled: boolean;
   saving: boolean;
   onSave: () => void;
@@ -1399,7 +1484,7 @@ function OverrideForm({
     </label>
   );
   const otSuggested = Number(line.overtimeSuggested || 0);
-  const otInPay = Number(line.overtimeDays || 0);
+  const otInPay = Number(preview?.overtimeDays ?? line.overtimeDays ?? 0);
   const weekdayHours = Number(line.weekdayHours || 8);
   const excessHours = payrollExcessHours(line);
   const excessLabel = formatHoursMinutes(excessHours);
@@ -1407,9 +1492,47 @@ function OverrideForm({
   const netWithoutOt = Number(
     (Number(line.weekdaysWorking || 0) + Number(line.leavesConsumed || 0) + Number(line.weekoffWorking || 0)).toFixed(3)
   );
+  const payableMonth = Number(preview?.payableMonth ?? line.payableMonth ?? 0);
+  const bankPayment = Number(preview?.bankPayment ?? line.bankPayment ?? 0);
+  const cashOff = Number(preview?.cashOff ?? line.cashOff ?? 0);
+  const netWorkingDays = Number(preview?.netWorkingDays ?? line.netWorkingDays ?? 0);
+  const officeWorkingDays = Number(preview?.officeWorkingDays ?? line.officeWorkingDays ?? 0);
 
   return (
     <div className="space-y-4">
+      <div
+        className={`rounded-lg border px-3 py-2 ${
+          unsaved ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white'
+        }`}
+      >
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Upcoming totals</p>
+          {unsaved ? (
+            <span className="rounded border border-amber-200 bg-white px-1.5 py-0.5 text-[11px] font-medium text-amber-900">
+              Not saved
+            </span>
+          ) : (
+            <span className="text-[11px] text-slate-500">Saved</span>
+          )}
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <div>
+            <p className="text-[11px] text-slate-500">Payable</p>
+            <p className="text-sm font-semibold tabular-nums text-slate-900">{inr(payableMonth)}</p>
+          </div>
+          <div>
+            <p className="text-[11px] text-slate-500">Bank payment</p>
+            <p className="text-sm font-semibold tabular-nums text-slate-900">{inr(bankPayment)}</p>
+          </div>
+          <div>
+            <p className="text-[11px] text-slate-500">Cash off</p>
+            <p className="text-sm font-semibold tabular-nums text-slate-900">{inr(cashOff)}</p>
+          </div>
+        </div>
+        <p className="mt-1 text-[11px] text-slate-500">
+          Totals change as you type. They are not stored until you click Save overrides.
+        </p>
+      </div>
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
           <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Days in this salary</p>
@@ -1427,7 +1550,7 @@ function OverrideForm({
           />
           <div className="mt-1 flex items-baseline justify-between border-t border-slate-100 pt-1 text-xs font-semibold">
             <span>Net working days</span>
-            <span className="tabular-nums">{line.netWorkingDays}</span>
+            <span className="tabular-nums">{netWorkingDays}</span>
           </div>
           <p className="mt-1 text-[11px] text-slate-500">
             {line.isArticle
@@ -1487,14 +1610,14 @@ function OverrideForm({
       </div>
 
       <p className="text-xs text-slate-500">
-        Leave taken {line.leavesTaken} · C/F {line.leavesCf} · Office days {line.officeWorkingDays} · Checking {line.checking}
+        Leave taken {line.leavesTaken} · C/F {line.leavesCf} · Office days {officeWorkingDays} · Checking {line.checking}
         {Math.abs(Number(line.checking || 0)) > 0.05 ? ' (should be 0)' : ''}
       </p>
       <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {!line.isArticle && field('overtimeDays', 'Overtime days override', line.overtimeSuggested)}
-        {field('netWorkingDays', 'Net working days override', line.netWorkingDays)}
-        {field('officeWorkingDays', 'Office working days override', line.officeWorkingDays)}
-        {field('dueInTally', 'Due in tally', line.payableMonth)}
+        {field('netWorkingDays', 'Net working days override', netWorkingDays)}
+        {field('officeWorkingDays', 'Office working days override', officeWorkingDays)}
+        {field('dueInTally', 'Due in tally', payableMonth)}
         {field('additionInOffDue', 'Addition in off due', 0)}
         {field('advances', 'Advances', 0)}
         {field('tds', 'TDS', 0)}
@@ -1546,7 +1669,9 @@ function OverrideForm({
           {saving ? 'Saving…' : 'Save overrides'}
         </button>
         <span className="text-xs text-slate-500">
-          Overtime stays out of pay until you approve it. Other blank fields keep the calculated value.
+          {unsaved
+            ? 'Upcoming totals above are a preview only. Click Save overrides to store them.'
+            : 'Overtime stays out of pay until you approve it. Other blank fields keep the calculated value.'}
         </span>
       </div>
     </div>

@@ -143,21 +143,19 @@ export async function POST(request: NextRequest) {
           },
         });
         console.log(`[LEAVE DEBUG] Created new attendance record for ${attendanceRequest.monthYear}`);
+      }
 
-        // Credit monthly base earned leave for this new attendance record.
-        // Idempotent per user+month (ledger-based); no-ops for pre-2026, inactive, and articles.
-        try {
-          const res = await creditMonthlyEarnedIfNeeded(
-            attendanceRequest.userId,
-            attendanceRequest.monthYear,
-            attendanceRequest._id?.toString()
-          );
-          console.log(`[LEAVE DEBUG] Monthly earned credit for ${attendanceRequest.monthYear}: credited=${res.credited}, amount=${res.amount}`);
-        } catch (e) {
-          console.error('Failed to credit monthly earned leave on approval', e);
-        }
-      } else {
-        console.log(`[LEAVE DEBUG] Attendance record already exists for ${attendanceRequest.monthYear} - no increment`);
+      // Credit monthly earn before paid/unpaid classification, including when
+      // Attendance already exists (first upload may have skipped earn-before-allocate).
+      try {
+        const res = await creditMonthlyEarnedIfNeeded(
+          attendanceRequest.userId,
+          attendanceRequest.monthYear,
+          attendanceRequest._id?.toString()
+        );
+        console.log(`[LEAVE DEBUG] Monthly earned credit for ${attendanceRequest.monthYear}: credited=${res.credited}, amount=${res.amount}`);
+      } catch (e) {
+        console.error('Failed to credit monthly earned leave on approval', e);
       }
 
       // Get existing record for the date or create new (matching bulk-action pattern)

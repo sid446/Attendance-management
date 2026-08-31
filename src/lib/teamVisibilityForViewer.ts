@@ -137,6 +137,18 @@ function teamAccessRuleAllowsApproval(rule: { canApproveRequests?: boolean } | n
   return !rule || rule.canApproveRequests !== false;
 }
 
+function teamAccessRuleAllowsSelfApproval(
+  rule: { canApproveRequests?: boolean; canApproveSelf?: boolean } | null | undefined
+): boolean {
+  return teamAccessRuleAllowsApproval(rule) && rule?.canApproveSelf === true;
+}
+
+export async function viewerMayApproveOwnRequests(viewerUserId: string): Promise<boolean> {
+  if (!viewerUserId) return false;
+  const rule = await TeamAttendanceAccess.findOne({ viewerUserId }).lean();
+  return teamAccessRuleAllowsSelfApproval(rule);
+}
+
 export async function viewerAccessAllowsRequestApproval(viewerUserId: string): Promise<boolean> {
   if (!viewerUserId) return true;
   const rule = await TeamAttendanceAccess.findOne({ viewerUserId }).lean();
@@ -147,16 +159,21 @@ export async function viewerAccessAllowsRequestApproval(viewerUserId: string): P
  * Members whose attendance requests this viewer may review/approve.
  * Official attendance-email inbox is always included.
  * Extra Team Attendance Access people are included only when canApproveRequests is on.
+ * The viewer themself is excluded unless canApproveSelf is on.
  */
 export async function getApprovableTeamMembersForViewer(
   viewerUserId: string
 ): Promise<VisibleTeamMember[]> {
   const rule = await TeamAttendanceAccess.findOne({ viewerUserId }).lean();
-  if (teamAccessRuleAllowsApproval(rule)) {
-    const { members } = await getVisibleTeamMembersForViewer(viewerUserId);
+  const members = teamAccessRuleAllowsApproval(rule)
+    ? (await getVisibleTeamMembersForViewer(viewerUserId)).members
+    : await getApproverInboxMembersForViewer(viewerUserId);
+
+  if (teamAccessRuleAllowsSelfApproval(rule)) {
     return members;
   }
-  return getApproverInboxMembersForViewer(viewerUserId);
+
+  return members.filter((member) => member._id !== viewerUserId);
 }
 
 /** Employees whose attendanceEmail matches the viewer's login email. */

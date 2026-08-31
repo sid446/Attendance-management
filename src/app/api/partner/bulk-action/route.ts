@@ -216,8 +216,6 @@ export async function POST(request: NextRequest) {
             if (action === 'approve' && !deferredToHrOnly) {
                 // Update Attendance Logic
                 let attendance = await Attendance.findOne({ userId, monthYear });
-                const isNewAttendanceRecord = !attendance;
-                
                 if (!attendance) {
                     attendance = new Attendance({
                         userId,
@@ -225,17 +223,17 @@ export async function POST(request: NextRequest) {
                         records: new Map(),
                         summary: { totalHour: 0, totalLateArrival: 0, excessHour: 0, totalHalfDay: 0, totalPresent: 0, totalAbsent: 0, totalLeave: 0 }
                     });
+                }
 
-                    // Credit monthly base earned leave for this new attendance record.
-                    // Idempotent per user+month (ledger-based); no-ops for pre-2026, inactive, and articles.
-                    try {
-                        const res = await creditMonthlyEarnedIfNeeded(userId, monthYear, reqRecord._id?.toString());
-                        if (res.credited) {
-                            console.log(`Leave balance incremented for user ${userId} (new attendance record via bulk approval for ${monthYear})`);
-                        }
-                    } catch (e) {
-                        console.error('Failed to credit monthly earned leave on bulk approval', e);
+                // Credit monthly earn before paid/unpaid classification, even if
+                // Attendance already exists for the month.
+                try {
+                    const res = await creditMonthlyEarnedIfNeeded(userId, monthYear, reqRecord._id?.toString());
+                    if (res.credited) {
+                        console.log(`Leave balance incremented for user ${userId} (bulk approval for ${monthYear})`);
                     }
+                } catch (e) {
+                    console.error('Failed to credit monthly earned leave on bulk approval', e);
                 }
 
                 let rec = attendance.records.get(date);

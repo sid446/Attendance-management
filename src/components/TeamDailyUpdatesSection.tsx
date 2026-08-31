@@ -13,13 +13,19 @@ import {
   UserRound,
 } from "lucide-react";
 import { employeeCredentialsInit } from "@/lib/employeeCredentialsInit";
-import { EmployeeSummaryMonthPicker } from "@/components/EmployeeSummaryMonthPicker";
 import { istDateString } from "@/lib/attendanceRequestWindow";
 import {
   DAILY_UPDATE_GROUP_META,
+  TEAM_DAILY_UPDATES_MAX_RANGE_DAYS,
+  clampDailyUpdateRange,
+  enumerateYyyyMmDd,
+  formatDailyUpdateRangeLabel,
   groupDailyUpdates,
+  mergeConsecutiveDailyUpdates,
+  shiftIstYyyyMmDd,
   type TeamDailyUpdateCategory,
   type TeamDailyUpdateEntry,
+  type TeamDailyUpdateRangeEntry,
 } from "@/lib/teamDailyUpdates";
 
 interface TeamDailyUpdatesSectionProps {
@@ -33,6 +39,8 @@ interface TeamDailyUpdatesSectionProps {
 
 interface DailyUpdatesPayload {
   date: string;
+  from: string;
+  to: string;
   entries: TeamDailyUpdateEntry[];
   summary: {
     total: number;
@@ -40,24 +48,6 @@ interface DailyUpdatesPayload {
     away: number;
     pending: number;
   };
-}
-
-function shiftIstDate(date: string, deltaDays: number): string {
-  const parsed = new Date(`${date}T12:00:00+05:30`);
-  if (Number.isNaN(parsed.getTime())) return istDateString();
-  parsed.setDate(parsed.getDate() + deltaDays);
-  return istDateString(parsed);
-}
-
-function clampDateToMonthYear(date: string, monthYear: string): string {
-  if (!/^\d{4}-\d{2}$/.test(monthYear)) return date;
-  const dayNum = parseInt(date.slice(8, 10), 10);
-  const day = Number.isFinite(dayNum) && dayNum >= 1 ? dayNum : 1;
-  const [ys, ms] = monthYear.split("-");
-  const y = parseInt(ys, 10);
-  const m = parseInt(ms, 10);
-  const lastDay = new Date(y, m, 0).getDate();
-  return `${monthYear}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
 }
 
 function istWeekdayIndex(date: string): number {
@@ -73,40 +63,21 @@ function istWeekdayIndex(date: string): number {
 function startOfIstWeek(date: string): string {
   const weekday = istWeekdayIndex(date);
   const mondayOffset = weekday === 0 ? -6 : 1 - weekday;
-  return shiftIstDate(date, mondayOffset);
+  return shiftIstYyyyMmDd(date, mondayOffset);
 }
 
-function formatWeekdayShort(date: string): string {
-  return new Date(`${date}T12:00:00+05:30`).toLocaleDateString("en-IN", {
-    weekday: "short",
-    timeZone: "Asia/Kolkata",
-  });
-}
-
-function formatDayNum(date: string): string {
-  return new Date(`${date}T12:00:00+05:30`).toLocaleDateString("en-IN", {
-    day: "numeric",
-    timeZone: "Asia/Kolkata",
-  });
-}
-
-function formatDateHeading(date: string): string {
-  const d = new Date(`${date}T12:00:00+05:30`);
-  if (Number.isNaN(d.getTime())) return date;
+function formatDateHeading(from: string, to: string): string {
   const today = istDateString();
-  const yesterday = shiftIstDate(today, -1);
-  const tomorrow = shiftIstDate(today, 1);
-  const formatted = d.toLocaleDateString("en-IN", {
-    weekday: "long",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    timeZone: "Asia/Kolkata",
-  });
-  if (date === today) return `Today · ${formatted}`;
-  if (date === yesterday) return `Yesterday · ${formatted}`;
-  if (date === tomorrow) return `Tomorrow · ${formatted}`;
-  return formatted;
+  if (from === to) {
+    const yesterday = shiftIstYyyyMmDd(today, -1);
+    const tomorrow = shiftIstYyyyMmDd(today, 1);
+    const formatted = formatDailyUpdateRangeLabel(from, to);
+    if (from === today) return `Today · ${formatted}`;
+    if (from === yesterday) return `Yesterday · ${formatted}`;
+    if (from === tomorrow) return `Tomorrow · ${formatted}`;
+    return formatted;
+  }
+  return formatDailyUpdateRangeLabel(from, to);
 }
 
 function groupIcon(category: TeamDailyUpdateCategory) {
@@ -183,24 +154,39 @@ const DISPLAY_ORDER: TeamDailyUpdateCategory[] = [
   "pending_hr",
 ];
 
+const DATE_INPUT_CLASS =
+  "w-full rounded-lg border border-border bg-background px-2 py-2 text-sm text-foreground disabled:opacity-50";
+
 export function TeamDailyUpdatesSection({
   viewerUserId,
   onSelectMember,
   showHeader = true,
   onLoaded,
 }: TeamDailyUpdatesSectionProps) {
-  const [date, setDate] = useState(() => istDateString());
+  const [fromDate, setFromDate] = useState(() => istDateString());
+  const [toDate, setToDate] = useState(() => istDateString());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [payload, setPayload] = useState<DailyUpdatesPayload | null>(null);
+
+  const applyRange = useCallback((nextFrom: string, nextTo: string) => {
+    const clamped = clampDailyUpdateRange(nextFrom, nextTo);
+    setFromDate(clamped.from);
+    setToDate(clamped.to);
+  }, []);
 
   const fetchUpdates = useCallback(async () => {
     if (!viewerUserId) return;
     setLoading(true);
     setError(null);
     try {
+      const params = new URLSearchParams({
+        viewerUserId,
+        from: fromDate,
+        to: toDate,
+      });
       const res = await fetch(
-        `/api/employee/team-daily-updates?viewerUserId=${encodeURIComponent(viewerUserId)}&date=${encodeURIComponent(date)}`,
+        `/api/employee/team-daily-updates?${params.toString()}`,
         employeeCredentialsInit({ cache: "no-store" })
       );
       const json = await res.json();
@@ -208,7 +194,11 @@ export function TeamDailyUpdatesSection({
         throw new Error(json.error || "Failed to load daily updates");
       }
       const data = json.data as DailyUpdatesPayload;
-      setPayload(data);
+      setPayload({
+        ...data,
+        from: data.from || data.date,
+        to: data.to || data.date,
+      });
       onLoaded?.(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
@@ -216,113 +206,138 @@ export function TeamDailyUpdatesSection({
     } finally {
       setLoading(false);
     }
-  }, [viewerUserId, date, onLoaded]);
+  }, [viewerUserId, fromDate, toDate, onLoaded]);
 
   useEffect(() => {
     void fetchUpdates();
   }, [fetchUpdates]);
 
-  const grouped = useMemo(
-    () => groupDailyUpdates(payload?.entries ?? []),
+  const rangeEntries = useMemo(
+    () => mergeConsecutiveDailyUpdates(payload?.entries ?? []),
     [payload?.entries]
   );
+
+  const grouped = useMemo(() => groupDailyUpdates(rangeEntries), [rangeEntries]);
 
   const visibleGroups = DISPLAY_ORDER.filter((key) => grouped[key].length > 0);
 
   const today = istDateString();
-  const weekDates = useMemo(() => {
-    const start = startOfIstWeek(date);
-    return Array.from({ length: 7 }, (_, i) => shiftIstDate(start, i));
-  }, [date]);
+  const isSingleDay = fromDate === toDate;
+  const isTodayRange = fromDate === today && toDate === today;
+  const rangeDayCount = enumerateYyyyMmDd(fromDate, toDate).length || 1;
+  const rangeHeading = formatDateHeading(fromDate, toDate);
+
+  const shiftRange = (direction: -1 | 1) => {
+    applyRange(
+      shiftIstYyyyMmDd(fromDate, direction * rangeDayCount),
+      shiftIstYyyyMmDd(toDate, direction * rangeDayCount)
+    );
+  };
+
+  const setThisWeek = () => {
+    const start = startOfIstWeek(today);
+    applyRange(start, shiftIstYyyyMmDd(start, 6));
+  };
+
+  const setNextSevenDays = () => {
+    applyRange(today, shiftIstYyyyMmDd(today, 6));
+  };
 
   const periodSelection = (
-    <div className="space-y-3">
-      <EmployeeSummaryMonthPicker
-        monthYear={date.slice(0, 7)}
-        onMonthYearChange={(monthYear) => setDate((current) => clampDateToMonthYear(current, monthYear))}
-        disabled={loading}
-        label="Period"
-      />
-      <div className="rounded-xl border border-border bg-surface p-3 sm:p-4">
-        <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Day
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setDate((d) => shiftIstDate(d, -1))}
-            disabled={loading}
-            className="rounded-lg border border-border bg-background p-2 text-foreground hover:bg-surface/70 disabled:cursor-not-allowed disabled:opacity-50"
-            aria-label="Previous day"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <label className="sr-only" htmlFor="daily-updates-date">
-            Select date
+    <div className="rounded-xl border border-border bg-surface p-3 sm:p-4">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label htmlFor="daily-updates-from" className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            From
           </label>
           <input
-            id="daily-updates-date"
+            id="daily-updates-from"
             type="date"
-            value={date}
+            value={fromDate}
             onChange={(e) => {
               const next = e.target.value;
-              if (/^\d{4}-\d{2}-\d{2}$/.test(next)) setDate(next);
+              if (/^\d{4}-\d{2}-\d{2}$/.test(next)) applyRange(next, toDate);
             }}
             disabled={loading}
-            className="rounded-lg border border-border bg-background px-2 py-2 text-sm text-foreground disabled:opacity-50"
+            className={DATE_INPUT_CLASS}
           />
-          <button
-            type="button"
-            onClick={() => setDate((d) => shiftIstDate(d, 1))}
-            disabled={loading}
-            className="rounded-lg border border-border bg-background p-2 text-foreground hover:bg-surface/70 disabled:cursor-not-allowed disabled:opacity-50"
-            aria-label="Next day"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-          {date !== today && (
-            <button
-              type="button"
-              onClick={() => setDate(today)}
-              disabled={loading}
-              className="rounded-lg border border-border bg-background px-2.5 py-2 text-xs font-medium text-foreground hover:bg-surface/70 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Today
-            </button>
-          )}
-          <p className="min-w-0 flex-1 text-sm font-medium text-foreground sm:text-right">
-            {formatDateHeading(date)}
-          </p>
         </div>
-        <div className="mt-3 grid grid-cols-7 gap-1" role="group" aria-label="Week">
-          {weekDates.map((weekDate) => {
-            const selected = weekDate === date;
-            const isToday = weekDate === today;
-            return (
-              <button
-                key={weekDate}
-                type="button"
-                onClick={() => setDate(weekDate)}
-                disabled={loading}
-                className={`rounded-lg border px-1 py-2 text-center disabled:cursor-not-allowed disabled:opacity-50 ${
-                  selected
-                    ? "border-sky-500/50 bg-sky-950/30 text-foreground shadow-sm"
-                    : isToday
-                      ? "border-border bg-background text-foreground hover:bg-surface/70"
-                      : "border-transparent bg-background/60 text-muted-foreground hover:border-border hover:bg-surface/70 hover:text-foreground"
-                }`}
-                aria-pressed={selected}
-                aria-label={formatDateHeading(weekDate)}
-              >
-                <span className="block text-[10px] font-medium uppercase tracking-wide">
-                  {formatWeekdayShort(weekDate)}
-                </span>
-                <span className="mt-0.5 block text-sm font-semibold">{formatDayNum(weekDate)}</span>
-              </button>
-            );
-          })}
+        <div>
+          <label htmlFor="daily-updates-to" className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            To
+          </label>
+          <input
+            id="daily-updates-to"
+            type="date"
+            value={toDate}
+            onChange={(e) => {
+              const next = e.target.value;
+              if (/^\d{4}-\d{2}-\d{2}$/.test(next)) applyRange(fromDate, next);
+            }}
+            disabled={loading}
+            className={DATE_INPUT_CLASS}
+          />
         </div>
       </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => shiftRange(-1)}
+          disabled={loading}
+          className="rounded-lg border border-border bg-background p-2 text-foreground hover:bg-surface/70 disabled:cursor-not-allowed disabled:opacity-50"
+          aria-label="Previous period"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => shiftRange(1)}
+          disabled={loading}
+          className="rounded-lg border border-border bg-background p-2 text-foreground hover:bg-surface/70 disabled:cursor-not-allowed disabled:opacity-50"
+          aria-label="Next period"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+        {!isTodayRange && (
+          <button
+            type="button"
+            onClick={() => applyRange(today, today)}
+            disabled={loading}
+            className="rounded-lg border border-border bg-background px-2.5 py-2 text-xs font-medium text-foreground hover:bg-surface/70 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Today
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={setThisWeek}
+          disabled={loading}
+          className="rounded-lg border border-border bg-background px-2.5 py-2 text-xs font-medium text-foreground hover:bg-surface/70 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          This week
+        </button>
+        <button
+          type="button"
+          onClick={setNextSevenDays}
+          disabled={loading}
+          className="rounded-lg border border-border bg-background px-2.5 py-2 text-xs font-medium text-foreground hover:bg-surface/70 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Next 7 days
+        </button>
+        <p className="min-w-0 flex-1 text-sm font-medium text-foreground sm:text-right">
+          {rangeHeading}
+          {rangeDayCount > 1 && (
+            <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+              · {rangeDayCount} days
+            </span>
+          )}
+        </p>
+      </div>
+      {rangeDayCount >= TEAM_DAILY_UPDATES_MAX_RANGE_DAYS && (
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          Range is limited to {TEAM_DAILY_UPDATES_MAX_RANGE_DAYS} days.
+        </p>
+      )}
     </div>
   );
 
@@ -339,13 +354,15 @@ export function TeamDailyUpdatesSection({
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
             Loading team updates…
           </div>
-        ) : !payload || payload.entries.length === 0 ? (
+        ) : !payload || rangeEntries.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border py-10 text-center">
             <CalendarDays className="mx-auto h-8 w-8 text-muted-foreground/70" aria-hidden />
-            <p className="mt-3 text-sm font-medium text-foreground">No updates for this day</p>
+            <p className="mt-3 text-sm font-medium text-foreground">
+              {isSingleDay ? "No updates for this day" : "No updates for this period"}
+            </p>
             <p className="mt-1 text-sm text-muted-foreground">
               No approved leave, WFH, travel, or pending requests for your visible team on{" "}
-              {date}.
+              {rangeHeading}.
             </p>
           </div>
         ) : (
@@ -399,18 +416,18 @@ export function TeamDailyUpdatesSection({
                     </div>
                     <ul className="divide-y divide-border/70">
                       {rows.map((entry) => (
-                        <li key={`${entry.userId}:${entry.requestedStatus}:${entry.requestStatus}`}>
+                        <li key={`${entry.userId}:${entry.dateFrom}:${entry.dateTo}:${entry.requestedStatus}:${entry.requestStatus}`}>
                           {onSelectMember ? (
                             <button
                               type="button"
                               onClick={() => onSelectMember(entry.userId)}
                               className="flex w-full items-start gap-3 bg-background/30 px-3 py-3 text-left hover:bg-background/60 sm:px-4"
                             >
-                              <EntryBody entry={entry} />
+                              <EntryBody entry={entry} showDates={!isSingleDay} />
                             </button>
                           ) : (
                             <div className="flex items-start gap-3 bg-background/30 px-3 py-3 sm:px-4">
-                              <EntryBody entry={entry} />
+                              <EntryBody entry={entry} showDates={!isSingleDay} />
                             </div>
                           )}
                         </li>
@@ -440,7 +457,7 @@ export function TeamDailyUpdatesSection({
         <h2 className="text-lg font-semibold tracking-tight text-foreground">Daily updates</h2>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
           Who on your team is on leave, WFH, outstation, or has an approved or pending request
-          for the selected day (IST).
+          for the selected dates (IST).
         </p>
         <div className="mt-4">{periodSelection}</div>
       </header>
@@ -469,7 +486,13 @@ function statusBadgeLabel(entry: TeamDailyUpdateEntry): string {
   return entry.approvedBy ? `By ${entry.approvedBy}` : "Approved";
 }
 
-function EntryBody({ entry }: { entry: TeamDailyUpdateEntry }) {
+function EntryBody({
+  entry,
+  showDates,
+}: {
+  entry: TeamDailyUpdateRangeEntry;
+  showDates: boolean;
+}) {
   return (
     <>
       <div className="min-w-0 flex-1">
@@ -477,6 +500,11 @@ function EntryBody({ entry }: { entry: TeamDailyUpdateEntry }) {
         <div className="text-xs text-muted-foreground">
           {entry.odId || entry.employeeCode || "—"}
         </div>
+        {showDates && (
+          <div className="mt-1 text-xs font-medium text-foreground">
+            {formatDailyUpdateRangeLabel(entry.dateFrom, entry.dateTo)}
+          </div>
+        )}
         <div className="mt-1 text-sm text-foreground">{entry.label}</div>
         {(entry.startTime || entry.endTime) && (
           <div className="mt-0.5 text-xs text-muted-foreground">

@@ -16,9 +16,10 @@
  *
  * 4. Attendance records: Absent / On leave (value 0 = unpaid, 1 = paid)
  *
- * Upload allocation: absent candidates sorted by date; earliest days consume balance
- * → On leave, rest Absent. This module replays that same allocation across all stored
- * attendance, then rebuilds transactions, user balances, and snapshots.
+ * Upload allocation: monthly earn is credited first; then absent candidates sorted
+ * by date; earliest days consume balance → On leave, rest Absent. This module
+ * replays that same allocation across all stored attendance, then rebuilds
+ * transactions, user balances, and snapshots.
  */
 
 import mongoose from 'mongoose';

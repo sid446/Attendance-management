@@ -973,6 +973,32 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Credit monthly earn BEFORE paid/unpaid allocation. Previously this ran
+      // after leave classification, so first-of-month leave days were judged
+      // against last month's remaining only (e.g. June 2 + July +2 unused →
+      // 4 July leaves became 2 paid / 2 unpaid).
+      const monthsToCredit = new Set<string>(newAttendanceUserMonths);
+      for (const [uid, dateSet] of uploadedLeaveCandidates.entries()) {
+        for (const date of dateSet) {
+          monthsToCredit.add(`${uid}_${String(date).slice(0, 7)}`);
+        }
+      }
+      try {
+        let incrementedCount = 0;
+        for (const userMonthKey of monthsToCredit) {
+          const lastUnderscore = userMonthKey.lastIndexOf('_');
+          const userId = userMonthKey.slice(0, lastUnderscore);
+          const monthYear = userMonthKey.slice(lastUnderscore + 1);
+          const res = await creditMonthlyEarnedIfNeeded(userId, monthYear);
+          if (res.credited) incrementedCount++;
+        }
+        console.log(
+          `Leave balance incremented for ${incrementedCount} users (before leave allocation, month >= Jan 2026)`
+        );
+      } catch (leaveError) {
+        console.error('Error incrementing leave balance before allocation:', leaveError);
+      }
+
       // Apply leave-credit allocation for uploaded Absent/On leave days:
       // earliest dates consume leave first; paid ones become On leave, rest stay Absent.
       if (uploadedLeaveCandidates.size > 0) {
@@ -1082,17 +1108,22 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Credit monthly base earned leave for users who got their FIRST attendance record
-      // for this month. creditMonthlyEarnedIfNeeded is idempotent per user+month (ledger-based)
-      // and no-ops for pre-2026 months, inactive users, and articles.
+      // Safety net: credit any first-attendance user-months that had no leave
+      // candidates (already credited above when they did). Idempotent.
       try {
         let incrementedCount = 0;
         for (const userMonthKey of newAttendanceUserMonths) {
-          const [userId, monthYear] = userMonthKey.split('_');
+          const lastUnderscore = userMonthKey.lastIndexOf('_');
+          const userId = userMonthKey.slice(0, lastUnderscore);
+          const monthYear = userMonthKey.slice(lastUnderscore + 1);
           const res = await creditMonthlyEarnedIfNeeded(userId, monthYear);
           if (res.credited) incrementedCount++;
         }
-        console.log(`Leave balance incremented for ${incrementedCount} users (first time attendance upload for month >= Jan 2026)`);
+        if (incrementedCount > 0) {
+          console.log(
+            `Leave balance incremented for ${incrementedCount} additional users after leave allocation`
+          );
+        }
       } catch (leaveError) {
         console.error('Error incrementing leave balance:', leaveError);
         // Don't fail the upload if leave increment fails

@@ -3,6 +3,7 @@ import {
   getApprovableTeamMembersForViewer,
   getVisibleTeamMembersForViewer,
   viewerAccessAllowsRequestApproval,
+  viewerMayApproveOwnRequests,
 } from '@/lib/teamVisibilityForViewer';
 
 export function normalizePartnerName(name: string): string {
@@ -53,6 +54,10 @@ export async function isAuthorizedPartnerForRequest(
   const partnerEmail = String(claims.partnerEmail || '').trim().toLowerCase();
   if (requestApproverEmail && partnerEmail && requestApproverEmail === partnerEmail) {
     return true;
+  }
+
+  if (viewerUserId && String(reqRecord.userId || '') === String(viewerUserId)) {
+    return viewerMayApproveOwnRequests(viewerUserId);
   }
 
   if (viewerUserId) {

@@ -7,6 +7,8 @@ export interface ITeamAttendanceAccess extends Document {
   extraPartnerNames: string[];
   /** When true, viewer may approve attendance requests for people they can see. */
   canApproveRequests: boolean;
+  /** When true, viewer may approve their own attendance. Independent of include-self viewing. */
+  canApproveSelf: boolean;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -41,6 +43,10 @@ const TeamAttendanceAccessSchema = new Schema(
       type: Boolean,
       default: true,
     },
+    canApproveSelf: {
+      type: Boolean,
+      default: false,
+    },
     isActive: {
       type: Boolean,
       default: true,
@@ -58,6 +64,12 @@ const TeamAttendanceAccess: Model<ITeamAttendanceAccess> =
 if (!TeamAttendanceAccess.schema.path('canApproveRequests')) {
   TeamAttendanceAccess.schema.add({
     canApproveRequests: { type: Boolean, default: true },
+  });
+}
+
+if (!TeamAttendanceAccess.schema.path('canApproveSelf')) {
+  TeamAttendanceAccess.schema.add({
+    canApproveSelf: { type: Boolean, default: false },
   });
 }
 

@@ -69,6 +69,7 @@ export async function POST(request: NextRequest) {
       extraUserIds: normalizeObjectIdArray(body?.extraUserIds),
       extraPartnerNames: normalizeStringArray(body?.extraPartnerNames),
       canApproveRequests: body?.canApproveRequests !== false,
+      canApproveSelf: body?.canApproveRequests !== false && body?.canApproveSelf === true,
       isActive: body?.isActive !== false,
     };
 

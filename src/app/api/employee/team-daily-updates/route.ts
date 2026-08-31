@@ -8,7 +8,11 @@ import { forbidUnlessSelf, requireEmployeeSession } from '@/lib/employeeRouteAut
 import { getVisibleTeamMembersForViewer } from '@/lib/teamVisibilityForViewer';
 import {
   categorizePresenceStatus,
+  clampDailyUpdateRange,
+  enumerateYyyyMmDd,
   formatDailyUpdateLabel,
+  isYyyyMmDd,
+  monthYearsInRange,
   type TeamDailyUpdateEntry,
 } from '@/lib/teamDailyUpdates';
 
@@ -58,7 +62,15 @@ function attendanceEntryForDate(
     requestedStatus: t,
     requestStatus: 'Attendance',
     source: 'attendance',
+    date,
   };
+}
+
+function uniqueUserCount(
+  entries: TeamDailyUpdateEntry[],
+  predicate: (entry: TeamDailyUpdateEntry) => boolean
+): number {
+  return new Set(entries.filter(predicate).map((e) => e.userId)).size;
 }
 
 export async function GET(request: NextRequest) {
@@ -73,36 +85,53 @@ export async function GET(request: NextRequest) {
     if (forbidden) return forbidden;
 
     const dateParam = String(request.nextUrl.searchParams.get('date') || '').trim();
-    const date = /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : istDateString();
+    const fromParam = String(request.nextUrl.searchParams.get('from') || '').trim();
+    const toParam = String(request.nextUrl.searchParams.get('to') || '').trim();
+    const today = istDateString();
+    const singleDate = isYyyyMmDd(dateParam) ? dateParam : today;
+    const { from, to } = clampDailyUpdateRange(
+      isYyyyMmDd(fromParam) ? fromParam : singleDate,
+      isYyyyMmDd(toParam) ? toParam : isYyyyMmDd(fromParam) ? fromParam : singleDate
+    );
+    const date = from;
+    const monthYears = monthYearsInRange(from, to);
+    const datesInRange = enumerateYyyyMmDd(from, to);
 
     if (!mongoose.Types.ObjectId.isValid(viewerUserId)) {
       return NextResponse.json({ success: false, error: 'Valid viewerUserId is required' }, { status: 400 });
     }
 
+    const emptyPayload = {
+      date,
+      from,
+      to,
+      entries: [] as TeamDailyUpdateEntry[],
+      summary: { total: 0, onLeave: 0, away: 0, pending: 0 },
+    };
+
     const { members } = await getVisibleTeamMembersForViewer(viewerUserId);
     if (members.length === 0) {
       return NextResponse.json({
         success: true,
-        data: { date, entries: [], summary: { total: 0, onLeave: 0, away: 0, pending: 0 } },
+        data: emptyPayload,
       });
     }
 
     const memberById = new Map(members.map((m) => [m._id, m]));
     const memberIds = members.map((m) => m._id);
-    const monthYear = date.slice(0, 7);
 
     const [requests, attendanceDocs] = await Promise.all([
       AttendanceRequest.find({
         userId: { $in: memberIds },
-        date,
+        date: { $gte: from, $lte: to },
         status: { $in: ['Approved', 'Pending', 'PendingHr'] },
       })
         .select(
           'userId userName date requestedStatus status reason startTime endTime approvedBy approvedAt'
         )
-        .sort({ userName: 1 })
+        .sort({ date: 1, userName: 1 })
         .lean(),
-      Attendance.find({ userId: { $in: memberIds }, monthYear })
+      Attendance.find({ userId: { $in: memberIds }, monthYear: { $in: monthYears } })
         .select('userId records')
         .lean(),
     ]);
@@ -115,7 +144,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const coveredUserIds = new Set<string>();
+    const coveredUserDates = new Set<string>();
     const entries: TeamDailyUpdateEntry[] = [];
 
     for (const req of requests) {
@@ -123,7 +152,10 @@ export async function GET(request: NextRequest) {
       const member = memberById.get(userId);
       if (!member) continue;
 
-      coveredUserIds.add(userId);
+      const reqDate = String(req.date || '');
+      if (!isYyyyMmDd(reqDate) || reqDate < from || reqDate > to) continue;
+
+      coveredUserDates.add(`${userId}:${reqDate}`);
       const requestedStatus = String(req.requestedStatus || '');
       let category = categorizePresenceStatus(requestedStatus);
       const status = String(req.status || '');
@@ -142,6 +174,7 @@ export async function GET(request: NextRequest) {
         requestedStatus,
         requestStatus: status as TeamDailyUpdateEntry['requestStatus'],
         source: 'request',
+        date: reqDate,
         approvedBy: req.approvedBy ? String(req.approvedBy) : undefined,
         reason: req.reason ? String(req.reason) : undefined,
         startTime: req.startTime ? String(req.startTime) : undefined,
@@ -149,33 +182,41 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    for (const member of members) {
-      if (coveredUserIds.has(member._id)) continue;
-      const fromAttendance = attendanceEntryForDate(member._id, date, attendanceByUser);
-      if (!fromAttendance) continue;
-      entries.push({
-        ...fromAttendance,
-        userId: member._id,
-        name: member.name,
-        odId: member.odId,
-        employeeCode: member.employeeCode,
-      });
+    for (const day of datesInRange) {
+      for (const member of members) {
+        if (coveredUserDates.has(`${member._id}:${day}`)) continue;
+        const fromAttendance = attendanceEntryForDate(member._id, day, attendanceByUser);
+        if (!fromAttendance) continue;
+        entries.push({
+          ...fromAttendance,
+          userId: member._id,
+          name: member.name,
+          odId: member.odId,
+          employeeCode: member.employeeCode,
+          date: day,
+        });
+      }
     }
 
-    entries.sort((a, b) => a.name.localeCompare(b.name));
+    entries.sort(
+      (a, b) => (a.date || '').localeCompare(b.date || '') || a.name.localeCompare(b.name)
+    );
 
     const summary = {
-      total: entries.length,
-      onLeave: entries.filter((e) => e.category === 'leave').length,
-      away: entries.filter((e) =>
+      total: uniqueUserCount(entries, () => true),
+      onLeave: uniqueUserCount(entries, (e) => e.category === 'leave'),
+      away: uniqueUserCount(entries, (e) =>
         ['leave', 'wfh', 'outstation', 'half_day', 'other_approved'].includes(e.category)
-      ).length,
-      pending: entries.filter((e) => e.category === 'pending' || e.category === 'pending_hr').length,
+      ),
+      pending: uniqueUserCount(
+        entries,
+        (e) => e.category === 'pending' || e.category === 'pending_hr'
+      ),
     };
 
     return NextResponse.json({
       success: true,
-      data: { date, entries, summary },
+      data: { date, from, to, entries, summary },
     });
   } catch (error) {
     console.error('Team daily updates GET error:', error);

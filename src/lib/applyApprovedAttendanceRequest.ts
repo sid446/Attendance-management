@@ -4,7 +4,7 @@ import { isHrModifiedAttendanceRecord, pickLatestApprovedRequestPerDate } from '
 import AttendanceRequest from '@/models/AttendanceRequest';
 import User from '@/models/User';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
-import { calculateLeaveUsage, updateLeaveBalanceOnApproval } from '@/lib/leaveManagement';
+import { calculateLeaveUsage, updateLeaveBalanceOnApproval, creditMonthlyEarnedIfNeeded } from '@/lib/leaveManagement';
 import { calculateTotalHours as calculateDuration } from '@/lib/attendanceHours';
 import { calculateSummary, type AttendanceRecordForSummary } from '@/lib/attendanceSummaryCalculation';
 import { applyDayExcessToRecord } from '@/lib/calculateDayExcessHour';
@@ -276,6 +276,8 @@ export async function applyApprovedRequestToAttendance(
   }
 
   rec.typeOfPresence = requestedStatus;
+
+  await creditMonthlyEarnedIfNeeded(userObjectId, monthYear);
 
   const userObj = await User.findById(userObjectId);
 

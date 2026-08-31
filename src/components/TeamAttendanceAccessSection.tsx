@@ -13,6 +13,7 @@ interface TeamAttendanceAccessRule {
   extraUserIds?: Array<string | User | { _id: string; name?: string }>;
   extraPartnerNames?: string[];
   canApproveRequests: boolean;
+  canApproveSelf: boolean;
   isActive: boolean;
 }
 
@@ -34,6 +35,7 @@ export const TeamAttendanceAccessSection: React.FC<TeamAttendanceAccessSectionPr
   const [selectedViewerId, setSelectedViewerId] = useState('');
   const [includeOwnTeam, setIncludeOwnTeam] = useState(true);
   const [canApproveRequests, setCanApproveRequests] = useState(false);
+  const [canApproveSelf, setCanApproveSelf] = useState(false);
   const [isActive, setIsActive] = useState(true);
   const [extraUserIds, setExtraUserIds] = useState<string[]>([]);
   const [extraPartnerNames, setExtraPartnerNames] = useState<string[]>([]);
@@ -165,6 +167,7 @@ export const TeamAttendanceAccessSection: React.FC<TeamAttendanceAccessSectionPr
     if (!selectedRule) {
       setIncludeOwnTeam(true);
       setCanApproveRequests(false);
+      setCanApproveSelf(false);
       setIsActive(true);
       setExtraUserIds([]);
       setExtraPartnerNames([]);
@@ -173,6 +176,7 @@ export const TeamAttendanceAccessSection: React.FC<TeamAttendanceAccessSectionPr
 
     setIncludeOwnTeam(selectedRule.includeOwnTeam !== false);
     setCanApproveRequests(selectedRule.canApproveRequests !== false);
+    setCanApproveSelf(selectedRule.canApproveSelf === true);
     setIsActive(selectedRule.isActive !== false);
     setExtraUserIds((selectedRule.extraUserIds || []).map(getEntityId).filter(Boolean));
     setExtraPartnerNames(selectedRule.extraPartnerNames || []);
@@ -213,6 +217,7 @@ export const TeamAttendanceAccessSection: React.FC<TeamAttendanceAccessSectionPr
           extraUserIds,
           extraPartnerNames,
           canApproveRequests,
+          canApproveSelf: canApproveRequests && canApproveSelf,
           isActive,
         }),
       });
@@ -264,7 +269,7 @@ export const TeamAttendanceAccessSection: React.FC<TeamAttendanceAccessSectionPr
           </div>
           <h2 className="text-xl font-semibold text-slate-900">Team Attendance Access</h2>
           <p className="mt-1 max-w-3xl text-sm text-slate-600">
-            Control who can view extra employees in the employee dashboard Team Attendance tab. Tick “Can approve their requests” if this viewer should also review and approve those people’s attendance requests.
+            Control who can view extra employees in the employee dashboard Team Attendance tab. Tick “Can approve their requests” if this viewer should also review and approve those people’s attendance requests. Include viewer (self) only shows their own row — they still cannot approve their own attendance unless “Can approve own attendance” is also ticked.
           </p>
         </div>
         <button
@@ -345,13 +350,31 @@ export const TeamAttendanceAccessSection: React.FC<TeamAttendanceAccessSectionPr
             <input
               type="checkbox"
               checked={canApproveRequests}
-              onChange={(e) => setCanApproveRequests(e.target.checked)}
+              onChange={(e) => {
+                const next = e.target.checked;
+                setCanApproveRequests(next);
+                if (!next) setCanApproveSelf(false);
+              }}
               disabled={!isActive}
               className="mt-1 h-4 w-4 rounded border-slate-300"
             />
             <span>
               <span className="block font-medium text-slate-900">Can approve their requests</span>
-              Allow this viewer to review and approve attendance requests for the team and employees they can see. When unchecked, they can still view Team Attendance, but the request section stays hidden on their dashboard (unless they are the official attendance-email approver).
+              Allow this viewer to review and approve attendance requests for the team and employees they can see. This does not include their own attendance unless “Can approve own attendance” is also ticked. When unchecked, they can still view Team Attendance, but the request section stays hidden on their dashboard (unless they are the official attendance-email approver).
+            </span>
+          </label>
+
+          <label className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={canApproveSelf}
+              onChange={(e) => setCanApproveSelf(e.target.checked)}
+              disabled={!isActive || !canApproveRequests}
+              className="mt-1 h-4 w-4 rounded border-slate-300"
+            />
+            <span>
+              <span className="block font-medium text-slate-900">Can approve own attendance</span>
+              Allow this viewer to approve their own attendance requests. Leave this unchecked to prevent self-approve even when Include viewer (self) is on.
             </span>
           </label>
 
@@ -415,7 +438,7 @@ export const TeamAttendanceAccessSection: React.FC<TeamAttendanceAccessSectionPr
                 />
                 <span>
                   <span className="block font-medium text-slate-900">Include viewer (self)</span>
-                  <span className="text-xs text-slate-600">Show {selectedViewer.name}&apos;s own row in the Team Attendance list for this viewer.</span>
+                  <span className="text-xs text-slate-600">Show {selectedViewer.name}&apos;s own row in the Team Attendance list. This is view-only unless “Can approve own attendance” is also ticked.</span>
                 </span>
               </label>
             )}
@@ -454,7 +477,11 @@ export const TeamAttendanceAccessSection: React.FC<TeamAttendanceAccessSectionPr
             Preview: {selectedViewer?.name || 'Selected viewer'} can view {previewUsers.length} employee{previewUsers.length === 1 ? '' : 's'}
             {isActive
               ? canApproveRequests
-                ? ' and can approve their requests'
+                ? extraUserIds.includes(selectedViewerId) && canApproveSelf
+                  ? ' and can approve their requests, including their own'
+                  : extraUserIds.includes(selectedViewerId)
+                    ? ' and can approve their requests (except their own)'
+                    : ' and can approve their requests'
                 : ' (view only — cannot approve their requests)'
               : ''}
           </h3>
