@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   RefreshCw,
   AlertTriangle,
@@ -75,7 +75,13 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [showManualFineForm, setShowManualFineForm] = useState(false);
-  const [manualFineEmployee, setManualFineEmployee] = useState('');
+  const [manualFineEmployeeId, setManualFineEmployeeId] = useState('');
+  const [manualFineEmployeeQuery, setManualFineEmployeeQuery] = useState('');
+  const [showEmployeeSuggestions, setShowEmployeeSuggestions] = useState(false);
+  const [directoryEmployees, setDirectoryEmployees] = useState<
+    { _id: string; name: string; odId: string }[]
+  >([]);
+  const employeePickerRef = useRef<HTMLDivElement>(null);
   const [manualFineReason, setManualFineReason] = useState('');
   const [manualFineAmount, setManualFineAmount] = useState('');
   const [manualFineRemark, setManualFineRemark] = useState('');
@@ -152,10 +158,66 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
     }
   };
 
+  const employeeOptionLabel = (employee: { name?: string; odId?: string }) => {
+    const name = employee.name?.trim() || 'Unknown';
+    return employee.odId ? `${name} (${employee.odId})` : name;
+  };
+
+  const finesEmployeeOptions = useMemo(() => {
+    const map = new Map<string, { _id: string; name: string; odId: string }>();
+    for (const fine of fines) {
+      const id = String(fine.userId?._id || '');
+      if (!id || map.has(id)) continue;
+      map.set(id, {
+        _id: id,
+        name: fine.userId?.name || 'Unknown',
+        odId: fine.userId?.odId || '',
+      });
+    }
+    return [...map.values()];
+  }, [fines]);
+
+  const manualFineEmployeeOptions = useMemo(() => {
+    const source = directoryEmployees.length > 0 ? directoryEmployees : finesEmployeeOptions;
+    return [...source].sort((a, b) => a.name.localeCompare(b.name));
+  }, [directoryEmployees, finesEmployeeOptions]);
+
+  const manualFineEmployeeMatches = useMemo(() => {
+    const q = manualFineEmployeeQuery.trim().toLowerCase();
+    if (!q) return manualFineEmployeeOptions.slice(0, 30);
+    return manualFineEmployeeOptions
+      .filter(
+        (employee) =>
+          employee.name.toLowerCase().includes(q) ||
+          employee.odId.toLowerCase().includes(q)
+      )
+      .slice(0, 30);
+  }, [manualFineEmployeeOptions, manualFineEmployeeQuery]);
+
+  const resolveManualFineEmployeeId = () => {
+    if (manualFineEmployeeId) return manualFineEmployeeId;
+    const q = manualFineEmployeeQuery.trim().toLowerCase();
+    if (!q) return '';
+    const exact = manualFineEmployeeOptions.filter(
+      (employee) =>
+        employee.name.toLowerCase() === q ||
+        employee.odId.toLowerCase() === q ||
+        employeeOptionLabel(employee).toLowerCase() === q
+    );
+    return exact.length === 1 ? exact[0]._id : '';
+  };
+
+  const selectManualFineEmployee = (employee: { _id: string; name: string; odId: string }) => {
+    setManualFineEmployeeId(employee._id);
+    setManualFineEmployeeQuery(employeeOptionLabel(employee));
+    setShowEmployeeSuggestions(false);
+  };
+
   // Impose manual fine
   const imposeManualFine = async () => {
-    if (!manualFineEmployee || !manualFineReason || !manualFineAmount) {
-      setError('Please fill all required fields');
+    const employeeId = resolveManualFineEmployeeId();
+    if (!employeeId || !manualFineReason || !manualFineAmount) {
+      setError(!employeeId ? 'Please select an employee from the list' : 'Please fill all required fields');
       return;
     }
     setImposingFine(true);
@@ -165,7 +227,7 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          employeeId: manualFineEmployee,
+          employeeId,
           reason: manualFineReason,
           amount: parseFloat(manualFineAmount),
           remark: manualFineRemark,
@@ -175,7 +237,7 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
       const data = await response.json();
       if (data.success) {
         // Check if fine already exists for this employee and month
-        const existingFineIndex = fines.findIndex(f => f.userId._id === manualFineEmployee && f.monthYear === monthYear);
+        const existingFineIndex = fines.findIndex(f => f.userId._id === employeeId && f.monthYear === monthYear);
         if (existingFineIndex >= 0) {
           // Update existing fine
           setFines(prev => prev.map((f, i) => i === existingFineIndex ? data.fine : f));
@@ -183,7 +245,8 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
           // Add new fine
           setFines(prev => [...prev, data.fine]);
         }
-        setManualFineEmployee('');
+        setManualFineEmployeeId('');
+        setManualFineEmployeeQuery('');
         setManualFineReason('');
         setManualFineAmount('');
         setManualFineRemark('');
@@ -203,6 +266,42 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
     setSelectedUserIds(new Set());
     setEmailNotice(null);
   }, [monthYear]);
+
+  useEffect(() => {
+    if (!showManualFineForm) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/users?listOnly=1', hrCredentialsInit());
+        const json = await res.json();
+        if (cancelled || !json.success || !Array.isArray(json.data)) return;
+        setDirectoryEmployees(
+          json.data
+            .filter((user: { _id?: string }) => user?._id)
+            .map((user: { _id: string; name?: string; odId?: string; employeeCode?: string }) => ({
+              _id: String(user._id),
+              name: user.name || 'Unknown',
+              odId: user.odId || user.employeeCode || '',
+            }))
+        );
+      } catch {
+        // Fall back to employees already present in this month's fine list.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showManualFineForm]);
+
+  useEffect(() => {
+    const onPointerDown = (event: MouseEvent) => {
+      if (!employeePickerRef.current?.contains(event.target as Node)) {
+        setShowEmployeeSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, []);
 
   // Toggle row expansion
   const toggleRow = (fineId: string) => {
@@ -866,7 +965,9 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
           <h2 id="fine-management-heading" className="text-2xl font-bold tracking-tight text-slate-900">
             Fine management
           </h2>
-          <p className="text-sm text-slate-600">Manage late arrival fines and warnings.</p>
+          <p className="text-sm text-slate-600">
+            Manage late arrival fines and warnings. Calculate adds new late days without removing paid, waived, or manual fines.
+          </p>
           <ol className="flex flex-wrap gap-2" aria-label="Workflow">
             {FINE_MANAGEMENT_WORKFLOW_STEPS.map((label, i) => (
               <li
@@ -915,6 +1016,7 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
             onClick={calculateFines}
             disabled={calculating}
             className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50"
+            title="Adds new late fines from attendance. Paid, waived, and manual fines are kept."
           >
             <RefreshCw className={`h-4 w-4 ${calculating ? 'animate-spin' : ''}`} aria-hidden />
             {calculating ? 'Calculating…' : 'Calculate fines'}
@@ -973,7 +1075,7 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
         </div>
         {showManualFineForm && (
           <div id="manual-fine-panel" className="space-y-4">
-            <div>
+            <div ref={employeePickerRef} className="relative">
               <label htmlFor="manual-fine-employee" className="mb-1 block text-sm font-medium text-slate-700">
                 Search employee
               </label>
@@ -981,18 +1083,48 @@ export const FineManagementSection: React.FC<FineManagementProps> = ({
                 id="manual-fine-employee"
                 type="text"
                 placeholder="Search by name or ID…"
-                value={manualFineEmployee}
-                onChange={(e) => setManualFineEmployee(e.target.value)}
+                value={manualFineEmployeeQuery}
+                onChange={(e) => {
+                  setManualFineEmployeeQuery(e.target.value);
+                  setManualFineEmployeeId('');
+                  setShowEmployeeSuggestions(true);
+                }}
+                onFocus={() => setShowEmployeeSuggestions(true)}
                 className={inputCls}
-                list="employee-list"
+                autoComplete="off"
+                role="combobox"
+                aria-expanded={showEmployeeSuggestions}
+                aria-controls="employee-suggestions"
+                aria-autocomplete="list"
               />
-              <datalist id="employee-list">
-                {fines.map((fine) => (
-                  <option key={fine.userId._id} value={fine.userId._id}>
-                    {fine.userId.name} ({fine.userId.odId})
-                  </option>
-                ))}
-              </datalist>
+              {showEmployeeSuggestions && (
+                <ul
+                  id="employee-suggestions"
+                  role="listbox"
+                  className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+                >
+                  {manualFineEmployeeMatches.length === 0 ? (
+                    <li className="px-3 py-2 text-sm text-slate-500">No employees found</li>
+                  ) : (
+                    manualFineEmployeeMatches.map((employee) => (
+                      <li key={employee._id} role="option" aria-selected={manualFineEmployeeId === employee._id}>
+                        <button
+                          type="button"
+                          onClick={() => selectManualFineEmployee(employee)}
+                          className={`flex w-full flex-col px-3 py-2 text-left hover:bg-slate-50 ${
+                            manualFineEmployeeId === employee._id ? 'bg-blue-50' : ''
+                          }`}
+                        >
+                          <span className="text-sm font-medium text-slate-900">{employee.name}</span>
+                          {employee.odId ? (
+                            <span className="text-xs text-slate-500">{employee.odId}</span>
+                          ) : null}
+                        </button>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              )}
             </div>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>

@@ -33,6 +33,7 @@ import {
 } from '@/lib/attendanceSummaryMetrics';
 import { isValidPunchTime } from '@/lib/attendanceHours';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
+import { getWorkHoursReferenceSchedule } from '@/lib/deriveRequestInOutFromWorkHours';
 import { useExcessAllowanceMaps } from '@/hooks/useExcessAllowanceMaps';
 import { SummaryAlignedMetricsStrip } from '@/components/SummaryAlignedMetricsStrip';
 import {
@@ -1004,7 +1005,10 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
           setFormEndTime(gpsOut);
           return;
         }
-        const sch = getScheduledTimesForDate(dateStr);
+        const sch =
+          /weekoff|wfh/i.test(status)
+            ? getWorkHoursReferenceSchedule(scheduleUser, dateStr)
+            : getScheduledTimesForDate(dateStr);
         if (sch.inTime) setFormStartTime(sch.inTime);
         if (sch.outTime) setFormEndTime(sch.outTime);
       }

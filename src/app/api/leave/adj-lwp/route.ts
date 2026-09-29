@@ -5,14 +5,32 @@ import User from '@/models/User';
 import { getHrOperatorEmailFromRequest } from '@/lib/hrAuthServer';
 import { loadHrConsolePermissionDoc } from '@/lib/hrConsolePermissionDb';
 import { effectiveFromDoc } from '@/lib/hrConsolePermissionUtils';
-import { computeLeaveRemaining } from '@/lib/leaveManagement';
+import {
+  ADJ_FROM_MONTH,
+  currentLeaveMonthYear,
+  rebuildSnapshotsFromMonth,
+  setAdjThisMonth,
+  syncUserLeaveAdjLwpFromLedger,
+} from '@/lib/leaveAdjLwp';
+import {
+  reconcileLeaveFromAttendance,
+  EARN_FROM_MONTH,
+} from '@/lib/leaveReconciliation';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
+
+function parseMonthYear(raw: unknown): string | null {
+  const value = String(raw || '').trim();
+  if (!value) return currentLeaveMonthYear();
+  if (!/^\d{4}-\d{2}$/.test(value)) return null;
+  return value < ADJ_FROM_MONTH ? ADJ_FROM_MONTH : value;
+}
 
 /**
- * Save a single employee's Leave Adj/LWP.
- * Writes via the native Mongo collection (bypasses Mongoose schema cache) and
- * verifies the value is present in DB before returning success.
+ * Save a single employee's Adj/LWP change for a month.
+ * The posted number is that month's delta. Adj till this month is derived
+ * (sum of monthly deltas) and is not typed.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -33,7 +51,12 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const userId = String(body?.userId || '').trim();
-    const leaveAdjLwp = Number(body?.leaveAdjLwp);
+    const thisMonthRaw =
+      body?.leaveAdjLwpThisMonth !== undefined && body?.leaveAdjLwpThisMonth !== null
+        ? body.leaveAdjLwpThisMonth
+        : body?.leaveAdjLwp;
+    const leaveAdjLwpThisMonth = Number(thisMonthRaw);
+    const monthYear = parseMonthYear(body?.monthYear);
 
     if (!userId) {
       return NextResponse.json({ success: false, error: 'userId is required' }, { status: 400 });
@@ -41,14 +64,20 @@ export async function POST(request: NextRequest) {
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       return NextResponse.json({ success: false, error: 'Invalid userId' }, { status: 400 });
     }
-    if (!Number.isFinite(leaveAdjLwp)) {
+    if (!Number.isFinite(leaveAdjLwpThisMonth)) {
       return NextResponse.json(
-        { success: false, error: 'Leave Adj/LWP must be a number' },
+        { success: false, error: 'Adj this month must be a number' },
+        { status: 400 }
+      );
+    }
+    if (!monthYear) {
+      return NextResponse.json(
+        { success: false, error: 'monthYear must be YYYY-MM' },
         { status: 400 }
       );
     }
 
-    const roundedAdj = Number(leaveAdjLwp.toFixed(3));
+    const roundedAdj = Number(leaveAdjLwpThisMonth.toFixed(3));
     const _id = new mongoose.Types.ObjectId(userId);
 
     const existing = await User.collection.findOne(
@@ -59,58 +88,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Employee not found' }, { status: 404 });
     }
 
-    const lb = (existing.leaveBalance || {}) as Record<string, unknown>;
-    const remaining = computeLeaveRemaining({
-      balanceAsOfJan26: Number(lb.balanceAsOfJan26 || 0),
-      earned: Number(lb.earned || 0),
-      usedAfterJan26: Number(lb.usedAfterJan26 || 0),
-      leaveAdjLwp: roundedAdj,
+    const { thisMonth, tillMonth } = await setAdjThisMonth(_id, monthYear, roundedAdj);
+
+    await reconcileLeaveFromAttendance({
+      fromMonth: EARN_FROM_MONTH,
+      toMonth: currentLeaveMonthYear(),
+      userIds: [userId],
+      dryRun: false,
     });
 
-    const now = new Date();
-    const writeResult = await User.collection.updateOne(
-      { _id },
-      {
-        $set: {
-          'leaveBalance.leaveAdjLwp': roundedAdj,
-          'leaveBalance.remaining': remaining,
-          'leaveBalance.lastUpdated': now,
-        },
-      }
-    );
-
-    if (writeResult.matchedCount !== 1) {
-      return NextResponse.json(
-        { success: false, error: 'Employee not found while saving' },
-        { status: 404 }
-      );
-    }
-
-    // Verify from Mongo directly — never report success from the request body alone.
-    const verified = await User.collection.findOne(
-      { _id },
-      { projection: { leaveBalance: 1 } }
-    );
-    const savedAdj = Number(verified?.leaveBalance?.leaveAdjLwp);
-    if (!Number.isFinite(savedAdj) || savedAdj !== roundedAdj) {
-      console.error('[leave-adj-lwp] verify failed', {
-        userId,
-        roundedAdj,
-        savedAdj,
-        leaveBalance: verified?.leaveBalance,
-        writeResult,
-      });
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Leave Adj/LWP did not persist in the database. Restart the server and try again.',
-        },
-        { status: 500 }
-      );
-    }
+    const synced = await syncUserLeaveAdjLwpFromLedger(_id);
+    const monthsRebuilt = await rebuildSnapshotsFromMonth(monthYear);
 
     console.log(
-      `[leave-adj-lwp] verified userId=${userId} leaveAdjLwp=${savedAdj} remaining=${verified?.leaveBalance?.remaining}`
+      `[leave-adj-lwp] userId=${userId} monthYear=${monthYear} till=${tillMonth} thisMonth=${thisMonth} remaining=${synced.remaining} months=${monthsRebuilt.join(',')}`
     );
 
     return NextResponse.json(
@@ -118,8 +109,10 @@ export async function POST(request: NextRequest) {
         success: true,
         data: {
           userId,
-          leaveAdjLwp: savedAdj,
-          remaining: Number(verified?.leaveBalance?.remaining ?? remaining),
+          monthYear,
+          leaveAdjLwp: tillMonth,
+          leaveAdjLwpThisMonth: thisMonth,
+          remaining: synced.remaining,
         },
       },
       {

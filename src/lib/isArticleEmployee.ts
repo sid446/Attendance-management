@@ -21,6 +21,20 @@ export function isArticleEmployee(user: ArticleEmployeeLike): boolean {
   );
 }
 
+/** Intern category/designation, or article trainee (salary group “Articles / Interns”). */
+export function isInternOrArticleEmployee(user: ArticleEmployeeLike): boolean {
+  if (!user) return false;
+  const employmentType = String(user.employmentType || '').trim().toLowerCase();
+  const designation = String(user.designation || '').trim().toLowerCase();
+  const category = String(user.category || '').trim().toLowerCase();
+  return (
+    isArticleEmployee(user) ||
+    employmentType.includes('intern') ||
+    designation.includes('intern') ||
+    category.includes('intern')
+  );
+}
+
 /** Article-specific per-day excess hours from schedule vs actual punch times. */
 export function calculateArticleDayExcessMinutes(
   scheduledInTime: string,

@@ -8,10 +8,12 @@ import {
   RefreshCw,
   Search,
   Upload,
+  Download,
   X,
 } from 'lucide-react';
 import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
 import { confirmMajorAction } from '@/lib/confirmMajorAction';
+import { downloadWorkbook } from '@/components/summary/exports/downloadWorkbook';
 
 type UploadRow = { name: string; balance?: number; leaveAdjLwp?: number };
 
@@ -54,6 +56,7 @@ type ReconcileResult = {
 type UploadPreview = {
   kind: 'bf' | 'adj';
   mode: 'preview' | 'apply';
+  monthYear?: string;
   matched: Array<{
     excelName: string;
     userId: string;
@@ -78,7 +81,8 @@ interface LeaveBalance {
   employmentType?: string;
   balanceAsOfJan26: number;
   earned: number;
-  leaveAdjLwp: number; // HR Leave Adj/LWP (added into remaining)
+  leaveAdjLwp: number; // Adj/LWP as of the selected month (sum Jan..month)
+  leaveAdjLwpThisMonth?: number; // That month's change
   usedAfterJan26: number; // Leaves taken on or after 1st Jan 2026
   remaining: number;
   lastUpdated: Date;
@@ -92,9 +96,9 @@ interface LeaveManagementSectionProps {
 }
 
 const LEAVE_MANAGEMENT_WORKFLOW_STEPS = [
-  'Pick month & filters',
+  'Pick period & filters',
   'Review balances',
-  'Refresh from server',
+  'Export or refresh',
 ] as const;
 
 /** Leave day amounts always display with exactly two decimal places. */
@@ -134,7 +138,26 @@ function formatMonthLabel(monthYear: string): string {
   return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 }
 
-/** Editable Leave Adj/LWP cell — saves on blur, Enter, or Save button. */
+function addMonthYear(monthYear: string, delta: number): string {
+  const [year, month] = monthYear.split('-').map(Number);
+  const date = new Date(year, month - 1 + delta, 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function formatPeriodLabel(fromMonth: string, monthFilter: string): string {
+  if (fromMonth === monthFilter) return formatMonthLabel(monthFilter);
+  return `${formatMonthLabel(fromMonth)} – ${formatMonthLabel(monthFilter)}`;
+}
+
+function clampMonthYear(monthYear: string, options: string[]): string {
+  if (options.includes(monthYear)) return monthYear;
+  const sorted = [...options].sort();
+  if (sorted.length === 0) return monthYear;
+  if (monthYear < sorted[0]) return sorted[0];
+  return sorted[sorted.length - 1];
+}
+
+/** Editable Adj this month — saves on blur, Enter, or Save button. */
 const LeaveAdjLwpInput: React.FC<{
   userId: string;
   value: number;
@@ -208,8 +231,8 @@ const LeaveAdjLwpInput: React.FC<{
             e.currentTarget.blur();
           }
         }}
-        aria-label="Leave Adj/LWP"
-        title="Leave Adj/LWP — added to balance. Enter or Save to persist."
+        aria-label="Adj this month"
+        title="Adj this month — change for the selected month. Enter or Save to persist."
         className="w-20 rounded-md border border-violet-200 bg-violet-50 px-2 py-1 text-center text-xs font-medium tabular-nums text-violet-950 shadow-sm outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 disabled:opacity-50"
       />
       <button
@@ -217,7 +240,7 @@ const LeaveAdjLwpInput: React.FC<{
         disabled={disabled || localSaving || !dirty}
         onClick={() => void commitValue(draft)}
         className="rounded-md border border-violet-300 bg-violet-600 px-1.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40"
-        title="Save Leave Adj/LWP"
+        title="Save Adj this month"
       >
         {localSaving ? '…' : 'Save'}
       </button>
@@ -243,6 +266,9 @@ const UploadPreviewDialog: React.FC<{
             <h3 className="text-base font-semibold text-slate-900">Check before saving</h3>
             <p className="mt-1 text-sm text-slate-600">
               Nothing has been saved yet. This is what will happen if you continue.
+              {preview.kind === 'adj' && preview.monthYear && (
+                <> Values are the Adj/LWP <strong>change for {formatMonthLabel(preview.monthYear)}</strong> (overall till now is not typed).</>
+              )}
             </p>
           </div>
           <button
@@ -284,9 +310,12 @@ const UploadPreviewDialog: React.FC<{
           <p className="text-sm text-slate-600">
             Leave will be recalculated from <strong>{reconcile.fromMonth}</strong> to{' '}
             <strong>{reconcile.toMonth}</strong> as{' '}
-            <strong>B/F + earned after Jan − used after Jan + Leave Adj/LWP</strong>, where earned
+            <strong>B/F + earned after Jan − used after Jan + Adj till month</strong>, where earned
             is 2 per month with attendance (articles earn none). Days set by an approved employee
             request are kept exactly as they are. Employees not listed in the file are untouched.
+            {preview.kind === 'adj' && preview.monthYear && (
+              <> The uploaded number is the Adj/LWP change for {formatMonthLabel(preview.monthYear)}. Adj till this month is recalculated and is not editable.</>
+            )}
             {reconcile.usersSkippedNoAttendance > 0 && (
               <> {reconcile.usersSkippedNoAttendance} matched employee(s) have no attendance in this range and will only get the new {preview.kind === 'adj' ? 'Adj/LWP' : 'opening balance'}.</>
             )}
@@ -349,10 +378,10 @@ const UploadPreviewDialog: React.FC<{
                     Employee
                   </th>
                   <th className="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    {preview.kind === 'adj' ? 'Adj/LWP now' : 'B/F now'}
+                    {preview.kind === 'adj' ? 'Adj this month now' : 'B/F now'}
                   </th>
                   <th className="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    {preview.kind === 'adj' ? 'Adj/LWP new' : 'B/F new'}
+                    {preview.kind === 'adj' ? 'Adj this month new' : 'B/F new'}
                   </th>
                   <th className="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Earned after Jan
@@ -468,9 +497,11 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
   const [leaveBalances, setLeaveBalances] = useState<LeaveBalance[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [filterTeam, setFilterTeam] = useState<string>('all');
+  const [fromMonth, setFromMonth] = useState<string>(() => currentMonthYear());
   const [monthFilter, setMonthFilter] = useState<string>(() => currentMonthYear());
+  const [exporting, setExporting] = useState(false);
   const [sortBy, setSortBy] = useState<
-    'name' | 'balanceAsOfJan26' | 'earned' | 'remaining' | 'leaveAdjLwp'
+    'name' | 'balanceAsOfJan26' | 'earned' | 'remaining' | 'leaveAdjLwp' | 'leaveAdjLwpThisMonth'
   >('earned');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'all' | 'articles' | 'employees'>('all');
@@ -485,6 +516,21 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
   const [savingAdjUserId, setSavingAdjUserId] = useState<string | null>(null);
 
   const monthOptions = leaveMonthOptions();
+  const earliestMonth = [...monthOptions].sort()[0] || '2026-01';
+  const latestMonth = currentMonthYear();
+  const periodLabel = formatPeriodLabel(fromMonth, monthFilter);
+
+  const applyPeriod = (nextFrom: string, nextTo: string) => {
+    const from = clampMonthYear(nextFrom, monthOptions);
+    const to = clampMonthYear(nextTo, monthOptions);
+    if (from <= to) {
+      setFromMonth(from);
+      setMonthFilter(to);
+    } else {
+      setFromMonth(to);
+      setMonthFilter(from);
+    }
+  };
 
   const fetchLeaveBalances = async (monthYear = monthFilter) => {
     setLoading(true);
@@ -514,7 +560,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
 
   useEffect(() => {
     void fetchLeaveBalances(monthFilter);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch when month changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch when period end changes
   }, [monthFilter]);
 
   const filteredAndSortedBalances = leaveBalances
@@ -540,6 +586,8 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
           return b.remaining - a.remaining;
         case 'leaveAdjLwp':
           return (b.leaveAdjLwp || 0) - (a.leaveAdjLwp || 0);
+        case 'leaveAdjLwpThisMonth':
+          return (b.leaveAdjLwpThisMonth || 0) - (a.leaveAdjLwpThisMonth || 0);
         case 'name':
         default:
           return a.userName.localeCompare(b.userName);
@@ -553,6 +601,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
       totalBalanceAsOfJan26: acc.totalBalanceAsOfJan26 + balance.balanceAsOfJan26,
       totalEarned: acc.totalEarned + balance.earned,
       totalLeaveAdjLwp: acc.totalLeaveAdjLwp + (balance.leaveAdjLwp || 0),
+      totalLeaveAdjLwpThisMonth: acc.totalLeaveAdjLwpThisMonth + (balance.leaveAdjLwpThisMonth || 0),
       totalUsedAfterJan26: acc.totalUsedAfterJan26 + (balance.usedAfterJan26 || 0),
       totalRemaining: acc.totalRemaining + balance.remaining,
     }),
@@ -560,6 +609,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
       totalBalanceAsOfJan26: 0,
       totalEarned: 0,
       totalLeaveAdjLwp: 0,
+      totalLeaveAdjLwpThisMonth: 0,
       totalUsedAfterJan26: 0,
       totalRemaining: 0,
     }
@@ -571,6 +621,103 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
   const handleRefresh = () => {
     void fetchLeaveBalances(monthFilter);
     onRefresh();
+  };
+
+  const exportToExcel = async () => {
+    if (filteredAndSortedBalances.length === 0) return;
+    setExporting(true);
+    setUploadError(null);
+    try {
+      const ExcelJS = (await import('exceljs')).default;
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Leave balances');
+      sheet.columns = [
+        { header: 'Employee Name', key: 'userName', width: 28 },
+        { header: 'Employee Code', key: 'employeeCode', width: 16 },
+        { header: 'Type', key: 'employmentType', width: 14 },
+        { header: 'Team', key: 'team', width: 22 },
+        { header: 'Balance 1 Jan 26', key: 'balanceAsOfJan26', width: 18 },
+        { header: 'Earned (after Jan)', key: 'earned', width: 18 },
+        { header: `Adj ${formatMonthLabel(monthFilter)}`, key: 'leaveAdjLwpThisMonth', width: 18 },
+        { header: 'Adj till this month', key: 'leaveAdjLwp', width: 18 },
+        { header: 'Used (after 1 Jan)', key: 'usedAfterJan26', width: 18 },
+        { header: 'Balance', key: 'remaining', width: 14 },
+        { header: 'Last updated', key: 'lastUpdated', width: 16 },
+        { header: 'Period from', key: 'periodFrom', width: 16 },
+        { header: 'Period to', key: 'periodTo', width: 16 },
+      ];
+
+      for (const balance of filteredAndSortedBalances) {
+        const isArticle = balance.employmentType?.toLowerCase() === 'article';
+        sheet.addRow({
+          userName: balance.userName,
+          employeeCode: balance.employeeCode || '',
+          employmentType: isArticle ? 'Article' : 'Employee',
+          team: balance.team || '',
+          balanceAsOfJan26: Number(formatLeaveValue(balance.balanceAsOfJan26)),
+          earned: isArticle ? 'N/A' : Number(formatLeaveValue(balance.earned)),
+          leaveAdjLwpThisMonth: Number(formatLeaveValue(balance.leaveAdjLwpThisMonth ?? 0)),
+          leaveAdjLwp: Number(formatLeaveValue(balance.leaveAdjLwp ?? 0)),
+          usedAfterJan26: Number(formatLeaveValue(balance.usedAfterJan26 || 0)),
+          remaining: Number(formatLeaveValue(balance.remaining)),
+          lastUpdated: new Date(balance.lastUpdated).toLocaleDateString('en-GB'),
+          periodFrom: formatMonthLabel(fromMonth),
+          periodTo: formatMonthLabel(monthFilter),
+        });
+      }
+
+      const totalRow = sheet.addRow({
+        userName: 'TOTAL',
+        employeeCode: '',
+        employmentType: '',
+        team: '',
+        balanceAsOfJan26: Number(formatLeaveValue(totalStats.totalBalanceAsOfJan26)),
+        earned: Number(formatLeaveValue(totalStats.totalEarned)),
+        leaveAdjLwpThisMonth: Number(formatLeaveValue(totalStats.totalLeaveAdjLwpThisMonth)),
+        leaveAdjLwp: Number(formatLeaveValue(totalStats.totalLeaveAdjLwp)),
+        usedAfterJan26: Number(formatLeaveValue(totalStats.totalUsedAfterJan26)),
+        remaining: Number(formatLeaveValue(totalStats.totalRemaining)),
+        lastUpdated: '',
+        periodFrom: formatMonthLabel(fromMonth),
+        periodTo: formatMonthLabel(monthFilter),
+      });
+      totalRow.font = { bold: true };
+
+      sheet.spliceRows(1, 0, [`Leave balances — ${periodLabel}`]);
+      sheet.mergeCells(1, 1, 1, 13);
+      const titleCell = sheet.getCell(1, 1);
+      titleCell.font = { bold: true, size: 14, color: { argb: 'FF1E40AF' } };
+      titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
+
+      const headerRow = sheet.getRow(2);
+      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+      headerRow.eachCell((cell) => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF1E40AF' },
+        };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF000000' } },
+          bottom: { style: 'thin', color: { argb: 'FF000000' } },
+          left: { style: 'thin', color: { argb: 'FF000000' } },
+          right: { style: 'thin', color: { argb: 'FF000000' } },
+        };
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const fileName =
+        fromMonth === monthFilter
+          ? `Leave_Balances_${monthFilter}.xlsx`
+          : `Leave_Balances_${fromMonth}_to_${monthFilter}.xlsx`;
+      await downloadWorkbook(buffer as ArrayBuffer, fileName);
+    } catch (err) {
+      console.error('Error exporting leave balances:', err);
+      setUploadError('Failed to export Excel');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -720,7 +867,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
         hrCredentialsInit({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rows, mode: 'preview' }),
+          body: JSON.stringify({ rows, mode: 'preview', monthYear: monthFilter }),
         })
       );
       const json = await res.json();
@@ -729,7 +876,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
       }
 
       setPendingRows(rows);
-      setPreview({ ...(json.data as Omit<UploadPreview, 'kind'>), kind: 'adj' });
+      setPreview({ ...(json.data as Omit<UploadPreview, 'kind'>), kind: 'adj', monthYear: monthFilter });
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
@@ -748,7 +895,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
         hrCredentialsInit({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId, leaveAdjLwp }),
+          body: JSON.stringify({ userId, leaveAdjLwpThisMonth: leaveAdjLwp, monthYear: monthFilter }),
           cache: 'no-store',
         })
       );
@@ -757,21 +904,25 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
         throw new Error(json.error || `Could not save Leave Adj/LWP (${res.status}).`);
       }
 
-      const savedAdj = Number(json.data?.leaveAdjLwp ?? leaveAdjLwp);
+      const savedAdj = Number(json.data?.leaveAdjLwp);
+      const savedThisMonth = Number(json.data?.leaveAdjLwpThisMonth ?? leaveAdjLwp);
       const savedRemaining = Number(json.data?.remaining);
       setLeaveBalances((prev) =>
         prev.map((row) =>
           row.userId === userId
             ? {
                 ...row,
-                leaveAdjLwp: savedAdj,
+                leaveAdjLwp: Number.isFinite(savedAdj) ? savedAdj : row.leaveAdjLwp,
+                leaveAdjLwpThisMonth: savedThisMonth,
                 remaining: Number.isFinite(savedRemaining) ? savedRemaining : row.remaining,
                 lastUpdated: new Date(),
               }
             : row
         )
       );
-      setUploadNotice(`Saved Leave Adj/LWP ${formatLeaveValue(savedAdj)} to the database.`);
+      setUploadNotice(
+        `Saved Adj this month for ${formatMonthLabel(monthFilter)} as ${formatLeaveValue(savedThisMonth)}.`
+      );
       // Re-read from DB (cache-busted) so Refresh shows the same value.
       await fetchLeaveBalances(monthFilter);
     } catch (err) {
@@ -792,11 +943,11 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
     if (
       !confirmMajorAction(
         isAdj
-          ? 'Save Leave Adj/LWP and recalculate leave from Jan 2026 to now'
+          ? `Save Adj this month for ${formatMonthLabel(monthFilter)} and recalculate leave from Jan 2026 to now`
           : 'Save leaves B/F and recalculate leave from Jan 2026 to now',
         [
           isAdj
-            ? `${preview.matched.length} employee(s) will get a new Leave Adj/LWP.`
+            ? `${preview.matched.length} employee(s) will get a new Adj this month for ${formatMonthLabel(monthFilter)}. Adj till this month is recalculated and cannot be typed.`
             : `${preview.matched.length} employee(s) will get a new opening balance.`,
           `${changes} attendance day(s) will be switched between "On leave" and "Absent".`,
           'Leave balances, the leave ledger and monthly snapshots will be rebuilt.',
@@ -815,7 +966,11 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
         hrCredentialsInit({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rows: pendingRows, mode: 'apply' }),
+          body: JSON.stringify(
+            isAdj
+              ? { rows: pendingRows, mode: 'apply', monthYear: monthFilter }
+              : { rows: pendingRows, mode: 'apply' }
+          ),
         })
       );
       const json = await res.json();
@@ -855,11 +1010,11 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
           </h2>
           <p className="max-w-2xl text-sm text-slate-600">
             {activeTab === 'all' &&
-              `Track earned, used, and remaining leave balances as of ${formatMonthLabel(monthFilter)}.`}
+              `Track earned, used, and remaining leave balances for ${periodLabel}.`}
             {activeTab === 'articles' &&
               'Article staff: opening balance and usage; no monthly earn after 1 Jan 2026 in this view.'}
             {activeTab === 'employees' &&
-              `Regular employees: earned / used / remaining as of ${formatMonthLabel(monthFilter)}.`}
+              `Regular employees: earned / used / remaining for ${periodLabel}.`}
           </p>
           <ol className="flex list-none flex-wrap gap-2 text-xs text-slate-700" aria-label="Leave management workflow">
             {LEAVE_MANAGEMENT_WORKFLOW_STEPS.map((t, i) => (
@@ -905,10 +1060,20 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
             onClick={() => adjFileInputRef.current?.click()}
             className="inline-flex shrink-0 items-center gap-2 rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50"
             disabled={uploadBusy || loading || isLoading}
-            title='Excel with columns "Employee Name" and "Leave Adj/LWP"'
+            title={`Excel with columns "Employee Name" and "Leave Adj/LWP" — applied as this month's change for ${formatMonthLabel(monthFilter)}`}
           >
             <Upload className={`h-4 w-4 ${uploadBusy ? 'animate-pulse text-blue-600' : 'text-slate-600'}`} aria-hidden />
             Upload Adj/LWP
+          </button>
+          <button
+            type="button"
+            onClick={() => void exportToExcel()}
+            className="inline-flex shrink-0 items-center gap-2 rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50"
+            disabled={exporting || loading || isLoading || filteredAndSortedBalances.length === 0}
+            title={`Export filtered leave balances for ${periodLabel}`}
+          >
+            <Download className={`h-4 w-4 ${exporting ? 'animate-pulse text-blue-600' : 'text-slate-600'}`} aria-hidden />
+            {exporting ? 'Exporting…' : 'Export Excel'}
           </button>
           <button
             type="button"
@@ -976,7 +1141,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
       </div>
 
       <div
-        className={`grid grid-cols-1 gap-3 ${activeTab === 'articles' ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-2 lg:grid-cols-5'}`}
+        className={`grid grid-cols-1 gap-3 ${activeTab === 'articles' ? 'sm:grid-cols-2 lg:grid-cols-5' : 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6'}`}
       >
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm">
           <div className="mb-2 flex items-center gap-2">
@@ -1005,12 +1170,23 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm">
           <div className="mb-2 flex items-center gap-2">
             <TrendingUp className="h-5 w-5 text-violet-700" aria-hidden />
-            <span className="text-sm font-medium text-slate-700">Leave Adj/LWP</span>
+            <span className="text-sm font-medium text-slate-700">Adj this month</span>
+          </div>
+          <div className="text-2xl font-bold tabular-nums text-slate-900">
+            {formatLeaveValue(totalStats.totalLeaveAdjLwpThisMonth)}
+          </div>
+          <div className="mt-1 text-xs text-slate-500">Change in {formatMonthLabel(monthFilter)} (editable)</div>
+        </div>
+
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm">
+          <div className="mb-2 flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-violet-700" aria-hidden />
+            <span className="text-sm font-medium text-slate-700">Adj till this month</span>
           </div>
           <div className="text-2xl font-bold tabular-nums text-slate-900">
             {formatLeaveValue(totalStats.totalLeaveAdjLwp)}
           </div>
-          <div className="mt-1 text-xs text-slate-500">Manual adjustment (added to balance)</div>
+          <div className="mt-1 text-xs text-slate-500">Overall as of {formatMonthLabel(monthFilter)} (not editable)</div>
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm">
@@ -1056,13 +1232,13 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
         </div>
 
         <div className="flex flex-col gap-1">
-          <label htmlFor="leave-management-month" className="text-xs font-medium text-slate-600">
-            Month
+          <label htmlFor="leave-management-from" className="text-xs font-medium text-slate-600">
+            From
           </label>
           <select
-            id="leave-management-month"
-            value={monthFilter}
-            onChange={(e) => setMonthFilter(e.target.value)}
+            id="leave-management-from"
+            value={fromMonth}
+            onChange={(e) => applyPeriod(e.target.value, monthFilter)}
             className={selectCls}
           >
             {monthOptions.map((my) => (
@@ -1071,6 +1247,64 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
               </option>
             ))}
           </select>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label htmlFor="leave-management-to" className="text-xs font-medium text-slate-600">
+            To
+          </label>
+          <select
+            id="leave-management-to"
+            value={monthFilter}
+            onChange={(e) => applyPeriod(fromMonth, e.target.value)}
+            className={selectCls}
+          >
+            {monthOptions.map((my) => (
+              <option key={my} value={my}>
+                {formatMonthLabel(my)}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-slate-600">Period</span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => applyPeriod(latestMonth, latestMonth)}
+              className={
+                fromMonth === latestMonth && monthFilter === latestMonth
+                  ? 'rounded-md bg-blue-600 px-2.5 py-2 text-xs font-medium text-white shadow-sm'
+                  : 'rounded-md border border-blue-200/65 bg-panel px-2.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50'
+              }
+            >
+              This month
+            </button>
+            <button
+              type="button"
+              onClick={() => applyPeriod(addMonthYear(latestMonth, -2), latestMonth)}
+              className={
+                fromMonth === clampMonthYear(addMonthYear(latestMonth, -2), monthOptions) &&
+                monthFilter === latestMonth
+                  ? 'rounded-md bg-blue-600 px-2.5 py-2 text-xs font-medium text-white shadow-sm'
+                  : 'rounded-md border border-blue-200/65 bg-panel px-2.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50'
+              }
+            >
+              Last 3 months
+            </button>
+            <button
+              type="button"
+              onClick={() => applyPeriod(earliestMonth, latestMonth)}
+              className={
+                fromMonth === earliestMonth && monthFilter === latestMonth
+                  ? 'rounded-md bg-blue-600 px-2.5 py-2 text-xs font-medium text-white shadow-sm'
+                  : 'rounded-md border border-blue-200/65 bg-panel px-2.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50'
+              }
+            >
+              YTD
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-col gap-1">
@@ -1101,7 +1335,13 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
             value={sortBy}
             onChange={(e) =>
               setSortBy(
-                e.target.value as 'name' | 'balanceAsOfJan26' | 'earned' | 'remaining' | 'leaveAdjLwp'
+                e.target.value as
+                  | 'name'
+                  | 'balanceAsOfJan26'
+                  | 'earned'
+                  | 'remaining'
+                  | 'leaveAdjLwp'
+                  | 'leaveAdjLwpThisMonth'
               )
             }
             className={selectCls}
@@ -1110,7 +1350,8 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
             <option value="balanceAsOfJan26">Balance as of Jan 26</option>
             <option value="earned">Earned</option>
             <option value="remaining">Remaining</option>
-            <option value="leaveAdjLwp">Leave Adj/LWP</option>
+            <option value="leaveAdjLwpThisMonth">Adj this month</option>
+            <option value="leaveAdjLwp">Adj till this month</option>
           </select>
         </div>
       </div>
@@ -1124,12 +1365,14 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
             Leave balances
           </h3>
           <p className="text-xs text-slate-600">
-            Showing balances as of {formatMonthLabel(monthFilter)}. Totals above respect the current
+            Showing balances as of {formatMonthLabel(monthFilter)}
+            {fromMonth !== monthFilter ? ` for period ${periodLabel}` : ''}. Type Adj this month; Adj till
+            this month is the running total and cannot be edited. Totals above respect the current
             tab, team, and search.
           </p>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-sm">
+          <table className="w-full min-w-[1020px] text-sm">
             <thead className="border-b border-slate-200 bg-slate-50">
               <tr>
                 <th scope="col" className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -1148,7 +1391,10 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
                   Earned (after Jan)
                 </th>
                 <th scope="col" className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Leave Adj/LWP
+                  Adj this month
+                </th>
+                <th scope="col" className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Adj till this month
                 </th>
                 <th scope="col" className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Used (after 1 Jan)
@@ -1164,14 +1410,14 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
             <tbody>
               {loading || isLoading ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-10 text-center text-slate-600">
+                  <td colSpan={10} className="px-4 py-10 text-center text-slate-600">
                     <RefreshCw className="mx-auto mb-2 h-6 w-6 animate-spin text-blue-600" aria-hidden />
                     <span role="status">Loading leave balances…</span>
                   </td>
                 </tr>
               ) : filteredAndSortedBalances.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-10 text-center text-slate-600">
+                  <td colSpan={10} className="px-4 py-10 text-center text-slate-600">
                     <AlertCircle className="mx-auto mb-2 h-6 w-6 text-slate-400" aria-hidden />
                     No leave balances match your filters.
                   </td>
@@ -1213,11 +1459,20 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
                     </td>
                     <td className="px-4 py-3 text-center">
                       <LeaveAdjLwpInput
+                        key={`${balance.userId}-${monthFilter}`}
                         userId={balance.userId}
-                        value={balance.leaveAdjLwp ?? 0}
+                        value={balance.leaveAdjLwpThisMonth ?? 0}
                         disabled={savingAdjUserId === balance.userId || uploadBusy}
                         onSave={saveLeaveAdjLwp}
                       />
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span
+                        className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs font-medium tabular-nums text-slate-700"
+                        title="Overall Adj/LWP through this month — derived from monthly changes"
+                      >
+                        {formatLeaveValue(balance.leaveAdjLwp ?? 0)}
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-center">
                       <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-medium tabular-nums text-amber-950">

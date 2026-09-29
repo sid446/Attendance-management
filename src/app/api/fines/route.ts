@@ -102,6 +102,27 @@ function getInitials(name: string): string {
   return words.map(w => w.charAt(0).toUpperCase()).join('').substring(0, 3);
 }
 
+function cloneFineRecord(record: any) {
+  return {
+    serialNo: record.serialNo || '',
+    date: record.date,
+    consecutiveDay: record.consecutiveDay ?? 0,
+    fineAmount: record.fineAmount || 0,
+    isWarning: !!record.isWarning,
+    status: record.status || 'pending',
+    penaltyImposedBy: record.penaltyImposedBy || '',
+    reason: record.reason || '',
+    remark: record.remark || '',
+    paymentDate: record.paymentDate || '',
+    paymentMode: record.paymentMode || '',
+    vertical: record.vertical || '',
+  };
+}
+
+function isLockedFineRecord(record: any) {
+  return record.status === 'paid' || record.status === 'waived' || record.penaltyImposedBy === 'Manual';
+}
+
 // GET - Fetch fines for a month (optionally filter by user)
 export async function GET(request: NextRequest) {
   try {
@@ -161,7 +182,10 @@ export async function POST(request: NextRequest) {
       sum + (f.fineRecords?.filter((r: any) => r.isWarning)?.length || 0), 0
     );
 
-    const results: any[] = [];
+    const existingFinesForMonth = allExistingFines.filter((fine) => fine.monthYear === monthYear);
+    const existingByUserId = new Map(
+      existingFinesForMonth.map((fine: any) => [String(fine.userId), fine])
+    );
 
     for (const attendance of attendanceRecords) {
       if (!attendance.userId) continue;
@@ -202,10 +226,24 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Apply new fine rules
-      const fineRecords: any[] = [];
-      let warningCount = 0;
-      let fineCount = 0;
+      const existingFine = existingByUserId.get(userId);
+      const existingRecords = existingFine?.fineRecords || [];
+      const lockedRecords = existingRecords.filter(isLockedFineRecord).map(cloneFineRecord);
+      const lockedAutoDates = new Set(
+        existingRecords
+          .filter((record: any) => (record.status === 'paid' || record.status === 'waived') && record.penaltyImposedBy !== 'Manual')
+          .map((record: any) => record.date)
+      );
+      const pendingAutoByDate = new Map<string, any>();
+      for (const record of existingRecords) {
+        if (isLockedFineRecord(record)) continue;
+        if (!pendingAutoByDate.has(record.date)) {
+          pendingAutoByDate.set(record.date, record);
+        }
+      }
+
+      // Recalc adds/updates pending late fines only. Paid, waived, and manual rows stay.
+      const fineRecords: any[] = [...lockedRecords];
       for (let i = 0; i < lateDates.length; i++) {
         const dateStr = lateDates[i];
         const rec = records[dateStr];
@@ -238,15 +276,31 @@ export async function POST(request: NextRequest) {
             remark = `Fine ₹50 for ${i + 1}th late day`;
           }
         }
+
+        if (lockedAutoDates.has(dateStr)) {
+          continue;
+        }
+
+        const existingPending = pendingAutoByDate.get(dateStr);
+        if (existingPending) {
+          const kept = cloneFineRecord(existingPending);
+          kept.consecutiveDay = 0;
+          kept.fineAmount = fineAmount;
+          kept.isWarning = isWarning;
+          kept.reason = `In Time-${effectiveCheckin} (Scheduled: ${scheduledIn})`;
+          kept.remark = remark;
+          kept.vertical = vertical;
+          fineRecords.push(kept);
+          continue;
+        }
+
         let serialNo = '';
         if (isWarning) {
           globalWarningCounter++;
           serialNo = `${userInitials}/W${String(globalWarningCounter).padStart(4, '0')}`;
-          warningCount++;
         } else {
           globalFineCounter++;
           serialNo = `${userInitials}/F${String(globalFineCounter).padStart(4, '0')}`;
-          fineCount++;
         }
         fineRecords.push({
           serialNo,
@@ -264,12 +318,21 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      // Calculate totals
-      const totalFine = fineRecords.reduce((sum, r) => sum + r.fineAmount, 0);
-      const totalWarnings = fineRecords.filter(r => r.isWarning).length;
+      fineRecords.sort((a, b) => String(a.date).localeCompare(String(b.date)));
 
-      // Upsert fine record
-      const fine = await Fine.findOneAndUpdate(
+      if (fineRecords.length === 0) {
+        if (existingFine?._id) {
+          await Fine.deleteOne({ _id: existingFine._id });
+        }
+        continue;
+      }
+
+      const totalFine = fineRecords
+        .filter((record) => record.status === 'pending' && !record.isWarning)
+        .reduce((sum, record) => sum + record.fineAmount, 0);
+      const totalWarnings = fineRecords.filter((record) => record.isWarning).length;
+
+      await Fine.findOneAndUpdate(
         { userId, monthYear },
         {
           userId,
@@ -280,16 +343,19 @@ export async function POST(request: NextRequest) {
           totalWarnings,
         },
         { upsert: true, new: true }
-      ).populate('userId', 'name odId category team designation workingUnderPartner fieldHistories');
-
-      results.push(fine);
+      );
     }
+
+    const fines = await Fine.find({ monthYear }).populate(
+      'userId',
+      'name odId category team designation workingUnderPartner fieldHistories'
+    );
 
     return NextResponse.json({ 
       success: true, 
-      message: `Calculated fines for ${results.length} employees`,
-      count: results.length,
-      fines: results 
+      message: `Calculated fines for ${fines.length} employees. Paid, waived, and manual fines were kept.`,
+      count: fines.length,
+      fines,
     });
   } catch (error) {
     console.error('Error calculating fines:', error);

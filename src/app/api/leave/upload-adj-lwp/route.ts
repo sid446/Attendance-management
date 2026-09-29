@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import mongoose from 'mongoose';
 import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
 import { getHrOperatorEmailFromRequest } from '@/lib/hrAuthServer';
@@ -11,6 +10,13 @@ import {
   currentMonthKey,
   EARN_FROM_MONTH,
 } from '@/lib/leaveReconciliation';
+import {
+  ADJ_FROM_MONTH,
+  getAdjLwpByUserThroughMonth,
+  rebuildSnapshotsFromMonth,
+  setAdjThisMonth,
+  syncUserLeaveAdjLwpFromLedger,
+} from '@/lib/leaveAdjLwp';
 
 export const maxDuration = 300;
 
@@ -26,6 +32,13 @@ type MatchedRow = {
   currentLeaveAdjLwp: number;
   newLeaveAdjLwp: number;
 };
+
+function parseMonthYear(raw: unknown): string | null {
+  const value = String(raw || '').trim();
+  if (!value) return currentMonthKey();
+  if (!/^\d{4}-\d{2}$/.test(value)) return null;
+  return value < ADJ_FROM_MONTH ? ADJ_FROM_MONTH : value;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -47,6 +60,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const rows: UploadRow[] = Array.isArray(body?.rows) ? body.rows : [];
     const mode: 'preview' | 'apply' = body?.mode === 'apply' ? 'apply' : 'preview';
+    const monthYear = parseMonthYear(body?.monthYear);
+
+    if (!monthYear) {
+      return NextResponse.json(
+        { success: false, error: 'monthYear must be YYYY-MM' },
+        { status: 400 }
+      );
+    }
 
     if (rows.length === 0) {
       return NextResponse.json(
@@ -59,15 +80,19 @@ export async function POST(request: NextRequest) {
       .select('_id name employeeCode leaveBalance')
       .lean();
 
+    const adjByUser = await getAdjLwpByUserThroughMonth(monthYear);
+
     const byNameKey = new Map<string, Array<{ id: string; name: string; adj: number }>>();
     for (const u of users) {
       const key = normalizeForMatch(String(u.name || ''));
       if (!key) continue;
       if (!byNameKey.has(key)) byNameKey.set(key, []);
+      const uid = String(u._id);
+      const adjRow = adjByUser.get(uid);
       byNameKey.get(key)!.push({
-        id: String(u._id),
+        id: uid,
         name: String(u.name || ''),
-        adj: Number(u.leaveBalance?.leaveAdjLwp || 0),
+        adj: adjRow?.thisMonth ?? 0,
       });
     }
 
@@ -84,7 +109,7 @@ export async function POST(request: NextRequest) {
 
       const leaveAdjLwp = Number(row?.leaveAdjLwp);
       if (!Number.isFinite(leaveAdjLwp)) {
-        invalid.push({ excelName, reason: 'Leave Adj/LWP is not a valid number' });
+        invalid.push({ excelName, reason: 'Adj this month is not a valid number' });
         continue;
       }
 
@@ -118,7 +143,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: false,
         error: 'No employee in the file could be matched by name',
-        data: { matched, notFound, ambiguous, invalid, duplicateNames },
+        data: { matched, notFound, ambiguous, invalid, duplicateNames, monthYear },
       });
     }
 
@@ -135,12 +160,14 @@ export async function POST(request: NextRequest) {
         userIds,
         dryRun: true,
         leaveAdjLwpOverrides,
+        leaveAdjLwpOverrideMonth: monthYear,
       });
 
       return NextResponse.json({
         success: true,
         data: {
           mode,
+          monthYear,
           matched,
           notFound,
           ambiguous,
@@ -152,15 +179,7 @@ export async function POST(request: NextRequest) {
     }
 
     for (const m of matched) {
-      await User.collection.updateOne(
-        { _id: new mongoose.Types.ObjectId(m.userId) },
-        {
-          $set: {
-            'leaveBalance.leaveAdjLwp': m.newLeaveAdjLwp,
-            'leaveBalance.lastUpdated': new Date(),
-          },
-        }
-      );
+      await setAdjThisMonth(m.userId, monthYear, m.newLeaveAdjLwp);
     }
 
     const applied = await reconcileLeaveFromAttendance({
@@ -170,10 +189,17 @@ export async function POST(request: NextRequest) {
       dryRun: false,
     });
 
+    for (const m of matched) {
+      await syncUserLeaveAdjLwpFromLedger(m.userId);
+    }
+
+    await rebuildSnapshotsFromMonth(monthYear);
+
     return NextResponse.json({
       success: true,
       data: {
         mode,
+        monthYear,
         matched,
         notFound,
         ambiguous,

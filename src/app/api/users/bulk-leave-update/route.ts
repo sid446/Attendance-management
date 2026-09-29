@@ -4,6 +4,11 @@ import User, { IUser } from '@/models/User';
 import { getHrOperatorEmailFromRequest } from '@/lib/hrAuthServer';
 import { loadHrConsolePermissionDoc } from '@/lib/hrConsolePermissionDb';
 import { effectiveFromDoc } from '@/lib/hrConsolePermissionUtils';
+import {
+  ADJ_FROM_MONTH,
+  setAdjAsOf,
+  syncUserLeaveAdjLwpFromLedger,
+} from '@/lib/leaveAdjLwp';
 
 export async function POST(request: NextRequest) {
   try {
@@ -79,21 +84,16 @@ export async function POST(request: NextRequest) {
 
       try {
         const leavesAllowed = parseFloat(item.leavesAllowed) || 0;
-        const leavesTaken = parseFloat(item.leavesTaken) || 0; // Leave Adj/LWP (may be negative)
+        const leavesTaken = parseFloat(item.leavesTaken) || 0; // Leave Adj/LWP as of Jan 2026 (may be negative)
 
-        // Update leave balance
-        // 'balanceAsOfJan26' stores the opening balance as of 1st Jan 2026 (from Excel)
-        // 'earned' is calculated from attendance uploads after Jan 2026
-        // 'leaveAdjLwp' is HR Leave Adj/LWP (added into remaining)
-        // 'usedAfterJan26' is calculated dynamically from attendance records
-        // 'remaining' is calculated dynamically
         await User.findByIdAndUpdate(matchedUser._id, {
           $set: {
             'leaveBalance.balanceAsOfJan26': leavesAllowed,
-            'leaveBalance.leaveAdjLwp': leavesTaken, // Leave Adj/LWP from Excel
             'leaveBalance.lastUpdated': new Date()
           }
         });
+        await setAdjAsOf(matchedUser._id, ADJ_FROM_MONTH, Number(leavesTaken.toFixed(3)));
+        await syncUserLeaveAdjLwpFromLedger(matchedUser._id);
 
         stats.updated++;
       } catch (err) {

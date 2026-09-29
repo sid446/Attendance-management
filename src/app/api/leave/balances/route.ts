@@ -4,6 +4,7 @@ import User from '@/models/User';
 import LeaveTransaction from '@/models/LeaveTransaction';
 import { getWorkingUnderPartnerForDate, lastDayOfMonthYear } from '@/lib/userFieldHistory';
 import { computeLeaveRemaining } from '@/lib/leaveManagement';
+import { getAdjLwpByUserThroughMonth, ADJ_FROM_MONTH } from '@/lib/leaveAdjLwp';
 
 export const dynamic = 'force-dynamic';
 
@@ -101,6 +102,8 @@ export async function GET(request: NextRequest) {
       earnedFromLedgerMap.set(String(row._id), Number(row.totalEarned || 0));
     }
 
+    const adjByUser = await getAdjLwpByUserThroughMonth(monthYear);
+
     const useLiveEarnedFallback = monthYear >= thisMonth;
 
     // Transform the data to include user information with leave balances
@@ -115,10 +118,23 @@ export async function GET(request: NextRequest) {
           : useLiveEarnedFallback
             ? liveEarned
             : 0;
-      // Read adj from lean doc; treat missing as 0 (do not fall back to legacy `used`).
-      const leaveAdjLwp = Number(
+      const liveAdj = Number(
         (user.leaveBalance as { leaveAdjLwp?: number } | undefined)?.leaveAdjLwp ?? 0
       );
+      const uid = String(user._id);
+      const adjRow = adjByUser.get(uid);
+      // Ledger is source of truth. Live scalar is only a fallback for the current
+      // month when this employee has no adj-lwp rows yet (pre-migrate).
+      const leaveAdjLwp = adjRow
+        ? adjRow.tillMonth
+        : monthYear >= thisMonth
+          ? liveAdj
+          : 0;
+      const leaveAdjLwpThisMonth = adjRow
+        ? adjRow.thisMonth
+        : monthYear === ADJ_FROM_MONTH
+          ? liveAdj
+          : 0;
       const remaining = computeLeaveRemaining({
         balanceAsOfJan26,
         earned,
@@ -135,6 +151,7 @@ export async function GET(request: NextRequest) {
         balanceAsOfJan26: balanceAsOfJan26,
         earned: earned,
         leaveAdjLwp,
+        leaveAdjLwpThisMonth,
         usedAfterJan26: usedAfterJan26,
         remaining: remaining,
         lastUpdated: user.leaveBalance?.lastUpdated || user.joiningDate || new Date(),

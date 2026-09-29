@@ -43,40 +43,47 @@ export function useRequestApproval({
 
     setProcessingRequest(processingId as string);
     try {
-      const response =
-        requestIds.length > 1
-          ? await fetch('/api/partner/bulk-action', apiCredentialsInit({
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                action,
-                ids: requestIds,
-                remark: remarks,
-                value: value ? parseFloat(value) : undefined,
-                approvedBy: 'HR',
-                approvedByEmail: 'hr@asija.in',
-              }),
-            }))
-          : await fetch('/api/employee/approve', apiCredentialsInit({
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                requestId: requestIds[0],
-                action,
-                remarks,
-                value,
-                approvedBy: 'HR',
-                approvedByEmail: 'hr@asija.in',
-              }),
-            }));
+      // Date ranges must not go through partner bulk-action from the HR console.
+      // That API treated an employee cookie as the actor and re-queued stale
+      // months as PendingHr instead of HR-finalizing them.
+      let lastError: string | null = null;
+      let successCount = 0;
+      for (const id of requestIds) {
+        const response = await fetch(
+          '/api/employee/approve',
+          apiCredentialsInit({
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              requestId: id,
+              action,
+              remarks,
+              value,
+              approvedBy: 'HR',
+              approvedByEmail: 'hr@asija.in',
+            }),
+          })
+        );
+        const result = await response.json();
+        if (result.success) {
+          successCount += 1;
+        } else {
+          lastError = result.error || 'Failed to process request';
+          break;
+        }
+      }
 
-      const result = await response.json();
-
-      if (result.success) {
+      if (successCount === requestIds.length) {
         await refresh();
         onRequestUpdate?.();
       } else {
-        setError(result.error || 'Failed to process request');
+        if (successCount > 0) await refresh();
+        setError(
+          lastError ||
+            (successCount === 0
+              ? 'Failed to process request'
+              : `Processed ${successCount} of ${requestIds.length} day(s). ${lastError || ''}`.trim())
+        );
       }
     } catch {
       setError('Failed to process request');

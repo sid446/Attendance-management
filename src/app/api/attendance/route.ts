@@ -30,6 +30,10 @@ import {
   normalizeHalftimeDayRecord,
 } from '@/lib/halftimeAttendance';
 import { isLocationPunchAttendanceRecord } from '@/lib/locationPunchAttendance';
+import {
+  emptyFixedUploadSkipCounts,
+  fixedUploadSkipReason,
+} from '@/lib/attendanceUploadGuards';
 
 // GET - Fetch attendance records
 export async function GET(request: NextRequest) {
@@ -153,6 +157,13 @@ export async function POST(request: NextRequest) {
       const processed: Array<{ odId: string; userId: string; monthYear: string; date: string; createdUser: boolean }> = [];
       const errors: Array<{ odId: string; reason: string }> = [];
       const pendingQueued: Array<{ odId: string; uploadName: string; isoDate: string }> = [];
+      const skipped = emptyFixedUploadSkipCounts();
+      const leaveReplayFromByUser = new Map<string, string>();
+      const noteLeaveReplay = (userId: string, monthYear: string) => {
+        if (!userId || !/^\d{4}-\d{2}$/.test(monthYear) || monthYear < '2026-01') return;
+        const prev = leaveReplayFromByUser.get(userId);
+        if (!prev || monthYear < prev) leaveReplayFromByUser.set(userId, monthYear);
+      };
       const uploadedMonths = new Set<string>();
       // Track uploaded absent/leave candidates by user for paid-leave allocation.
       const uploadedLeaveCandidates = new Map<string, Set<string>>();
@@ -243,6 +254,12 @@ export async function POST(request: NextRequest) {
           // Track uploaded months for leave increment
           uploadedMonths.add(isoMonthYear);
 
+          // Fixed re-uploads often skip unchanged days, so a failed leave replay
+          // would never run again. Always rebuild from January for matched staff.
+          if (isFixedDataUpload) {
+            noteLeaveReplay(String(user._id), isoMonthYear);
+          }
+
           // Find existing attendance or create new one per user per month
           let attendance = await Attendance.findOne({ userId: user._id, monthYear: isoMonthYear });
           const isNewAttendanceForMonth = !attendance;
@@ -273,6 +290,30 @@ export async function POST(request: NextRequest) {
 
           let checkin = normalizeTimeToHHmm(rec.inTime || rec.actualInTime);
           let checkout = normalizeTimeToHHmm(rec.outTime || rec.actualOutTime);
+
+          const approvedRequest = await AttendanceRequest.findOne({
+            userId: user._id,
+            date: isoDate,
+            status: 'Approved',
+          });
+
+          if (isFixedDataUpload) {
+            const incomingType =
+              rec.typeOfPresence
+                ? String(rec.typeOfPresence).trim()
+                : mapFixedPresenceCodeToType(fixedPresenceCode);
+            const skipReason = fixedUploadSkipReason({
+              existing: existingRecordBeforeUpdate as Record<string, unknown> | undefined,
+              hasApprovedRequest: Boolean(approvedRequest),
+              incomingType: incomingType || 'Absent',
+              incomingIn: rec.inTime || rec.actualInTime || checkin,
+              incomingOut: rec.outTime || rec.actualOutTime || checkout,
+            });
+            if (skipReason) {
+              skipped[skipReason] += 1;
+              continue;
+            }
+          }
 
           // Capture Excel intent before merge: late single "in" with empty out is exit-only.
           // Re-uploads can fill out from a prior remap (00:00/18:04), which would otherwise
@@ -389,13 +430,6 @@ export async function POST(request: NextRequest) {
             calculationCheckout,
             scheduleHourOpts
           );
-
-          // Check for Approved Requests (Future/Correction) that override Excel data
-          const approvedRequest = await AttendanceRequest.findOne({
-            userId: user._id,
-            date: isoDate,
-            status: 'Approved'
-          });
 
           // Map page status to typeOfPresence;
           let typeOfPresence = 'ThumbMachine';
@@ -796,6 +830,7 @@ export async function POST(request: NextRequest) {
               try {
                 const lm = await import('@/lib/leaveManagement');
                 await lm.removePaidLeaveForDate(user._id, isoDate);
+                noteLeaveReplay(String(user._id), isoMonthYear);
                 console.log(`[LEAVE DEBUG] Removed prior paid-leave transactions for ${user._id} on ${isoDate} due to re-upload change`);
               } catch (e) {
                 console.error('Failed to remove prior paid-leave transactions on re-upload:', e);
@@ -1052,6 +1087,11 @@ export async function POST(request: NextRequest) {
 
             if (paidDetails.length > 0) {
               await updateLeaveBalanceOnApproval(user._id as any, paidDetails as any);
+              const earliest = paidDetails.reduce(
+                (min, d) => (d.date < min ? d.date : min),
+                paidDetails[0].date
+              );
+              noteLeaveReplay(String(user._id), earliest.slice(0, 7));
             }
           } catch (leaveApplyErr) {
             console.error('Error applying uploaded leave allocation for user', userId, leaveApplyErr);
@@ -1101,6 +1141,14 @@ export async function POST(request: NextRequest) {
 
             if (partialEntries.length > 0) {
               await reconcilePartialLeaveFromAttendance(user._id as any, partialEntries);
+              const withLeave = partialEntries.filter((p) => p.amount > 0);
+              if (withLeave.length > 0) {
+                const earliest = withLeave.reduce(
+                  (min, p) => (p.date < min ? p.date : min),
+                  withLeave[0].date
+                );
+                noteLeaveReplay(String(userId), earliest.slice(0, 7));
+              }
             }
           } catch (partialErr) {
             console.error('Error reconciling partial leave for uploaded records for user', userId, partialErr);
@@ -1136,6 +1184,11 @@ export async function POST(request: NextRequest) {
             processed,
             errors,
             pendingQueued,
+            skipped,
+            leaveReplay: Array.from(leaveReplayFromByUser.entries()).map(([userId, fromMonth]) => ({
+              userId,
+              fromMonth,
+            })),
           },
         },
         { status: 201 }

@@ -329,6 +329,8 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         [
           `File(s): ${fileLabel}`,
           'This will import present/absent, in-time, and out-time rows from the fixed sheet format.',
+          'Unchanged days, approved-request days, location punches, and HR-edited days are left as they are.',
+          'If Present replaces a system On leave day, that leave credit is returned and leave is replayed from January so later months pick up paid/unpaid correctly.',
         ]
       )
     ) {
@@ -643,7 +645,7 @@ export const UploadSection: React.FC<UploadSectionProps> = ({
         <div className="mb-3">
           <h3 className="text-sm font-semibold text-slate-900">Fixed attendance sheet (optional)</h3>
           <p className="mt-1 text-xs text-slate-600">
-            Required headers: Date, Employee Name, Present / Absent, Actual InTime, Actual OutTime.
+            Required headers: Date, Employee Name, Present / Absent, and Actual InTime/OutTime (or Data as per Thumb in/out).
           </p>
           <p className="mt-1 text-[11px] text-slate-500">
             Date format: DD-MM-YYYY (example: 02-01-2026). Presence codes supported: Present, WO-Present, HD, OS-P,

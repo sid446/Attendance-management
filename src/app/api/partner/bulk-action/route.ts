@@ -45,6 +45,7 @@ import {
   sendPartnerRequestDecisionEmail,
 } from '@/lib/attendanceRequestNotifications';
 import { getEmployeeUserIdFromRequest } from '@/lib/employeeAuthServer';
+import { getHrOperatorEmailFromRequest } from '@/lib/hrAuthServer';
 import { formatPartnerNameForReview } from '@/lib/selfApproveAttendanceRequests';
 import {
   isAuthorizedPartnerForRequest,
@@ -94,8 +95,15 @@ export async function POST(request: NextRequest) {
         let secureApprovedBy: string | null = null;
         let secureApprovedByEmail: string | null = null;
         let viewerUserId = '';
+        let isHrActor = false;
 
-        if (typeof accessToken === 'string' && accessToken.trim()) {
+        const hrEmail = await getHrOperatorEmailFromRequest(request);
+        if (hrEmail) {
+            // HR console wins even if an employee cookie is also on the browser.
+            isHrActor = true;
+            secureApprovedBy = 'HR';
+            secureApprovedByEmail = hrEmail;
+        } else if (typeof accessToken === 'string' && accessToken.trim()) {
             const tokenCheck = verifyPartnerReviewToken(accessToken.trim());
             if (!tokenCheck.valid) {
                 return NextResponse.json({ success: false, error: tokenCheck.error }, { status: 401 });
@@ -145,7 +153,7 @@ export async function POST(request: NextRequest) {
           { partnerName: string; rows: RequestDecisionRow[]; skipIfSameAs?: string | null }
         > = {};
 
-        const partnerActor = !!secureApprovedBy;
+        const partnerActor = !!secureApprovedBy && !isHrActor;
 
         for (const id of ids) {
             const reqRecord = await AttendanceRequest.findById(id);
@@ -158,7 +166,9 @@ export async function POST(request: NextRequest) {
 
             let isAuthorized = false;
 
-            if (!secureApprovedBy) {
+            if (isHrActor) {
+                isAuthorized = true;
+            } else if (!secureApprovedBy) {
                 isAuthorized = true;
             } else if (viewerUserId && secureApprovedByEmail) {
                 isAuthorized = await isAuthorizedPartnerForRequest(

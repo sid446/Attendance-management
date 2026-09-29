@@ -61,16 +61,8 @@ export function getScheduledTimes(user: any, dateInput: string | Date): {
       .sort((a: any, b: any) => normalizeDate(b.effectiveFrom) - normalizeDate(a.effectiveFrom))[0];
 
     if (applicableSeasonal && applicableSeasonal.daily) {
-      const sch = applicableSeasonal.daily[dayName];
-      if (sch && sch.inTime) {
-        return {
-          inTime: sch.inTime,
-          outTime: sch.outTime || '18:00',
-          isHoliday: sch.isHoliday || false,
-          isHalfDay: sch.isHalfDay || false,
-          source: 'seasonal'
-        };
-      }
+      const fromDay = scheduleFromDayEntry(applicableSeasonal.daily[dayName], 'seasonal');
+      if (fromDay) return fromDay;
     }
   }
 
@@ -82,16 +74,8 @@ export function getScheduledTimes(user: any, dateInput: string | Date): {
       .sort((a: any, b: any) => normalizeDate(b.effectiveFrom) - normalizeDate(a.effectiveFrom))[0];
 
     if (applicableEntry && applicableEntry.daily) {
-      const sch = applicableEntry.daily[dayName];
-      if (sch && sch.inTime) {
-        return {
-          inTime: sch.inTime,
-          outTime: sch.outTime || '18:00',
-          isHoliday: sch.isHoliday || false,
-          isHalfDay: sch.isHalfDay || false,
-          source: 'regular'
-        };
-      }
+      const fromDay = scheduleFromDayEntry(applicableEntry.daily[dayName], 'regular');
+      if (fromDay) return fromDay;
     }
   }
 
@@ -128,9 +112,39 @@ export function getScheduledTimes(user: any, dateInput: string | Date): {
       source = 'legacy';
     }
   } else {
-    // Sunday default
+    // Sunday weekoff — do not invent 09:00–18:00
+    inTime = '';
+    outTime = '';
     isHoliday = true;
   }
 
   return { inTime, outTime, isHoliday, isHalfDay, source };
+}
+
+/**
+ * Honour an explicit day entry even when in-time is blank (Sunday/holiday weekoff).
+ * Previously empty in-time was skipped and fell through to default 09:00–18:00.
+ */
+function scheduleFromDayEntry(
+  sch: { inTime?: string; outTime?: string; isHoliday?: boolean; isHalfDay?: boolean } | null | undefined,
+  source: 'seasonal' | 'regular'
+): {
+  inTime: string;
+  outTime: string;
+  isHoliday: boolean;
+  isHalfDay: boolean;
+  source: 'seasonal' | 'regular';
+} | null {
+  if (!sch || typeof sch !== 'object') return null;
+  const inTime = String(sch.inTime || '').trim();
+  const outTime = String(sch.outTime || '').trim();
+  const isHoliday = !!sch.isHoliday;
+  if (!inTime && !outTime && !isHoliday && !sch.isHalfDay) return null;
+  return {
+    inTime,
+    outTime: outTime || (isHoliday || !inTime ? '' : '18:00'),
+    isHoliday: isHoliday || !inTime || inTime === '00:00',
+    isHalfDay: !!sch.isHalfDay,
+    source,
+  };
 }

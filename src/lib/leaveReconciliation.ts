@@ -6,7 +6,7 @@
  * 1. User.leaveBalance
  *    - balanceAsOfJan26: opening balance (Excel)
  *    - earned: +2 per calendar month with attendance (from 2026-01, non-articles)
- *    - leaveAdjLwp: HR Leave Adj/LWP (manual/upload; added into remaining)
+ *    - leaveAdjLwp: sum of monthly Adj/LWP ledger rows through the current month
  *    - usedAfterJan26: leave consumed from 2026 onward (ledger-driven)
  *    - remaining = balanceAsOfJan26 + earned - usedAfterJan26 + leaveAdjLwp
  *
@@ -16,10 +16,11 @@
  *
  * 4. Attendance records: Absent / On leave (value 0 = unpaid, 1 = paid)
  *
- * Upload allocation: monthly earn is credited first; then absent candidates sorted
- * by date; earliest days consume balance → On leave, rest Absent. This module
- * replays that same allocation across all stored attendance, then rebuilds
- * transactions, user balances, and snapshots.
+ * Upload allocation: monthly earn is credited when that month is reached; then
+ * absent/on-leave candidates sorted by date consume balance → On leave, rest
+ * Absent. Approved leave requests are kept as requests; paid vs unpaid still
+ * follows remaining balance. This module replays that allocation across stored
+ * attendance, then rebuilds transactions, user balances, and snapshots.
  */
 
 import mongoose from 'mongoose';
@@ -30,6 +31,12 @@ import User from '@/models/User';
 import LeaveTransaction from '@/models/LeaveTransaction';
 import { createMonthlySnapshots } from '@/lib/leaveLedger';
 import { MONTHLY_EARNED_SOURCES } from '@/lib/leaveManagement';
+import {
+  addAdjThroughMonth,
+  adjAsOfFromDeltas,
+  getAdjLwpDeltasByUser,
+  monthsFromTo,
+} from '@/lib/leaveAdjLwp';
 
 export const MONTHLY_EARN = 2;
 export const EARN_FROM_MONTH = '2026-01';
@@ -91,7 +98,10 @@ type PartialResult = {
 };
 
 export interface LeaveReconcileOptions {
-  /** Inclusive first month (YYYY-MM). Defaults to 2026-01. */
+  /**
+   * Inclusive first month (YYYY-MM). Leave earn always starts at 2026-01 even if
+   * a later month is passed, so earlier monthly credit is not dropped.
+   */
   fromMonth?: string;
   /** Inclusive last month (YYYY-MM). Defaults to the current month. */
   toMonth?: string;
@@ -109,9 +119,12 @@ export interface LeaveReconcileOptions {
    */
   openingBalanceOverrides?: Record<string, number>;
   /**
-   * userId → Leave Adj/LWP to use instead of the stored `leaveAdjLwp`.
+   * userId → Adj/LWP **this-month delta** for `leaveAdjLwpOverrideMonth` (or `toMonth`).
+   * Lets a dry run preview a monthly change that has not been saved yet.
    */
   leaveAdjLwpOverrides?: Record<string, number>;
+  /** Month the this-month overrides apply to (YYYY-MM). Defaults to toMonth. */
+  leaveAdjLwpOverrideMonth?: string;
 }
 
 export interface LeaveReconcileDayChange {
@@ -256,35 +269,68 @@ function allocateLeaveDays(
     requestedStatus?: string;
   }>,
   startingBalance: number,
-  isArticle: boolean
-): { allocations: AllocResult[]; endingBalance: number } {
+  isArticle: boolean,
+  creditByMonth?: Record<string, number>
+): { allocations: AllocResult[]; endingBalance: number; lastAdjMonth: string } {
   const sorted = [...candidates].sort((a, b) => a.date.localeCompare(b.date));
   let running = startingBalance;
+  let lastAdjMonth = '2025-12';
   const allocations: AllocResult[] = [];
 
   for (const c of sorted) {
-    // A day that went through an approved employee request is a decision already made.
-    // Never flip an approved "On leave" request to Absent — restore On leave even if a
-    // previous reconcile wrongly marked it Absent. Articles keep the status but value 0.
+    const monthYear = String(c.date).slice(0, 7);
+    const stepped = addAdjThroughMonth(running, lastAdjMonth, monthYear, creditByMonth);
+    running = stepped.running;
+    lastAdjMonth = stepped.lastInclusiveMonth;
+
+    // Approved requests keep the day as a leave decision (not un-approved).
+    // Paid vs unpaid still follows Leave Management balance: On leave if a day
+    // of balance remains, otherwise Absent (unpaid).
     if (c.locked) {
       const approvedOnLeave = isApprovedOnLeaveRequest(c.requestedStatus);
-      const keepType = approvedOnLeave
-        ? 'On leave'
-        : c.currentType || String(c.requestedStatus || 'Absent');
-      const value = isArticle ? 0 : approvedOnLeave ? 1 : Number(c.currentValue || 0);
-      const paid = value > 0;
-      if (paid) running -= value;
+      if (isArticle) {
+        allocations.push({
+          date: c.date,
+          paid: false,
+          value: 0,
+          reason: 'employee-request-approved-article-unpaid',
+          locked: true,
+          keepType: approvedOnLeave
+            ? 'On leave'
+            : c.currentType || String(c.requestedStatus || 'Absent'),
+        });
+        continue;
+      }
+      if (approvedOnLeave) {
+        if (running >= 1) {
+          running -= 1;
+          allocations.push({
+            date: c.date,
+            paid: true,
+            value: 1,
+            reason: 'employee-request-approved-paid',
+            locked: true,
+            keepType: 'On leave',
+          });
+        } else {
+          allocations.push({
+            date: c.date,
+            paid: false,
+            value: 0,
+            reason: 'employee-request-approved-unpaid',
+            locked: true,
+            keepType: 'Absent',
+          });
+        }
+        continue;
+      }
       allocations.push({
         date: c.date,
-        paid,
-        value,
-        reason: isArticle
-          ? 'employee-request-approved-article-unpaid'
-          : approvedOnLeave
-            ? 'employee-request-approved-on-leave'
-            : 'employee-request-approved',
+        paid: false,
+        value: Number(c.currentValue || 0),
+        reason: 'employee-request-approved',
         locked: true,
-        keepType,
+        keepType: c.currentType || String(c.requestedStatus || 'Absent'),
       });
       continue;
     }
@@ -301,18 +347,26 @@ function allocateLeaveDays(
     }
   }
 
-  return { allocations, endingBalance: running };
+  return { allocations, endingBalance: running, lastAdjMonth };
 }
 
 function allocatePartialDays(
   entries: Array<{ date: string; amount: number }>,
-  startingBalance: number
+  startingBalance: number,
+  lastAdjMonth: string,
+  adjByMonth?: Record<string, number>
 ): { results: PartialResult[]; endingBalance: number } {
   const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
   let running = Math.max(0, startingBalance);
+  let adjMonth = lastAdjMonth;
   const results: PartialResult[] = [];
 
   for (const { date, amount } of sorted) {
+    const monthYear = String(date).slice(0, 7);
+    const stepped = addAdjThroughMonth(running, adjMonth, monthYear, adjByMonth);
+    running = Math.max(0, stepped.running);
+    adjMonth = stepped.lastInclusiveMonth;
+
     const desired = Math.round(Math.max(0, amount) * 100) / 100;
     if (desired <= 0) {
       results.push({ date, amount: 0 });
@@ -344,7 +398,9 @@ function recalcLeaveSummary(records: Record<string, DayRecord>) {
 export async function reconcileLeaveFromAttendance(
   options: LeaveReconcileOptions = {}
 ): Promise<LeaveReconcileResult> {
-  const fromMonth = options.fromMonth || EARN_FROM_MONTH;
+  // Always allocate from January 2026. Starting later drops Jan–Mar earn and
+  // under-pays later months (upload used to pass the first changed month).
+  const fromMonth = EARN_FROM_MONTH;
   const toMonth = options.toMonth || currentMonthKey();
   const dryRun = options.dryRun !== false;
   const skipAttendance = options.skipAttendance === true;
@@ -402,6 +458,11 @@ export async function reconcileLeaveFromAttendance(
     attendanceByUser.get(uid)!.push(doc);
   }
 
+  const adjDeltasByUser = await getAdjLwpDeltasByUser(
+    hasUserFilter ? objectIds.map((id) => String(id)) : undefined
+  );
+  const adjOverrideMonth = options.leaveAdjLwpOverrideMonth || toMonth;
+
   const result: LeaveReconcileResult = {
     dryRun,
     fromMonth,
@@ -433,9 +494,11 @@ export async function reconcileLeaveFromAttendance(
       override !== undefined ? override : user.leaveBalance?.balanceAsOfJan26 || 0
     );
     const adjOverride = options.leaveAdjLwpOverrides?.[uid];
-    const leaveAdjLwp = Number(
-      adjOverride !== undefined ? adjOverride : user.leaveBalance?.leaveAdjLwp || 0
-    );
+    const adjByMonth: Record<string, number> = { ...(adjDeltasByUser.get(uid) || {}) };
+    if (adjOverride !== undefined && adjOverrideMonth) {
+      adjByMonth[adjOverrideMonth] = Number(Number(adjOverride).toFixed(3));
+    }
+    const leaveAdjLwp = adjAsOfFromDeltas(adjByMonth, toMonth);
 
     const monthsWithAttendance = new Set<string>();
     const leaveCandidates: Array<{ date: string; monthYear: string; rec: DayRecord }> = [];
@@ -464,10 +527,22 @@ export async function reconcileLeaveFromAttendance(
     }
 
     const earnedTotal = isArticle ? 0 : monthsWithAttendance.size * MONTHLY_EARN;
-    const startingBalance = balanceAsOfJan26 + earnedTotal + leaveAdjLwp;
+    // Opening is B/F only. Each month's +2 earn and adj-lwp are added when
+    // allocation reaches that month so June cannot spend July/August credit.
+    const creditByMonth: Record<string, number> = { ...adjByMonth };
+    if (!isArticle) {
+      for (const m of monthsWithAttendance) {
+        creditByMonth[m] = Number(((creditByMonth[m] || 0) + MONTHLY_EARN).toFixed(3));
+      }
+    }
+    const startingBalance = balanceAsOfJan26;
 
     const leaveDates = leaveCandidates.map((c) => c.date);
-    const { allocations, endingBalance: afterFullDays } = allocateLeaveDays(
+    const {
+      allocations,
+      endingBalance: afterFullDays,
+      lastAdjMonth,
+    } = allocateLeaveDays(
       leaveCandidates.map((c) => {
         const key = `${uid}|${c.date}`;
         const requestedStatus = approvedRequestByKey.get(key);
@@ -480,12 +555,18 @@ export async function reconcileLeaveFromAttendance(
         };
       }),
       startingBalance,
-      isArticle
+      isArticle,
+      creditByMonth
     );
     const allocByDate = new Map(allocations.map((a) => [a.date, a]));
 
     const partialEntries = partialCandidates.map((p) => ({ date: p.date, amount: p.amount }));
-    const { results: partialResults } = allocatePartialDays(partialEntries, afterFullDays);
+    const { results: partialResults } = allocatePartialDays(
+      partialEntries,
+      afterFullDays,
+      lastAdjMonth,
+      creditByMonth
+    );
 
     const fullDayUsed = allocations.filter((a) => a.paid).reduce((s, a) => s + a.value, 0);
     const partialUsed = partialResults.reduce((s, p) => s + p.amount, 0);
@@ -658,6 +739,7 @@ export async function reconcileLeaveFromAttendance(
     await User.findByIdAndUpdate(user._id, {
       'leaveBalance.earned': earnedTotal,
       'leaveBalance.usedAfterJan26': Math.round(totalUsedAfter * 1000) / 1000,
+      'leaveBalance.leaveAdjLwp': leaveAdjLwp,
       'leaveBalance.remaining': newRemaining,
       'leaveBalance.lastUpdated': new Date(),
       'leaveBalance.monthlyEarned': MONTHLY_EARN,
@@ -665,6 +747,9 @@ export async function reconcileLeaveFromAttendance(
   }
 
   if (!dryRun) {
+    for (const m of monthsFromTo(fromMonth, toMonth)) {
+      affectedMonths.add(m);
+    }
     const months = Array.from(affectedMonths).sort();
     for (const m of months) {
       await createMonthlySnapshots(m);

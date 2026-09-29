@@ -48,6 +48,10 @@ import {
 import { requiresAttendanceRequestTimePair, usesWorkHoursInputForRequest } from '@/lib/attendanceRequestTimeRules';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import {
+  deriveInOutFromWorkHours,
+  getWorkHoursReferenceSchedule,
+} from '@/lib/deriveRequestInOutFromWorkHours';
+import {
   LogOut,
   X,
   Loader2,
@@ -557,78 +561,6 @@ function parseTimeToMinutes(time: string): number | null {
   return hours * 60 + minutes;
 }
 
-function minutesToHhMm(totalMinutes: number): string {
-  const mins = ((Math.round(totalMinutes) % (24 * 60)) + 24 * 60) % (24 * 60);
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-}
-
-/**
- * Derive in/out from entered work hours using that day's scheduled in-time as start.
- * Uses the exact schedule for the selected date (weekday / Saturday / seasonal).
- * Only falls back to Monday (or 09:00) when that day has no working in-time.
- */
-function deriveInOutFromWorkHours(
-  user: User | null | undefined,
-  dateStr: string,
-  hours: number
-): { startTime: string; endTime: string; scheduleIn: string; scheduleSource: string } | null {
-  if (!Number.isFinite(hours) || hours <= 0) return null;
-
-  const dayIso = String(dateStr || '').slice(0, 10);
-  let schedule = user ? getScheduledTimes(user, dayIso) : null;
-  let inTime = schedule?.inTime || '';
-  let scheduleSource: string = schedule?.source || 'default';
-
-  const hasWorkingIn =
-    !!inTime &&
-    inTime !== '00:00' &&
-    !(schedule?.isHoliday && (!schedule.outTime || schedule.outTime === '00:00'));
-
-  if (!hasWorkingIn && user) {
-    // Weekoff / empty day: use nearest Monday schedule as a working-day reference
-    const d = new Date(`${dayIso}T12:00:00`);
-    if (!Number.isNaN(d.getTime())) {
-      const monday = new Date(d);
-      const day = monday.getDay();
-      const delta = day === 0 ? 1 : day === 1 ? 0 : 1 - day;
-      monday.setDate(monday.getDate() + delta);
-      const mondayIso = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`;
-      schedule = getScheduledTimes(user, mondayIso);
-      inTime = schedule.inTime || '';
-      scheduleSource = `${schedule.source}-monday-fallback`;
-    }
-  }
-  if (!inTime || inTime === '00:00') {
-    inTime = '09:00';
-    scheduleSource = 'default';
-  }
-
-  const startMinutes = parseTimeToMinutes(inTime);
-  if (startMinutes === null) return null;
-
-  const durationMinutes = Math.round(hours * 60);
-  if (durationMinutes <= 0) return null;
-
-  const endMinutes = startMinutes + durationMinutes;
-  if (endMinutes >= 24 * 60) {
-    return {
-      startTime: minutesToHhMm(startMinutes),
-      endTime: '23:59',
-      scheduleIn: inTime,
-      scheduleSource,
-    };
-  }
-
-  return {
-    startTime: minutesToHhMm(startMinutes),
-    endTime: minutesToHhMm(endMinutes),
-    scheduleIn: inTime,
-    scheduleSource,
-  };
-}
-
 /** Prefer the profile that actually carries schedule data (attendance merge or login). */
 function userWithSchedule(primary: User | null, fallback: User | null): User | null {
   const hasSchedule = (u: User | null | undefined) =>
@@ -1016,14 +948,14 @@ export default function EmployeeDashboard() {
 
   const correctionScheduleHint = useMemo(() => {
     if (!selectedDate || !correctionUsesWorkHours || !scheduleUserForRequests) return null;
-    const sch = getScheduledTimes(scheduleUserForRequests, selectedDate);
+    const sch = getWorkHoursReferenceSchedule(scheduleUserForRequests, selectedDate);
     if (!sch.inTime || sch.inTime === '00:00') return null;
     return sch;
   }, [selectedDate, correctionUsesWorkHours, scheduleUserForRequests]);
 
   const futureScheduleHint = useMemo(() => {
     if (!futureStartDate || !futureUsesWorkHours || !scheduleUserForRequests) return null;
-    const sch = getScheduledTimes(scheduleUserForRequests, futureStartDate);
+    const sch = getWorkHoursReferenceSchedule(scheduleUserForRequests, futureStartDate);
     if (!sch.inTime || sch.inTime === '00:00') return null;
     return sch;
   }, [futureStartDate, futureUsesWorkHours, scheduleUserForRequests]);
@@ -3245,15 +3177,18 @@ export default function EmployeeDashboard() {
                         </div>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        In and out times use your schedule for this day
+                        In and out times use your working schedule
                         {correctionScheduleHint
                           ? ` (scheduled in ${correctionScheduleHint.inTime}${
                               correctionScheduleHint.outTime
                                 ? `, out ${correctionScheduleHint.outTime}`
                                 : ''
                             })`
-                          : ''}{' '}
-                        — in time is schedule start, out time is start plus the hours you enter.
+                          : ''}
+                        {correctionScheduleHint?.scheduleSource?.includes('monday-fallback')
+                          ? ' — this day is weekoff, so Monday’s in-time is used'
+                          : ''}
+                        . In time is schedule start; out time is start plus the hours you enter.
                       </p>
                     </>
                   )}
@@ -3436,13 +3371,16 @@ export default function EmployeeDashboard() {
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    In and out times use your schedule for this day
+                    In and out times use your working schedule
                     {futureScheduleHint
                       ? ` (scheduled in ${futureScheduleHint.inTime}${
                           futureScheduleHint.outTime ? `, out ${futureScheduleHint.outTime}` : ''
                         })`
-                      : ''}{' '}
-                    — in time is schedule start, out time is start plus the hours you enter.
+                      : ''}
+                    {futureScheduleHint?.scheduleSource?.includes('monday-fallback')
+                      ? ' — this day is weekoff, so Monday’s in-time is used'
+                      : ''}
+                    . In time is schedule start; out time is start plus the hours you enter.
                   </p>
                 </>
               )}

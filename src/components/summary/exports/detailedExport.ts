@@ -671,12 +671,8 @@ export async function exportDetailedAttendance(ctx: SummaryExportContext): Promi
       const leavesEarned = (user?.leaveBalance?.monthlyEarned ?? 2);
       const totalLeavesEarned = Number((leavesEarned + (extraEarnedFromOutclient || 0)).toFixed(3));
       let leavesConsumed = 0;
-      if (staffWeekdaysWorking < 10) {
-        leavesConsumed = 0;
-      } else {
-        const available = leavesBF + totalLeavesEarned;
-        leavesConsumed = Math.min(leaves_taken, available);
-      }
+      const available = leavesBF + totalLeavesEarned;
+      leavesConsumed = Math.min(leaves_taken, available);
       const leavesCF = Number((leavesBF + totalLeavesEarned - leavesConsumed).toFixed(3));
       // Calculate unique weekoffs (Sundays + non-Sunday Holidays)
       let uniqueWeekoffs = totalSundaysInPeriod;

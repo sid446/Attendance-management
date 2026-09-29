@@ -371,11 +371,8 @@ export function computeSalaryLine(input: SalaryCalcInput): SalaryCalcResult {
 
   let leavesConsumed = 0;
   if (!isArticle) {
-    if (days.weekdaysWorking < 10) {
-      leavesConsumed = 0;
-    } else {
-      leavesConsumed = Math.min(days.leavesTaken, Number(input.leavesBf || 0) + leavesEarned);
-    }
+    // Still consume paid leave when weekday working days are low (long approved leave).
+    leavesConsumed = Math.min(days.leavesTaken, Number(input.leavesBf || 0) + leavesEarned);
   }
   const leavesCf = round3(Number(input.leavesBf || 0) + leavesEarned - leavesConsumed);
 

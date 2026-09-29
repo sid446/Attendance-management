@@ -123,6 +123,7 @@ export const MONTHLY_EARNED_SOURCES = [
   'monthly-increment',
   'attendance-create-increment',
   'attendance-create-increment-bulk',
+  'reconcile-script-earned',
 ];
 
 /**
@@ -870,7 +871,7 @@ export async function removePaidLeaveForDate(
       'leaveBalance.lastUpdated': new Date(),
     });
 
-    // Rebuild snapshot for the affected month (best-effort)
+    // Rebuild snapshot for this month (callers that need later months replay leave after).
     try {
       const ledger = await import('@/lib/leaveLedger');
       await ledger.createMonthlySnapshots(monthYear);

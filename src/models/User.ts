@@ -139,7 +139,7 @@ export interface IUser extends Document {
     earned: number; // Leave earned after 1st Jan 2026 (calculated from attendance uploads, only for non-articles)
     /** @deprecated Legacy pre-Jan-2026 used days; no longer in remaining formula. Prefer leaveAdjLwp. */
     used: number;
-    /** HR manual adjustment / LWP credit (or debit if negative). remaining = B/F + earned − usedAfter + leaveAdjLwp */
+    /** Live Adj/LWP: sum of monthly adj-lwp ledger rows through the current calendar month. remaining = B/F + earned − usedAfter + leaveAdjLwp */
     leaveAdjLwp?: number;
     usedAfterJan26?: number; // Leaves taken on or after 1st Jan 2026 (calculated from attendance records)
     remaining: number; // Calculated dynamically

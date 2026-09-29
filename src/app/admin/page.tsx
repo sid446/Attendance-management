@@ -532,6 +532,24 @@ export default function AttendanceUpload() {
 
   const normalizeHeader = (value: any): string => String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
 
+  const indexesWhere = (headers: string[], pred: (h: string) => boolean): number[] =>
+    headers.map((h, i) => (pred(h) ? i : -1)).filter((i) => i >= 0);
+
+  /** April-style Actual In/Out, or July-style paired "Data as per Thumb" / "Data as per Portal". */
+  const findFixedInOutIndexes = (headers: string[]): { inTimeIndex: number; outTimeIndex: number } => {
+    const inTimeIndex = headers.findIndex((h) => h.startsWith('actual intime'));
+    const outTimeIndex = headers.findIndex((h) => h.startsWith('actual outtime'));
+    if (inTimeIndex >= 0 && outTimeIndex >= 0) return { inTimeIndex, outTimeIndex };
+
+    const thumb = indexesWhere(headers, (h) => h === 'data as per thumb' || h.startsWith('data as per thumb'));
+    if (thumb.length >= 2) return { inTimeIndex: thumb[0], outTimeIndex: thumb[1] };
+
+    const portal = indexesWhere(headers, (h) => h === 'data as per portal' || h.startsWith('data as per portal'));
+    if (portal.length >= 2) return { inTimeIndex: portal[0], outTimeIndex: portal[1] };
+
+    return { inTimeIndex: -1, outTimeIndex: -1 };
+  };
+
   const parseNumericValue = (raw: any): number | undefined => {
     if (raw === null || raw === undefined || raw === '') return undefined;
     const parsed = Number(String(raw).replace(/,/g, '').trim());
@@ -610,21 +628,19 @@ export default function AttendanceUpload() {
         const hasDate = normalized.some((h) => h === 'date');
         const hasEmployee = normalized.some((h) => h === 'employee name');
         const hasStatus = normalized.some((h) => h === 'present / absent' || h === 'present/absent');
-        const hasIn = normalized.some((h) => h.startsWith('actual intime'));
-        const hasOut = normalized.some((h) => h.startsWith('actual outtime'));
-        return hasDate && hasEmployee && hasStatus && hasIn && hasOut;
+        const { inTimeIndex, outTimeIndex } = findFixedInOutIndexes(normalized);
+        return hasDate && hasEmployee && hasStatus && inTimeIndex >= 0 && outTimeIndex >= 0;
       });
 
       if (headerRowIndex === -1) {
-        throw new Error('Could not find fixed data headers. Required: Date, Employee Name, Present / Absent, Actual InTime, Actual OutTime');
+        throw new Error('Could not find fixed data headers. Required: Date, Employee Name, Present / Absent, and either Actual InTime/OutTime or Data as per Thumb (in and out).');
       }
 
       const headers = rows[headerRowIndex].map(normalizeHeader);
       const dateIndex = headers.findIndex((h: string) => h === 'date');
       const employeeNameIndex = headers.findIndex((h: string) => h === 'employee name');
       const presenceIndex = headers.findIndex((h: string) => h === 'present / absent' || h === 'present/absent');
-      const inTimeIndex = headers.findIndex((h: string) => h.startsWith('actual intime'));
-      const outTimeIndex = headers.findIndex((h: string) => h.startsWith('actual outtime'));
+      const { inTimeIndex, outTimeIndex } = findFixedInOutIndexes(headers);
       const actualWFHIndex = headers.findIndex((h: string) => h === 'actual - wfh' || h === 'actual-wfh');
       const actualOutStationIndex = headers.findIndex((h: string) => h === 'actual - out station' || h === 'actual-out station' || h === 'actual - outstation' || h === 'actual-outstation');
 
@@ -998,6 +1014,12 @@ export default function AttendanceUpload() {
     let localSaved = 0;
     let localFailed = 0;
     let localPendingQueued = 0;
+    let localSkippedUnchanged = 0;
+    let localSkippedApproved = 0;
+    let localSkippedOnLeave = 0;
+    let localSkippedLocation = 0;
+    let localSkippedHr = 0;
+    const leaveReplayFromByUser = new Map<string, string>();
     const localErrors: { odId: string; reason: string }[] = [];
 
     try {
@@ -1024,10 +1046,23 @@ export default function AttendanceUpload() {
          const pendingCount = Array.isArray(result.data?.pendingQueued)
            ? result.data.pendingQueued.length
            : 0;
+         const skipped = result.data?.skipped || {};
 
          localSaved += processedCount;
          localFailed += errorCount;
          localPendingQueued += pendingCount;
+         localSkippedUnchanged += Number(skipped.unchanged || 0);
+         localSkippedApproved += Number(skipped.approvedRequest || 0);
+         localSkippedOnLeave += Number(skipped.onLeave || 0);
+         localSkippedLocation += Number(skipped.locationPunch || 0);
+         localSkippedHr += Number(skipped.hrEdited || 0);
+         for (const row of result.data?.leaveReplay || []) {
+           const uid = String(row?.userId || '');
+           const fromMonth = String(row?.fromMonth || '');
+           if (!uid || !/^\d{4}-\d{2}$/.test(fromMonth)) continue;
+           const prev = leaveReplayFromByUser.get(uid);
+           if (!prev || fromMonth < prev) leaveReplayFromByUser.set(uid, fromMonth);
+         }
          localErrors.push(...errorsList);
 
          // Update state progressively
@@ -1072,6 +1107,15 @@ export default function AttendanceUpload() {
 
       const baseMessage = `Saved ${localSaved} attendance record${localSaved === 1 ? '' : 's'} to the server.`;
 
+      const skipParts: string[] = [];
+      if (localSkippedUnchanged > 0) skipParts.push(`${localSkippedUnchanged} unchanged`);
+      if (localSkippedApproved > 0) skipParts.push(`${localSkippedApproved} approved request`);
+      if (localSkippedOnLeave > 0) skipParts.push(`${localSkippedOnLeave} on leave`);
+      if (localSkippedLocation > 0) skipParts.push(`${localSkippedLocation} location punch`);
+      if (localSkippedHr > 0) skipParts.push(`${localSkippedHr} HR edited`);
+      const skipMessage =
+        skipParts.length > 0 ? ` Left ${skipParts.join(', ')} day(s) as they were.` : '';
+
       let pendingMessage = '';
       if (localPendingQueued > 0) {
         pendingMessage = ` ${localPendingQueued} row${localPendingQueued === 1 ? '' : 's'} queued for unknown employees (pending); they apply after matching staff are added.`;
@@ -1081,8 +1125,32 @@ export default function AttendanceUpload() {
       if (localFailed > 0) {
         errorMessage = ` ${localFailed} record${localFailed === 1 ? '' : 's'} failed to save. See details below.`;
       }
-      
-      setSaveMessage(baseMessage + pendingMessage + errorMessage);
+
+      let replayMessage = '';
+      if (leaveReplayFromByUser.size > 0) {
+        const userIds = Array.from(leaveReplayFromByUser.keys());
+        const fromMonth = '2026-01';
+        try {
+          const replayRes = await fetch(
+            '/api/leave/replay-from-attendance',
+            hrCredentialsInit({
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userIds, fromMonth }),
+            })
+          );
+          const replayJson = await replayRes.json().catch(() => ({}));
+          if (!replayRes.ok || !replayJson.success) {
+            replayMessage = ` Leave credit changed for ${userIds.length} employee(s) but later months could not be rebuilt automatically. Replay leave from ${fromMonth}.`;
+          } else {
+            replayMessage = ` Replayed leave from ${replayJson.data?.fromMonth || fromMonth} through ${replayJson.data?.toMonth || 'now'} for ${replayJson.data?.usersProcessed ?? userIds.length} employee(s) so later months pick up the credit.`;
+          }
+        } catch {
+          replayMessage = ` Leave credit changed for ${userIds.length} employee(s) but later months could not be rebuilt automatically.`;
+        }
+      }
+
+      setSaveMessage(baseMessage + skipMessage + replayMessage + pendingMessage + errorMessage);
 
       const monthYearToFetch =
         monthYearOverride || currentMonthYear || (data[0] ? getMonthYearFromDate(data[0].date) : null);
