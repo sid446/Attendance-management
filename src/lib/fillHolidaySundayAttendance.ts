@@ -2,6 +2,7 @@ import Holiday from '@/models/Holiday';
 import { datesInMonthYear, isEmployeeActiveOnDate } from '@/lib/employeeMisExceptions';
 import { isSundayDate } from '@/lib/attendanceSummaryMetrics';
 import { hasPhysicalAttendancePresence } from '@/lib/attendancePhysicalPresence';
+import { getScheduledTimes } from '@/lib/scheduleUtils';
 
 type DayRecord = Record<string, unknown>;
 type RecordsMap = Map<string, DayRecord> | Record<string, DayRecord> | any;
@@ -204,9 +205,17 @@ export function repairHolidayAndSundayRecords(
 
     const holidayName = holidayNameByDate.get(dateKey);
     const sunday = isSundayDate(dateKey);
-    if (!holidayName && !sunday) continue;
+    let scheduleOffLabel = '';
+    if (user && !holidayName && !sunday) {
+      const sched = getScheduledTimes(user, dateKey);
+      if (sched.isHoliday) {
+        const dow = new Date(`${dateKey}T12:00:00`).getDay();
+        scheduleOffLabel = dow === 6 ? 'Weekly Off (Saturday)' : 'Weekly Off';
+      }
+    }
+    if (!holidayName && !sunday && !scheduleOffLabel) continue;
 
-    const restLabel = holidayName || 'Weekly Off (Sunday)';
+    const restLabel = holidayName || (sunday ? 'Weekly Off (Sunday)' : scheduleOffLabel);
     const existing = getDayRecord(attendance.records, dateKey);
 
     if (!existing) {
@@ -225,7 +234,13 @@ export function repairHolidayAndSundayRecords(
     const rec = cloneDayRecord(existing);
     const currentType = typeOf(rec);
 
-    if (hasWorkedOnRestDay(rec)) {
+    // Schedule weekoff (for example Saturday holiday): a Present/Absent label
+    // with no punches is not work. Company holidays and Sundays keep the
+    // existing rule so a real presence type is preserved.
+    const worked = scheduleOffLabel
+      ? hasPhysicalAttendancePresence(rec) || hasExtraWork(rec)
+      : hasWorkedOnRestDay(rec);
+    if (worked) {
       const nextType = weekoffTypeForWorkedDay(currentType);
       if (nextType && nextType !== currentType) {
         rec.typeOfPresence = nextType;
@@ -243,9 +258,10 @@ export function repairHolidayAndSundayRecords(
       continue;
     }
 
-    if (isLeaveType(currentType) || isRestType(currentType)) {
-      continue;
-    }
+    if (isRestType(currentType)) continue;
+    // Paid leave on a schedule weekoff (Saturday holiday) is not a working-day leave.
+    if (isLeaveType(currentType) && !scheduleOffLabel) continue;
+    if (isLeaveType(currentType) && hasPhysicalAttendancePresence(rec)) continue;
 
     // Unmarked / Absent / empty punches on a rest day → Holiday
     setDayRecord(attendance, dateKey, restDayRecord(restLabel, rec));

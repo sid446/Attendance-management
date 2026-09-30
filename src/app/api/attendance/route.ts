@@ -23,6 +23,7 @@ import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { reconcileApprovedRequestsForMonth } from '@/lib/applyApprovedAttendanceRequest';
 import { isArticleEmployee } from '@/lib/isArticleEmployee';
 import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
+import { fillMissingHolidayAndSundayRecords } from '@/lib/fillHolidaySundayAttendance';
 import { hasPhysicalAttendancePresence } from '@/lib/attendancePhysicalPresence';
 import { invalidateSupersededLeaveRequest } from '@/lib/invalidateSupersededLeaveRequest';
 import {
@@ -76,6 +77,8 @@ export async function GET(request: NextRequest) {
             recordsChanged = true;
           }
         });
+        const scheduleOffUpdated = await fillMissingHolidayAndSundayRecords(doc, { user });
+        if (scheduleOffUpdated > 0) recordsChanged = true;
         if (recordsChanged) {
           doc.summary = calculateSummary(doc.records as any, user);
           doc.markModified('records');
@@ -1000,6 +1003,9 @@ export async function POST(request: NextRequest) {
             } catch (sundayErr) {
               console.error('Error adding Sunday weekly-off records:', sundayErr);
             }
+
+            // Schedule weekoffs (Saturday holiday, etc.) plus any rest day still Absent.
+            await fillMissingHolidayAndSundayRecords(attendance, { user });
 
             // Recalculate summary after adding holidays
             attendance.summary = calculateSummary(attendance.records as any, user);

@@ -160,43 +160,34 @@ export async function applyActionsFromExcel({
         : undefined;
 
     try {
-      let response: Response;
-      if (ids.length > 1) {
-        response = await fetch('/api/partner/bulk-action', apiCredentialsInit({
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action,
-            ids,
-            remark: remarks,
-            value: action === 'approve' ? resolvedNum : undefined,
-            approvedBy: 'HR',
-            approvedByEmail: 'hr@asija.in',
-          }),
-        }));
-      } else {
-        response = await fetch('/api/employee/approve', apiCredentialsInit({
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            requestId: ids[0],
-            action,
-            remarks,
-            value:
-              action === 'approve' ? (resolvedNum !== undefined ? String(resolvedNum) : '') : '',
-            approvedBy: 'HR',
-            approvedByEmail: 'hr@asija.in',
-          }),
-        }));
+      // Same path as the Approve/Reject buttons. The partner bulk API asks for
+      // an email secure token when the HR cookie is missing.
+      let rowError: string | null = null;
+      for (const id of ids) {
+        const response = await fetch(
+          '/api/employee/approve',
+          apiCredentialsInit({
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              requestId: id,
+              action,
+              remarks,
+              value:
+                action === 'approve' ? (resolvedNum !== undefined ? String(resolvedNum) : '') : '',
+              approvedBy: 'HR',
+              approvedByEmail: 'hr@asija.in',
+            }),
+          })
+        );
+        const json = await response.json().catch(() => ({}));
+        if (!response.ok || json?.success === false) {
+          rowError = json?.error || `API failed (HTTP ${response.status})`;
+          break;
+        }
       }
-
-      const json = await response.json().catch(() => ({}));
-      if (!response.ok || json?.success === false) {
-        results.push({
-          rowIndex: excelRowNumber,
-          ok: false,
-          message: json?.error || `API failed (HTTP ${response.status})`,
-        });
+      if (rowError) {
+        results.push({ rowIndex: excelRowNumber, ok: false, message: rowError });
       } else {
         results.push({ rowIndex: excelRowNumber, ok: true });
       }

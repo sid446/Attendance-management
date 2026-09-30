@@ -769,7 +769,11 @@ export async function buildDaywiseWorkbook(
           presentAbsent = 'On leave';
         } else if (isDaywiseExplicitAbsentRecord(record)) {
           presentAbsent = 'Absent';
-        } else if (isHoliday || isSunday) {
+        } else if (
+          isHoliday ||
+          isSunday ||
+          ['holiday', 'sunday', 'weekoff'].includes(String(typeOfPresence).trim().toLowerCase())
+        ) {
           presentAbsent = 'Holiday';
         } else if (isDaywiseHalfDayRecord(record, inTime === '00:00' && outTime === '00:00')) {
           presentAbsent = 'HD';

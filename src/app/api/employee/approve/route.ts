@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
       }, { status: 404 });
     }
 
-    const isHr = approvedBy === 'HR';
+    const isHr = auth.type === 'hr';
     if (isHr) {
       if (attendanceRequest.status !== 'Pending' && attendanceRequest.status !== 'PendingHr') {
         return NextResponse.json(
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
       updateData.approvedBy = approvedBy;
       updateData.approvedByEmail = resolvedApprovedByEmail;
       updateData.approvedAt = new Date();
-      if (approvedBy === 'HR') {
+      if (isHr) {
         if (remarks) updateData.hrRemarks = remarks;
         if (value) updateData.hrValue = value;
       } else {
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
       updateData.rejectedBy = approvedBy;
       updateData.rejectedByEmail = resolvedApprovedByEmail;
       updateData.rejectedAt = new Date();
-      if (approvedBy === 'HR') {
+      if (isHr) {
         if (remarks) updateData.hrRemarks = remarks;
       } else {
         if (remarks) updateData.partnerRemarks = remarks;
