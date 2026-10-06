@@ -884,8 +884,8 @@ export const SalarySection: React.FC = () => {
           <div className="space-y-3">
             <h3 className="text-sm font-semibold text-slate-900">Edit extras</h3>
             <p className="text-xs text-slate-500">
-              Add a named extra (TDS, advances, a designation allowance). It appears on every employee. Earnings
-              increase net pay; deductions reduce it.
+              Add a named extra. It appears on every employee. Earnings increase bank payment; deductions reduce it.
+              Built-in TDS, ESI employee, advances, and laptop adjustment are already deductions.
             </p>
             <div className="flex flex-wrap items-end gap-2">
               <label className="min-w-[12rem] flex-1 text-xs text-slate-600">
@@ -1530,7 +1530,8 @@ function OverrideForm({
           </div>
         </div>
         <p className="mt-1 text-[11px] text-slate-500">
-          Totals change as you type. They are not stored until you click Save overrides.
+          Totals change as you type. They are not stored until you click Save overrides. Bank payment starts from due
+          in tally, then adds other extra, TA, and LC, and deducts TDS, ESI employee, advances, and laptop adjustment.
         </p>
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
@@ -1618,16 +1619,28 @@ function OverrideForm({
         {field('netWorkingDays', 'Net working days override', netWorkingDays)}
         {field('officeWorkingDays', 'Office working days override', officeWorkingDays)}
         {field('dueInTally', 'Due in tally', payableMonth)}
-        {field('additionInOffDue', 'Addition in off due', 0)}
-        {field('advances', 'Advances', 0)}
-        {field('tds', 'TDS', 0)}
-        {field('esiEmployee', 'ESI employee', 0)}
-        {field('esiEmployer', 'ESI employer', 0)}
+        <p className="sm:col-span-3 lg:col-span-4 mt-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+          Added to bank payment
+        </p>
         {field('otherExtra', 'Other extra', 0)}
-        {field('off', 'OFF', 0)}
         {field('taReimbursement', 'TA reimbursement', 0)}
         {field('lcReimbursement', 'LC reimbursement', 0)}
+        <p className="sm:col-span-3 lg:col-span-4 mt-1 text-[11px] font-semibold uppercase tracking-wide text-rose-700">
+          Deducted from bank payment
+        </p>
+        {field('tds', 'TDS', 0)}
+        {field('esiEmployee', 'ESI employee', 0)}
+        {field('advances', 'Advances', 0)}
         {field('laptopAdjustment', 'Laptop adjustment', 0)}
+        <p className="sm:col-span-3 lg:col-span-4 mt-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Cash, not bank
+        </p>
+        {field('additionInOffDue', 'Addition in off due', 0)}
+        {field('off', 'OFF', 0)}
+        <p className="sm:col-span-3 lg:col-span-4 mt-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Employer cost, not in employee bank pay
+        </p>
+        {field('esiEmployer', 'ESI employer', 0)}
         {extraFields.length > 0 && (
           <p className="sm:col-span-3 lg:col-span-4 mt-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
             Custom extras

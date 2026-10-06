@@ -3,8 +3,11 @@ import User, { IUser } from '@/models/User';
 import Attendance from '@/models/Attendance';
 import AttendanceRequest from '@/models/AttendanceRequest';
 import LeaveTransaction from '@/models/LeaveTransaction';
-import LeaveSnapshot from '@/models/LeaveSnapshot';
-import { isArticleEmployee } from '@/lib/isArticleEmployee';
+import { isInternOrArticleEmployee } from '@/lib/isArticleEmployee';
+
+/** Leave earn, use, and Adj/LWP are counted from this month onward. */
+const LEAVE_AS_OF_FROM = '2026-01';
+const ADJ_LWP_SOURCE = 'adj-lwp';
 
 export interface LeaveBalance {
   balanceAsOfJan26: number;
@@ -40,51 +43,148 @@ export interface LeaveTransaction {
   reference?: string; // Could be attendance record ID or request ID
 }
 
-function getCurrentUserRemaining(user: any): number {
-  return computeLeaveRemaining({
-    balanceAsOfJan26: user?.leaveBalance?.balanceAsOfJan26,
-    earned: user?.leaveBalance?.earned,
-    usedAfterJan26: user?.leaveBalance?.usedAfterJan26,
-    leaveAdjLwp: user?.leaveBalance?.leaveAdjLwp,
-  });
+function roundLeave(n: number): number {
+  return Number(Number(n || 0).toFixed(3));
 }
 
-async function getEffectiveRemainingForMonth(
-  userId: mongoose.Types.ObjectId,
-  user: any,
-  monthYear: string
-): Promise<number> {
-  const currentRemaining = getCurrentUserRemaining(user);
+function txMonth(tx: { monthYear?: string | null; date?: string | null }): string {
+  const my = String(tx.monthYear || '');
+  if (/^\d{4}-\d{2}$/.test(my)) return my;
+  return String(tx.date || '').slice(0, 7);
+}
 
-  // For pre-2026 months, keep existing behavior.
-  if (!monthYear || monthYear < '2026-01') {
-    return currentRemaining;
-  }
+type AsOfLedger = {
+  balanceAsOfJan26: number;
+  earnedByMonth: Map<string, number>;
+  adjByMonth: Map<string, number>;
+  /** Used rows not excluded. Compared by date, so only rows dated before D count. */
+  used: Array<{ date: string; amount: number }>;
+};
 
-  try {
-    const snap = await LeaveSnapshot.findOne({ userId, monthYear })
-      .select('balanceAsOfMonth earnedThisMonth adjustmentsThisMonth usedThisMonth remainingAfter')
-      .lean();
-
-    if (!snap) {
-      return currentRemaining;
+async function loadAsOfLedger(
+  userId: mongoose.Types.ObjectId | string,
+  excludeDates?: Iterable<string>
+): Promise<AsOfLedger> {
+  const exclude = new Set<string>();
+  if (excludeDates) {
+    for (const raw of excludeDates) {
+      const date = String(raw || '').trim();
+      if (date) exclude.add(date);
     }
-
-    const snapComputed =
-      Number(snap.balanceAsOfMonth || 0) +
-      Number(snap.earnedThisMonth || 0) +
-      Number(snap.adjustmentsThisMonth || 0) -
-      Number(snap.usedThisMonth || 0);
-
-    const snapRemainingAfter = Number(snap.remainingAfter || 0);
-
-    // Use the larger value so missing monthly credit in user.leaveBalance
-    // does not incorrectly force paid leaves to unpaid.
-    return Math.max(currentRemaining, snapComputed, snapRemainingAfter);
-  } catch (e) {
-    return currentRemaining;
   }
+
+  const user = await User.findById(userId).select('leaveBalance.balanceAsOfJan26').lean();
+  const txs = await LeaveTransaction.find({
+    userId,
+    type: { $in: ['earned', 'used', 'adjust'] },
+  })
+    .select('date monthYear type amount source')
+    .lean();
+
+  const earnedByMonth = new Map<string, number>();
+  const adjByMonth = new Map<string, number>();
+  const used: Array<{ date: string; amount: number }> = [];
+
+  for (const tx of txs) {
+    const month = txMonth(tx);
+    if (!month || month < LEAVE_AS_OF_FROM) continue;
+    const amount = Number(tx.amount || 0);
+    if (tx.type === 'earned') {
+      earnedByMonth.set(month, roundLeave((earnedByMonth.get(month) || 0) + amount));
+    } else if (tx.type === 'adjust' && tx.source === ADJ_LWP_SOURCE) {
+      adjByMonth.set(month, roundLeave((adjByMonth.get(month) || 0) + amount));
+    } else if (tx.type === 'used') {
+      const date = String(tx.date || '');
+      if (date && exclude.has(date)) continue;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        used.push({ date, amount });
+      } else if (month) {
+        used.push({ date: `${month}-01`, amount });
+      }
+    }
+  }
+
+  return {
+    balanceAsOfJan26: Number(user?.leaveBalance?.balanceAsOfJan26 || 0),
+    earnedByMonth,
+    adjByMonth,
+    used,
+  };
 }
+
+/**
+ * Balance still available on `date`:
+ * opening 1 Jan 2026 + earned through that month + Adj/LWP through that month
+ * − used leave dated before that day.
+ * Earn and Adj from later months are ignored. Snapshots are not used.
+ * `excludeDates` (and `date` itself) are left out of the used total so a
+ * re-check of the day, or of the current batch, does not count those rows.
+ */
+export async function getRemainingAsOfDate(
+  userId: mongoose.Types.ObjectId | string,
+  date: string,
+  excludeDates?: Iterable<string>
+): Promise<number> {
+  const exclude = new Set<string>(excludeDates ? Array.from(excludeDates, (d) => String(d)) : []);
+  exclude.add(String(date));
+  const ledger = await loadAsOfLedger(userId, exclude);
+  return balanceOnDate(ledger, date, 0);
+}
+
+function balanceOnDate(ledger: AsOfLedger, date: string, extraUsedBefore: number): number {
+  const monthYear = String(date).slice(0, 7);
+  if (!/^\d{4}-\d{2}$/.test(monthYear) || monthYear < LEAVE_AS_OF_FROM) {
+    return Math.max(0, roundLeave(ledger.balanceAsOfJan26));
+  }
+
+  let earned = 0;
+  for (const [month, amount] of ledger.earnedByMonth) {
+    if (month <= monthYear) earned += amount;
+  }
+  let adj = 0;
+  for (const [month, amount] of ledger.adjByMonth) {
+    if (month <= monthYear) adj += amount;
+  }
+  let used = extraUsedBefore;
+  for (const row of ledger.used) {
+    if (row.date < date) used += row.amount;
+  }
+  return Math.max(0, roundLeave(ledger.balanceAsOfJan26 + earned - used + adj));
+}
+
+/**
+ * Walk dates in order. Each paid day spends one from the balance on that date,
+ * so an earlier day in the batch is used before a later one, and a later month's
+ * +2 is added only when the walk reaches that month.
+ */
+async function allocateFullDaysAsOf(
+  userId: mongoose.Types.ObjectId | string,
+  dates: string[]
+): Promise<Array<{ date: string; isPaidLeave: boolean; value: number }>> {
+  const unique = Array.from(
+    new Set(dates.map((d) => String(d || '').trim()).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)))
+  ).sort();
+  const ledger = await loadAsOfLedger(userId, unique);
+  let spentEarlierInBatch = 0;
+  const details: Array<{ date: string; isPaidLeave: boolean; value: number }> = [];
+
+  for (const date of unique) {
+    const remaining = balanceOnDate(ledger, date, spentEarlierInBatch);
+    if (remaining >= 1) {
+      details.push({ date, isPaidLeave: true, value: 1 });
+      spentEarlierInBatch = roundLeave(spentEarlierInBatch + 1);
+    } else {
+      details.push({ date, isPaidLeave: false, value: 0 });
+    }
+  }
+
+  return details;
+}
+
+export type LeaveApprovalUpdateResult = {
+  /** Requested dates that have a used ledger row after this call. */
+  deductedDates: string[];
+};
 
 /**
  * Initialize leave balance for a new user
@@ -134,7 +234,7 @@ export const MONTHLY_EARNED_SOURCES = [
  * source of truth for monthly accrual and replaces the ad-hoc `earned += 2` blocks that
  * previously lived in the upload/approve/bulk routes and the monthly job.
  *
- * No-ops for pre-2026 months, inactive users, and articles.
+ * No-ops for pre-2026 months, inactive users, articles, and interns.
  */
 export async function creditMonthlyEarnedIfNeeded(
   userId: mongoose.Types.ObjectId | string,
@@ -146,7 +246,7 @@ export async function creditMonthlyEarnedIfNeeded(
 
     const user = await User.findById(userId);
     if (!user || !user.isActive) return { credited: false, amount: 0 };
-    if (isArticleEmployee(user)) return { credited: false, amount: 0 };
+    if (isInternOrArticleEmployee(user)) return { credited: false, amount: 0 };
 
     // Idempotency: skip if a monthly-base earned tx already exists for this user+month.
     const existing = await LeaveTransaction.findOne({
@@ -277,8 +377,8 @@ export async function calculateLeaveUsageForMultipleDays(
       return { leaveDetails };
     }
 
-    // Check if user is an article - articles have no paid leave concept
-    const isArticle = isArticleEmployee(user);
+    // Articles and interns have no paid leave.
+    const isArticle = isInternOrArticleEmployee(user);
     if (isArticle) {
       // Articles always get value 0 for leave (no paid leave)
       const leaveDetails = dates.map(date => ({
@@ -289,47 +389,14 @@ export async function calculateLeaveUsageForMultipleDays(
       return { leaveDetails };
     }
 
-    // Credit each involved month's +2 before allocation so July leave is not
-    // classified against June-only remaining.
-    const reloaded = await creditMonthsAndReloadUser(
+    // Credit each involved month's +2 before allocation so leave in that month
+    // can use that month's earn, and not a later month's.
+    await creditMonthsAndReloadUser(
       userId,
       dates.map((d) => String(d).slice(0, 7))
     );
-    const userForBalance = reloaded || user;
 
-    // For other employees, calculate how many can be paid vs unpaid based on balance.
-    // Use month-aware effective remaining (snapshot-aware) so monthly earned credit is considered.
-    const leaveDetails = [];
-    const remainingByMonth = new Map<string, number>();
-
-    for (const date of dates) {
-      const monthYear = String(date).slice(0, 7);
-      if (!remainingByMonth.has(monthYear)) {
-        const effective = await getEffectiveRemainingForMonth(userId, userForBalance, monthYear);
-        remainingByMonth.set(monthYear, effective);
-      }
-
-      let remainingBalance = remainingByMonth.get(monthYear) || 0;
-
-      if (remainingBalance >= 1) {
-        // Has enough balance for paid leave
-        leaveDetails.push({
-          date,
-          isPaidLeave: true,
-          value: 1
-        });
-        remainingBalance -= 1;
-        remainingByMonth.set(monthYear, remainingBalance);
-      } else {
-        // No balance remaining, unpaid leave
-        leaveDetails.push({
-          date,
-          isPaidLeave: false,
-          value: 0
-        });
-      }
-    }
-
+    const leaveDetails = await allocateFullDaysAsOf(userId, dates);
     return { leaveDetails };
   } catch (error) {
     console.error('Error calculating leave usage for multiple days:', error);
@@ -368,17 +435,17 @@ export async function calculateLeaveUsage(
       return { isPaidLeave: false, value: 1 }; // Not a leave, full attendance value
     }
 
-    // Check if user is an article - articles have no paid leave concept
-    const isArticle = isArticleEmployee(user);
+    // Articles and interns have no paid leave.
+    const isArticle = isInternOrArticleEmployee(user);
     if (isArticle) {
       // Articles always get value 0 for leave (no paid leave)
       return { isPaidLeave: false, value: 0 };
     }
 
-    const userForBalance = (await creditMonthsAndReloadUser(userId, [monthYear])) || user;
-    const remainingLeave = await getEffectiveRemainingForMonth(userId, userForBalance, monthYear);
+    await creditMonthsAndReloadUser(userId, [monthYear]);
+    const remainingLeave = await getRemainingAsOfDate(userId, date, [date]);
 
-    // For other employees, determine if it's paid or unpaid based on balance
+    // Paid only when at least one day was still left on this date.
     if (remainingLeave >= 1) {
       // Has enough leave balance for paid leave
       return { isPaidLeave: true, value: 1 };
@@ -400,7 +467,7 @@ export async function updateLeaveBalanceOnApproval(
   userId: mongoose.Types.ObjectId,
   dateOrDetails: string | Array<{ date: string; isPaidLeave: boolean; value: number }>,
   isPaidLeave?: boolean
-): Promise<void> {
+): Promise<LeaveApprovalUpdateResult> {
   try {
     const user = await User.findById(userId);
     if (!user) {
@@ -410,7 +477,7 @@ export async function updateLeaveBalanceOnApproval(
     // Handle single date (backward compatibility)
     if (typeof dateOrDetails === 'string') {
         if (!isPaidLeave) {
-          return; // No balance update needed for unpaid leave
+          return { deductedDates: [] };
         }
 
         // Approving the same day twice must not deduct twice.
@@ -420,7 +487,7 @@ export async function updateLeaveBalanceOnApproval(
           type: 'used',
         }).lean();
         if (alreadyDeducted) {
-          return;
+          return { deductedDates: [dateOrDetails] };
         }
 
         const currentUsedAfterJan26 = user.leaveBalance?.usedAfterJan26 || 0;
@@ -428,17 +495,12 @@ export async function updateLeaveBalanceOnApproval(
         const currentEarned = user.leaveBalance?.earned || 0;
         const leaveAdjLwp = user.leaveBalance?.leaveAdjLwp || 0;
         const monthYear = (dateOrDetails && dateOrDetails.length >= 7) ? dateOrDetails.slice(0,7) : undefined;
-        const effectiveRemainingForMonth = await getEffectiveRemainingForMonth(
-          userId,
-          user,
-          monthYear || ''
-        );
+        const remainingOnDate = await getRemainingAsOfDate(userId, dateOrDetails, [dateOrDetails]);
 
-        // Only deduct if there's at least 1 full day remaining. Do not make remaining negative.
-        if (effectiveRemainingForMonth < 1) {
-          // Not enough balance for a paid leave; treat as unpaid — no update
-          console.log(`[LEAVE DEBUG] Not enough remaining leave for user ${userId} on ${dateOrDetails}. Remaining=${effectiveRemainingForMonth}. Skipping paid deduction.`);
-          return;
+        // Only deduct if at least 1 full day was left on this date.
+        if (remainingOnDate < 1) {
+          console.log(`[LEAVE DEBUG] Not enough remaining leave for user ${userId} on ${dateOrDetails}. Remaining=${remainingOnDate}. Skipping paid deduction.`);
+          return { deductedDates: [] };
         }
 
         const newUsedAfterJan26 = currentUsedAfterJan26 + 1;
@@ -478,7 +540,7 @@ export async function updateLeaveBalanceOnApproval(
           console.error('Failed to create monthly snapshot after approval (single):', e);
         }
 
-        return;
+        return { deductedDates: [dateOrDetails] };
     }
 
     // Handle multiple dates
@@ -486,7 +548,7 @@ export async function updateLeaveBalanceOnApproval(
     const requestedPaidLeaves = leaveDetails.filter(detail => detail.isPaidLeave);
 
     if (requestedPaidLeaves.length === 0) {
-      return; // No paid leaves to update
+      return { deductedDates: [] };
     }
 
     // Days already deducted (by an earlier approval or a reconcile) must be skipped,
@@ -500,9 +562,12 @@ export async function updateLeaveBalanceOnApproval(
       .lean();
     const alreadyDeductedDates = new Set(existingUsed.map(t => String(t.date)));
     const paidLeaves = requestedPaidLeaves.filter(p => !alreadyDeductedDates.has(p.date));
+    const alreadyDeductedList = requestedPaidLeaves
+      .map((p) => p.date)
+      .filter((date) => alreadyDeductedDates.has(date));
 
     if (paidLeaves.length === 0) {
-      return; // Every requested day was already deducted
+      return { deductedDates: alreadyDeductedList };
     }
 
     const currentUsedAfterJan26 = user.leaveBalance?.usedAfterJan26 || 0;
@@ -510,30 +575,19 @@ export async function updateLeaveBalanceOnApproval(
     const currentEarned = user.leaveBalance?.earned || 0;
     const leaveAdjLwp = user.leaveBalance?.leaveAdjLwp || 0;
 
-    // Determine paid capacity month-wise using snapshot-aware effective remaining.
-    const paidByMonth = new Map<string, Array<{ date: string; isPaidLeave: boolean; value: number }>>();
-    for (const p of paidLeaves) {
-      const monthYear = (p.date && p.date.length >= 7) ? p.date.slice(0, 7) : '';
-      if (!monthYear) continue;
-      if (!paidByMonth.has(monthYear)) paidByMonth.set(monthYear, []);
-      paidByMonth.get(monthYear)?.push(p);
-    }
-
-    const allowedDateSet = new Set<string>();
-    let paidCount = 0;
-    for (const [monthYear, monthPaidLeaves] of paidByMonth.entries()) {
-      const effectiveRemainingForMonth = await getEffectiveRemainingForMonth(userId, user, monthYear);
-      const maxPaidLeavesPossible = Math.floor(Math.max(0, effectiveRemainingForMonth));
-      const allowedCount = Math.min(monthPaidLeaves.length, maxPaidLeavesPossible);
-      paidCount += allowedCount;
-      for (let i = 0; i < allowedCount; i++) {
-        allowedDateSet.add(monthPaidLeaves[i].date);
-      }
-    }
+    // Spend earlier dates first, using only the balance available on each date.
+    const allocation = await allocateFullDaysAsOf(
+      userId,
+      paidLeaves.map((p) => p.date)
+    );
+    const allowedDateSet = new Set(
+      allocation.filter((d) => d.isPaidLeave).map((d) => d.date)
+    );
+    const paidCount = allowedDateSet.size;
 
     if (paidCount <= 0) {
       console.log(`[LEAVE DEBUG] No sufficient remaining leave for user ${userId}. paidLeaves requested=${paidLeaves.length}`);
-      return; // Nothing to deduct
+      return { deductedDates: alreadyDeductedList };
     }
 
     const newUsedAfterJan26 = currentUsedAfterJan26 + paidCount;
@@ -581,6 +635,7 @@ export async function updateLeaveBalanceOnApproval(
       console.error('Failed to trigger snapshots after multi-day approval:', e);
     }
 
+    return { deductedDates: [...alreadyDeductedList, ...allowedDateSet] };
   } catch (error) {
     console.error('Error updating leave balance on approval:', error);
     throw error;
@@ -626,7 +681,16 @@ export async function reconcilePartialLeaveFromAttendance(
         })
       );
 
-    for (const entry of entries) {
+    const orderedEntries = [...entries].sort((a, b) =>
+      String(a?.date || '').localeCompare(String(b?.date || ''))
+    );
+    const partialDates = orderedEntries
+      .map((e) => String(e?.date || '').trim())
+      .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
+    const asOfLedger = await loadAsOfLedger(userId, partialDates);
+    let usedEarlierInBatch = 0;
+
+    for (const entry of orderedEntries) {
       const date = String(entry?.date || '').trim();
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
         continue;
@@ -648,7 +712,7 @@ export async function reconcilePartialLeaveFromAttendance(
       let appliedDelta = 0;
 
       if (requestedDelta > 0) {
-        const remaining = Math.max(0, computeRemaining());
+        const remaining = balanceOnDate(asOfLedger, date, usedEarlierInBatch);
         appliedDelta = round2(Math.min(requestedDelta, remaining));
       } else if (requestedDelta < 0) {
         const reversible = Math.min(Math.abs(requestedDelta), existingAmount, currentUsedAfterJan26);
@@ -688,6 +752,7 @@ export async function reconcilePartialLeaveFromAttendance(
       if (Math.abs(appliedDelta) > 0) {
         currentUsedAfterJan26 = round2(currentUsedAfterJan26 + appliedDelta);
       }
+      usedEarlierInBatch = roundLeave(usedEarlierInBatch + newAmount);
     }
 
     const safeRemaining = computeRemaining();

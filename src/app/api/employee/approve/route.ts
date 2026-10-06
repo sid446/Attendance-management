@@ -502,13 +502,25 @@ export async function POST(request: NextRequest) {
       
       await attendanceRecord.save();
 
-      // Update leave balance if this is a leave request
+      // Update leave balance if this is a leave request.
+      // Value was written before this; if the deduction is refused, put the day back to unpaid.
       if (isLeaveRequest) {
         const { calculateLeaveUsage, updateLeaveBalanceOnApproval } = await import('@/lib/leaveManagement');
         const leaveUsage = await calculateLeaveUsage(attendanceRequest.userId, attendanceRequest.date, attendanceRequest.requestedStatus);
-        
+        let deducted = false;
         if (leaveUsage.isPaidLeave) {
-          await updateLeaveBalanceOnApproval(attendanceRequest.userId, attendanceRequest.date, true);
+          const result = await updateLeaveBalanceOnApproval(attendanceRequest.userId, attendanceRequest.date, true);
+          deducted = result.deductedDates.includes(attendanceRequest.date);
+        }
+        const nextValue = deducted ? 1 : 0;
+        if (Number(rec.value) !== nextValue) {
+          rec.value = nextValue;
+          rec.halfDay = false;
+          attendanceRecord.records.set(attendanceRequest.date, rec);
+          attendanceRecord.markModified('records');
+          const userAfter = await User.findById(attendanceRequest.userId);
+          attendanceRecord.summary = calculateSummary(attendanceRecord.records, userAfter);
+          await attendanceRecord.save();
         }
       }
 

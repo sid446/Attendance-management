@@ -572,10 +572,19 @@ export async function POST(request: NextRequest) {
                 attendance.summary = calculateSummary(attendance.records, userObj);
                 await attendance.save();
 
-                // Update leave balance if this is a paid leave request
+                // Update leave balance if this is a paid leave request.
+                // If the balance on that date cannot cover it, store the day as unpaid.
                 if (isLeaveRequest && leaveIsPaid) {
                   const { updateLeaveBalanceOnApproval } = await import('@/lib/leaveManagement');
-                  await updateLeaveBalanceOnApproval(userId, date, true);
+                  const result = await updateLeaveBalanceOnApproval(userId, date, true);
+                  if (!result.deductedDates.includes(date)) {
+                    rec.value = 0;
+                    rec.halfDay = false;
+                    attendance.records.set(date, rec);
+                    attendance.markModified('records');
+                    attendance.summary = calculateSummary(attendance.records, userObj);
+                    await attendance.save();
+                  }
                 }
                 }
             }

@@ -4,7 +4,7 @@ import User from '@/models/User';
 import LeaveTransaction from '@/models/LeaveTransaction';
 import { getWorkingUnderPartnerForDate, lastDayOfMonthYear } from '@/lib/userFieldHistory';
 import { computeLeaveRemaining } from '@/lib/leaveManagement';
-import { getAdjLwpByUserThroughMonth, ADJ_FROM_MONTH } from '@/lib/leaveAdjLwp';
+import { getAdjLwpByUserThroughMonth } from '@/lib/leaveAdjLwp';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,17 +53,30 @@ export async function GET(request: NextRequest) {
       .sort({ name: 1 })
       .lean();
 
-    // Used leave on/after 1 Jan 2026, through asOfDate for the selected month.
-    const usedTxAgg = await LeaveTransaction.aggregate([
-      {
-        $match: {
-          type: 'used',
-          $or: [
-            { monthYear: { $gte: '2026-01', $lte: monthYear } },
-            { date: { $gte: '2026-01-01', $lte: asOfDate } },
+    // Leave month is monthYear when it is YYYY-MM. Otherwise the month inside date.
+    // Do not match on date alone: monthly earn rows store "today" as the date, which
+    // would pull later months into an earlier view.
+    const txMonthExpr = {
+      $let: {
+        vars: {
+          my: { $ifNull: ['$monthYear', ''] },
+          d: { $ifNull: ['$date', ''] },
+        },
+        in: {
+          $cond: [
+            { $regexMatch: { input: '$$my', regex: /^[0-9]{4}-[0-9]{2}$/ } },
+            '$$my',
+            { $substrCP: ['$$d', 0, 7] },
           ],
         },
       },
+    };
+
+    // Used leave from Jan 2026 through the selected month only.
+    const usedTxAgg = await LeaveTransaction.aggregate([
+      { $match: { type: 'used' } },
+      { $addFields: { txMonth: txMonthExpr } },
+      { $match: { txMonth: { $gte: '2026-01', $lte: monthYear } } },
       {
         $group: {
           _id: '$userId',
@@ -77,18 +90,11 @@ export async function GET(request: NextRequest) {
       usedAfterJan26Map.set(String(row._id), Number(row.totalUsedAfterJan26 || 0));
     }
 
-    // Earned through selected month (ledger). For the live/current month, fall back to
-    // user.leaveBalance.earned when ledger is empty so older data still displays.
+    // Earned from the ledger through the selected month only (not the live overall total).
     const earnedTxAgg = await LeaveTransaction.aggregate([
-      {
-        $match: {
-          type: 'earned',
-          $or: [
-            { monthYear: { $lte: monthYear } },
-            { date: { $lte: asOfDate } },
-          ],
-        },
-      },
+      { $match: { type: 'earned' } },
+      { $addFields: { txMonth: txMonthExpr } },
+      { $match: { txMonth: { $gte: '2026-01', $lte: monthYear } } },
       {
         $group: {
           _id: '$userId',
@@ -104,37 +110,17 @@ export async function GET(request: NextRequest) {
 
     const adjByUser = await getAdjLwpByUserThroughMonth(monthYear);
 
-    const useLiveEarnedFallback = monthYear >= thisMonth;
-
     // Transform the data to include user information with leave balances
     const leaveBalances = users.map((user) => {
       const usedAfterJan26 = usedAfterJan26Map.get(String(user._id)) || 0;
       const balanceAsOfJan26 = user.leaveBalance?.balanceAsOfJan26 || 0;
-      const ledgerEarned = earnedFromLedgerMap.get(String(user._id));
-      const liveEarned = user.leaveBalance?.earned || 0;
-      const earned =
-        ledgerEarned !== undefined
-          ? ledgerEarned
-          : useLiveEarnedFallback
-            ? liveEarned
-            : 0;
-      const liveAdj = Number(
-        (user.leaveBalance as { leaveAdjLwp?: number } | undefined)?.leaveAdjLwp ?? 0
-      );
+      const earned = earnedFromLedgerMap.get(String(user._id)) || 0;
       const uid = String(user._id);
       const adjRow = adjByUser.get(uid);
-      // Ledger is source of truth. Live scalar is only a fallback for the current
-      // month when this employee has no adj-lwp rows yet (pre-migrate).
-      const leaveAdjLwp = adjRow
-        ? adjRow.tillMonth
-        : monthYear >= thisMonth
-          ? liveAdj
-          : 0;
-      const leaveAdjLwpThisMonth = adjRow
-        ? adjRow.thisMonth
-        : monthYear === ADJ_FROM_MONTH
-          ? liveAdj
-          : 0;
+      // Sum of monthly Adj rows from Jan 2026 through the selected month.
+      // Do not substitute the live overall Adj scalar — that stays at "till now".
+      const leaveAdjLwp = adjRow ? adjRow.tillMonth : 0;
+      const leaveAdjLwpThisMonth = adjRow ? adjRow.thisMonth : 0;
       const remaining = computeLeaveRemaining({
         balanceAsOfJan26,
         earned,

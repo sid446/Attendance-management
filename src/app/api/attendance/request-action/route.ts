@@ -222,11 +222,22 @@ export async function GET(request: NextRequest) {
         
         await attendance.save();
 
-        // Update leave balance if it's a paid leave
+        // Update leave balance if it's a paid leave. Unpaid days stay value 0.
         if (requestedStatus === 'On leave' || requestedStatus === 'Absent') {
           const leaveUsage = await calculateLeaveUsage(userId, date, requestedStatus);
+          let deducted = false;
           if (leaveUsage.isPaidLeave) {
-            await updateLeaveBalanceOnApproval(userId, date, true);
+            const result = await updateLeaveBalanceOnApproval(userId, date, true);
+            deducted = result.deductedDates.includes(date);
+          }
+          const nextValue = deducted ? 1 : 0;
+          if (Number(rec.value) !== nextValue) {
+            rec.value = nextValue;
+            rec.halfDay = false;
+            attendance.records.set(date, rec);
+            const userAfter = await User.findById(userId);
+            attendance.summary = calculateSummary(attendance.records, userAfter);
+            await attendance.save();
           }
         }
 
@@ -557,6 +568,26 @@ export async function POST(request: NextRequest) {
       attendance.summary = calculateSummary(attendance.records, user);
 
       await attendance.save();
+
+      if (
+        (requestedStatus === 'On leave' || requestedStatus === 'Absent') &&
+        (attendanceValue === undefined || attendanceValue === null)
+      ) {
+        const leaveUsage = await calculateLeaveUsage(userId, date, requestedStatus);
+        let deducted = false;
+        if (leaveUsage.isPaidLeave) {
+          const result = await updateLeaveBalanceOnApproval(userId, date, true);
+          deducted = result.deductedDates.includes(date);
+        }
+        const nextValue = deducted ? 1 : 0;
+        if (Number(rec.value) !== nextValue) {
+          rec.value = nextValue;
+          rec.halfDay = false;
+          attendance.records.set(date, rec);
+          attendance.summary = calculateSummary(attendance.records, user);
+          await attendance.save();
+        }
+      }
     }
 
     // Send email notification to employee

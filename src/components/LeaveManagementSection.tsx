@@ -637,10 +637,10 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
         { header: 'Type', key: 'employmentType', width: 14 },
         { header: 'Team', key: 'team', width: 22 },
         { header: 'Balance 1 Jan 26', key: 'balanceAsOfJan26', width: 18 },
-        { header: 'Earned (after Jan)', key: 'earned', width: 18 },
+        { header: `Earned through ${formatMonthLabel(monthFilter)}`, key: 'earned', width: 22 },
         { header: `Adj ${formatMonthLabel(monthFilter)}`, key: 'leaveAdjLwpThisMonth', width: 18 },
         { header: 'Adj till this month', key: 'leaveAdjLwp', width: 18 },
-        { header: 'Used (after 1 Jan)', key: 'usedAfterJan26', width: 18 },
+        { header: `Used through ${formatMonthLabel(monthFilter)}`, key: 'usedAfterJan26', width: 22 },
         { header: 'Balance', key: 'remaining', width: 14 },
         { header: 'Last updated', key: 'lastUpdated', width: 16 },
         { header: 'Period from', key: 'periodFrom', width: 16 },
@@ -1158,12 +1158,12 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm">
             <div className="mb-2 flex items-center gap-2">
               <TrendingUp className="h-5 w-5 text-emerald-700" aria-hidden />
-              <span className="text-sm font-medium text-slate-700">Earned (after Jan)</span>
+              <span className="text-sm font-medium text-slate-700">Earned through {formatMonthLabel(monthFilter)}</span>
             </div>
             <div className="text-2xl font-bold tabular-nums text-slate-900">
               {formatLeaveValue(totalStats.totalEarned)}
             </div>
-            <div className="mt-1 text-xs text-slate-500">Earned after 1 Jan 2026</div>
+            <div className="mt-1 text-xs text-slate-500">From Jan 2026 through this month</div>
           </div>
         )}
 
@@ -1186,18 +1186,18 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
           <div className="text-2xl font-bold tabular-nums text-slate-900">
             {formatLeaveValue(totalStats.totalLeaveAdjLwp)}
           </div>
-          <div className="mt-1 text-xs text-slate-500">Overall as of {formatMonthLabel(monthFilter)} (not editable)</div>
+          <div className="mt-1 text-xs text-slate-500">Sum from Jan 2026 through {formatMonthLabel(monthFilter)} (not editable)</div>
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm">
           <div className="mb-2 flex items-center gap-2">
             <TrendingDown className="h-5 w-5 text-amber-800" aria-hidden />
-            <span className="text-sm font-medium text-slate-700">Used (after 1 Jan)</span>
+            <span className="text-sm font-medium text-slate-700">Used through {formatMonthLabel(monthFilter)}</span>
           </div>
           <div className="text-2xl font-bold tabular-nums text-slate-900">
             {formatLeaveValue(totalStats.totalUsedAfterJan26)}
           </div>
-          <div className="mt-1 text-xs text-slate-500">Leave on/after 1 Jan 2026</div>
+          <div className="mt-1 text-xs text-slate-500">From Jan 2026 through this month</div>
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm">
@@ -1208,7 +1208,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
           <div className="text-2xl font-bold tabular-nums text-slate-900">
             {formatLeaveValue(totalStats.totalRemaining)}
           </div>
-          <div className="mt-1 text-xs text-slate-500">Available leave balance</div>
+          <div className="mt-1 text-xs text-slate-500">As of {formatMonthLabel(monthFilter)}</div>
         </div>
       </div>
 
@@ -1365,10 +1365,9 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
             Leave balances
           </h3>
           <p className="text-xs text-slate-600">
-            Showing balances as of {formatMonthLabel(monthFilter)}
-            {fromMonth !== monthFilter ? ` for period ${periodLabel}` : ''}. Type Adj this month; Adj till
-            this month is the running total and cannot be edited. Totals above respect the current
-            tab, team, and search.
+            Showing balances through {formatMonthLabel(monthFilter)}, not the latest overall total.
+            Type Adj this month; Adj till this month is the running total through that month and cannot
+            be edited. Totals above respect the current tab, team, and search.
           </p>
         </div>
         <div className="overflow-x-auto">
@@ -1388,7 +1387,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
                   Balance 1 Jan 26
                 </th>
                 <th scope="col" className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Earned (after Jan)
+                  Earned through month
                 </th>
                 <th scope="col" className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Adj this month
@@ -1397,7 +1396,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
                   Adj till this month
                 </th>
                 <th scope="col" className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Used (after 1 Jan)
+                  Used through month
                 </th>
                 <th scope="col" className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Balance
@@ -1469,7 +1468,7 @@ export const LeaveManagementSection: React.FC<LeaveManagementSectionProps> = ({
                     <td className="px-4 py-3 text-center">
                       <span
                         className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs font-medium tabular-nums text-slate-700"
-                        title="Overall Adj/LWP through this month — derived from monthly changes"
+                        title="Adj/LWP from Jan 2026 through the selected month"
                       >
                         {formatLeaveValue(balance.leaveAdjLwp ?? 0)}
                       </span>

@@ -460,8 +460,25 @@ export async function applyApprovedRequestToAttendance(
 
   if (requestedStatus === 'On leave' || requestedStatus === 'Absent') {
     const leaveUsage = await calculateLeaveUsage(userObjectId, date, requestedStatus);
+    let deducted = false;
     if (leaveUsage.isPaidLeave) {
-      await updateLeaveBalanceOnApproval(userObjectId, date, true);
+      const result = await updateLeaveBalanceOnApproval(userObjectId, date, true);
+      deducted = result.deductedDates.includes(date);
+    }
+    const nextValue = deducted ? 1 : 0;
+    if (Number(rec.value) !== nextValue) {
+      rec.value = nextValue;
+      rec.halfDay = false;
+      setDayRecord(attendance, date, rec);
+      const recordsMap =
+        attendance.records instanceof Map
+          ? attendance.records
+          : new Map(Object.entries(attendance.records || {}));
+      attendance.summary = calculateSummary(
+        recordsMap as Map<string, AttendanceRecordForSummary>,
+        userObj
+      );
+      await attendance.save();
     }
   }
 

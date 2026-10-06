@@ -152,8 +152,20 @@ export async function POST(request: NextRequest) {
                         const { calculateLeaveUsageForMultipleDays, updateLeaveBalanceOnApproval } = await import('@/lib/leaveManagement');
                         const leaveCalc = await calculateLeaveUsageForMultipleDays(user._id as any, dates, newStatus);
                         if (leaveCalc && Array.isArray(leaveCalc.leaveDetails) && leaveCalc.leaveDetails.length > 0) {
-                          // Update leave balances (will internally no-op for unpaid leaves)
-                          await updateLeaveBalanceOnApproval(user._id as any, leaveCalc.leaveDetails as any);
+                          const deduction = await updateLeaveBalanceOnApproval(user._id as any, leaveCalc.leaveDetails as any);
+                          const deducted = new Set(deduction.deductedDates);
+                          for (const date of dates) {
+                            const rec = attendance.records.get(date);
+                            if (!rec) continue;
+                            const nextValue = deducted.has(date) ? 1 : 0;
+                            if (Number(rec.value) !== nextValue) {
+                              rec.value = nextValue;
+                              rec.halfDay = false;
+                              attendance.records.set(date, rec);
+                            }
+                          }
+                          attendance.markModified('records');
+                          await attendance.save();
                         }
                       }
                     } catch (leaveErr) {

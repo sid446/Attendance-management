@@ -1,6 +1,7 @@
 import LeaveTransaction from '@/models/LeaveTransaction';
 import LeaveSnapshot from '@/models/LeaveSnapshot';
 import User from '@/models/User';
+import { isInternOrArticleEmployee } from '@/lib/isArticleEmployee';
 
 /**
  * Add a leave transaction to the ledger
@@ -94,7 +95,7 @@ export async function createMonthlySnapshots(monthYear?: string) {
     const cumVals = cumPerUser[uid] || { earned: 0, used: 0, adjust: 0 };
 
     // Fetch user to read balanceAsOfJan26 as a fallback and employment info
-    const user = await User.findById(uid).select('leaveBalance employmentType designation');
+    const user = await User.findById(uid).select('leaveBalance employmentType designation category');
     const balanceAsOfJan26 = user?.leaveBalance?.balanceAsOfJan26 || 0;
     // Opening is B/F only. Monthly Adj/LWP and outstation-delta live on ledger
     // `adjust` rows and flow into adjustmentsThisMonth / remainingAfter.
@@ -117,10 +118,8 @@ export async function createMonthlySnapshots(monthYear?: string) {
     const usedThisMonth = monthVals.used || 0;
     const adjustmentsThisMonth = monthVals.adjust || 0;
 
-    // Treat 'article' employment/designation as articleship: they do not get paid leave
-    const employmentTypeLower = (user?.employmentType || '').toString().toLowerCase();
-    const designationLower = (user?.designation || '').toString().toLowerCase();
-    const isArticle = employmentTypeLower.includes('article') || designationLower.includes('article');
+    // Articles and interns do not get paid leave.
+    const isArticle = isInternOrArticleEmployee(user);
     // Check for an existing snapshot for this month so we can decide whether to apply
     // the earned=2 business rule to existing documents as well (but never overwrite
     // non-zero earned values).

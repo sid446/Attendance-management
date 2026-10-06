@@ -1092,7 +1092,29 @@ export async function POST(request: NextRequest) {
             }
 
             if (paidDetails.length > 0) {
-              await updateLeaveBalanceOnApproval(user._id as any, paidDetails as any);
+              const deduction = await updateLeaveBalanceOnApproval(user._id as any, paidDetails as any);
+              const deducted = new Set(deduction.deductedDates);
+              let refused = false;
+              for (const date of dates) {
+                const detail = detailByDate.get(date);
+                const wantedPaid = Boolean(detail?.isPaidLeave && Number(detail?.value || 0) >= 1);
+                if (!wantedPaid || deducted.has(date)) continue;
+                const monthYear = date.slice(0, 7);
+                const attendance = attendanceByMonth.get(monthYear);
+                const rec = attendance?.records.get(date);
+                if (!attendance || !rec) continue;
+                rec.typeOfPresence = 'Absent';
+                rec.value = 0;
+                rec.halfDay = false;
+                attendance.records.set(date, rec);
+                refused = true;
+              }
+              if (refused) {
+                for (const attendance of attendanceByMonth.values()) {
+                  attendance.summary = calculateSummary(attendance.records as any, user as any);
+                  await attendance.save();
+                }
+              }
               const earliest = paidDetails.reduce(
                 (min, d) => (d.date < min ? d.date : min),
                 paidDetails[0].date

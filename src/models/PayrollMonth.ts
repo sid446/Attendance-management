@@ -46,6 +46,7 @@ export interface IPayrollLine {
   absentWfhMaxActual: number;
   weekdaysWorking: number;
   leavesTaken: number;
+  paidLeave?: number;
   leavesBf: number;
   leavesEarned: number;
   leavesConsumed: number;
@@ -181,6 +182,7 @@ const PayrollLineSchema = new Schema(
     absentWfhMaxActual: { type: Number, default: 0 },
     weekdaysWorking: { type: Number, default: 0 },
     leavesTaken: { type: Number, default: 0 },
+    paidLeave: { type: Number },
     leavesBf: { type: Number, default: 0 },
     leavesEarned: { type: Number, default: 0 },
     leavesConsumed: { type: Number, default: 0 },

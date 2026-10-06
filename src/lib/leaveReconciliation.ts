@@ -28,6 +28,7 @@ import Attendance from '@/models/Attendance';
 import AttendanceRequest from '@/models/AttendanceRequest';
 import Holiday from '@/models/Holiday';
 import User from '@/models/User';
+import { isInternOrArticleEmployee } from '@/lib/isArticleEmployee';
 import LeaveTransaction from '@/models/LeaveTransaction';
 import { createMonthlySnapshots } from '@/lib/leaveLedger';
 import { MONTHLY_EARNED_SOURCES } from '@/lib/leaveManagement';
@@ -181,10 +182,12 @@ function monthInRange(monthYear: string, from: string, to: string): boolean {
   return monthYear >= from && monthYear <= to;
 }
 
-function isArticleUser(user: { employmentType?: string; designation?: string }): boolean {
-  const emp = String(user.employmentType || '').toLowerCase();
-  const des = String(user.designation || '').toLowerCase();
-  return emp.includes('article') || des.includes('article');
+function isArticleUser(user: {
+  employmentType?: string;
+  designation?: string;
+  category?: string;
+}): boolean {
+  return isInternOrArticleEmployee(user);
 }
 
 function recordsMapToObject(
@@ -421,7 +424,7 @@ export async function reconcileLeaveFromAttendance(
     : { isActive: { $ne: false } };
 
   const users = await User.find(userQuery)
-    .select('_id name employmentType designation leaveBalance')
+    .select('_id name employmentType designation category leaveBalance')
     .lean();
 
   const attendanceQuery: Record<string, unknown> = {

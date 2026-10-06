@@ -322,8 +322,19 @@ export async function POST(request: NextRequest) {
     if (['On leave', 'Absent'].includes(requestedStatus)) {
       try {
         const leaveUsage = await calculateLeaveUsage(userId, date, requestedStatus);
+        let deducted = false;
         if (leaveUsage.isPaidLeave) {
-          await updateLeaveBalanceOnApproval(userId, date, true);
+          const result = await updateLeaveBalanceOnApproval(userId, date, true);
+          deducted = result.deductedDates.includes(date);
+        }
+        const nextValue = deducted ? 1 : 0;
+        if (Number(rec.value) !== nextValue) {
+          rec.value = nextValue;
+          rec.halfDay = false;
+          attendance.records.set(date, rec);
+          attendance.markModified('records');
+          attendance.summary = calculateSummary(attendance.records, userObj);
+          await attendance.save();
         }
       } catch (e) {
         console.error('Leave update failed during admin update:', e);

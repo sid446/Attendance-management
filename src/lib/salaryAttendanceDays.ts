@@ -34,6 +34,8 @@ export type SalaryAttendanceDays = {
   absentWfhMaxActual: number;
   weekdaysWorking: number;
   leavesTaken: number;
+  /** On leave / Leave days whose attendance value is above 0 (paid). Value 0 is unpaid and is not included. */
+  paidLeave?: number;
   weekoffWorking: number;
   overtimeSuggested: number;
   presentOrWfhCount: number;
@@ -144,6 +146,7 @@ export function countSalaryAttendanceDays(
     absentWfhMaxActual: 0,
     weekdaysWorking: 0,
     leavesTaken: 0,
+    paidLeave: 0,
     weekoffWorking: 0,
     overtimeSuggested: 0,
     presentOrWfhCount: 0,
@@ -173,6 +176,7 @@ export function countSalaryAttendanceDays(
   let presentWfhActual = 0;
   let wfhWeekoffActual = 0;
   let presentOrWfhCount = 0;
+  let paidLeave = 0;
 
   for (const dateStr of keys) {
     const rec = recs[dateStr];
@@ -217,6 +221,7 @@ export function countSalaryAttendanceDays(
     if (!isSunday && !isHoliday && (isExplicitAbsent || isLeaveMarked)) {
       absent += 1;
       isAbsentRecord = true;
+      if (isLeaveMarked && value > 0) paidLeave += value;
     } else if (
       !isSunday &&
       !isHoliday &&
@@ -267,6 +272,7 @@ export function countSalaryAttendanceDays(
   const absentWfhMaxActual = round3(Math.max(0, wfhMaxAllowed - presentWfh));
   const weekdaysWorking = round3(pio + osP + hd / 2 + presentWfh);
   const leavesTaken = round3(absent + (wfhWeekdayCount - presentWfh) + hd / 2);
+  const paidLeaveDays = round3(paidLeave);
   const weekoffWorking = round3(woPio + weekoffHd / 2 + wfhWeekoffActual);
 
   const periodExcess = Math.max(0, Number(options?.periodExcessHours || 0));
@@ -292,6 +298,7 @@ export function countSalaryAttendanceDays(
     absentWfhMaxActual,
     weekdaysWorking,
     leavesTaken,
+    paidLeave: paidLeaveDays,
     weekoffWorking,
     overtimeSuggested,
     presentOrWfhCount,

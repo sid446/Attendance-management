@@ -333,6 +333,60 @@ function overrideNum(v: number | null | undefined, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * Bank payment starts from due-in-tally.
+ * Added: other extra, TA, LC, custom earnings.
+ * Deducted: TDS, ESI employee, advances, laptop adjustment, custom deductions.
+ * ESI employer is the firm's own ESIC cost, so it does not change the employee's bank amount.
+ * Addition in off due and OFF go to cash, not the bank.
+ */
+function settlePayrollCash(input: {
+  payableBasic: number;
+  payableLaptop: number;
+  payableMonth: number;
+  dueInTally: number;
+  additionInOffDue: number;
+  otherExtra: number;
+  esiEmployee: number;
+  tds: number;
+  advances: number;
+  off: number;
+  taReimbursement: number;
+  lcReimbursement: number;
+  laptopAdjustment: number;
+  customEarnings: number;
+  customDeductions: number;
+}): {
+  cashOffDue: number;
+  bankPayment: number;
+  cashOff: number;
+  diff: number;
+  netSalary: number;
+} {
+  const additions =
+    input.otherExtra + input.taReimbursement + input.lcReimbursement + input.customEarnings;
+  const deductions =
+    input.esiEmployee + input.tds + input.advances + input.laptopAdjustment + input.customDeductions;
+  const cashOffDue = input.payableMonth - input.dueInTally + input.additionInOffDue;
+  const bankPayment = input.dueInTally + additions - deductions;
+  const cashOff = cashOffDue + input.off;
+  const diff = round3(bankPayment + cashOff - input.payableMonth - additions + deductions - input.off);
+  const income =
+    input.payableBasic +
+    input.payableLaptop +
+    input.otherExtra +
+    input.taReimbursement +
+    input.lcReimbursement +
+    input.customEarnings;
+  return {
+    cashOffDue,
+    bankPayment,
+    cashOff,
+    diff,
+    netSalary: income - deductions,
+  };
+}
+
 export function computeSalaryLine(input: SalaryCalcInput): SalaryCalcResult {
   const o = input.overrides || {};
   const days = input.days;
@@ -371,8 +425,11 @@ export function computeSalaryLine(input: SalaryCalcInput): SalaryCalcResult {
 
   let leavesConsumed = 0;
   if (!isArticle) {
-    // Still consume paid leave when weekday working days are low (long approved leave).
-    leavesConsumed = Math.min(days.leavesTaken, Number(input.leavesBf || 0) + leavesEarned);
+    // Paid leave only: On leave days with value > 0. Unpaid (value 0) stays out of pay.
+    // Older saved lines have no paidLeave count, so they keep the previous leavesTaken cap.
+    const paidLeaveDays =
+      typeof days.paidLeave === 'number' ? days.paidLeave : Number(days.leavesTaken || 0);
+    leavesConsumed = Math.min(paidLeaveDays, Number(input.leavesBf || 0) + leavesEarned);
   }
   const leavesCf = round3(Number(input.leavesBf || 0) + leavesEarned - leavesConsumed);
 
@@ -412,8 +469,6 @@ export function computeSalaryLine(input: SalaryCalcInput): SalaryCalcResult {
 
   const dueInTally = overrideNum(o.dueInTally, payableMonth);
   const additionInOffDue = overrideNum(o.additionInOffDue, 0);
-  const cashOffDue = payableMonth - dueInTally + additionInOffDue;
-
   const otherExtra = overrideNum(o.otherExtra, 0);
   const esiEmployer = overrideNum(o.esiEmployer, 0);
   const esiEmployee = overrideNum(o.esiEmployee, 0);
@@ -427,16 +482,24 @@ export function computeSalaryLine(input: SalaryCalcInput): SalaryCalcResult {
     input.extraFields,
     o.customAmounts
   );
-
-  const extrasForBank =
-    otherExtra + esiEmployer + esiEmployee + tds + advances + customEarnings + customDeductions;
-  const bankPayment = dueInTally + extrasForBank;
-  const cashOff = cashOffDue + off;
-  const diff = bankPayment + cashOff - payableMonth - extrasForBank - off;
-
-  const income = payableBasic + payableLaptop + taReimbursement + lcReimbursement + customEarnings;
-  const deductions = advances + laptopAdjustment + customDeductions;
-  const netSalary = income - deductions;
+  const money = settlePayrollCash({
+    payableBasic,
+    payableLaptop,
+    payableMonth,
+    dueInTally,
+    additionInOffDue,
+    otherExtra,
+    esiEmployee,
+    tds,
+    advances,
+    off,
+    taReimbursement,
+    lcReimbursement,
+    laptopAdjustment,
+    customEarnings,
+    customDeductions,
+  });
+  const { cashOffDue, bankPayment, cashOff, diff, netSalary } = money;
 
   return {
     group,
@@ -561,8 +624,6 @@ export function previewPayrollLineFromOverrides(
 
   const dueInTally = overrideNum(o.dueInTally, payableMonth);
   const additionInOffDue = overrideNum(o.additionInOffDue, 0);
-  const cashOffDue = payableMonth - dueInTally + additionInOffDue;
-
   const otherExtra = overrideNum(o.otherExtra, 0);
   const esiEmployer = overrideNum(o.esiEmployer, 0);
   const esiEmployee = overrideNum(o.esiEmployee, 0);
@@ -576,16 +637,24 @@ export function previewPayrollLineFromOverrides(
     extraFields,
     o.customAmounts
   );
-
-  const extrasForBank =
-    otherExtra + esiEmployer + esiEmployee + tds + advances + customEarnings + customDeductions;
-  const bankPayment = dueInTally + extrasForBank;
-  const cashOff = cashOffDue + off;
-  const diff = bankPayment + cashOff - payableMonth - extrasForBank - off;
-
-  const income = payableBasic + payableLaptop + taReimbursement + lcReimbursement + customEarnings;
-  const deductions = advances + laptopAdjustment + customDeductions;
-  const netSalary = income - deductions;
+  const money = settlePayrollCash({
+    payableBasic,
+    payableLaptop,
+    payableMonth,
+    dueInTally,
+    additionInOffDue,
+    otherExtra,
+    esiEmployee,
+    tds,
+    advances,
+    off,
+    taReimbursement,
+    lcReimbursement,
+    laptopAdjustment,
+    customEarnings,
+    customDeductions,
+  });
+  const { cashOffDue, bankPayment, cashOff, diff, netSalary } = money;
 
   return {
     overtimeDays: round3(overtimeDays),
