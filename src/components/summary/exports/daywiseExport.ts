@@ -22,6 +22,7 @@ import {
   splitExcessAndDeficitLabels,
 } from './exportExcelDuration';
 import { downloadWorkbook } from './downloadWorkbook';
+import { insertWorksheetRow } from './excelWorksheet';
 import {
   calculateDayExcessHour,
   effectiveScheduledMinutesForDay,
@@ -152,7 +153,7 @@ export async function buildDaywiseWorkbook(
     }));
 
     const daywiseHeaderLabels = [...DAYWISE_HEADER_LABELS];
-    worksheet.insertRow(1, daywiseHeaderLabels);
+    insertWorksheetRow(worksheet, 1, daywiseHeaderLabels);
 
     const pad2 = (n: number) => String(n).padStart(2, '0');
     const toIsoFromLocalDate = (dt: Date) =>
@@ -1154,17 +1155,23 @@ export async function buildDaywiseWorkbook(
 
     // Widen columns slightly if content is longer than default (cap so layout stays usable)
     worksheet.columns.forEach((col, idx) => {
+      if (!col) return;
       const headerLen = (daywiseHeaderLabels[idx] || '').length;
       let maxLen = headerLen;
-      if (col.eachCell) {
-        col.eachCell({ includeEmpty: false }, (cell, rowNumber) => {
-          if (rowNumber === 1) return;
-          const v = cell.value != null ? String(cell.value) : '';
-          maxLen = Math.max(maxLen, Math.min(v.length, 55));
-        });
-      }
-      const base = col.width || 10;
-      col.width = Math.min(42, Math.max(base, maxLen * 0.9 + 1.5));
+      const sized = col as {
+        width?: number;
+        eachCell?: (
+          opt: { includeEmpty: boolean },
+          callback: (cell: { value?: unknown }, rowNumber: number) => void
+        ) => void;
+      };
+      sized.eachCell?.({ includeEmpty: false }, (cell, rowNumber) => {
+        if (rowNumber === 1) return;
+        const v = cell.value != null ? String(cell.value) : '';
+        maxLen = Math.max(maxLen, Math.min(v.length, 55));
+      });
+      const base = sized.width || 10;
+      sized.width = Math.min(42, Math.max(base, maxLen * 0.9 + 1.5));
     });
     }
 

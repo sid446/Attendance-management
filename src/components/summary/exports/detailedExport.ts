@@ -9,6 +9,7 @@ import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
 import { sortRecordDetailsEntries } from '../utils/summaryDateUtils';
 import type { SummaryExportContext } from './exportTypes';
 import { downloadWorkbook } from './downloadWorkbook';
+import { insertWorksheetRow } from './excelWorksheet';
 import { isArticleEmployee } from '@/lib/isArticleEmployee';
 
 const INACTIVE_ROW_FILL = 'FFFDBA74';
@@ -240,7 +241,7 @@ export async function exportDetailedAttendance(ctx: SummaryExportContext): Promi
     // Insert numbering row above header (1..N) and header row at row 2
     const colCount = worksheet.columns.length;
     const numberingRow = Array.from({ length: colCount }, (_, i) => i + 1);
-    worksheet.insertRow(1, numberingRow);
+    insertWorksheetRow(worksheet, 1, numberingRow);
     const headerLabels = [
       'Employee Code',
       'Employee Name',
@@ -275,7 +276,7 @@ export async function exportDetailedAttendance(ctx: SummaryExportContext): Promi
       'Net Staff Working Days',
       'Loss due to invalid'
     ];
-    worksheet.insertRow(2, headerLabels);
+    insertWorksheetRow(worksheet, 2, headerLabels);
 
     // Pre-calc period range
     let startDate: Date;
