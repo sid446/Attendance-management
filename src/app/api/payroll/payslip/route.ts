@@ -7,7 +7,7 @@ import { assertHrSection, effectiveFromDoc } from '@/lib/hrConsolePermissionUtil
 import { transporter, mailOptions } from '@/lib/mailer';
 import { getServiceAdminEmail } from '@/lib/hrServiceEmail';
 import User from '@/models/User';
-import { buildPayslipHtml, buildPayslipPdf, payslipFileName, payslipRecipient } from '@/lib/payrollPayslip';
+import { buildPayslipHtml, buildPayslipPdf, payslipFileName, payslipLogoAttachment, payslipRecipient } from '@/lib/payrollPayslip';
 import { formatMonthLabel, parseMoney } from '@/lib/salaryCalculation';
 import { payrollLinePlain } from '@/lib/payrollGenerate';
 import type { IPayrollLine } from '@/models/PayrollMonth';
@@ -68,6 +68,7 @@ export async function POST(request: NextRequest) {
           otherAllowance: line.otherAllowance || parseMoney(master?.otherAllowance),
         };
         const pdf = buildPayslipPdf(hydrated, monthYear, doc.calendar);
+        const logo = payslipLogoAttachment();
         await transporter.sendMail({
           ...mailOptions,
           to,
@@ -80,6 +81,7 @@ export async function POST(request: NextRequest) {
               content: pdf,
               contentType: 'application/pdf',
             },
+            ...(logo ? [logo] : []),
           ],
         });
         doc.lines[idx].payslipSentAt = new Date();

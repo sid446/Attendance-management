@@ -114,6 +114,24 @@ function dashAmt(n: number): string {
   return new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(Math.round(n));
 }
 
+function netAmt(n: number, rupee: string): string {
+  const body = dashAmt(n);
+  if (body === '-') return '-';
+  return `${rupee}${body}`;
+}
+
+function leaveRow(line: IPayrollLine): string[] {
+  if (line.isArticle) return ['-', '-', '-', '-', '-'];
+  const carried = fmtLeave(line.leavesCf);
+  return [
+    fmtLeave(line.leavesBf),
+    fmtLeave(line.leavesEarned),
+    fmtLeave(line.leavesConsumed),
+    carried,
+    carried,
+  ];
+}
+
 function fmtDays(n: number): string {
   if (!Number.isFinite(n)) return '-';
   if (Number.isInteger(n)) return String(n);
@@ -158,10 +176,46 @@ function loadLogo(): Buffer | null {
   return readFirst(candidates);
 }
 
-function logoDataUri(): string | null {
-  const buf = loadLogo();
-  if (!buf) return null;
-  return `data:image/jpeg;base64,${buf.toString('base64')}`;
+export function payslipLogoAttachment(): {
+  filename: string;
+  content: Buffer;
+  cid: string;
+  contentType: string;
+} | null {
+  const content = loadLogo();
+  if (!content) return null;
+  return { filename: 'asija-logo.jpg', content, cid: 'asija-logo', contentType: 'image/jpeg' };
+}
+
+const CELL_PAD = 5.64;
+
+function cellStyleName(cell: Cell): 'italic' | 'bold' | 'normal' {
+  if (cell.italic) return 'italic';
+  if (cell.bold) return 'bold';
+  return 'normal';
+}
+
+function fitCellLines(doc: jsPDF, font: FontSet, cell: Cell, colWidth: number): { lines: string[]; size: number } {
+  const preferred = cell.size ?? 8.5;
+  const maxWidth = Math.max(8, colWidth - CELL_PAD * 2);
+  const style = cellStyleName(cell);
+  doc.setFont(font.family, style);
+  if (!cell.text) return { lines: [], size: preferred };
+
+  const linesAt = (size: number): string[] => {
+    doc.setFontSize(size);
+    if (doc.getTextWidth(cell.text) <= maxWidth + 0.4) return [cell.text];
+    const parts = doc.splitTextToSize(cell.text, maxWidth) as string[];
+    return parts.length ? parts : [cell.text];
+  };
+
+  let size = preferred;
+  let lines = linesAt(size);
+  while (size > 7 && lines.some((ln) => doc.getTextWidth(ln) > maxWidth + 0.4)) {
+    size = Math.round((size - 0.25) * 100) / 100;
+    lines = linesAt(size);
+  }
+  return { lines, size };
 }
 
 function drawTable(
@@ -173,17 +227,30 @@ function drawTable(
   heights: number[],
   grid: Cell[][]
 ): number {
+  const prepared = grid.map((row, r) =>
+    row.map((cell, c) => ({ cell, ...fitCellLines(doc, font, cell, widths[c] || widths[widths.length - 1]) }))
+  );
+  const rowHeights = heights.map((h, r) => {
+    let needed = h;
+    for (const item of prepared[r] || []) {
+      if (item.lines.length > 1) {
+        needed = Math.max(needed, item.lines.length * item.size * 1.15 + 6);
+      }
+    }
+    return needed;
+  });
+
   const xs = [x0];
   for (const w of widths) xs.push(xs[xs.length - 1] + w);
   const ys = [y0];
-  for (const h of heights) ys.push(ys[ys.length - 1] + h);
+  for (const h of rowHeights) ys.push(ys[ys.length - 1] + h);
 
   for (let r = 0; r < grid.length; r++) {
     for (let c = 0; c < grid[r].length; c++) {
       const fill = grid[r][c].fill;
       if (fill) {
         doc.setFillColor(...fill);
-        doc.rect(xs[c], ys[r], widths[c], heights[r], 'F');
+        doc.rect(xs[c], ys[r], widths[c], rowHeights[r], 'F');
       }
     }
   }
@@ -195,27 +262,29 @@ function drawTable(
   for (const y of ys) doc.line(x0, y, xEnd, y);
   for (const x of xs) doc.line(x, y0, x, yEnd);
 
-  for (let r = 0; r < grid.length; r++) {
-    for (let c = 0; c < grid[r].length; c++) {
-      const cell = grid[r][c];
-      if (!cell.text) continue;
-      const size = cell.size ?? 8.5;
-      const style = cell.italic ? 'italic' : cell.bold ? 'bold' : 'normal';
-      doc.setFont(font.family, style);
+  for (let r = 0; r < prepared.length; r++) {
+    for (let c = 0; c < prepared[r].length; c++) {
+      const { cell, lines, size } = prepared[r][c];
+      if (!lines.length) continue;
+      doc.setFont(font.family, cellStyleName(cell));
       doc.setFontSize(size);
       doc.setTextColor(0, 0, 0);
-      const pad = 5.64;
       const w = widths[c];
-      const h = heights[r];
-      const ty = ys[r] + h / 2 + size * 0.28;
+      const h = rowHeights[r];
       const align = cell.align || 'left';
-      const maxWidth = Math.max(8, w - pad * 2);
-      if (align === 'center') {
-        doc.text(cell.text, xs[c] + w / 2, ty, { align: 'center', maxWidth });
-      } else if (align === 'right') {
-        doc.text(cell.text, xs[c] + w - pad, ty, { align: 'right', maxWidth });
-      } else {
-        doc.text(cell.text, xs[c] + pad, ty, { maxWidth });
+      const x =
+        align === 'center' ? xs[c] + w / 2 : align === 'right' ? xs[c] + w - CELL_PAD : xs[c] + CELL_PAD;
+      if (lines.length === 1) {
+        const ty = ys[r] + h / 2 + size * 0.28;
+        doc.text(lines[0], x, ty, { align });
+        continue;
+      }
+      const lineH = size * 1.15;
+      const blockH = lines.length * lineH;
+      let ty = ys[r] + (h - blockH) / 2 + size * 0.78;
+      for (const line of lines) {
+        doc.text(line, x, ty, { align });
+        ty += lineH;
       }
     }
   }
@@ -280,39 +349,45 @@ export function buildPayslipPdf(
   const font = registerCalibri(doc);
   const vals = payslipValues(line, calendar);
 
+  const logoSize = 56.94;
   const logo = loadLogo();
   if (logo) {
     try {
-      doc.addImage(logo, 'JPEG', 145.05, 28.1, 47.45, 47.45);
+      doc.addImage(logo, 'JPEG', LEFT, 23.35, logoSize, logoSize);
     } catch {
       // continue without logo
     }
   }
 
+  const headerRight = LEFT + COL4.reduce((sum, w) => sum + w, 0);
   doc.setTextColor(0, 0, 0);
   doc.setFont(font.family, 'bold');
   doc.setFontSize(14);
-  doc.text('ASIJA & ASSOCIATES LLP', 311.4, 35.3);
+  doc.text('ASIJA & ASSOCIATES LLP', headerRight, 35.3, { align: 'right' });
   doc.setFont(font.family, 'italic');
   doc.setFontSize(9.5);
-  doc.text('Chartered Accountants', 311.4, 51.9);
+  doc.text('Chartered Accountants', headerRight, 51.9, { align: 'right' });
   doc.setFont(font.family, 'normal');
   doc.setFontSize(8.5);
-  doc.text('1st Floor, 34/5, Gokhale Marg, Butler Colony, Lucknow – 226001', 311.4, 63.9);
+  doc.text('1st Floor, 34/5, Gokhale Marg, Butler Colony, Lucknow – 226001', headerRight, 63.9, { align: 'right' });
 
   doc.setFont(font.family, 'bold');
   doc.setFontSize(12);
-  doc.text(monthTitle(monthYear), 306, 88.7, { align: 'center' });
+  doc.text(monthTitle(monthYear), 306, 94, { align: 'center' });
 
-  drawTable(doc, font, LEFT, 106.92, COL4, [11.52, 11.52, 11.52, 11.88], [
+  let extra = 0;
+  const identityY = 106.92;
+  const identityEnd = drawTable(doc, font, LEFT, identityY, COL4, [11.52, 11.52, 11.52, 11.88], [
     [h('Employee Name'), v(textOrDash(line.name)), h('Employee Code'), v(textOrDash(line.employeeCode || line.odId))],
     [h('Designation'), v(textOrDash(line.designation)), h('Joining Date'), v(joinDateLabel(line.joiningDate))],
     [h('Department / Vertical'), v(vals.department), h('ESIC No.'), v(vals.esiNo, { align: vals.esiNo === '-' ? 'center' : 'left' })],
     [h('Bank Name'), v(textOrDash(line.bankName)), h('Bank A/C No.'), v(textOrDash(line.accountNumber))],
   ]);
+  extra += identityEnd - (identityY + 11.52 * 3 + 11.88);
 
   const attHead: Cell = { text: '', bold: true, fill: HEADER_FILL, align: 'center', size: 8.5 };
-  drawTable(doc, font, LEFT, 176.04, COL6, [10.92, 12.0], [
+  const attY = 176.04 + extra;
+  const attEnd = drawTable(doc, font, LEFT, attY, COL6, [10.92, 12.0], [
     [
       { ...attHead, text: 'Office Working Days' },
       { ...attHead, text: 'Staff Working Days' },
@@ -330,10 +405,12 @@ export function buildPayslipPdf(
       v(fmtDays(vals.paidLeave), { align: 'center' }),
     ],
   ]);
+  extra += attEnd - (attY + 10.92 + 12);
 
   const amt = (n: number): Cell => v(dashAmt(n), { align: 'center' });
   const earnHead: Cell = { text: '', bold: true, fill: HEADER_FILL, align: 'center', size: 9 };
-  drawTable(doc, font, LEFT, 221.52, COL4, [11.52, 11.52, 11.52, 11.52, 11.52, 11.52, 11.88], [
+  const earnY = 221.52 + extra;
+  const earnEnd = drawTable(doc, font, LEFT, earnY, COL4, [11.52, 11.52, 11.52, 11.52, 11.52, 11.52, 11.88], [
     [
       { ...earnHead, text: 'EARNINGS' },
       { ...earnHead, text: `AMOUNT (${font.rupee})` },
@@ -352,29 +429,24 @@ export function buildPayslipPdf(
       { text: dashAmt(vals.totalDed), fill: TOTAL_FILL, align: 'center', size: 9 },
     ],
   ]);
+  extra += earnEnd - (earnY + 11.52 * 6 + 11.88);
 
-  drawTable(doc, font, LEFT, 325.08, COL2, [12.12, 13.2], [
+  const netY = 325.08 + extra;
+  const netEnd = drawTable(doc, font, LEFT, netY, COL2, [12.12, 13.2], [
     [
       { text: 'NET PAY', bold: true, fill: HEADER_FILL, size: 9.5 },
-      { text: `${font.rupee}${dashAmt(vals.net)}`, bold: true, fill: HEADER_FILL, align: 'center', size: 9 },
+      { text: netAmt(vals.net, font.rupee), bold: true, fill: HEADER_FILL, align: 'center', size: 9 },
     ],
     [
       { text: 'Amount in Words', bold: true, size: 8.5 },
       { text: amountInWords(vals.net), bold: true, align: 'center', size: 10 },
     ],
   ]);
+  extra += netEnd - (netY + 12.12 + 13.2);
 
   const leaveHead: Cell = { text: '', bold: true, fill: HEADER_FILL, align: 'center', size: 8 };
-  const leaveVals = line.isArticle
-    ? ['-', '-', '-', '-', '-']
-    : [
-        fmtLeave(line.leavesBf),
-        fmtLeave(line.leavesEarned),
-        fmtLeave(line.leavesConsumed),
-        fmtLeave(line.leavesBf),
-        fmtLeave(line.leavesCf),
-      ];
-  drawTable(doc, font, LEFT, 373.08, COL5, [10.2, 12.0], [
+  const leaveVals = leaveRow(line);
+  const leaveEnd = drawTable(doc, font, LEFT, 373.08 + extra, COL5, [10.2, 12.0], [
     [
       { ...leaveHead, text: 'Leave B/F' },
       { ...leaveHead, text: 'Earned Leave' },
@@ -390,10 +462,64 @@ export function buildPayslipPdf(
   doc.text(
     'Note: This is a computer-generated payslip and does not require a signature.',
     LEFT,
-    424.4
+    leaveEnd + 29.12
   );
 
   return Buffer.from(doc.output('arraybuffer'));
+}
+
+const MAIL_FONT = 'Calibri,Arial,sans-serif';
+const MAIL_W = 720;
+
+function mailTable(inner: string, gap = 16): string {
+  return `<table role="presentation" width="${MAIL_W}" cellpadding="0" cellspacing="0" border="0" style="width:${MAIL_W}px;border-collapse:collapse;mso-table-lspace:0;mso-table-rspace:0;margin:0 0 ${gap}px 0;table-layout:fixed;">${inner}</table>`;
+}
+
+function mailCell(
+  text: string,
+  opts: {
+    width: number;
+    header?: boolean;
+    total?: boolean;
+    net?: boolean;
+    bold?: boolean;
+    align?: 'left' | 'center';
+    firstRow?: boolean;
+    firstCol?: boolean;
+    size?: number;
+  }
+): string {
+  const align = opts.align || 'left';
+  const bg = opts.header || opts.net ? '#dbe5f1' : opts.total ? '#f3f3f3' : '#ffffff';
+  const weight = opts.header || opts.total || opts.net || opts.bold ? '700' : '400';
+  const size = opts.size ?? (opts.net ? 13 : 12);
+  const style = [
+    `width:${opts.width}px`,
+    'box-sizing:border-box',
+    'border-right:1px solid #000000',
+    'border-bottom:1px solid #000000',
+    opts.firstRow ? 'border-top:1px solid #000000' : '',
+    opts.firstCol ? 'border-left:1px solid #000000' : '',
+    `background-color:${bg}`,
+    `font-weight:${weight}`,
+    `font-size:${size}px`,
+    `font-family:${MAIL_FONT}`,
+    'color:#000000',
+    `text-align:${align}`,
+    'vertical-align:middle',
+    'line-height:16px',
+    'padding:5px 6px',
+    'word-wrap:break-word',
+    'overflow-wrap:break-word',
+  ]
+    .filter(Boolean)
+    .join(';');
+  const inner = text ? escapeHtml(text) : '&nbsp;';
+  return `<td width="${opts.width}" align="${align}" valign="middle" style="${style}">${inner}</td>`;
+}
+
+function mailRow(cells: string[]): string {
+  return `<tr>${cells.join('')}</tr>`;
 }
 
 export function buildPayslipHtml(
@@ -403,129 +529,119 @@ export function buildPayslipHtml(
 ): string {
   const vals = payslipValues(line, calendar);
   const title = monthTitle(monthYear);
-  const logo = logoDataUri();
-  const th =
-    'background:#dbe5f1;font-weight:700;border:1px solid #000;padding:5px 8px;font-size:12px;font-family:Calibri,Arial,sans-serif;';
-  const td =
-    'border:1px solid #000;padding:5px 8px;font-size:12px;font-family:Calibri,Arial,sans-serif;';
-  const tot =
-    'background:#f3f3f3;font-weight:700;border:1px solid #000;padding:5px 8px;font-size:12px;font-family:Calibri,Arial,sans-serif;';
-  const net =
-    'background:#dbe5f1;font-weight:700;border:1px solid #000;padding:5px 8px;font-size:13px;font-family:Calibri,Arial,sans-serif;';
-  const leaveVals = line.isArticle
-    ? ['-', '-', '-', '-', '-']
-    : [
-        fmtLeave(line.leavesBf),
-        fmtLeave(line.leavesEarned),
-        fmtLeave(line.leavesConsumed),
-        fmtLeave(line.leavesBf),
-        fmtLeave(line.leavesCf),
-      ];
+  const logo = payslipLogoAttachment();
+  const w4 = [180, 180, 180, 180];
+  const w6 = [120, 120, 120, 120, 120, 120];
+  const w5 = [144, 144, 144, 144, 144];
+  const w2 = [360, 360];
+  const pair = (
+    rows: Array<[string, string, string, string, { header?: boolean; total?: boolean; net?: boolean; bold?: boolean }?]>
+  ) =>
+    rows
+      .map((row, r) => {
+        const tone = row[4] || {};
+        const labelAlign = tone.header ? 'center' : 'left';
+        return mailRow([
+          mailCell(row[0], { width: w4[0], firstRow: r === 0, firstCol: true, align: labelAlign, ...tone }),
+          mailCell(row[1], { width: w4[1], firstRow: r === 0, align: 'center', ...tone }),
+          mailCell(row[2], { width: w4[2], firstRow: r === 0, align: labelAlign, ...tone }),
+          mailCell(row[3], { width: w4[3], firstRow: r === 0, align: 'center', ...tone }),
+        ]);
+      })
+      .join('');
+  const identity = [
+    ['Employee Name', textOrDash(line.name), 'Employee Code', textOrDash(line.employeeCode || line.odId)],
+    ['Designation', textOrDash(line.designation), 'Joining Date', joinDateLabel(line.joiningDate)],
+    ['Department / Vertical', vals.department, 'ESIC No.', vals.esiNo],
+    ['Bank Name', textOrDash(line.bankName), 'Bank A/C No.', textOrDash(line.accountNumber)],
+  ] as Array<[string, string, string, string]>;
+  const attendanceHeads = ['Office Working Days', 'Staff Working Days', 'Days Paid', 'WeekOff / Holiday', 'Absent', 'Paid Leave'];
+  const attendanceVals = [
+    fmtDays(line.officeWorkingDays),
+    fmtDays(vals.staffWorking),
+    fmtDays(line.netWorkingDays),
+    fmtDays(vals.weekoffHoliday),
+    fmtDays(line.absent),
+    fmtDays(vals.paidLeave),
+  ];
+  const leaveHeads = ['Leave B/F', 'Earned Leave', 'Leave Availed', 'Leave C/F', 'Leave Balance'];
+  const leaveVals = leaveRow(line);
+  const logoCell = logo
+    ? `<td valign="middle" align="left" width="74" style="width:74px;padding:0;"><img src="cid:${logo.cid}" width="62" height="62" alt="Asija" style="display:block;border:0;outline:none;text-decoration:none;" /></td>`
+    : '';
+
   return `<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:24px;background:#fff;color:#000;font-family:Calibri,Arial,sans-serif;">
-  <div style="max-width:720px;margin:0 auto;">
-    <table style="margin:0 auto 10px auto;border-collapse:collapse;">
-      <tr>
-        ${logo ? `<td style="vertical-align:middle;padding-right:16px;"><img src="${logo}" width="52" height="52" alt="Asija" /></td>` : ''}
-        <td style="vertical-align:middle;">
-          <div style="font-size:18px;font-weight:700;">ASIJA &amp; ASSOCIATES LLP</div>
-          <div style="font-size:13px;font-style:italic;">Chartered Accountants</div>
-          <div style="font-size:11px;">1st Floor, 34/5, Gokhale Marg, Butler Colony, Lucknow – 226001</div>
-        </td>
-      </tr>
-    </table>
-    <div style="text-align:center;font-size:15px;font-weight:700;margin:8px 0 12px;">${escapeHtml(title)}</div>
-    <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
-      <tr>
-        <td style="${th}">Employee Name</td><td style="${td}">${escapeHtml(textOrDash(line.name))}</td>
-        <td style="${th}">Employee Code</td><td style="${td}">${escapeHtml(textOrDash(line.employeeCode || line.odId))}</td>
-      </tr>
-      <tr>
-        <td style="${th}">Designation</td><td style="${td}">${escapeHtml(textOrDash(line.designation))}</td>
-        <td style="${th}">Joining Date</td><td style="${td}">${escapeHtml(joinDateLabel(line.joiningDate))}</td>
-      </tr>
-      <tr>
-        <td style="${th}">Department / Vertical</td><td style="${td}">${escapeHtml(vals.department)}</td>
-        <td style="${th}">ESIC No.</td><td style="${td}">${escapeHtml(vals.esiNo)}</td>
-      </tr>
-      <tr>
-        <td style="${th}">Bank Name</td><td style="${td}">${escapeHtml(textOrDash(line.bankName))}</td>
-        <td style="${th}">Bank A/C No.</td><td style="${td}">${escapeHtml(textOrDash(line.accountNumber))}</td>
-      </tr>
-    </table>
-    <table style="width:100%;border-collapse:collapse;margin-bottom:16px;text-align:center;">
-      <tr>
-        <td style="${th}">Office Working Days</td>
-        <td style="${th}">Staff Working Days</td>
-        <td style="${th}">Days Paid</td>
-        <td style="${th}">WeekOff / Holiday</td>
-        <td style="${th}">Absent</td>
-        <td style="${th}">Paid Leave</td>
-      </tr>
-      <tr>
-        <td style="${td}">${fmtDays(line.officeWorkingDays)}</td>
-        <td style="${td}">${fmtDays(vals.staffWorking)}</td>
-        <td style="${td}">${fmtDays(line.netWorkingDays)}</td>
-        <td style="${td}">${fmtDays(vals.weekoffHoliday)}</td>
-        <td style="${td}">${fmtDays(line.absent)}</td>
-        <td style="${td}">${fmtDays(vals.paidLeave)}</td>
-      </tr>
-    </table>
-    <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
-      <tr>
-        <td style="${th}text-align:center;">EARNINGS</td>
-        <td style="${th}text-align:center;">AMOUNT (₹)</td>
-        <td style="${th}text-align:center;">DEDUCTIONS</td>
-        <td style="${th}text-align:center;">AMOUNT (₹)</td>
-      </tr>
-      <tr>
-        <td style="${td}">Basic Salary</td><td style="${td}text-align:center;">${dashAmt(vals.basicAmt)}</td>
-        <td style="${td}">ESIC</td><td style="${td}text-align:center;">${dashAmt(vals.esicAmt)}</td>
-      </tr>
-      <tr>
-        <td style="${td}">Laptop Allowance</td><td style="${td}text-align:center;">${dashAmt(vals.laptopAmt)}</td>
-        <td style="${td}">Advance / Recovery</td><td style="${td}text-align:center;">${dashAmt(vals.advanceAmt)}</td>
-      </tr>
-      <tr>
-        <td style="${td}">Other Allowance</td><td style="${td}text-align:center;">${dashAmt(vals.otherAllowance)}</td>
-        <td style="${td}">Other Deductions</td><td style="${td}text-align:center;">${dashAmt(vals.otherDed)}</td>
-      </tr>
-      <tr>
-        <td style="${td}">Project Allowance</td><td style="${td}text-align:center;">${dashAmt(vals.projectAllowance)}</td>
-        <td style="${td}"></td><td style="${td}"></td>
-      </tr>
-      <tr>
-        <td style="${td}"></td><td style="${td}"></td>
-        <td style="${td}"></td><td style="${td}"></td>
-      </tr>
-      <tr>
-        <td style="${tot}">Gross Earnings</td><td style="${tot}text-align:center;">${dashAmt(vals.gross)}</td>
-        <td style="${tot}">Total Deductions</td><td style="${tot}text-align:center;">${dashAmt(vals.totalDed)}</td>
-      </tr>
-    </table>
-    <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
-      <tr>
-        <td style="${net}">NET PAY</td>
-        <td style="${net}text-align:center;">₹${dashAmt(vals.net)}</td>
-      </tr>
-      <tr>
-        <td style="${td}"><b>Amount in Words</b></td>
-        <td style="${td}"><b>${escapeHtml(amountInWords(vals.net))}</b></td>
-      </tr>
-    </table>
-    <table style="width:100%;border-collapse:collapse;margin-bottom:16px;text-align:center;">
-      <tr>
-        <td style="${th}">Leave B/F</td>
-        <td style="${th}">Earned Leave</td>
-        <td style="${th}">Leave Availed</td>
-        <td style="${th}">Leave C/F</td>
-        <td style="${th}">Leave Balance</td>
-      </tr>
-      <tr>${leaveVals.map((val) => `<td style="${td}">${escapeHtml(val)}</td>`).join('')}</tr>
-    </table>
-    <p style="font-size:12px;font-weight:700;">Note: This is a computer-generated payslip and does not require a signature.</p>
-  </div>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${escapeHtml(title)}</title>
+</head>
+<body style="margin:0;padding:0;background:#ffffff;color:#000000;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;">
+<tr><td align="center" style="padding:24px 12px;">
+<table role="presentation" width="${MAIL_W}" cellpadding="0" cellspacing="0" border="0" align="center" style="width:${MAIL_W}px;border-collapse:collapse;mso-table-lspace:0;mso-table-rspace:0;">
+<tr><td align="left" style="padding:0 0 8px 0;font-family:${MAIL_FONT};color:#000000;">
+  <table role="presentation" width="${MAIL_W}" cellpadding="0" cellspacing="0" border="0" align="left" style="width:${MAIL_W}px;border-collapse:collapse;">
+    <tr>
+      ${logoCell}
+      <td valign="middle" align="right" style="font-family:${MAIL_FONT};color:#000000;text-align:right;">
+        <div style="font-size:18px;line-height:22px;font-weight:700;">ASIJA &amp; ASSOCIATES LLP</div>
+        <div style="font-size:13px;line-height:16px;font-style:italic;">Chartered Accountants</div>
+        <div style="font-size:11px;line-height:14px;">1st Floor, 34/5, Gokhale Marg, Butler Colony, Lucknow – 226001</div>
+      </td>
+    </tr>
+  </table>
+</td></tr>
+<tr><td align="center" style="padding:8px 0 14px 0;font-family:${MAIL_FONT};font-size:15px;line-height:20px;font-weight:700;color:#000000;text-align:center;">${escapeHtml(title)}</td></tr>
+<tr><td>
+${mailTable(
+  identity
+    .map((row, r) =>
+      mailRow([
+        mailCell(row[0], { width: w4[0], header: true, firstRow: r === 0, firstCol: true }),
+        mailCell(row[1], { width: w4[1], firstRow: r === 0 }),
+        mailCell(row[2], { width: w4[2], header: true, firstRow: r === 0 }),
+        mailCell(row[3], { width: w4[3], firstRow: r === 0 }),
+      ])
+    )
+    .join('')
+)}
+${mailTable(
+  mailRow(attendanceHeads.map((label, i) => mailCell(label, { width: w6[i], header: true, align: 'center', firstRow: true, firstCol: i === 0, size: 11 }))) +
+    mailRow(attendanceVals.map((val, i) => mailCell(val, { width: w6[i], align: 'center', firstCol: i === 0 })))
+)}
+${mailTable(
+  pair([
+    ['EARNINGS', `AMOUNT (₹)`, 'DEDUCTIONS', `AMOUNT (₹)`, { header: true }],
+    ['Basic Salary', dashAmt(vals.basicAmt), 'ESIC', dashAmt(vals.esicAmt)],
+    ['Laptop Allowance', dashAmt(vals.laptopAmt), 'Advance / Recovery', dashAmt(vals.advanceAmt)],
+    ['Other Allowance', dashAmt(vals.otherAllowance), 'Other Deductions', dashAmt(vals.otherDed)],
+    ['Project Allowance', dashAmt(vals.projectAllowance), '', ''],
+    ['', '', '', ''],
+    ['Gross Earnings', dashAmt(vals.gross), 'Total Deductions', dashAmt(vals.totalDed), { total: true }],
+  ])
+)}
+${mailTable(
+  mailRow([
+    mailCell('NET PAY', { width: w2[0], net: true, firstRow: true, firstCol: true }),
+    mailCell(netAmt(vals.net, '₹'), { width: w2[1], net: true, align: 'center', firstRow: true }),
+  ]) +
+    mailRow([
+      mailCell('Amount in Words', { width: w2[0], bold: true, firstCol: true }),
+      mailCell(amountInWords(vals.net), { width: w2[1], bold: true, align: 'center' }),
+    ])
+)}
+${mailTable(
+  mailRow(leaveHeads.map((label, i) => mailCell(label, { width: w5[i], header: true, align: 'center', firstRow: true, firstCol: i === 0, size: 11 }))) +
+    mailRow(leaveVals.map((val, i) => mailCell(val, { width: w5[i], align: 'center', firstCol: i === 0 }))),
+  10
+)}
+</td></tr>
+<tr><td style="padding:4px 0 0 0;font-family:${MAIL_FONT};font-size:12px;line-height:16px;font-weight:700;color:#000000;">Note: This is a computer-generated payslip and does not require a signature.</td></tr>
+</table>
+</td></tr>
+</table>
 </body>
 </html>`;
 }
