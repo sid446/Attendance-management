@@ -1,7 +1,9 @@
 import type { DailyExcessApprovalRow } from '@/lib/excessHourAllowance';
 import {
   decimalHoursToExcelDuration,
+  enableExcelNegativeDurations,
   EXCEL_DURATION_NUM_FMT,
+  EXCEL_SIGNED_DURATION_NUM_FMT,
   hhmmStringToExcelTime,
 } from './exportExcelDuration';
 import { downloadWorkbook } from './downloadWorkbook';
@@ -20,9 +22,9 @@ const excessColumnNumFmt: Record<string, string> = {
   date: '@',
   checkIn: EXCEL_DURATION_NUM_FMT,
   checkOut: EXCEL_DURATION_NUM_FMT,
-  rawExcess: EXCEL_DURATION_NUM_FMT,
-  updatedHours: EXCEL_DURATION_NUM_FMT,
-  countsAs: EXCEL_DURATION_NUM_FMT,
+  rawExcess: EXCEL_SIGNED_DURATION_NUM_FMT,
+  updatedHours: EXCEL_SIGNED_DURATION_NUM_FMT,
+  countsAs: EXCEL_SIGNED_DURATION_NUM_FMT,
 };
 
 export async function exportExcessHourSheet(
@@ -34,6 +36,7 @@ export async function exportExcessHourSheet(
 
   const ExcelJS = (await import('exceljs')).default;
   const workbook = new ExcelJS.Workbook();
+  enableExcelNegativeDurations(workbook);
   const worksheet = workbook.addWorksheet('Excess Hours');
 
   worksheet.columns = [
@@ -42,9 +45,9 @@ export async function exportExcessHourSheet(
     { key: 'date', header: 'Date', width: 12 },
     { key: 'checkIn', header: 'In', width: 10 },
     { key: 'checkOut', header: 'Out', width: 10 },
-    { key: 'rawExcess', header: 'Excess Hour', width: 14 },
-    { key: 'updatedHours', header: 'Updated Hours', width: 14 },
-    { key: 'countsAs', header: 'Counts As', width: 14 },
+    { key: 'rawExcess', header: 'Excess Hour', width: 16 },
+    { key: 'updatedHours', header: 'Updated Hours', width: 16 },
+    { key: 'countsAs', header: 'Counts As', width: 16 },
     { key: 'remark', header: 'Remarks', width: 32 },
   ];
 
