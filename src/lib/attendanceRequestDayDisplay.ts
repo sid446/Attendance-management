@@ -1,4 +1,5 @@
-import { isLeaveRequestType } from '@/lib/attendanceRequestValues';
+import { getDefaultNumericValueForType, isLeaveRequestType } from '@/lib/attendanceRequestValues';
+import type { PresenceCreditEmployee, PresenceCreditRuleLike } from '@/lib/presenceCredit';
 import { hasPhysicalAttendancePresence } from '@/lib/attendancePhysicalPresence';
 import { isExtraWorkRequest } from '@/lib/extraWorkRequest';
 
@@ -178,7 +179,13 @@ export function buildDisplayRecordFromApprovedRequest<T extends AttendanceDayLik
   existing: T | null | undefined,
   req: ApprovedRequestLike,
   date: string,
-  defaults?: { id?: string; name?: string; isArticle?: boolean }
+  defaults?: {
+    id?: string;
+    name?: string;
+    isArticle?: boolean;
+    employee?: PresenceCreditEmployee;
+    rules?: PresenceCreditRuleLike[];
+  }
 ): T {
   const requestedStatus = String(req.requestedStatus || 'Present').trim();
   const reqIn = String(req.startTime || '').trim();
@@ -200,11 +207,13 @@ export function buildDisplayRecordFromApprovedRequest<T extends AttendanceDayLik
 
   const value =
     existing?.value ??
-    (reqLower.includes('outstation')
-      ? (defaults?.isArticle ? 1.2 : 1)
-      : reqLower.includes('half day')
-        ? 0.5
-        : 1);
+    getDefaultNumericValueForType(requestedStatus, {
+      isArticle: defaults?.isArticle,
+      employee: defaults?.employee,
+      date,
+      rules: defaults?.rules,
+    }) ??
+    1;
 
   return {
     ...(existing || ({} as T)),

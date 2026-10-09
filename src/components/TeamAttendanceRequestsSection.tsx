@@ -18,6 +18,7 @@ type TeamRequestRow = EmployeeAttendanceRequest & {
   employeeCategory?: string;
   employeeDesignation?: string;
   isArticleEmployee?: boolean;
+  presenceCredit?: number;
 };
 
 interface TeamAttendanceRequestsSectionProps {
@@ -33,8 +34,10 @@ function formatDateTime(value?: string | Date): string {
 }
 
 function getApproveContext(row: TeamRequestRow): ApproveValueContext {
-  if (row.isArticleEmployee != null) return { isArticle: row.isArticleEmployee };
   return {
+    isArticle: row.isArticleEmployee,
+    date: row.date,
+    presenceCredit: row.presenceCredit,
     employee: {
       employmentType: row.employeeEmploymentType,
       designation: row.employeeDesignation,

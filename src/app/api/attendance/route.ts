@@ -20,6 +20,7 @@ import {
   normalizeTimeToHHmm,
 } from '@/lib/attendanceHours';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
+import { isWfhOrOspPresence, resolveWfhOspSpentSchedule } from '@/lib/deriveRequestInOutFromWorkHours';
 import { reconcileApprovedRequestsForMonth } from '@/lib/applyApprovedAttendanceRequest';
 import { isArticleEmployee } from '@/lib/isArticleEmployee';
 import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
@@ -481,12 +482,27 @@ export async function POST(request: NextRequest) {
             // NEW: Automatically fill missing times with scheduled hours for specific work types
             const isMissingTimes = (!finalCheckin || finalCheckin === '00:00' || finalCheckin === '') && 
                                    (!finalCheckout || finalCheckout === '00:00' || finalCheckout === '');
+            const isWfhOrOspUpload = isWfhOrOspPresence(typeOfPresence);
             const isRelevantType = typeOfPresence.includes('ClientPlace') || 
-                                   typeOfPresence.includes('WFH') || 
                                    typeOfPresence.includes('Present - in office') ||
                                    typeOfPresence.includes('Half Day');
 
-            if (isMissingTimes && isRelevantType && user) {
+            if (isMissingTimes && isWfhOrOspUpload && user) {
+                const spent = resolveWfhOspSpentSchedule({
+                  user,
+                  dateStr: isoDate,
+                  typeOfPresence,
+                  value: finalValue,
+                });
+                if (spent) {
+                  finalCheckin = spent.scheduledIn;
+                  finalCheckout = spent.scheduledOut;
+                  finalEditedCheckin = spent.scheduledIn;
+                  finalEditedCheckout = spent.scheduledOut;
+                  finalTotalHour = Number((spent.minutes / 60).toFixed(2));
+                  remarksStr += (remarksStr ? ' | ' : '') + 'Auto-filled time spent';
+                }
+            } else if (isMissingTimes && isRelevantType && user) {
                 // Get scheduled times for this date
                 let sch = getScheduledTimes(user, isoDate);
                 

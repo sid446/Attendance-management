@@ -7,6 +7,11 @@ import {
 } from '@/lib/attendanceSummaryMetrics';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import {
+  isWfhOrOspPresence,
+  scheduledWindowForAttendanceDay,
+  withWfhOspSchedule,
+} from '@/lib/deriveRequestInOutFromWorkHours';
+import {
   formatExtraWorkEntriesTimeSummary,
   getRecordPunchHours,
   sumExtraWorkEntryHours,
@@ -41,7 +46,13 @@ import {
   LOCATION_PUNCH_SOURCE,
   locationPunchSourceLabel,
 } from '@/lib/locationPunchAttendance';
-import { resolveDayWorkedHours } from '@/lib/resolveDayWorkedHours';
+import { isClientPlaceWeekoffType, resolveDayWorkedHours, typeIncludesClientPlace } from '@/lib/resolveDayWorkedHours';
+import {
+  effectiveWfhAttendanceValue,
+  formatPresenceCredit,
+  resolvePresenceCredit,
+  type PresenceCreditRuleLike,
+} from '@/lib/presenceCredit';
 
 export async function buildDaywiseWorkbook(
   ctx: SummaryExportContext,
@@ -71,6 +82,15 @@ export async function buildDaywiseWorkbook(
         : filteredSummaries;
 
     if (summariesToExport.length === 0) return null;
+
+    let presenceRules: PresenceCreditRuleLike[] = [];
+    try {
+      const rulesRes = await fetch('/api/hr-console-settings/presence-credit', hrCredentialsInit());
+      const rulesJson = await rulesRes.json();
+      if (rulesJson?.success && Array.isArray(rulesJson.data?.rules)) presenceRules = rulesJson.data.rules;
+    } catch {
+      presenceRules = [];
+    }
 
     // Approved-request Source fallback (partner / HR) for days missing stamp on the record
     const sourceByUserDate = new Map<string, AttendanceEditSourceInfo>();
@@ -382,6 +402,15 @@ export async function buildDaywiseWorkbook(
         return zeroDaywiseScheduledFields();
       }
 
+      const spent = scheduledWindowForAttendanceDay(user, date, record, presenceRules);
+      if (spent) {
+        return {
+          scheduledInTime: spent.scheduledIn,
+          scheduledOutTime: spent.scheduledOut,
+          scheduledTime: `${Math.floor(spent.minutes / 60)}:${String(spent.minutes % 60).padStart(2, '0')}`,
+        };
+      }
+
       // Weekday WFH must show that day's schedule (not 00:00). Weekoff WFH / Sunday
       // stay on the normal include rules (usually excluded from Sched.).
       const type = String(record?.typeOfPresence || record?.status || '').trim();
@@ -562,7 +591,13 @@ export async function buildDaywiseWorkbook(
         const hasValidCheckout = !!(effectiveCheckout && effectiveCheckout !== '00:00');
         if (!hasValidCheckin && !hasValidCheckout) return false;
       }
-      return t === 'ThumbMachine' || t === 'Present - in office' || t === 'Present - in office - weekdays' || t === 'Present or NA';
+      return (
+        t === 'ThumbMachine' ||
+        t === 'Present - in office' ||
+        t === 'Present - in office - weekdays' ||
+        t === 'Present or NA' ||
+        (typeIncludesClientPlace(t) && !isClientPlaceWeekoffType(t))
+      );
     };
 
     const daywiseIsWOPIOExplicit = (rec: any) => {
@@ -571,7 +606,8 @@ export async function buildDaywiseWorkbook(
       return (
         t === 'Present - in office - weekoff' ||
         t === 'Present - weekoff' ||
-        t === 'Weekly Off - Present (WO-Present)'
+        t === 'Weekly Off - Present (WO-Present)' ||
+        isClientPlaceWeekoffType(t)
       );
     };
 
@@ -656,7 +692,20 @@ export async function buildDaywiseWorkbook(
           record.outTime ??
           ''
         ).trim();
-        if (actualIn && actualOut && actualIn !== '00:00' && actualOut !== '00:00') {
+        const spentForMonth = getDaywiseScheduledFieldsForDay(
+          daywiseUser as User | undefined,
+          date,
+          record
+        );
+        if (isWfhOrOspPresence(record?.typeOfPresence || record?.status)) {
+          const [inH, inM] = String(spentForMonth.scheduledInTime || '').split(':').map(Number);
+          const [outH, outM] = String(spentForMonth.scheduledOutTime || '').split(':').map(Number);
+          if (Number.isFinite(inH) && Number.isFinite(outH) && spentForMonth.scheduledInTime !== '00:00') {
+            let diff = outH * 60 + outM - (inH * 60 + inM);
+            if (diff < 0) diff += 24 * 60;
+            if (diff > 0) workingHrsMonth += diff / 60;
+          }
+        } else if (actualIn && actualOut && actualIn !== '00:00' && actualOut !== '00:00') {
           const [inH, inM] = actualIn.split(':').map(Number);
           const [outH, outM] = actualOut.split(':').map(Number);
           let diff = (outH * 60 + outM) - (inH * 60 + inM);
@@ -719,10 +768,25 @@ export async function buildDaywiseWorkbook(
         let maxOutstation = '';
         let actualOutstation = '';
         // Total working hours — same resolver as summary metrics (handles CP-P totalHour=0)
-        const workingHrs = resolveDayWorkedHours(record, {
+        let workingHrs = resolveDayWorkedHours(record, {
           scheduledIn: scheduledInTime,
           scheduledOut: scheduledOutTime,
         });
+        if (
+          isWfhOrOspPresence(record?.typeOfPresence || record?.status) &&
+          scheduledInTime &&
+          scheduledOutTime &&
+          scheduledInTime !== '00:00' &&
+          scheduledOutTime !== '00:00'
+        ) {
+          const [schInH, schInM] = scheduledInTime.split(':').map(Number);
+          const [schOutH, schOutM] = scheduledOutTime.split(':').map(Number);
+          let schedMins = schOutH * 60 + schOutM - (schInH * 60 + schInM);
+          if (schedMins < 0) schedMins += 24 * 60;
+          if (schedMins > 0) {
+            workingHrs = Number((schedMins / 60 + Math.max(0, extraWorkHrs)).toFixed(2));
+          }
+        }
         // Use the attendance record's halfDay flag only — Saturday is not always half day
         let isHalfDay = false;
         if (typeof record.halfDay === 'boolean') {
@@ -749,17 +813,24 @@ export async function buildDaywiseWorkbook(
           actualWFH = '';
           maxOutstation = '';
           actualOutstation = '';
-        } else if (recordIsDaywiseClientPlaceRow(record)) {
-          maxOutstation = '1.2';
-          actualOutstation = formatDaywiseActualOutstation(record, workingHrs);
-          presentAbsent = 'CP-P';
         } else if (recordIsDaywiseOutstationRow(record)) {
-          maxOutstation = '1.2';
+          maxOutstation = formatPresenceCredit(
+            resolvePresenceCredit(presenceRules, daywiseUser, date, 'osp')
+          );
           actualOutstation = formatDaywiseActualOutstation(record, workingHrs);
           presentAbsent = 'OS-P';
         } else if (recordIsDaywiseWFHRow(record)) {
-          maxWFH = '0.75';
-          actualWFH = formatDaywiseActualOutstation(record, workingHrs);
+          maxWFH = formatPresenceCredit(
+            resolvePresenceCredit(presenceRules, daywiseUser, date, 'wfh')
+          );
+          const storedWfh = Number(record?.value);
+          const wfhCredit = Number.isFinite(storedWfh)
+            ? effectiveWfhAttendanceValue(storedWfh, daywiseUser, date, presenceRules)
+            : storedWfh;
+          actualWFH = formatDaywiseActualOutstation(
+            { ...record, value: wfhCredit },
+            workingHrs
+          );
           presentAbsent = daywiseWFHStatusLabel(record, isHoliday, isSunday);
         } else if (
           daywiseIsWOPIOExplicit(record) ||
@@ -830,7 +901,7 @@ export async function buildDaywiseWorkbook(
           } else if (punchWorkingHrs > 0) {
             holidaySundayWorkMinutes = Math.round(punchWorkingHrs * 60);
           }
-          if (holidaySundayWorkMinutes > 0) {
+          if (holidaySundayWorkMinutes > 0 && !isWfhOrOspPresence(typeOfPresence)) {
             dayScheduledTimeLabel = `${Math.floor(holidaySundayWorkMinutes / 60)}:${String(
               holidaySundayWorkMinutes % 60
             ).padStart(2, '0')}`;
@@ -847,12 +918,19 @@ export async function buildDaywiseWorkbook(
           daySeconds = 0;
         } else if (daywiseUser) {
           const excessRecord = useHalfSchedule ? { ...record, halfDay: true } : record;
-          const rawDayHours = calculateDayExcessHour(
+          const spentBaseline = withWfhOspSchedule(
             daywiseUser,
             date,
             excessRecord,
             scheduledInTime || '',
-            scheduledOutTime || '',
+            scheduledOutTime || ''
+          );
+          const rawDayHours = calculateDayExcessHour(
+            daywiseUser,
+            date,
+            spentBaseline.record,
+            spentBaseline.scheduledIn,
+            spentBaseline.scheduledOut,
             { isCompanyHoliday: Boolean(isHoliday) }
           );
           daySeconds = rawDayHours * 3600;

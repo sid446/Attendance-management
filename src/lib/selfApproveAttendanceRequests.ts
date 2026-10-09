@@ -1,5 +1,8 @@
 import AttendanceRequest from '@/models/AttendanceRequest';
+import User from '@/models/User';
 import { applyApprovedRequestToAttendance } from '@/lib/applyApprovedAttendanceRequest';
+import { getDefaultNumericValueForType } from '@/lib/attendanceRequestValues';
+import { loadPresenceCreditRules } from '@/lib/presenceCreditDb';
 import { isAttendanceDatePartnerOnlyIst } from '@/lib/attendanceRequestApprovalWindow';
 import { isAttendanceApproverSameAsEmployee } from '@/lib/employeeMisExceptions';
 
@@ -88,6 +91,7 @@ export async function autoApproveSelfRequests(
   const partnerName = formatPartnerNameForReview(String(user.name || ''));
   const remark = 'Auto-approved (self)';
   const approvedIds: string[] = [];
+  const creditRules = await loadPresenceCreditRules();
 
   for (const id of ids) {
     try {
@@ -99,10 +103,18 @@ export async function autoApproveSelfRequests(
       reqRecord.approvedByEmail = partnerEmail;
       reqRecord.approvedAt = new Date();
       reqRecord.partnerRemarks = remark;
-      reqRecord.partnerProposedValue = '1';
+      const creditUser = await User.findById(reqRecord.userId).select('team employmentType designation category');
+      const credit = getDefaultNumericValueForType(String(reqRecord.requestedStatus || ''), {
+        employee: creditUser,
+        date: reqRecord.date,
+        rules: creditRules,
+      });
+      reqRecord.partnerProposedValue = credit != null ? String(credit) : '1';
       await reqRecord.save();
 
-      await applyApprovedRequestToAttendance(reqRecord, { attendanceValue: 1 });
+      await applyApprovedRequestToAttendance(reqRecord, {
+        attendanceValue: credit != null ? credit : 1,
+      });
       approvedIds.push(id);
     } catch (error) {
       console.error('Auto-approve (self) failed for request', id, error);

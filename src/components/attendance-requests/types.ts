@@ -7,6 +7,7 @@ export interface AttendanceRequest {
     designation?: string;
     employmentType?: string;
     category?: string;
+    team?: string;
   };
   userName: string;
   partnerName: string;

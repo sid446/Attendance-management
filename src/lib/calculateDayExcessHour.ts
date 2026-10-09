@@ -4,8 +4,6 @@ import {
   calculateArticleDayExcessMinutes,
   isArticleEmployee,
 } from '@/lib/isArticleEmployee';
-import { typeIncludesClientPlace } from '@/lib/resolveDayWorkedHours';
-
 export type DayExcessRecordLike = {
   checkin?: string;
   checkout?: string;
@@ -162,7 +160,6 @@ function isValueBasedPresentForExcess(record: DayExcessRecordLike): boolean {
     .toLowerCase()
     .replace(/\s+/g, ' ');
   if (!t) return false;
-  if (typeIncludesClientPlace(t)) return true;
   if (
     t.includes('outstation') ||
     t.includes('onsite presence') ||
@@ -212,6 +209,12 @@ export function calculateDayExcessHour(
     typeOfPresence === 'Leave' ||
     typeLower.includes('on leave')
   ) {
+    return 0;
+  }
+
+  // WFH / OSP schedule is the time spent. A stored office out-time must not
+  // show up as extra hours against that shorter window.
+  if (isValueBasedPresentForExcess(record)) {
     return 0;
   }
 

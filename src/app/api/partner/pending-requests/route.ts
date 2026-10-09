@@ -16,6 +16,7 @@ import {
 import { viewerAccessAllowsRequestApproval } from '@/lib/teamVisibilityForViewer';
 import { enrichAttendanceRequestsWithOriginalTimes } from '@/lib/enrichAttendanceRequests';
 import { isArticleEmployee } from '@/lib/isArticleEmployee';
+import { creditForEmployeeDate, loadPresenceCreditRules } from '@/lib/presenceCreditDb';
 
 export async function GET(request: NextRequest) {
   try {
@@ -155,6 +156,7 @@ export async function GET(request: NextRequest) {
     const enrichedRequests = await enrichAttendanceRequestsWithOriginalTimes(
       requests as Array<Record<string, unknown>>
     );
+    const creditRules = await loadPresenceCreditRules();
 
     return NextResponse.json({
       success: true,
@@ -176,6 +178,12 @@ export async function GET(request: NextRequest) {
         originalCheckout: req.originalCheckout,
         isArticleEmployee: isArticleEmployee(
           req.userId as { employmentType?: unknown; designation?: unknown; category?: unknown }
+        ),
+        presenceCredit: creditForEmployeeDate(
+          creditRules,
+          req.userId as { _id?: unknown; team?: unknown; employmentType?: unknown; designation?: unknown; category?: unknown },
+          String(req.date || ''),
+          String(req.requestedStatus || '')
         ),
       })),
     });

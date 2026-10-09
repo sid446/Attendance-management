@@ -10,11 +10,13 @@ import { isAttendanceDatePartnerOnlyIst } from '@/lib/attendanceRequestApprovalW
 import { sendPartnerRequestDecisionEmail } from '@/lib/attendanceRequestNotifications';
 import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
 import { applyDayExcessToRecord } from '@/lib/calculateDayExcessHour';
-import { getDefaultNumericValueForType } from '@/lib/attendanceRequestValues';
+import { clampApproveAttendanceValue, getDefaultNumericValueForType } from '@/lib/attendanceRequestValues';
+import { creditForEmployeeDate, loadPresenceCreditRules } from '@/lib/presenceCreditDb';
 import { isArticleEmployee } from '@/lib/isArticleEmployee';
 import { applyAttendanceEditSource } from '@/lib/daywiseAttendanceSource';
 import { normalizeTimeToHHmm } from '@/lib/attendanceHours';
 import { fillMissingHolidayAndSundayRecords } from '@/lib/fillHolidaySundayAttendance';
+import { applyWfhOspSpentWindow, isWfhOrOspPresence } from '@/lib/deriveRequestInOutFromWorkHours';
 
 function calculateDuration(start: string, end: string): number {
     if (!start || !end) return 0;
@@ -35,12 +37,13 @@ export async function GET(request: NextRequest) {
 
     const reqRecord = await AttendanceRequest.findById(id).populate(
       'userId',
-      'name email designation employmentType category'
+      'name email designation employmentType category team'
     );
     if (!reqRecord) return new NextResponse('Request not found', { status: 404 });
 
     // If no action provided, return request details as JSON (for partner review page)
     if (!action) {
+      const creditRules = await loadPresenceCreditRules();
       return NextResponse.json({
         success: true,
         data: {
@@ -57,6 +60,12 @@ export async function GET(request: NextRequest) {
           partnerRemarks: reqRecord.partnerRemarks,
           isArticleEmployee: isArticleEmployee(
             reqRecord.userId as { employmentType?: unknown; designation?: unknown; category?: unknown }
+          ),
+          presenceCredit: creditForEmployeeDate(
+            creditRules,
+            reqRecord.userId as { _id?: unknown; team?: unknown; employmentType?: unknown; designation?: unknown; category?: unknown },
+            reqRecord.date,
+            reqRecord.requestedStatus
           ),
         }
       });
@@ -201,6 +210,25 @@ export async function GET(request: NextRequest) {
           rec.excessHour = 0;
         }
 
+        rec.typeOfPresence = requestedStatus as any;
+        const emailCreditRules = await loadPresenceCreditRules();
+        const emailCredit = getDefaultNumericValueForType(String(requestedStatus || ''), {
+          employee: reqRecord.userId as {
+            _id?: unknown;
+            team?: unknown;
+            employmentType?: unknown;
+            designation?: unknown;
+            category?: unknown;
+          },
+          date,
+          rules: emailCreditRules,
+          allowAboveCap: false,
+        });
+        if (emailCredit !== undefined) {
+          rec.value = emailCredit;
+          rec.halfDay = String(requestedStatus || '').toLowerCase().includes('half');
+        }
+
         applyAttendanceEditSource(rec as any, {
           approvedBy: 'Partner',
           approvedByEmail: null,
@@ -294,12 +322,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 });
     }
 
-    const reqRecord = await AttendanceRequest.findById(id).populate('userId', 'name email');
+    const reqRecord = await AttendanceRequest.findById(id).populate(
+      'userId',
+      'name email team employmentType designation category'
+    );
     if (!reqRecord) {
       return NextResponse.json({ success: false, error: 'Request not found' }, { status: 404 });
     }
 
     const actorIsHr = (approvedBy || '') === 'HR';
+    const creditRules = await loadPresenceCreditRules();
+    const creditCtx = {
+      employee: reqRecord.userId as {
+        _id?: unknown;
+        team?: unknown;
+        employmentType?: unknown;
+        designation?: unknown;
+        category?: unknown;
+      },
+      date: reqRecord.date,
+      rules: creditRules,
+      allowAboveCap: actorIsHr,
+    };
+    const clampedAttendanceValue = clampApproveAttendanceValue(
+      String(reqRecord.requestedStatus || ''),
+      attendanceValue,
+      creditCtx
+    );
     if (!actorIsHr && reqRecord.status !== 'Pending') {
       return NextResponse.json({ success: false, error: `Request already ${reqRecord.status}` }, { status: 400 });
     }
@@ -314,7 +363,9 @@ export async function POST(request: NextRequest) {
         reqRecord.status = 'PendingHr';
         reqRecord.partnerRemarks = remarks || null;
         reqRecord.partnerApprovedAt = new Date();
-        if (attendanceValue !== undefined && attendanceValue !== null) {
+        if (clampedAttendanceValue !== undefined) {
+          reqRecord.partnerProposedValue = String(clampedAttendanceValue);
+        } else if (attendanceValue !== undefined && attendanceValue !== null) {
           reqRecord.partnerProposedValue = String(attendanceValue);
         }
         deferredToHrOnly = true;
@@ -322,7 +373,9 @@ export async function POST(request: NextRequest) {
         reqRecord.status = 'Approved';
         if (actorIsHr) {
           if (remarks) reqRecord.hrRemarks = remarks;
-          if (attendanceValue !== undefined && attendanceValue !== null) {
+          if (clampedAttendanceValue !== undefined) {
+            reqRecord.hrValue = String(clampedAttendanceValue);
+          } else if (attendanceValue !== undefined && attendanceValue !== null) {
             reqRecord.hrValue = String(attendanceValue);
           }
         } else {
@@ -383,8 +436,8 @@ export async function POST(request: NextRequest) {
       if (requestedStatus.includes('Half Day')) {
         rec.value = 0.5;
         rec.halfDay = true;
-      } else if (attendanceValue !== undefined) {
-        rec.value = attendanceValue;
+      } else if (clampedAttendanceValue !== undefined) {
+        rec.value = clampedAttendanceValue;
         // Only Half Day types should have halfDay=true, not based on value
         rec.halfDay = false;
       } else {
@@ -400,7 +453,7 @@ export async function POST(request: NextRequest) {
         } else {
           const userForValue = await User.findById(userId);
           rec.value =
-            getDefaultNumericValueForType(requestedStatus, { employee: userForValue }) ?? 1;
+            getDefaultNumericValueForType(requestedStatus, { ...creditCtx, employee: userForValue || creditCtx.employee }) ?? 1;
           rec.halfDay = false;
         }
       }
@@ -423,6 +476,17 @@ export async function POST(request: NextRequest) {
       
       // Helper to check type
       const isType = (type: string) => requestedStatus.toLowerCase().includes(type.toLowerCase());
+      const statusLowerForPlace = String(requestedStatus || '').toLowerCase();
+      if (
+        (statusLowerForPlace.includes('client place') || statusLowerForPlace.includes('clientplace')) &&
+        Number(rec.value) > 1
+      ) {
+        rec.value = 1;
+      }
+      const isClientPlaceStatus =
+        statusLowerForPlace.includes('client place') || statusLowerForPlace.includes('clientplace');
+      const isClientPlaceWeekoff =
+        isClientPlaceStatus && /weekoff|week-off|week off/.test(statusLowerForPlace);
       
       // For weekoff types, use weekday (Monday) schedule instead of actual day schedule
       let isWeekoff = /weekoff|week-off|week off/i.test(requestedStatus);
@@ -457,18 +521,13 @@ export async function POST(request: NextRequest) {
       const hasCustomTimes =
         startTime && endTime && startTime !== '00:00' && endTime !== '00:00';
       
-      // Calculate totalHour and excessHour based on request type
-      // WFH
-      if (isType('WFH - weekdays')) {
-        rec.totalHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
-        rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
-        if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
-        if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
-      } else if (isType('WFH - weekoff')) {
-        rec.totalHour = 0;
-        rec.excessHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
-        if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
-        if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
+      if (isWfhOrOspPresence(requestedStatus)) {
+        applyWfhOspSpentWindow(rec, userObj, date, {
+          typeOfPresence: requestedStatus,
+          givenIn: hasCustomTimes ? startTime : undefined,
+          givenOut: hasCustomTimes ? endTime : undefined,
+          trustGivenPair: !!hasCustomTimes,
+        });
       }
       // Half Day
       else if (isType('Half Day - weekdays')) {
@@ -482,50 +541,13 @@ export async function POST(request: NextRequest) {
         if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
         if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
       }
-      // Present - Outstation
-      else if (isType('Present - Outstation (Weekdays)')) {
-        if (hasCustomTimes) {
-          rec.totalHour = calculateDuration(startTime, endTime);
-          applyDayExcessToRecord(
-            rec,
-            userObj,
-            date,
-            effectiveScheduledInTime,
-            effectiveScheduledOutTime
-          );
-        } else {
-          rec.totalHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
-          rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
-        }
-      } else if (isType('Present - Outstation (Weekoff)')) {
-        rec.totalHour = 0;
-        if (hasCustomTimes) {
-          applyDayExcessToRecord(
-            rec,
-            userObj,
-            date,
-            effectiveScheduledInTime,
-            effectiveScheduledOutTime
-          );
-        } else {
-          rec.excessHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
-        }
-      }
-      // Present - ClientPlace
-      else if (isType('Present - ClientPlace (Weekdays)')) {
-        rec.totalHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
-        rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
-      } else if (isType('Present - ClientPlace (Weekoff)')) {
-        rec.totalHour = 0;
-        rec.excessHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
-      }
-      // Present - in office
-      else if (isType('Present - in office - weekdays')) {
+      // Present - in office, and client place (same credit and hours, never 1.2)
+      else if (isType('Present - in office - weekdays') || (isClientPlaceStatus && !isClientPlaceWeekoff)) {
         rec.totalHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
         rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
         if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
         if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
-      } else if (isType('Present - in office - weekoff')) {
+      } else if (isType('Present - in office - weekoff') || isClientPlaceWeekoff) {
         rec.totalHour = 0;
         rec.excessHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
         if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;

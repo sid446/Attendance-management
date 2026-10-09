@@ -1,5 +1,7 @@
 import * as XLSX from 'xlsx';
 import { apiCredentialsInit } from '@/lib/apiCredentialsInit';
+import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
+import type { PresenceCreditRuleLike } from '@/lib/presenceCredit';
 import type { AttendanceRequest } from '../types';
 import { resolveApproveValueNumber } from '../utils/requestValues';
 
@@ -38,6 +40,14 @@ export async function applyActionsFromExcel({
     });
 
   const buffer = await readAsArrayBuffer();
+  let presenceRules: PresenceCreditRuleLike[] = [];
+  try {
+    const rulesRes = await fetch('/api/hr-console-settings/presence-credit', hrCredentialsInit());
+    const rulesJson = await rulesRes.json();
+    if (rulesJson?.success && Array.isArray(rulesJson.data?.rules)) presenceRules = rulesJson.data.rules;
+  } catch {
+    presenceRules = [];
+  }
   const workbook = XLSX.read(buffer, { type: 'array' });
   const sheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
@@ -156,7 +166,12 @@ export async function applyActionsFromExcel({
       valueRaw !== undefined && valueRaw !== null && String(valueRaw).trim() !== '' ? String(valueRaw) : '';
     const resolvedNum =
       action === 'approve' && firstReq
-        ? resolveApproveValueNumber(firstReq.requestedStatus, excelValueStr)
+        ? resolveApproveValueNumber(firstReq.requestedStatus, excelValueStr, {
+            employee: firstReq.userId,
+            date: firstReq.date,
+            rules: presenceRules,
+            allowAboveCap: true,
+          })
         : undefined;
 
     try {

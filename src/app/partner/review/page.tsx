@@ -30,6 +30,7 @@ interface AttendanceRequest {
   extraWorkSlots?: { startTime: string; endTime: string; reason: string }[];
   status: string;
   isArticleEmployee?: boolean;
+  presenceCredit?: number;
 }
 
 const APPROVE_CHIPS = ['Done', 'Missed Entry', 'Client Visit', 'Emergency', 'Approved'];
@@ -84,8 +85,11 @@ function PartnerReviewContent() {
         }
         setRequest(data);
         setRemarks('Done');
-        const approveCtx =
-          data.isArticleEmployee != null ? { isArticle: data.isArticleEmployee } : undefined;
+        const approveCtx = {
+          isArticle: data.isArticleEmployee,
+          date: data.date,
+          presenceCredit: data.presenceCredit,
+        };
         setAttendanceValue(getDefaultValueForType(data.requestedStatus, approveCtx));
       } else {
         setError(result.error || 'Failed to load request');
@@ -103,8 +107,11 @@ function PartnerReviewContent() {
     setProcessing(true);
     setError('');
     try {
-      const approveCtx =
-        request.isArticleEmployee != null ? { isArticle: request.isArticleEmployee } : undefined;
+      const approveCtx = {
+        isArticle: request.isArticleEmployee,
+        date: request.date,
+        presenceCredit: request.presenceCredit,
+      };
       const response = await fetch('/api/attendance/request-action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

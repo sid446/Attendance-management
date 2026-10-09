@@ -6,11 +6,18 @@ import {
   getWorkingUnderPartnerForDate,
 } from '@/lib/userFieldHistory';
 import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
+import {
+  effectiveWfhAttendanceValue,
+  presenceKindForStatus,
+  resolvePresenceCredit,
+  type PresenceCreditRuleLike,
+} from '@/lib/presenceCredit';
 import { sortRecordDetailsEntries } from '../utils/summaryDateUtils';
 import type { SummaryExportContext } from './exportTypes';
 import { downloadWorkbook } from './downloadWorkbook';
 import { insertWorksheetRow } from './excelWorksheet';
 import { isArticleEmployee } from '@/lib/isArticleEmployee';
+import { isClientPlaceWeekoffType, typeIncludesClientPlace } from '@/lib/resolveDayWorkedHours';
 
 const INACTIVE_ROW_FILL = 'FFFDBA74';
 
@@ -48,6 +55,14 @@ export async function exportDetailedAttendance(ctx: SummaryExportContext): Promi
 
     // Build holiday date set for quick checks
     const holidayDates = new Set(holidays.map(h => h.date));
+    let presenceRules: PresenceCreditRuleLike[] = [];
+    try {
+      const rulesRes = await fetch('/api/hr-console-settings/presence-credit', hrCredentialsInit());
+      const rulesJson = await rulesRes.json();
+      if (rulesJson?.success && Array.isArray(rulesJson.data?.rules)) presenceRules = rulesJson.data.rules;
+    } catch {
+      presenceRules = [];
+    }
 
     // Helper predicates per spec
     const isPIO = (rec: any) => {
@@ -64,14 +79,25 @@ export async function exportDetailedAttendance(ctx: SummaryExportContext): Promi
         if (!hasValidCheckin && !hasValidCheckout) return false;
       }
 
-      return t === 'ThumbMachine' || t === 'Present - in office' || t === 'Present - in office - weekdays' || t === 'Present';
+      return (
+        t === 'ThumbMachine' ||
+        t === 'Present - in office' ||
+        t === 'Present - in office - weekdays' ||
+        t === 'Present' ||
+        (typeIncludesClientPlace(t) && !isClientPlaceWeekoffType(t))
+      );
     };
 
     const isWOPIO = (rec: any) => {
       const t = rec.typeOfPresence || '';
       if (!t) return false;
       if (rec.halfDay) return false;
-      return t === 'Present - in office - weekoff' || t === 'Present - weekoff' || t === 'Weekly Off - Present (WO-Present)';
+      return (
+        t === 'Present - in office - weekoff' ||
+        t === 'Present - weekoff' ||
+        t === 'Weekly Off - Present (WO-Present)' ||
+        isClientPlaceWeekoffType(t)
+      );
     };
 
     const isOSP = (rec: any) => {
@@ -79,11 +105,7 @@ export async function exportDetailedAttendance(ctx: SummaryExportContext): Promi
       const set = new Set([
         'Present - Outstation (Weekdays)',
         'Present - Outstation (Weekoff)',
-        'Present - ClientPlace (Weekoff)',
-        'Present - ClientPlace (Weekdays)',
         'Present - outstation',
-        'Present - client place',
-        'Present - Outstation (Weekdays)'
       ]);
       return set.has(t);
     };
@@ -472,8 +494,10 @@ export async function exportDetailedAttendance(ctx: SummaryExportContext): Promi
       let sun_days = 0;
       let ohd_days = 0;
       let wfh_weekoff = 0; // sum of values
-      let wfh_weekday = 0; // sum of values
-      let present_wfh_actual = 0; // same as wfh_weekday
+      let wfh_weekday = 0; // count of weekday WFH days
+      let present_wfh_actual = 0;
+      let wfhMaxSum = 0;
+      let absentWfhSum = 0;
       let leaves_taken = 0;
       let extraEarnedFromOutclient = 0; // additional leave earned from outstation/clientplace attendances
       let staffOvertime = 0; // sum of excessHour for ThumbMachine records
@@ -487,12 +511,18 @@ export async function exportDetailedAttendance(ctx: SummaryExportContext): Promi
         const effectiveCheckout = rec.editedCheckout || rec.checkout;
         const isBothZero = !(effectiveCheckin && effectiveCheckin !== '00:00') && !(effectiveCheckout && effectiveCheckout !== '00:00');
         // If both checkin/checkout are 00:00 (or missing) treat record as no-value (0)
-        const value = typeof rec.value === 'number'
+        const t = rec.typeOfPresence || '';
+        let value = typeof rec.value === 'number'
           ? rec.value
           : (isBothZero ? 0 : (rec.halfDay ? 0.5 : (rec.totalHour > 0 ? 1 : 0)));
-
-        const t = rec.typeOfPresence || '';
-        const outclientSet = new Set(['Present - Outstation (Weekdays)', 'Present - Outstation (Weekoff)', 'Present - ClientPlace (Weekoff)', 'Present - ClientPlace (Weekdays)', 'Present - outstation', 'Present - client place']);
+        if (presenceKindForStatus(t) === 'wfh') {
+          value = effectiveWfhAttendanceValue(value, user, dateStr, presenceRules);
+        }
+        const outstationSet = new Set([
+          'Present - Outstation (Weekdays)',
+          'Present - Outstation (Weekoff)',
+          'Present - outstation',
+        ]);
 
         // Resolve employment type for this record's date (respect history)
         const empType = getEmploymentTypeForDate(user, d) || user?.employmentType;
@@ -502,7 +532,7 @@ export async function exportDetailedAttendance(ctx: SummaryExportContext): Promi
           pio += 1;
         } else if (empType === 'halftime' && rec.halfDay && !isHoliday && !isSunday && !isBothZero) {
           // For halftime employees, count half-days as PIO (use rec.value if present)
-          if (!outclientSet.has(t)) {
+          if (!outstationSet.has(t)) {
             const inc = typeof rec.value === 'number' ? rec.value : 0.5;
             pio += inc;
           }
@@ -526,9 +556,7 @@ export async function exportDetailedAttendance(ctx: SummaryExportContext): Promi
         const isLeaveMarked = rec.typeOfPresence === 'Leave' || rec.typeOfPresence === 'On leave';
         const typeLower = String(t || '').toLowerCase();
         const isClientOrRemotePresence =
-          outclientSet.has(t) ||
-          typeLower.includes('client place') ||
-          typeLower.includes('clientplace') ||
+          outstationSet.has(t) ||
           typeLower.includes('outstation') ||
           typeLower.includes('wfh') ||
           typeLower.includes('work from home') ||
@@ -564,7 +592,7 @@ export async function exportDetailedAttendance(ctx: SummaryExportContext): Promi
           } else if (isSunday || isHoliday) {
             weekoff_hd_days += 1;
           } else {
-            if (!outclientSet.has(t)) {
+            if (!outstationSet.has(t)) {
               // For halftime employees, half-days are counted into PIO above, so skip hd_count to avoid double-counting
               if (empType !== 'halftime') {
                 hd_count += 1;
@@ -579,7 +607,7 @@ export async function exportDetailedAttendance(ctx: SummaryExportContext): Promi
           weekoffs_sum += value;
         }
 
-        if (outclientSet.has(t)) {
+        if (outstationSet.has(t)) {
           const explicitExtra = typeof rec.extraEarned === 'number' ? rec.extraEarned : (rec.extraEarned ? Number(rec.extraEarned) : 0);
           const impliedExtra = value > 1 ? (value - 1) : 0;
           extraEarnedFromOutclient += explicitExtra + impliedExtra;
@@ -598,6 +626,9 @@ export async function exportDetailedAttendance(ctx: SummaryExportContext): Promi
         if (isWFHWeekday(rec)) {
           wfh_weekday += 1;
           present_wfh_actual += value;
+          const cap = resolvePresenceCredit(presenceRules, user, dateStr, 'wfh');
+          wfhMaxSum += cap;
+          absentWfhSum += 1 - cap;
         }
 
         leaves_taken += getLeaveContribution(dateStr, rec);
@@ -611,9 +642,9 @@ export async function exportDetailedAttendance(ctx: SummaryExportContext): Promi
 
       // Post-process conversions (same as before)
       const weekoff_hd_days_converted = Number(weekoff_hd_days.toFixed(3));
-      const wfhMaxAllowed = Number((wfh_weekday * 0.75).toFixed(3));
+      const wfhMaxAllowed = Number(wfhMaxSum.toFixed(3));
       const presentWFHActual = Number(present_wfh_actual.toFixed(2));
-      const absentWFH = Number((wfh_weekday * 0.25).toFixed(3));
+      const absentWFH = Number(absentWfhSum.toFixed(3));
       const absentWFH_MaxActual = Number(Math.max(0, wfhMaxAllowed - presentWFHActual).toFixed(3));
       const staffWeekdaysWorking = Number((pio + os_p + (hd_count / 2) + presentWFHActual).toFixed(3));
 

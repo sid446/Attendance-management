@@ -24,6 +24,8 @@ import { getEmploymentTypeForDate, getDayExcessSumForPeriod, monthDateStrings } 
 import { scheduledMinutesBetween } from '@/lib/calculateDayExcessHour';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { isArticleEmployee } from '@/lib/isArticleEmployee';
+import { resolvePresenceCredit } from '@/lib/presenceCredit';
+import { loadPresenceCreditRules } from '@/lib/presenceCreditDb';
 import { filterRecordsByInactiveCutoff, toYmd } from '@/lib/attendanceInactiveFilter';
 import {
   fetchDayApprovalsForUsersMonth,
@@ -182,12 +184,13 @@ export async function generatePayrollMonth(monthYear: string, generatedBy: strin
 
   const periodEnd = lastDayOfMonthYear(monthYear);
 
-  const [users, attendanceDocs, holidays, snapshots, existing] = await Promise.all([
+  const [users, attendanceDocs, holidays, snapshots, existing, presenceRules] = await Promise.all([
     User.find({}).lean(),
     Attendance.find({ monthYear }).lean(),
     Holiday.find({ isActive: true }).select('date').lean(),
     LeaveSnapshot.find({ monthYear }).lean(),
     PayrollMonth.findOne({ monthYear }),
+    loadPresenceCreditRules(),
   ]);
 
   if (existing?.status === 'finalized') {
@@ -281,6 +284,9 @@ export async function generatePayrollMonth(monthYear: string, generatedBy: strin
       weekdayHours,
       periodExcessHours: excessHours,
       isArticle,
+      wfhCapForDate: (dateStr) => resolvePresenceCredit(presenceRules, user, dateStr, 'wfh'),
+      wfhCreditEmployee: user,
+      presenceRules,
     });
 
     const snap = snapByUser.get(uid);

@@ -30,8 +30,6 @@ export function isValueBasedPresenceHoursType(typeOfPresence: unknown): boolean 
     .replace(/\s+/g, ' ');
   if (!t) return false;
   return (
-    t.includes('client place') ||
-    t.includes('clientplace') ||
     t.includes('outstation') ||
     t.includes('onsite presence') ||
     t === 'os-p' ||
@@ -48,6 +46,13 @@ export function typeIncludesClientPlace(typeOfPresence: unknown): boolean {
     .toLowerCase()
     .replace(/\s+/g, ' ');
   return t.includes('client place') || t.includes('clientplace') || t === 'cp-p' || t.includes('(cp-p)');
+}
+
+/** Client-place status that follows present-in-office weekoff, not weekday PIO. */
+export function isClientPlaceWeekoffType(typeOfPresence: unknown): boolean {
+  if (!typeIncludesClientPlace(typeOfPresence)) return false;
+  const t = String(typeOfPresence || '').toLowerCase();
+  return t.includes('weekoff') || t.includes('week-off') || t.includes('week off');
 }
 
 /**

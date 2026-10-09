@@ -5,6 +5,7 @@ import AttendanceRequest from '@/models/AttendanceRequest';
 import { requireEmployeeSession } from '@/lib/employeeRouteAuth';
 import { getApprovableTeamMembersForViewer } from '@/lib/teamVisibilityForViewer';
 import { enrichAttendanceRequestsWithOriginalTimes } from '@/lib/enrichAttendanceRequests';
+import { creditForEmployeeDate, loadPresenceCreditRules } from '@/lib/presenceCreditDb';
 
 export async function GET(request: NextRequest) {
   try {
@@ -49,14 +50,24 @@ export async function GET(request: NextRequest) {
 
     const requests = await AttendanceRequest.find(query)
       .sort({ createdAt: -1 })
-      .populate('userId', 'name email designation employeeCode odId employmentType category')
+      .populate('userId', 'name email designation employeeCode odId employmentType category team')
       .lean();
 
+    const creditRules = await loadPresenceCreditRules();
     const enriched = await enrichAttendanceRequestsWithOriginalTimes(
       requests.map((req) => ({ ...req, userId: req.userId })) as Array<Record<string, unknown>>
     );
+    const withCredit = enriched.map((req) => ({
+      ...req,
+      presenceCredit: creditForEmployeeDate(
+        creditRules,
+        req.userId as { _id?: unknown; team?: unknown; employmentType?: unknown; designation?: unknown; category?: unknown },
+        String(req.date || ''),
+        String(req.requestedStatus || '')
+      ),
+    }));
 
-    return NextResponse.json({ success: true, data: enriched });
+    return NextResponse.json({ success: true, data: withCredit });
   } catch (error) {
     console.error('Team attendance requests fetch error:', error);
     return NextResponse.json({ success: false, error: 'Failed to fetch team requests' }, { status: 500 });

@@ -17,6 +17,7 @@ import {
 } from '@/lib/halftimeAttendance';
 
 import { isValueBasedPresenceHoursType } from '@/lib/resolveDayWorkedHours';
+import { withWfhOspSchedule } from '@/lib/deriveRequestInOutFromWorkHours';
 
 export type AttendanceRecordForSummary = {
   checkin: string;
@@ -50,9 +51,7 @@ export function shouldExcludeFromSummaryHours(
     'Work From Home (WFH)',
     'Weekly Off - Work From Home (WO-WFH)',
     'Onsite Presence (OS-P)',
-    'Present - ClientPlace (Weekdays)',
     'Present - ClientPlace (Weekoff)',
-    'Present - client place',
     'Present - outstation',
     'Present - Outstation (Weekdays)',
     'Present - Outstation (Weekoff)',
@@ -134,14 +133,21 @@ export function calculateSummary(
       record.totalHour = 0;
     }
 
+    const spentBaseline = withWfhOspSchedule(
+      user,
+      dateStr,
+      record,
+      scheduledInTime,
+      scheduledOutTime
+    );
     record.excessHour = isNonWorking
       ? 0
       : calculateDayExcessHour(
           user,
           dateStr,
-          record,
-          scheduledInTime,
-          scheduledOutTime
+          spentBaseline.record,
+          spentBaseline.scheduledIn,
+          spentBaseline.scheduledOut
         );
     reapplyExtraWorkEntriesToRecord(record);
 
@@ -206,12 +212,19 @@ export function calculateSummary(
       dayScheduledHours = Number((scheduledMinutes / 60).toFixed(2));
     }
     if (!isNonWorking) {
-      record.excessHour = calculateDayExcessHour(
+      const spentBaselineAfterHalf = withWfhOspSchedule(
         user,
         dateStr,
         record,
         scheduledInTime,
         scheduledOutTime
+      );
+      record.excessHour = calculateDayExcessHour(
+        user,
+        dateStr,
+        spentBaselineAfterHalf.record,
+        spentBaselineAfterHalf.scheduledIn,
+        spentBaselineAfterHalf.scheduledOut
       );
       reapplyExtraWorkEntriesToRecord(record);
     }

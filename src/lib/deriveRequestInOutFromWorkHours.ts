@@ -1,5 +1,19 @@
-import { parseIsoDateLocal } from '@/lib/attendanceSummaryMetrics';
+import {
+  BUILTIN_WFH_CREDIT,
+  effectiveWfhAttendanceValue,
+  presenceKindForStatus,
+  type PresenceCreditEmployee,
+  type PresenceCreditRuleLike,
+} from '@/lib/presenceCredit';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
+
+function parseIsoDateLocal(dateStr: string): Date {
+  const iso = String(dateStr || '').trim().slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+    return new Date(`${iso}T12:00:00`);
+  }
+  return new Date(dateStr);
+}
 
 const TIME_INPUT_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -155,4 +169,194 @@ export function deriveInOutFromWorkHours(
     scheduleIn: schedule.inTime,
     scheduleSource: schedule.scheduleSource,
   };
+}
+
+export type SpentScheduleWindow = {
+  scheduledIn: string;
+  scheduledOut: string;
+  minutes: number;
+};
+
+type SpentScheduleRecord = {
+  typeOfPresence?: string;
+  status?: string;
+  value?: number;
+  totalHour?: number;
+  editedCheckin?: string;
+  checkin?: string;
+  inTime?: string;
+  editedCheckout?: string;
+  checkout?: string;
+  outTime?: string;
+};
+
+/** WFH, outstation, and onsite presence. Client place stays on the office schedule. */
+export function isWfhOrOspPresence(typeOfPresence: unknown): boolean {
+  return presenceKindForStatus(String(typeOfPresence || '')) !== null;
+}
+
+function durationMinutes(start: string, end: string): number | null {
+  const startMin = parseHhMmToMinutes(start);
+  const endMin = parseHhMmToMinutes(end);
+  if (startMin === null || endMin === null || endMin <= startMin) return null;
+  return endMin - startMin;
+}
+
+function clocksMatch(a: string, b: string): boolean {
+  const left = parseHhMmToMinutes(a);
+  const right = parseHhMmToMinutes(b);
+  return left !== null && left === right;
+}
+
+/**
+ * Scheduled in/out for a WFH or OSP day.
+ * A real in/out pair is kept. Hours alone start at the usual in-time.
+ * A pair that is only the office window, with hours equal to the day credit, is treated as hours-only.
+ */
+export function resolveWfhOspSpentSchedule(input: {
+  user: unknown;
+  dateStr: string;
+  typeOfPresence?: string | null;
+  value?: number | null;
+  givenIn?: string | null;
+  givenOut?: string | null;
+  totalHour?: number | null;
+  trustGivenPair?: boolean;
+}): SpentScheduleWindow | null {
+  if (!isWfhOrOspPresence(input.typeOfPresence)) return null;
+
+  const schedule = getWorkHoursReferenceSchedule(input.user, input.dateStr);
+  const officeIn = normalizeHhMm(schedule.inTime);
+  const officeOut = normalizeHhMm(schedule.outTime);
+  const officeMinutes = officeIn && officeOut ? durationMinutes(officeIn, officeOut) : null;
+  if (!officeIn || officeMinutes === null || officeMinutes <= 0) return null;
+
+  const valueNum = Number(input.value);
+  const hasValue = Number.isFinite(valueNum) && valueNum > 0;
+  const fraction = hasValue ? valueNum : 1;
+  const creditHours = fraction * (officeMinutes / 60);
+
+  const givenIn = normalizeHhMm(input.givenIn);
+  const givenOut = normalizeHhMm(input.givenOut);
+  const givenMinutes = givenIn && givenOut ? durationMinutes(givenIn, givenOut) : null;
+  const pairIsOffice =
+    !!givenIn &&
+    !!givenOut &&
+    clocksMatch(givenIn, officeIn) &&
+    clocksMatch(givenOut, officeOut);
+  const storedHours = Number(input.totalHour);
+  const stored = Number.isFinite(storedHours) ? storedHours : 0;
+  const looksLikeCreditFill =
+    !input.trustGivenPair &&
+    pairIsOffice &&
+    hasValue &&
+    (stored <= 0 || Math.abs(stored - creditHours) <= 0.08);
+  // Saved days still store hours for the old 0.75 credit. Once that credit
+  // becomes 0.5, those office punches are the fill, not a chosen out-time.
+  const oldDefaultHours = BUILTIN_WFH_CREDIT * (officeMinutes / 60);
+  const looksLikeOldDefaultFill =
+    !input.trustGivenPair &&
+    pairIsOffice &&
+    hasValue &&
+    Math.abs(fraction - BUILTIN_WFH_CREDIT) > 0.001 &&
+    Math.abs(stored - oldDefaultHours) <= 0.08;
+
+  if (givenMinutes !== null && givenIn && givenOut && !looksLikeCreditFill && !looksLikeOldDefaultFill) {
+    return { scheduledIn: givenIn, scheduledOut: givenOut, minutes: givenMinutes };
+  }
+
+  const startMin = parseHhMmToMinutes(officeIn);
+  if (startMin === null) return null;
+  const spentMinutes = Math.max(1, Math.round(officeMinutes * fraction));
+  const endMin = startMin + spentMinutes;
+  const scheduledOut = endMin >= 24 * 60 ? '23:59' : minutesToHhMm(endMin);
+  const cappedEnd = parseHhMmToMinutes(scheduledOut);
+  const minutes = cappedEnd !== null && cappedEnd > startMin ? cappedEnd - startMin : spentMinutes;
+  return {
+    scheduledIn: minutesToHhMm(startMin),
+    scheduledOut,
+    minutes,
+  };
+}
+
+/** Report view of one saved day. Null means this day keeps the office schedule. */
+export function scheduledWindowForAttendanceDay(
+  user: unknown,
+  dateStr: string,
+  rec: SpentScheduleRecord | null | undefined,
+  rules?: PresenceCreditRuleLike[] | null
+): SpentScheduleWindow | null {
+  if (!rec) return null;
+  const type = rec.typeOfPresence || rec.status || '';
+  if (!isWfhOrOspPresence(type)) return null;
+  const stored = typeof rec.value === 'number' ? rec.value : undefined;
+  const value =
+    presenceKindForStatus(type) === 'wfh' && stored != null
+      ? effectiveWfhAttendanceValue(stored, user as PresenceCreditEmployee, dateStr, rules)
+      : stored;
+  return resolveWfhOspSpentSchedule({
+    user,
+    dateStr,
+    typeOfPresence: type,
+    value,
+    totalHour: rec.totalHour,
+    givenIn: rec.editedCheckin || rec.checkin || rec.inTime || '',
+    givenOut: rec.editedCheckout || rec.checkout || rec.outTime || '',
+    trustGivenPair: false,
+  });
+}
+
+/**
+ * Excess compares worked time to this window. For WFH/OSP the punches used in that
+ * comparison are the spent window, so a day filled with the office out-time is not a deficit.
+ */
+export function withWfhOspSchedule<T extends SpentScheduleRecord>(
+  user: unknown,
+  dateStr: string,
+  rec: T,
+  officeIn: string,
+  officeOut: string
+): { scheduledIn: string; scheduledOut: string; record: T } {
+  const spent = scheduledWindowForAttendanceDay(user, dateStr, rec);
+  if (!spent) {
+    return { scheduledIn: officeIn, scheduledOut: officeOut, record: rec };
+  }
+  return {
+    scheduledIn: spent.scheduledIn,
+    scheduledOut: spent.scheduledOut,
+    record: {
+      ...rec,
+      editedCheckin: spent.scheduledIn,
+      editedCheckout: spent.scheduledOut,
+    },
+  };
+}
+
+/** Write the spent window onto a day. Returns false when the type is not WFH or OSP. */
+export function applyWfhOspSpentWindow(
+  rec: SpentScheduleRecord & { excessHour?: number },
+  user: unknown,
+  dateStr: string,
+  opts?: {
+    typeOfPresence?: string | null;
+    givenIn?: string | null;
+    givenOut?: string | null;
+    trustGivenPair?: boolean;
+  }
+): boolean {
+  const window = resolveWfhOspSpentSchedule({
+    user,
+    dateStr,
+    typeOfPresence: opts?.typeOfPresence || rec.typeOfPresence || rec.status,
+    value: rec.value,
+    givenIn: opts?.givenIn,
+    givenOut: opts?.givenOut,
+    trustGivenPair: opts?.trustGivenPair,
+  });
+  if (!window) return false;
+  rec.editedCheckin = window.scheduledIn;
+  rec.editedCheckout = window.scheduledOut;
+  rec.totalHour = Number((window.minutes / 60).toFixed(2));
+  rec.excessHour = 0;
+  return true;
 }

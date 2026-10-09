@@ -101,6 +101,7 @@ export const AttendanceRequestsSection: React.FC<AttendanceRequestsSectionProps>
         valueError={approval.approvalValueError}
         onValueErrorClear={approval.clearApprovalValueError}
         modalProcessing={approval.modalProcessing}
+        presenceRules={approval.presenceRules}
         onClose={approval.closeApprovalModal}
         onSubmit={approval.handleModalSubmit}
       />

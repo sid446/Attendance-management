@@ -18,13 +18,16 @@ import {
 } from './extraWorkRequest';
 import { isArticleEmployee } from './isArticleEmployee';
 import { resolveDayWorkedHours, typeIncludesClientPlace } from './resolveDayWorkedHours';
+import {
+  scheduledWindowForAttendanceDay,
+  withWfhOspSchedule,
+} from './deriveRequestInOutFromWorkHours';
 
 /** Presence-type match used across absent/present metrics (includes spaced "client place"). */
 function isRemoteOrSpecialPresenceType(typeLower: string, halfDay?: boolean): boolean {
   return (
     typeLower.includes('wfh') ||
     typeLower.includes('outstation') ||
-    typeIncludesClientPlace(typeLower) ||
     typeLower.includes('half day') ||
     !!halfDay
   );
@@ -263,8 +266,7 @@ function isExemptFromSinglePunchAbsentRule(rec: any): boolean {
     type === 'Absent' ||
     typeLower.includes('weekoff') ||
     typeLower.includes('wfh') ||
-    typeLower.includes('outstation') ||
-    typeIncludesClientPlace(typeLower)
+    typeLower.includes('outstation')
   );
 }
 
@@ -335,7 +337,8 @@ export function isExcessEligibleRecord(dateStr: string, recAny: any): boolean {
   if (
     type === 'Present - in office - weekdays' ||
     type === 'Present - in office - weekoff' ||
-    typeLower.includes('present - in office')
+    typeLower.includes('present - in office') ||
+    typeIncludesClientPlace(type)
   ) {
     return true;
   }
@@ -354,11 +357,9 @@ export function isExcessEligibleRecord(dateStr: string, recAny: any): boolean {
     return true;
   }
 
-  // Client place / outstation: day-credit types. Only count toward Sched/excess
-  // hour math when there are real punches or stored hours — value alone must not
-  // add a scheduled day with 0 worked (false multi-day deficit).
+  // Outstation stays a day-credit type. Count it toward Sched only with real
+  // punches or stored hours. Client place is handled with in-office above.
   if (
-    typeIncludesClientPlace(type) ||
     typeLower.includes('outstation') ||
     typeLower.includes('onsite presence') ||
     typeLower === 'os-p'
@@ -603,6 +604,15 @@ export function getWorkedHoursMatchingScheduledDays(
   dateList.forEach((dateStr) => {
     const rec = item.recordDetails?.[dateStr];
     if (!isDayIncludedInScheduledCalc(user, dateStr, rec)) return;
+    const spent = scheduledWindowForAttendanceDay(user, dateStr, rec as { typeOfPresence?: string; value?: number; totalHour?: number; editedCheckin?: string; editedCheckout?: string });
+    if (spent) {
+      const extra = sumExtraWorkEntryHours(
+        (rec as { extraWorkEntries?: Array<{ hours?: number; startTime?: string; endTime?: string }> })
+          .extraWorkEntries
+      );
+      total += spent.minutes / 60 + Math.max(0, extra);
+      return;
+    }
     const schedule = getScheduledTimes(user, dateStr);
     // No value×schedule invention — keeps HR +/- aligned with prior summary behaviour.
     total += resolveDayWorkedHours(rec as any, {
@@ -694,6 +704,16 @@ export function getDailyWorkedHoursSeries(
     for (const dateStr of dateList) {
       const rec = item.recordDetails?.[dateStr];
       if (!isDayIncludedInScheduledCalc(user, dateStr, rec)) continue;
+      const spent = scheduledWindowForAttendanceDay(user, dateStr, rec as { typeOfPresence?: string; value?: number; totalHour?: number; editedCheckin?: string; editedCheckout?: string });
+      if (spent) {
+        const extra = sumExtraWorkEntryHours(
+          (rec as { extraWorkEntries?: Array<{ hours?: number; startTime?: string; endTime?: string }> })
+            .extraWorkEntries
+        );
+        const hours = Number((spent.minutes / 60 + Math.max(0, extra)).toFixed(2));
+        if (hours > 0) rows.push({ date: dateStr, hours });
+        continue;
+      }
       const schedule = getScheduledTimes(user, dateStr);
       const hours = resolveDayWorkedHours(rec as any, {
         scheduledIn: schedule.inTime,
@@ -1086,6 +1106,16 @@ export function getScheduledHoursNoLunchForMonth(
     const rec = item.recordDetails?.[dateStr];
     if (!isDayIncludedInScheduledCalc(user, dateStr, rec)) return;
 
+    const spent = scheduledWindowForAttendanceDay(user, dateStr, rec as { typeOfPresence?: string; value?: number; totalHour?: number; editedCheckin?: string; editedCheckout?: string });
+    if (spent) {
+      let spentDiff = spent.minutes;
+      if (isHalfDayAttendanceRecord(rec as { halfDay?: boolean; typeOfPresence?: string })) {
+        spentDiff = Math.round(spentDiff / 2);
+      }
+      total += spentDiff / 60;
+      return;
+    }
+
     const schedule = getScheduledTimes(user, dateStr);
 
     const [inH, inM] = schedule.inTime!.split(':').map(Number);
@@ -1156,12 +1186,19 @@ export function getDayExcessSumForPeriod(
 
     const schedule = getScheduledTimes(user, dateStr);
     const isCompanyHoliday = Boolean(options?.holidayDates?.has(dateStr));
-    const raw = resolveLiveDayExcessHour(
+    const spentBaseline = withWfhOspSchedule(
       user,
       dateStr,
       rec,
       schedule.inTime || '',
-      schedule.outTime || '',
+      schedule.outTime || ''
+    );
+    const raw = resolveLiveDayExcessHour(
+      user,
+      dateStr,
+      spentBaseline.record,
+      spentBaseline.scheduledIn,
+      spentBaseline.scheduledOut,
       { isCompanyHoliday }
     );
     total += applyDayAllowanceToRawExcess(
@@ -1212,10 +1249,17 @@ export function getArticleExcessBreakdownForPeriod(
     if (!rec) return;
 
     const schedule = getScheduledTimes(user, dateStr);
-    const scheduledInTime = schedule.inTime || '';
-    const scheduledOutTime = schedule.outTime || '';
-    const inTime = formatPunchTime(getRecordPunchTimeRange(rec).inTime);
-    const outTime = formatPunchTime(getRecordPunchTimeRange(rec).outTime);
+    const spentBaseline = withWfhOspSchedule(
+      user,
+      dateStr,
+      rec,
+      schedule.inTime || '',
+      schedule.outTime || ''
+    );
+    const scheduledInTime = spentBaseline.scheduledIn;
+    const scheduledOutTime = spentBaseline.scheduledOut;
+    const inTime = formatPunchTime(getRecordPunchTimeRange(spentBaseline.record).inTime);
+    const outTime = formatPunchTime(getRecordPunchTimeRange(spentBaseline.record).outTime);
     const schIn = formatPunchTime(scheduledInTime);
     const schOut = formatPunchTime(scheduledOutTime);
     const extraHours = sumExtraWorkEntryHours(
@@ -1229,7 +1273,7 @@ export function getArticleExcessBreakdownForPeriod(
     const rawDayExcess = resolveLiveDayExcessHour(
       user,
       dateStr,
-      rec,
+      spentBaseline.record,
       scheduledInTime,
       scheduledOutTime,
       { isCompanyHoliday: Boolean(options?.holidayDates?.has(dateStr)) }

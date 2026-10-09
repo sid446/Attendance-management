@@ -33,7 +33,11 @@ import {
 } from '@/lib/attendanceSummaryMetrics';
 import { isValidPunchTime } from '@/lib/attendanceHours';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
-import { getWorkHoursReferenceSchedule } from '@/lib/deriveRequestInOutFromWorkHours';
+import {
+  getWorkHoursReferenceSchedule,
+  resolveWfhOspSpentSchedule,
+  scheduledWindowForAttendanceDay,
+} from '@/lib/deriveRequestInOutFromWorkHours';
 import { useExcessAllowanceMaps } from '@/hooks/useExcessAllowanceMaps';
 import { SummaryAlignedMetricsStrip } from '@/components/SummaryAlignedMetricsStrip';
 import {
@@ -45,6 +49,12 @@ import {
 } from '@/lib/attendanceRequestDayDisplay';
 import { isArticleEmployee } from '@/lib/isArticleEmployee';
 import { getDefaultNumericValueForType, isLeaveRequestType } from '@/lib/attendanceRequestValues';
+import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
+import {
+  effectiveWfhAttendanceValue,
+  presenceKindForStatus,
+  type PresenceCreditRuleLike,
+} from '@/lib/presenceCredit';
 import { hasPhysicalAttendancePresence } from '@/lib/attendancePhysicalPresence';
 import {
   isExtraWorkRequest,
@@ -794,6 +804,22 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
   const [savingEdit, setSavingEdit] = React.useState(false);
   const [editError, setEditError] = React.useState<string | null>(null);
   const [dayActivityModal, setDayActivityModal] = React.useState<DayActivityModalData | null>(null);
+  const [presenceRules, setPresenceRules] = React.useState<PresenceCreditRuleLike[]>([]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    fetch('/api/hr-console-settings/presence-credit', hrCredentialsInit())
+      .then((res) => res.json())
+      .then((json) => {
+        if (!cancelled && json?.success && Array.isArray(json.data?.rules)) {
+          setPresenceRules(json.data.rules);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   React.useEffect(() => {
     if (!dayActivityModal) return;
@@ -973,15 +999,31 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
       return;
     }
 
-    // Outstation: article 1.2, staff 1; pre-fill schedule as a starting point but HR can edit times
-    if (status.toLowerCase().includes('outstation')) {
-      setFormValue(
-        getDefaultNumericValueForType(status, { employee: scheduleUser ?? undefined }) ?? 1
-      );
+    // WFH and OSP: in-time stays the usual start; out-time is that start plus the credited hours.
+    if (
+      status.toLowerCase().includes('wfh') ||
+      status.toLowerCase().includes('outstation') ||
+      status.toLowerCase().includes('onsite') ||
+      status.toLowerCase().includes('os-p')
+    ) {
+      const credit =
+        getDefaultNumericValueForType(status, {
+          employee: scheduleUser ?? undefined,
+          date: dateStr,
+          rules: presenceRules,
+        }) ?? (status.toLowerCase().includes('wfh') ? 0.75 : 1);
+      setFormValue(credit);
       if (dateStr) {
-        const sch = getScheduledTimesForDate(dateStr);
-        if (sch.inTime) setFormStartTime(sch.inTime);
-        if (sch.outTime) setFormEndTime(sch.outTime);
+        const spent = resolveWfhOspSpentSchedule({
+          user: scheduleUser,
+          dateStr,
+          typeOfPresence: status,
+          value: credit,
+        });
+        if (spent) {
+          setFormStartTime(spent.scheduledIn);
+          setFormEndTime(spent.scheduledOut);
+        }
       }
       return;
     }
@@ -1467,6 +1509,8 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                       id: String(scheduleUser?._id || ''),
                       name: scheduleUser?.name || '',
                       isArticle: scheduleUser ? isArticleEmployee(scheduleUser) : undefined,
+                      employee: scheduleUser ?? undefined,
+                      rules: presenceRules,
                     }
                   );
                 }
@@ -1670,7 +1714,27 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                               setFormRemarks(storedRec?.remarks || '');
                               setEditError(null);
 
-                              if (hasExistingTimes) {
+                              const spentWindow = scheduledWindowForAttendanceDay(
+                                scheduleUser,
+                                dateStr,
+                                storedRec,
+                                presenceRules
+                              );
+                              if (spentWindow) {
+                                setFormStartTime(spentWindow.scheduledIn);
+                                setFormEndTime(spentWindow.scheduledOut);
+                                const storedCredit = typeof storedRec?.value === 'number' ? storedRec.value : undefined;
+                                setFormValue(
+                                  storedCredit != null && presenceKindForStatus(chosenStatus) === 'wfh'
+                                    ? effectiveWfhAttendanceValue(
+                                        storedCredit,
+                                        scheduleUser ?? undefined,
+                                        dateStr,
+                                        presenceRules
+                                      )
+                                    : storedCredit
+                                );
+                              } else if (hasExistingTimes) {
                                 setFormStartTime(existingStart || '');
                                 setFormEndTime(existingEnd || '');
                                 setFormValue(
@@ -1679,6 +1743,8 @@ export const EmployeeMonthView: React.FC<EmployeeMonthViewProps> = ({
                                     : chosenStatus.toLowerCase().includes('outstation')
                                       ? getDefaultNumericValueForType(chosenStatus, {
                                           employee: scheduleUser ?? undefined,
+                                          date: dateStr,
+                                          rules: presenceRules,
                                         }) ?? 1
                                       : undefined
                                 );

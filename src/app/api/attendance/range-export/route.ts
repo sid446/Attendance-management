@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Attendance from '@/models/Attendance';
 import User from '@/models/User';
+import { resolvePresenceCredit } from '@/lib/presenceCredit';
+import { loadPresenceCreditRules } from '@/lib/presenceCreditDb';
+import { scheduledWindowForAttendanceDay } from '@/lib/deriveRequestInOutFromWorkHours';
 
 export async function POST(request: NextRequest) {
   try {
     await dbConnect();
+    const presenceRules = await loadPresenceCreditRules();
 
     const body = await request.json();
     const { userIds, monthYear, startDate, endDate } = body;
@@ -120,6 +124,11 @@ export async function POST(request: NextRequest) {
           const scheduledTimes = getScheduledTimesForDate(user, d);
           let scheduledInTime = scheduledTimes.inTime;
           let scheduledOutTime = scheduledTimes.outTime;
+          const spentWindow = scheduledWindowForAttendanceDay(user, dateStr, dayRecord, presenceRules);
+          if (spentWindow) {
+            scheduledInTime = spentWindow.scheduledIn;
+            scheduledOutTime = spentWindow.scheduledOut;
+          }
 
           // Determine status based on user's requirements
           const machineTypes = ['ThumbMachine', 'PIO', 'Thumb machine - not working'];
@@ -147,11 +156,13 @@ export async function POST(request: NextRequest) {
           }
 
           // Calculate WFH and Outstation values
-          let maxWfh = 0.75;
+          let maxWfh = resolvePresenceCredit(presenceRules, user, dateStr, 'wfh');
           let actualWfh = 0;
-          let maxOutstation = 1.2;
+          let maxOutstation = resolvePresenceCredit(presenceRules, user, dateStr, 'osp');
           let actualOutstation = 0;
-          let scheduledHours = calculateScheduledHours(user, d);
+          let scheduledHours = spentWindow
+            ? spentWindow.minutes / 60
+            : calculateScheduledHours(user, d);
 
           // Check if it's WFH type
           if (typeOfPresence === 'WFH-weekdays' || typeOfPresence === 'WFH-weekoff') {

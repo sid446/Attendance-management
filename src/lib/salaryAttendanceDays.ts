@@ -1,3 +1,12 @@
+import {
+  BUILTIN_WFH_CREDIT,
+  effectiveWfhAttendanceValue,
+  presenceKindForStatus,
+  type PresenceCreditEmployee,
+  type PresenceCreditRuleLike,
+} from '@/lib/presenceCredit';
+import { isClientPlaceWeekoffType, typeIncludesClientPlace } from '@/lib/resolveDayWorkedHours';
+
 /**
  * Salary-sheet day counts from attendance records.
  * Mirrors Detailed Attendance export / Excel Salary columns I–AL.
@@ -42,13 +51,10 @@ export type SalaryAttendanceDays = {
   hasAnyRecord: boolean;
 };
 
-const OUTCLIENT = new Set([
+const OUTSTATION = new Set([
   'Present - Outstation (Weekdays)',
   'Present - Outstation (Weekoff)',
-  'Present - ClientPlace (Weekoff)',
-  'Present - ClientPlace (Weekdays)',
   'Present - outstation',
-  'Present - client place',
 ]);
 
 function round3(n: number): number {
@@ -80,7 +86,8 @@ function isPIO(rec: SalaryDayRecord): boolean {
     t === 'ThumbMachine' ||
     t === 'Present - in office' ||
     t === 'Present - in office - weekdays' ||
-    t === 'Present'
+    t === 'Present' ||
+    (typeIncludesClientPlace(t) && !isClientPlaceWeekoffType(t))
   );
 }
 
@@ -90,12 +97,13 @@ function isWOPIO(rec: SalaryDayRecord): boolean {
   return (
     t === 'Present - in office - weekoff' ||
     t === 'Present - weekoff' ||
-    t === 'Weekly Off - Present (WO-Present)'
+    t === 'Weekly Off - Present (WO-Present)' ||
+    isClientPlaceWeekoffType(t)
   );
 }
 
 function isOSP(rec: SalaryDayRecord): boolean {
-  return OUTCLIENT.has(String(rec.typeOfPresence || ''));
+  return OUTSTATION.has(String(rec.typeOfPresence || ''));
 }
 
 function isWFHWeekoff(rec: SalaryDayRecord): boolean {
@@ -126,6 +134,11 @@ export function countSalaryAttendanceDays(
     weekdayHours?: number;
     periodExcessHours?: number;
     isArticle?: boolean;
+    /** Weekday WFH cap in force on that attendance date. Defaults to 0.75. */
+    wfhCapForDate?: (dateStr: string) => number;
+    /** Person used to turn a saved 0.75 WFH day into the credit in force. */
+    wfhCreditEmployee?: PresenceCreditEmployee | null;
+    presenceRules?: PresenceCreditRuleLike[] | null;
   }
 ): SalaryAttendanceDays {
   const empty: SalaryAttendanceDays = {
@@ -177,6 +190,8 @@ export function countSalaryAttendanceDays(
   let wfhWeekoffActual = 0;
   let presentOrWfhCount = 0;
   let paidLeave = 0;
+  let wfhMaxAllowedSum = 0;
+  let absentWfhSum = 0;
 
   for (const dateStr of keys) {
     const rec = recs[dateStr];
@@ -188,13 +203,21 @@ export function countSalaryAttendanceDays(
     const inT = rec.editedCheckin || rec.checkin;
     const outT = rec.editedCheckout || rec.checkout;
     const isBothZero = !hasValidPunch(inT) && !hasValidPunch(outT);
-    const value = recValue(rec, isBothZero);
     const t = rec.typeOfPresence || '';
     const typeLower = t.toLowerCase();
+    let value = recValue(rec, isBothZero);
+    if (presenceKindForStatus(t) === 'wfh' && options?.wfhCreditEmployee) {
+      value = effectiveWfhAttendanceValue(
+        value,
+        options.wfhCreditEmployee,
+        dateStr,
+        options.presenceRules
+      );
+    }
 
     if (isPIO(rec) && !isHoliday && !isSunday) {
       pio += 1;
-    } else if (isHalftime && rec.halfDay && !isHoliday && !isSunday && !isBothZero && !OUTCLIENT.has(t)) {
+    } else if (isHalftime && rec.halfDay && !isHoliday && !isSunday && !isBothZero && !OUTSTATION.has(t)) {
       pio += typeof rec.value === 'number' ? rec.value : 0.5;
     }
 
@@ -207,9 +230,7 @@ export function countSalaryAttendanceDays(
     }
 
     const isClientOrRemote =
-      OUTCLIENT.has(t) ||
-      typeLower.includes('client place') ||
-      typeLower.includes('clientplace') ||
+      OUTSTATION.has(t) ||
       typeLower.includes('outstation') ||
       typeLower.includes('wfh') ||
       typeLower.includes('work from home') ||
@@ -240,7 +261,7 @@ export function countSalaryAttendanceDays(
     } else if (rec.halfDay && !isAbsentRecord) {
       if (isSunday || isHoliday) {
         weekoffHd += 1;
-      } else if (!OUTCLIENT.has(t) && !isHalftime) {
+      } else if (!OUTSTATION.has(t) && !isHalftime) {
         hd += 1;
       }
     }
@@ -259,6 +280,9 @@ export function countSalaryAttendanceDays(
     if (isWFHWeekday(rec)) {
       wfhWeekdayCount += 1;
       presentWfhActual += value;
+      const cap = options?.wfhCapForDate?.(dateStr) ?? BUILTIN_WFH_CREDIT;
+      wfhMaxAllowedSum += cap;
+      absentWfhSum += 1 - cap;
     }
 
     if (isPIO(rec) || isOSP(rec) || isWFHWeekday(rec) || t === 'Present') {
@@ -266,8 +290,8 @@ export function countSalaryAttendanceDays(
     }
   }
 
-  const wfhMaxAllowed = round3(wfhWeekdayCount * 0.75);
-  const absentWfh = round3(wfhWeekdayCount * 0.25);
+  const wfhMaxAllowed = round3(wfhMaxAllowedSum);
+  const absentWfh = round3(absentWfhSum);
   const presentWfh = round3(presentWfhActual);
   const absentWfhMaxActual = round3(Math.max(0, wfhMaxAllowed - presentWfh));
   const weekdaysWorking = round3(pio + osP + hd / 2 + presentWfh);

@@ -5,6 +5,7 @@ import { KeyRound, Loader2, Mail, Shield } from 'lucide-react';
 import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
 import { DEFAULT_SERVICE_ADMIN_EMAIL } from '@/lib/hrServiceEmail';
 import { AttendanceRequestWindowSettings } from '@/components/AttendanceRequestWindowSettings';
+import { PresenceCreditSettings } from '@/components/PresenceCreditSettings';
 
 export const HrConsoleSettingsSection: React.FC = () => {
   const [serviceEmail, setServiceEmail] = useState(DEFAULT_SERVICE_ADMIN_EMAIL);
@@ -179,6 +180,10 @@ export const HrConsoleSettingsSection: React.FC = () => {
             Update HR password
           </button>
         </form>
+      </div>
+
+      <div className="mt-10 border-t border-slate-200 pt-10">
+        <PresenceCreditSettings />
       </div>
 
       <div className="mt-10 border-t border-slate-200 pt-10">

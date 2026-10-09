@@ -2,8 +2,8 @@
 
 import React from 'react';
 import type { AttendanceRequest } from '../../types';
+import type { PresenceCreditRuleLike } from '@/lib/presenceCredit';
 import {
-  getDefaultValueForType,
   getMaxValueForType,
   isFixedValueType,
   isLeaveRequestType,
@@ -21,6 +21,7 @@ export interface RequestsApprovalModalProps {
   valueError: string | null;
   onValueErrorClear: () => void;
   modalProcessing: boolean;
+  presenceRules?: PresenceCreditRuleLike[];
   onClose: () => void;
   onSubmit: () => void;
 }
@@ -37,6 +38,7 @@ export const RequestsApprovalModal: React.FC<RequestsApprovalModalProps> = ({
   valueError,
   onValueErrorClear,
   modalProcessing,
+  presenceRules,
   onClose,
   onSubmit,
 }) => {
@@ -73,7 +75,12 @@ export const RequestsApprovalModal: React.FC<RequestsApprovalModalProps> = ({
       );
     }
 
-    const approveCtx = { employee: req.userId };
+    const approveCtx = {
+      employee: req.userId,
+      date: req.date,
+      rules: presenceRules,
+      allowAboveCap: true,
+    };
     const maxVal = getMaxValueForType(req.requestedStatus, approveCtx);
 
     return (

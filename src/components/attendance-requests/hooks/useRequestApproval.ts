@@ -1,7 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { apiCredentialsInit } from '@/lib/apiCredentialsInit';
+import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
+import type { PresenceCreditRuleLike } from '@/lib/presenceCredit';
+import type { ApproveValueContext } from '@/lib/attendanceRequestValues';
 import type { AttendanceRequest } from '../types';
 import {
   getDefaultValueForType,
@@ -31,6 +34,32 @@ export function useRequestApproval({
   const [approvalValue, setApprovalValue] = useState('');
   const [approvalValueError, setApprovalValueError] = useState<string | null>(null);
   const [modalProcessing, setModalProcessing] = useState(false);
+  const [presenceRules, setPresenceRules] = useState<PresenceCreditRuleLike[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/hr-console-settings/presence-credit', hrCredentialsInit())
+      .then((res) => res.json())
+      .then((json) => {
+        if (!cancelled && json?.success && Array.isArray(json.data?.rules)) {
+          setPresenceRules(json.data.rules);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const creditCtx = (req: AttendanceRequest | undefined): ApproveValueContext | undefined => {
+    if (!req) return undefined;
+    return {
+      employee: req.userId,
+      date: req.date,
+      rules: presenceRules,
+      allowAboveCap: true,
+    };
+  };
 
   const submitApproval = async (
     requestId: string | string[],
@@ -101,7 +130,7 @@ export function useRequestApproval({
     if (action === 'approve') {
       const reqIds = Array.isArray(requestId) ? requestId : [requestId];
       const req = requests.find((r) => r._id === reqIds[0]);
-      const approveCtx = req ? { employee: req.userId } : undefined;
+      const approveCtx = creditCtx(req);
       if (req?.status === 'PendingHr' && req.partnerProposedValue) {
         setApprovalValue(req.partnerProposedValue);
       } else if (req) {
@@ -131,7 +160,7 @@ export function useRequestApproval({
     if (approvalAction === 'approve') {
       const reqIds = Array.isArray(selectedRequestId) ? selectedRequestId : [selectedRequestId];
       const req = requests.find((r) => r._id === reqIds[0]);
-      const approveCtx = req ? { employee: req.userId } : undefined;
+      const approveCtx = creditCtx(req);
       if (req && !isLeaveRequestType(req.requestedStatus) && !req.requestedStatus.toLowerCase().includes('half')) {
         const maxVal = getMaxValueForType(req.requestedStatus, approveCtx);
         const effectiveRaw =
@@ -152,7 +181,7 @@ export function useRequestApproval({
       const reqIds = Array.isArray(selectedRequestId) ? selectedRequestId : [selectedRequestId];
       const req = requests.find((r) => r._id === reqIds[0]);
       if (req) {
-        const approveCtx = { employee: req.userId };
+        const approveCtx = creditCtx(req);
         if (req.requestedStatus.toLowerCase().includes('half')) {
           valueToSend = '0.5';
         } else if (isLeaveRequestType(req.requestedStatus)) {
@@ -188,5 +217,6 @@ export function useRequestApproval({
     openApprovalModal,
     closeApprovalModal,
     handleModalSubmit,
+    presenceRules,
   };
 }

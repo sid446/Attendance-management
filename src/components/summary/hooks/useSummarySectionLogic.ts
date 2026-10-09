@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { AttendanceSummaryView, DailySchedule, ScheduleEntry, User } from '@/types/ui';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
+import { scheduledWindowForAttendanceDay } from '@/lib/deriveRequestInOutFromWorkHours';
 import {
   formatHoursMinutes,
   getEmploymentTypeForDate,
@@ -24,7 +25,7 @@ import {
   getRecordPunchTimeRange,
   sumExtraWorkEntryHours,
 } from '@/lib/extraWorkRequest';
-import { resolveDayWorkedHours, typeIncludesClientPlace } from '@/lib/resolveDayWorkedHours';
+import { isClientPlaceWeekoffType, resolveDayWorkedHours, typeIncludesClientPlace } from '@/lib/resolveDayWorkedHours';
 import {
   getDesignationForDate,
   getDesignationForSummary,
@@ -329,7 +330,6 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
         // Presence types that shouldn't be absent even with 0 hours
         const isPresenceType = typeLower.includes('wfh') || 
                                typeLower.includes('outstation') || 
-                               typeIncludesClientPlace(typeLower) ||
                                typeLower.includes('half day') ||
                                rec.halfDay;
 
@@ -508,7 +508,6 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
         const typeLower = String(rec.typeOfPresence || '').toLowerCase();
         const isPresenceType = typeLower.includes('wfh') || 
                                typeLower.includes('outstation') || 
-                               typeIncludesClientPlace(typeLower) ||
                                typeLower.includes('half day') ||
                                rec.halfDay;
 
@@ -604,7 +603,6 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
                   const typeLower = String(rec.typeOfPresence || '').toLowerCase();
                   const isPresenceType = typeLower.includes('wfh') || 
                                          typeLower.includes('outstation') || 
-                                         typeIncludesClientPlace(typeLower) ||
                                          typeLower.includes('half day') ||
                                          rec.halfDay;
 
@@ -959,20 +957,13 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
           outstationWeekday += value;
         }
         present += 1; // Count as 1 day present
-      } else if (type === 'Present - ClientPlace (Weekdays)') {
-        clientPlaceWeekday += value;
-        present += 1; // Count as 1 day present
-      } else if (type === 'Present - ClientPlace (Weekoff)') {
-        clientPlaceWeekoff += value;
-        present += 1; // Count as 1 day present
-      } else if (type === 'Present - client place') {
-        // Legacy client place - categorize based on day
-        if (isSunday) {
-          clientPlaceWeekoff += value;
+      } else if (typeIncludesClientPlace(type) || isClientPlaceWeekoffType(type)) {
+        if (isClientPlaceWeekoffType(type) || isSunday) {
+          inOfficeWeekoff += value;
         } else {
-          clientPlaceWeekday += value;
+          inOfficeWeekday += value;
         }
-        present += 1; // Count as 1 day present
+        present += 1;
       } else if (type === 'Present - in office - weekdays') {
         inOfficeWeekday += value;
         present += 1; // Count as 1 day present
@@ -1165,6 +1156,25 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
       if (!user || !isDayIncludedInScheduledCalc(user, dateStr, rec)) return;
 
       const dateObj = new Date(dateStr);
+      const spent = scheduledWindowForAttendanceDay(user, dateStr, rec);
+      if (spent) {
+        let spentDiff = spent.minutes;
+        if (isHalfDayAttendanceRecord(rec as { halfDay?: boolean; typeOfPresence?: string })) {
+          spentDiff = Math.round(spentDiff / 2);
+        }
+        const hours = spentDiff / 60;
+        total += hours;
+        breakdown.push({
+          date: dateStr,
+          info: formatHoursMinutes(hours),
+          subInfo: `${dateObj.toLocaleDateString('en-US', { weekday: 'long' })}${
+            isHalfDayAttendanceRecord(rec as { halfDay?: boolean; typeOfPresence?: string })
+              ? ' (Half Day)'
+              : ''
+          }`,
+        });
+        return;
+      }
       const schedule = getCachedScheduledTimes(user, dateObj);
 
       const [inH, inM] = schedule.inTime!.split(':').map(Number);
@@ -1484,7 +1494,6 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
           const typeLower = String(rec.typeOfPresence || '').toLowerCase();
           const isPresenceType = typeLower.includes('wfh') || 
                                  typeLower.includes('outstation') || 
-                                 typeIncludesClientPlace(typeLower) ||
                                  typeLower.includes('half day') ||
                                  rec.halfDay;
 
@@ -1506,7 +1515,7 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
           const type = String(rec.typeOfPresence || '').toLowerCase();
           
           if ((effectiveCheckin && effectiveCheckin !== '00:00') || (rec.halfDay && !isBothZero) || 
-              ((type.includes('wfh') || type.includes('outstation') || typeIncludesClientPlace(type)) && (rec.value > 0 || !isBothZero))) {
+              ((type.includes('wfh') || type.includes('outstation')) && (rec.value > 0 || !isBothZero))) {
             calcPresent += 1;
           }
         });

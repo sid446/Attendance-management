@@ -21,6 +21,9 @@ import { applyDayExcessToRecord } from '@/lib/calculateDayExcessHour';
 import { calculateTotalHours as calculateDuration } from '@/lib/attendanceHours';
 import { applyAttendanceEditSource } from '@/lib/daywiseAttendanceSource';
 import { fillMissingHolidayAndSundayRecords } from '@/lib/fillHolidaySundayAttendance';
+import { clampApproveAttendanceValue } from '@/lib/attendanceRequestValues';
+import { loadPresenceCreditRules } from '@/lib/presenceCreditDb';
+import { applyWfhOspSpentWindow, isWfhOrOspPresence } from '@/lib/deriveRequestInOutFromWorkHours';
 
 export async function POST(request: NextRequest) {
   try {
@@ -291,19 +294,30 @@ export async function POST(request: NextRequest) {
         const leaveUsage = await calculateLeaveUsage(attendanceRequest.userId, attendanceRequest.date, attendanceRequest.requestedStatus);
         rec.value = leaveUsage.value; // 1 for paid, 0 for unpaid
         rec.halfDay = false; // Leave is either full day paid or unpaid
-      } else if (value !== undefined && value !== null && value !== '') {
-        // Use provided value (from HR or partner)
-        rec.value = parseFloat(value);
-        // Only Half Day types should have halfDay=true, not based on value
-        rec.halfDay = false;
       } else {
-        // Default to 1 for non-leave requests when no value specified
-        rec.value = 1;
+        const creditRules = await loadPresenceCreditRules();
+        const clamped = clampApproveAttendanceValue(attendanceRequest.requestedStatus, value, {
+          employee: userObj,
+          date: attendanceRequest.date,
+          rules: creditRules,
+          allowAboveCap: isHr,
+        });
+        rec.value = clamped ?? 1;
         rec.halfDay = false;
+        if (isHr && clamped !== undefined) {
+          await AttendanceRequest.findByIdAndUpdate(requestId, { hrValue: String(clamped) });
+        }
       }
 
       // Now calculate totalHour and excessHour using new rules for special types
       const isType = (type: string) => attendanceRequest.requestedStatus && attendanceRequest.requestedStatus.toLowerCase().includes(type.toLowerCase());
+      const statusLowerForPlace = String(attendanceRequest.requestedStatus || '').toLowerCase();
+      if (
+        (statusLowerForPlace.includes('client place') || statusLowerForPlace.includes('clientplace')) &&
+        Number(rec.value) > 1
+      ) {
+        rec.value = 1;
+      }
       let isWeekoff = /weekoff|week-off|week off/i.test(attendanceRequest.requestedStatus || '');
       let isWeekdays = /weekday|weekdays/i.test(attendanceRequest.requestedStatus || '');
       
@@ -336,19 +350,13 @@ export async function POST(request: NextRequest) {
         attendanceRequest.startTime !== '00:00' &&
         attendanceRequest.endTime !== '00:00';
 
-      // WFH
-      if (isType('WFH - weekdays')) {
-        rec.totalHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
-        rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
-        // Set editedCheckin/editedCheckout based on schedule if not already set
-        if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
-        if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
-      } else if (isType('WFH - weekoff')) {
-        rec.totalHour = 0;
-        rec.excessHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
-        // Set editedCheckin/editedCheckout based on weekday schedule
-        if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
-        if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
+      if (isWfhOrOspPresence(attendanceRequest.requestedStatus)) {
+        applyWfhOspSpentWindow(rec, userObj, attendanceRequest.date, {
+          typeOfPresence: attendanceRequest.requestedStatus,
+          givenIn: hasCustomTimes ? attendanceRequest.startTime : undefined,
+          givenOut: hasCustomTimes ? attendanceRequest.endTime : undefined,
+          trustGivenPair: !!hasCustomTimes,
+        });
       }
       // Half Day
       else if (isType('Half Day - weekdays')) {
@@ -368,57 +376,21 @@ export async function POST(request: NextRequest) {
         if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
         if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
       }
-      // Present - Outstation & ClientPlace (Weekdays/Weekoff)
-      else if (
-        isType('Present - Outstation (Weekdays)') ||
-        isType('Present - ClientPlace (Weekdays)')
-      ) {
-        if (hasCustomTimes) {
-          rec.totalHour = calculateDuration(
-            String(attendanceRequest.startTime),
-            String(attendanceRequest.endTime),
-            {
-              scheduledIn: effectiveScheduledInTime,
-              scheduledOut: effectiveScheduledOutTime,
-            }
-          );
-          applyDayExcessToRecord(
-            rec,
-            userObj,
-            attendanceRequest.date,
-            effectiveScheduledInTime,
-            effectiveScheduledOutTime
-          );
-        } else {
-          rec.totalHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
-          rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
-          if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
-          if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
-        }
-      } else if (
-        isType('Present - Outstation (Weekoff)') ||
-        isType('Present - ClientPlace (Weekoff)')
-      ) {
-        rec.totalHour = 0;
-        if (hasCustomTimes) {
-          applyDayExcessToRecord(
-            rec,
-            userObj,
-            attendanceRequest.date,
-            effectiveScheduledInTime,
-            effectiveScheduledOutTime
-          );
-        } else {
-          rec.excessHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
-        }
-      }
       // Present - in office
-      else if (isType('Present - in office - weekdays')) {
+      else if (
+        isType('Present - in office - weekdays') ||
+        ((statusLowerForPlace.includes('client place') || statusLowerForPlace.includes('clientplace')) &&
+          !/weekoff|week-off|week off/.test(statusLowerForPlace))
+      ) {
         rec.totalHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
         rec.excessHour = Number((rec.totalHour - (effectiveScheduledMinutes / 60)).toFixed(2));
         if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
         if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
-      } else if (isType('Present - in office - weekoff')) {
+      } else if (
+        isType('Present - in office - weekoff') ||
+        ((statusLowerForPlace.includes('client place') || statusLowerForPlace.includes('clientplace')) &&
+          /weekoff|week-off|week off/.test(statusLowerForPlace))
+      ) {
         rec.totalHour = 0;
         rec.excessHour = Number((rec.value * (effectiveScheduledMinutes / 60)).toFixed(2));
         if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
@@ -529,7 +501,7 @@ export async function POST(request: NextRequest) {
         // Example: value=1.1 => add 0.1; value=1.2 => add 0.2; value=0.8 => subtract 0.2
         try {
           const statusLower = (attendanceRequest.requestedStatus || '').toLowerCase();
-          if (statusLower.includes('outstation') || statusLower.includes('client place') || statusLower.includes('clientplace')) {
+          if (statusLower.includes('outstation')) {
             const recValue = typeof rec.value === 'number' ? rec.value : (rec.value ? Number(rec.value) : 1);
             const delta = Number((recValue - 1).toFixed(3));
             if (Math.abs(delta) > 0) {

@@ -29,6 +29,7 @@ interface Request {
   originalCheckout?: string;
   extraWorkSlots?: { startTime: string; endTime: string; reason: string }[];
   isArticleEmployee?: boolean;
+  presenceCredit?: number;
 }
 
 interface RequestGroup {
@@ -42,10 +43,15 @@ interface RequestGroup {
   originalTimeRange: string;
   requestIds: string[];
   isArticleEmployee?: boolean;
+  presenceCredit?: number;
 }
 
 function getGroupApproveContext(group: RequestGroup): ApproveValueContext | undefined {
-  return group.isArticleEmployee != null ? { isArticle: group.isArticleEmployee } : undefined;
+  return {
+    isArticle: group.isArticleEmployee,
+    date: group.dates[0],
+    presenceCredit: group.presenceCredit,
+  };
 }
 
 function resolveApproveValueForGroup(group: RequestGroup, raw: string | undefined): number | undefined {
@@ -132,6 +138,7 @@ function ReviewAllPageContent() {
           : '-',
         requestIds: requests.map(r => r._id),
         isArticleEmployee: req.isArticleEmployee,
+        presenceCredit: req.presenceCredit,
       };
     });
   };

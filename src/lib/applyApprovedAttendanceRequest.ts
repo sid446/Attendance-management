@@ -9,6 +9,7 @@ import { calculateTotalHours as calculateDuration } from '@/lib/attendanceHours'
 import { calculateSummary, type AttendanceRecordForSummary } from '@/lib/attendanceSummaryCalculation';
 import { applyDayExcessToRecord } from '@/lib/calculateDayExcessHour';
 import { getDefaultNumericValueForType, isLeaveRequestType } from '@/lib/attendanceRequestValues';
+import { loadPresenceCreditRules } from '@/lib/presenceCreditDb';
 import { hasPhysicalAttendancePresence } from '@/lib/attendancePhysicalPresence';
 import { invalidateApprovedLeaveIfSuperseded, invalidateSupersededLeaveRequest } from '@/lib/invalidateSupersededLeaveRequest';
 import {
@@ -20,6 +21,7 @@ import {
   normalizeExtraWorkSlotsFromRequest,
 } from '@/lib/extraWorkRequest';
 import { fillMissingHolidayAndSundayRecords } from '@/lib/fillHolidaySundayAttendance';
+import { applyWfhOspSpentWindow, isWfhOrOspPresence } from '@/lib/deriveRequestInOutFromWorkHours';
 
 type DayRecord = Record<string, unknown>;
 type RecordsMap = Map<string, DayRecord> | Record<string, DayRecord> | any;
@@ -295,8 +297,22 @@ export async function applyApprovedRequestToAttendance(
     rec.value = 0;
     rec.halfDay = false;
   } else {
-    rec.value = getDefaultNumericValueForType(requestedStatus, { employee: userObj }) ?? 1;
+    const creditRules = await loadPresenceCreditRules();
+    rec.value =
+      getDefaultNumericValueForType(requestedStatus, {
+        employee: userObj,
+        date,
+        rules: creditRules,
+      }) ?? 1;
     rec.halfDay = false;
+  }
+
+  const requestedLower = String(requestedStatus || '').toLowerCase();
+  if (
+    (requestedLower.includes('client place') || requestedLower.includes('clientplace')) &&
+    Number(rec.value) > 1
+  ) {
+    rec.value = 1;
   }
 
   let scheduledInTime = '';
@@ -343,16 +359,13 @@ export async function applyApprovedRequestToAttendance(
     rec.editedCheckout = endTime;
   }
 
-  if (isType('WFH - weekdays')) {
-    rec.totalHour = Number((Number(rec.value) * (effectiveScheduledMinutes / 60)).toFixed(2));
-    rec.excessHour = Number((Number(rec.totalHour) - effectiveScheduledMinutes / 60).toFixed(2));
-    if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
-    if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
-  } else if (isType('WFH - weekoff')) {
-    rec.totalHour = 0;
-    rec.excessHour = Number((Number(rec.value) * (effectiveScheduledMinutes / 60)).toFixed(2));
-    if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
-    if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
+  if (isWfhOrOspPresence(requestedStatus)) {
+    applyWfhOspSpentWindow(rec, userObj, date, {
+      typeOfPresence: requestedStatus,
+      givenIn: hasCustomTimes ? startTime : undefined,
+      givenOut: hasCustomTimes ? endTime : undefined,
+      trustGivenPair: !!hasCustomTimes,
+    });
   } else if (isType('Half Day - weekdays')) {
     rec.totalHour = Number((0.5 * (effectiveScheduledMinutes / 60)).toFixed(2));
     rec.excessHour = Number((Number(rec.totalHour) - effectiveScheduledMinutes / 60).toFixed(2));
@@ -364,44 +377,11 @@ export async function applyApprovedRequestToAttendance(
     if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
     if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
   } else if (
-    isType('Present - Outstation (Weekdays)') ||
-    isType('Present - ClientPlace (Weekdays)')
+    isType('Present - in office - weekdays') ||
+    isType('Present - in office - weekoff') ||
+    isType('Present - ClientPlace') ||
+    isType('Present - client place')
   ) {
-    if (hasCustomTimes) {
-      rec.totalHour = calculateDuration(String(startTime), String(endTime), {
-        scheduledIn: effectiveScheduledInTime,
-        scheduledOut: effectiveScheduledOutTime,
-      });
-      applyDayExcessToRecord(
-        rec,
-        userObj,
-        date,
-        effectiveScheduledInTime,
-        effectiveScheduledOutTime
-      );
-    } else {
-      rec.totalHour = Number((Number(rec.value) * (effectiveScheduledMinutes / 60)).toFixed(2));
-      rec.excessHour = Number((Number(rec.totalHour) - effectiveScheduledMinutes / 60).toFixed(2));
-      if (!rec.editedCheckin || rec.editedCheckin === '00:00') rec.editedCheckin = effectiveScheduledInTime;
-      if (!rec.editedCheckout || rec.editedCheckout === '00:00') rec.editedCheckout = effectiveScheduledOutTime;
-    }
-  } else if (
-    isType('Present - Outstation (Weekoff)') ||
-    isType('Present - ClientPlace (Weekoff)')
-  ) {
-    rec.totalHour = 0;
-    if (hasCustomTimes) {
-      applyDayExcessToRecord(
-        rec,
-        userObj,
-        date,
-        effectiveScheduledInTime,
-        effectiveScheduledOutTime
-      );
-    } else {
-      rec.excessHour = Number((Number(rec.value) * (effectiveScheduledMinutes / 60)).toFixed(2));
-    }
-  } else if (isType('Present - in office - weekdays') || isType('Present - in office - weekoff')) {
     if (hasCustomTimes) {
       rec.totalHour = calculateDuration(String(startTime), String(endTime), {
         scheduledIn: effectiveScheduledInTime,

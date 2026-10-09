@@ -1,3 +1,5 @@
+import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
+import type { PresenceCreditRuleLike } from '@/lib/presenceCredit';
 import type { AttendanceRequest, DateRangeGroup } from '../types';
 import { buildSortedRequestRows } from '../utils/requestSorting';
 import { getDefaultValueForType, isLeaveRequestType } from '../utils/requestValues';
@@ -11,6 +13,15 @@ export async function exportRequestsToExcel({
   rangeGroups,
   individualRequests,
 }: ExportRequestsParams): Promise<void> {
+  let presenceRules: PresenceCreditRuleLike[] = [];
+  try {
+    const rulesRes = await fetch('/api/hr-console-settings/presence-credit', hrCredentialsInit());
+    const rulesJson = await rulesRes.json();
+    if (rulesJson?.success && Array.isArray(rulesJson.data?.rules)) presenceRules = rulesJson.data.rules;
+  } catch {
+    presenceRules = [];
+  }
+
   const ExcelJS = (await import('exceljs')).default;
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('Attendance Requests');
@@ -48,13 +59,22 @@ export async function exportRequestsToExcel({
     if ('dates' in item) {
       return {
         employee: {
+          _id: item.userId,
           designation: item.designation,
           employmentType: item.employmentType,
           category: item.category,
         },
+        date: item.startDate,
+        rules: presenceRules,
+        allowAboveCap: true,
       };
     }
-    return { employee: item.userId };
+    return {
+      employee: item.userId,
+      date: item.date,
+      rules: presenceRules,
+      allowAboveCap: true,
+    };
   };
 
   const addRequestRow = (item: DateRangeGroup | AttendanceRequest) => {

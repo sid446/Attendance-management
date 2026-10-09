@@ -4,6 +4,8 @@ import Attendance from '@/models/Attendance';
 import User from '@/models/User';
 import { reapplyExtraWorkEntriesToRecord } from '@/lib/extraWorkRequest';
 import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
+import { getDefaultNumericValueForType } from '@/lib/attendanceRequestValues';
+import { loadPresenceCreditRules } from '@/lib/presenceCreditDb';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -128,12 +130,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           record.value = 0;
         } else if (typeOfPresence === 'Holiday' || typeOfPresence === 'Weekoff - special allowance') {
           record.value = 0;
-        } else if (typeOfPresence.includes('outstation')) {
-          // Outstation work gets higher value due to travel/additional effort
-          record.value = 1.2;
         } else {
-          // All other present types
-          record.value = 1;
+          const creditRules = await loadPresenceCreditRules();
+          record.value =
+            getDefaultNumericValueForType(typeOfPresence, {
+              employee: user,
+              date,
+              rules: creditRules,
+            }) ?? 1;
         }
       }
 
