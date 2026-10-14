@@ -123,7 +123,7 @@ export function getScheduledTimes(user: any, dateInput: string | Date): {
 
 /**
  * Honour an explicit day entry even when in-time is blank (Sunday/holiday weekoff).
- * Previously empty in-time was skipped and fell through to default 09:00–18:00.
+ * Holiday is only the schedule checkbox. Blank or 00:00 in-time is not a holiday.
  */
 function scheduleFromDayEntry(
   sch: { inTime?: string; outTime?: string; isHoliday?: boolean; isHalfDay?: boolean } | null | undefined,
@@ -138,13 +138,15 @@ function scheduleFromDayEntry(
   if (!sch || typeof sch !== 'object') return null;
   const inTime = String(sch.inTime || '').trim();
   const outTime = String(sch.outTime || '').trim();
-  const isHoliday = !!sch.isHoliday;
-  if (!inTime && !outTime && !isHoliday && !sch.isHalfDay) return null;
+  const isHoliday = sch.isHoliday === true;
+  const isHalfDay = !!sch.isHalfDay;
+  const explicitlyNotHoliday = sch.isHoliday === false;
+  if (!inTime && !outTime && !isHoliday && !isHalfDay && !explicitlyNotHoliday) return null;
   return {
     inTime,
     outTime: outTime || (isHoliday || !inTime ? '' : '18:00'),
-    isHoliday: isHoliday || !inTime || inTime === '00:00',
-    isHalfDay: !!sch.isHalfDay,
+    isHoliday,
+    isHalfDay,
     source,
   };
 }

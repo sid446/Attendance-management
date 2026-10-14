@@ -207,6 +207,7 @@ export function repairHolidayAndSundayRecords(
     const sunday = isSundayDate(dateKey);
     let scheduleOffLabel = '';
     if (user && !holidayName && !sunday) {
+      // isHoliday is only the schedule checkbox. Blank Saturday times are not a week off.
       const sched = getScheduledTimes(user, dateKey);
       if (sched.isHoliday) {
         const dow = new Date(`${dateKey}T12:00:00`).getDay();
@@ -297,4 +298,196 @@ export async function fillMissingHolidayAndSundayRecords(
   const holidayNameByDate = await loadActiveHolidayNameByDate([year]);
   const result = repairHolidayAndSundayRecords(attendance, holidayNameByDate, options);
   return result.changed;
+}
+
+const FALSE_SCHEDULE_OFF_LABELS = new Set(['Weekly Off (Saturday)', 'Weekly Off']);
+
+const WEEKOFF_TO_WEEKDAY: Record<string, string> = {
+  'Present - in office - weekoff': 'Present - in office - weekdays',
+  'WFH - weekoff': 'WFH - weekdays',
+  'Half Day - weekoff': 'Half Day - weekdays',
+  'Present - Outstation (Weekoff)': 'Present - Outstation (Weekdays)',
+  'Present- Outstation (Weekoff)': 'Present - Outstation (Weekdays)',
+  'Present - ClientPlace (Weekoff)': 'Present - ClientPlace (Weekdays)',
+  'Present - weekoff': 'Present - in office - weekdays',
+  'Weekly Off - Present (WO-Present)': 'Present - in office - weekdays',
+  'Weekly Off - Work From Home (WO-WFH)': 'WFH - weekdays',
+};
+
+export type FalseScheduleHolidayAction = 'deleted' | 'restored-absent' | 'restored-worked' | 'remark-cleared';
+
+export type FalseScheduleHolidayChange = {
+  date: string;
+  action: FalseScheduleHolidayAction;
+  fromType: string;
+  toType: string;
+};
+
+export type FalseScheduleHolidayRevertResult = {
+  changed: number;
+  deleted: number;
+  restoredAbsent: number;
+  restoredWorked: number;
+  remarksCleared: number;
+  changes: FalseScheduleHolidayChange[];
+};
+
+function remarkParts(remarks: unknown): string[] {
+  return String(remarks || '')
+    .split('|')
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function hasFalseScheduleOffRemark(remarks: unknown): boolean {
+  return remarkParts(remarks).some((part) => FALSE_SCHEDULE_OFF_LABELS.has(part));
+}
+
+function stripFalseScheduleOffRemark(remarks: unknown): string {
+  return remarkParts(remarks)
+    .filter((part) => !FALSE_SCHEDULE_OFF_LABELS.has(part))
+    .join(' | ');
+}
+
+function deleteDayRecord(
+  attendance: { records: RecordsMap; markModified?: (path: string) => void },
+  date: string
+): void {
+  if (typeof attendance.records?.delete === 'function') {
+    attendance.records.delete(date);
+  } else if (attendance.records) {
+    delete (attendance.records as Record<string, DayRecord>)[date];
+  }
+  attendance.markModified?.('records');
+}
+
+function weekdayTypeForFalseWeekoff(currentType: string, remarksAfterStrip: string, rec: DayRecord): string {
+  if (
+    currentType === 'Present - in office - weekoff' &&
+    !remarksAfterStrip &&
+    hasPhysicalAttendancePresence(rec)
+  ) {
+    return 'ThumbMachine';
+  }
+  return WEEKOFF_TO_WEEKDAY[currentType] || currentType;
+}
+
+/**
+ * Undo holiday / weekoff marks on days the schedule does not mark as Holiday.
+ * Real Sundays, company holidays, schedule-checkbox holidays, and dates in
+ * preserveDates (approved Holiday requests) are left alone.
+ * Script-added stubs (no edited punches) are removed. Uploaded empty days
+ * go back to Absent. Worked days go back to a weekday presence type.
+ */
+export function revertFalseScheduleHolidayRecords(
+  attendance: {
+    records: RecordsMap;
+    monthYear: string;
+    markModified?: (path: string) => void;
+  },
+  holidayNameByDate: Map<string, string>,
+  options?: { user?: any; preserveDates?: Set<string> }
+): FalseScheduleHolidayRevertResult {
+  const monthYear = String(attendance.monthYear || '').slice(0, 7);
+  const empty: FalseScheduleHolidayRevertResult = {
+    changed: 0,
+    deleted: 0,
+    restoredAbsent: 0,
+    restoredWorked: 0,
+    remarksCleared: 0,
+    changes: [],
+  };
+  if (!/^\d{4}-\d{2}$/.test(monthYear)) return empty;
+
+  const user = options?.user;
+  if (!user) return empty;
+
+  const result = { ...empty, changes: [] as FalseScheduleHolidayChange[] };
+
+  for (const dateKey of datesInMonthYear(monthYear)) {
+    const existing = getDayRecord(attendance.records, dateKey);
+    if (!existing) continue;
+    const looksFalseRest = isRestType(typeOf(existing));
+    if (!hasFalseScheduleOffRemark(existing.remarks) && !looksFalseRest) continue;
+    if (isSundayDate(dateKey) || holidayNameByDate.has(dateKey)) continue;
+    if (getScheduledTimes(user, dateKey).isHoliday) continue;
+    if (options?.preserveDates?.has(dateKey)) continue;
+
+    const rec = cloneDayRecord(existing);
+    const currentType = typeOf(rec);
+    const strippedRemarks = stripFalseScheduleOffRemark(rec.remarks);
+    const worked = hasPhysicalAttendancePresence(rec) || hasExtraWork(rec);
+
+    if (worked) {
+      const nextType = isRestType(currentType)
+        ? strippedRemarks
+          ? 'Present - in office - weekdays'
+          : 'ThumbMachine'
+        : weekdayTypeForFalseWeekoff(currentType, strippedRemarks, rec);
+      const typeChanged = nextType !== currentType;
+      const remarksChanged = strippedRemarks !== String(rec.remarks || '').trim();
+      if (!typeChanged && !remarksChanged) continue;
+      rec.typeOfPresence = nextType;
+      rec.remarks = strippedRemarks;
+      setDayRecord(attendance, dateKey, rec);
+      result.restoredWorked += 1;
+      result.changes.push({
+        date: dateKey,
+        action: 'restored-worked',
+        fromType: currentType,
+        toType: nextType,
+      });
+      continue;
+    }
+
+    if (isRestType(currentType)) {
+      const editedIn = String(rec.editedCheckin ?? '').trim();
+      const editedOut = String(rec.editedCheckout ?? '').trim();
+      const checkin = String(rec.checkin ?? '').trim();
+      const checkout = String(rec.checkout ?? '').trim();
+      const hadUploadedRow =
+        editedIn !== '' || editedOut !== '' || checkin !== '' || checkout !== '';
+      if (!hadUploadedRow && !strippedRemarks) {
+        deleteDayRecord(attendance, dateKey);
+        result.deleted += 1;
+        result.changes.push({
+          date: dateKey,
+          action: 'deleted',
+          fromType: currentType,
+          toType: '',
+        });
+        continue;
+      }
+      rec.typeOfPresence = 'Absent';
+      rec.halfDay = false;
+      rec.value = 0;
+      rec.totalHour = 0;
+      rec.excessHour = 0;
+      rec.remarks = strippedRemarks;
+      setDayRecord(attendance, dateKey, rec);
+      result.restoredAbsent += 1;
+      result.changes.push({
+        date: dateKey,
+        action: 'restored-absent',
+        fromType: currentType,
+        toType: 'Absent',
+      });
+      continue;
+    }
+
+    if (strippedRemarks === String(rec.remarks || '').trim()) continue;
+    rec.remarks = strippedRemarks;
+    setDayRecord(attendance, dateKey, rec);
+    result.remarksCleared += 1;
+    result.changes.push({
+      date: dateKey,
+      action: 'remark-cleared',
+      fromType: currentType,
+      toType: currentType,
+    });
+  }
+
+  result.changed =
+    result.deleted + result.restoredAbsent + result.restoredWorked + result.remarksCleared;
+  return result;
 }

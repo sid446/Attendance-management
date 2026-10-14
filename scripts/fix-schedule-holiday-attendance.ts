@@ -1,5 +1,5 @@
 /**
- * Backfill attendance so schedule holidays (for example Saturday off) are Holiday,
+ * Backfill attendance so explicit schedule holidays (the Holiday checkbox) are Holiday.
  * for every employee from January 2026 through the current month. Then replay leave
  * for anyone whose days changed.
  */
