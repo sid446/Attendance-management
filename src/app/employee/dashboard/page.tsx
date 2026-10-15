@@ -1082,6 +1082,64 @@ export default function EmployeeDashboard() {
     [requestWindow]
   );
 
+  const futureDateMin = istDateString();
+  const futureDateMax = requestWindow?.latestDate ?? '';
+
+  const isFutureRequestDateAllowed = useCallback(
+    (date: string) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+      if (date < futureDateMin) return false;
+      if (futureDateMax && date > futureDateMax) return false;
+      return isDateInRequestWindow(date);
+    },
+    [futureDateMin, futureDateMax, isDateInRequestWindow]
+  );
+
+  const openFutureRequestModal = () => {
+    const seed = !futureDateMax || futureDateMin <= futureDateMax ? futureDateMin : '';
+    if (!futureStartDate) setFutureStartDate(seed);
+    if (!futureEndDate) setFutureEndDate(futureStartDate || seed);
+    setShowFutureModal(true);
+  };
+
+  const applyFutureStartDate = (value: string) => {
+    if (!value) {
+      setFutureStartDate('');
+      return;
+    }
+    if (!isFutureRequestDateAllowed(value)) {
+      alert(
+        value < futureDateMin
+          ? 'Future requests start from today.'
+          : getRequestWindowBlockMessage(value)
+      );
+      return;
+    }
+    setFutureStartDate(value);
+    if (TIMED_CATEGORIES.includes(futureType) || !futureEndDate || futureEndDate < value) {
+      setFutureEndDate(value);
+    }
+  };
+
+  const applyFutureEndDate = (value: string) => {
+    if (!value) {
+      setFutureEndDate('');
+      return;
+    }
+    if (!isFutureRequestDateAllowed(value)) {
+      alert(
+        value < futureDateMin
+          ? 'Future requests start from today.'
+          : getRequestWindowBlockMessage(value)
+      );
+      return;
+    }
+    if (futureStartDate && value < futureStartDate) {
+      setFutureStartDate(value);
+    }
+    setFutureEndDate(value);
+  };
+
   const fetchExcessAllowancesForMonth = useCallback(async (userIds: string[], my: string) => {
     const ids = userIds.filter(Boolean);
     if (ids.length === 0 || !my) {
@@ -1751,6 +1809,20 @@ export default function EmployeeDashboard() {
     if (!user) return;
     if (!futureStartDate || !futureEndDate) {
       alert('Please select start and end dates.');
+      return;
+    }
+    if (futureEndDate < futureStartDate) {
+      alert('End date must be on or after the start date.');
+      return;
+    }
+    if (!isFutureRequestDateAllowed(futureStartDate) || !isFutureRequestDateAllowed(futureEndDate)) {
+      alert(
+        futureStartDate < futureDateMin || futureEndDate < futureDateMin
+          ? 'Future requests start from today.'
+          : getRequestWindowBlockMessage(
+              !isFutureRequestDateAllowed(futureStartDate) ? futureStartDate : futureEndDate
+            )
+      );
       return;
     }
     const isTimed = TIMED_CATEGORIES.includes(futureType);
@@ -2541,7 +2613,7 @@ export default function EmployeeDashboard() {
                   onDayClick={handleDayClick}
                   selectionStart={calendarSelectionStart}
                   onSelectionStartChange={setCalendarSelectionStart}
-                  onApplyFutureRequest={() => setShowFutureModal(true)}
+                  onApplyFutureRequest={openFutureRequestModal}
                   approvedRequests={employeeRequests}
                   showSummaryStrip={false}
                   sectionTitle="Monthly calendar"
@@ -3266,34 +3338,42 @@ export default function EmployeeDashboard() {
             </div>
             <div className="p-4 sm:p-6 space-y-4">
               <div className="p-3 bg-indigo-900/20 border border-indigo-500/30 rounded-lg text-indigo-200 text-sm">
-                {futureStartDate === futureEndDate
-                  ? `Selected date: ${formatRequestDateWithDay(futureStartDate)}`
-                  : `Selected range: ${formatRequestDateRangeWithDay(futureStartDate, futureEndDate)}`}
+                {futureStartDate && futureEndDate
+                  ? futureStartDate === futureEndDate
+                    ? `Selected date: ${formatRequestDateWithDay(futureStartDate)}`
+                    : `Selected range: ${formatRequestDateRangeWithDay(futureStartDate, futureEndDate)}`
+                  : 'Choose the start and end dates for this request.'}
                 <div className="mt-2 text-xs text-indigo-300">
-                  📅 Dates selected from calendar. Click another date to change range, or proceed with request.
+                  You can type the dates here or pick them on the calendar. Only today through the request window is allowed.
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className={TIMED_CATEGORIES.includes(futureType) ? "col-span-1 sm:col-span-2 space-y-2" : "space-y-2"}>
-                  <label className="text-sm font-medium text-muted-foreground">
+                  <label className="text-sm font-medium text-muted-foreground" htmlFor="future-request-start">
                     {TIMED_CATEGORIES.includes(futureType) ? "Date" : "Start Date"}
                   </label>
                   <input
+                    id="future-request-start"
                     type="date"
                     value={futureStartDate}
-                    readOnly
-                    className="w-full bg-surface border border-border rounded-lg p-2.5 text-muted-foreground cursor-not-allowed text-sm sm:text-base"
+                    min={futureDateMin}
+                    max={futureDateMax || undefined}
+                    onChange={(e) => applyFutureStartDate(e.target.value)}
+                    className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-indigo-500 text-sm sm:text-base [color-scheme:light]"
                   />
                 </div>
                 {!TIMED_CATEGORIES.includes(futureType) && (
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-muted-foreground">End Date</label>
+                    <label className="text-sm font-medium text-muted-foreground" htmlFor="future-request-end">End Date</label>
                     <input
+                      id="future-request-end"
                       type="date"
                       value={futureEndDate}
-                      readOnly
-                      className="w-full bg-surface border border-border rounded-lg p-2.5 text-muted-foreground cursor-not-allowed text-sm sm:text-base"
+                      min={futureStartDate || futureDateMin}
+                      max={futureDateMax || undefined}
+                      onChange={(e) => applyFutureEndDate(e.target.value)}
+                      className="w-full bg-background border border-border rounded-lg p-2.5 text-foreground outline-none focus:border-indigo-500 text-sm sm:text-base [color-scheme:light]"
                     />
                   </div>
                 )}
