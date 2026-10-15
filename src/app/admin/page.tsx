@@ -1,7 +1,7 @@
                       
            
 "use client";
-import React, { useState, ChangeEvent, useEffect, useCallback, useRef } from "react";
+import React, { useState, ChangeEvent, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import * as XLSX from 'xlsx';
 import { X } from 'lucide-react';
 import { AttendanceRecord, AttendanceSummaryView, User, DailySchedule } from '@/types/ui';
@@ -37,6 +37,7 @@ import { ClientPlaceManagement } from '@/components/ClientPlaceManagement';
 import { HrConsoleAccessSection } from '@/components/HrConsoleAccessSection';
 import { HrConsoleSettingsSection } from '@/components/HrConsoleSettingsSection';
 import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
+import { BACKUP_PREVIEW_HEADER, PREVIEW_DB_NAME } from '@/lib/backupPreviewHeader';
 import { HR_OTP_TTL_MS } from '@/lib/hrOtpConstants';
 import {
   getDesignationForDate,
@@ -85,6 +86,36 @@ export default function AttendanceUpload() {
   const [uploadFailed, setUploadFailed] = useState<number>(0);
   const [uploadPendingQueued, setUploadPendingQueued] = useState<number>(0);
   const [activeSection, setActiveSection] = useState<HrConsoleSectionId>('summary');
+  const [backupPreviewDb, setBackupPreviewDb] = useState<string | null>(null);
+  useLayoutEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const db = params.get('backupPreview')?.trim() || '';
+    const section = params.get('section')?.trim() || '';
+    if (!PREVIEW_DB_NAME.test(db)) return;
+    setBackupPreviewDb(db);
+    if ((HR_CONSOLE_SECTION_IDS as readonly string[]).includes(section)) {
+      setActiveSection(section as HrConsoleSectionId);
+    }
+    const original = window.fetch.bind(window);
+    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      const method = (init?.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
+      const isApi = url.includes('/api/');
+      if (isApi && method !== 'GET' && method !== 'HEAD') {
+        return new Response(
+          JSON.stringify({ success: false, error: 'This backup view is read-only' }),
+          { status: 403, headers: { 'content-type': 'application/json' } }
+        );
+      }
+      const headers = new Headers(init?.headers || (input instanceof Request ? input.headers : undefined));
+      if (isApi) headers.set(BACKUP_PREVIEW_HEADER, db);
+      return original(input, { ...init, headers });
+    };
+    return () => {
+      window.fetch = original;
+    };
+  }, []);
+
   const [hrPermState, setHrPermState] = useState<{
     sections: Record<HrConsoleSectionId, HrAccessLevel>;
     employeeTabs: Record<EmployeeManagementTabId, HrAccessLevel>;
@@ -1716,6 +1747,12 @@ export default function AttendanceUpload() {
         {/* Main content */}
         <main className="flex-1 overflow-y-auto bg-background">
           <div className="mx-auto min-h-full max-w-6xl space-y-6 bg-surface px-8 py-6 shadow-[inset_0_0_0_1px_rgba(147,197,253,0.35)]">
+            {backupPreviewDb && (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                Viewing backup <span className="font-semibold">{backupPreviewDb.replace('asija_copy_', '').replace('asija_prerestore_', 'safety ')}</span>.
+                This is the saved copy, not live data. Editing is turned off.
+              </div>
+            )}
             {/* Upload Section */}
             
 

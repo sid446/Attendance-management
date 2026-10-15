@@ -1,43 +1,43 @@
 #!/usr/bin/env tsx
 
-import { createDatabaseBackup, cleanupOldBackups } from '../src/lib/backup';
+import mongoose from 'mongoose';
+import dbConnect from '../src/lib/mongodb';
+import { cleanupExpiredCopies, createSnapshot } from '../src/lib/backup';
 
 async function runAutomatedBackup() {
-  console.log('🚀 Starting automated database backup...');
+  console.log('Starting database copy...');
 
   try {
-    // Create backup
-    const result = await createDatabaseBackup({
-      compress: true
-    });
+    await dbConnect();
+    const result = await createSnapshot({ kind: 'daily', actor: 'script' });
 
-    if (result.success) {
-      console.log('✅ Backup created successfully!');
-      console.log(`🆔 Backup ID: ${result.backupId}`);
-      console.log(`📁 File: ${result.fileName}`);
-      console.log(`📊 Size: ${result.fileSize} bytes`);
-      console.log(`🗂️ Collections: ${result.collections.join(', ')}`);
-      console.log(`🕒 Timestamp: ${result.timestamp.toISOString()}`);
-
-      // Cleanup old backups (keep only last 10)
-      const deletedCount = await cleanupOldBackups(10);
-      if (deletedCount > 0) {
-        console.log(`🧹 Cleaned up ${deletedCount} old backup(s)`);
-      }
-
-      console.log('🎉 Automated backup completed successfully!');
-    } else {
-      console.error('❌ Backup failed:', result.error);
-      process.exit(1);
+    if (!result.success || !result.snapshot) {
+      console.error('Backup failed:', result.error);
+      process.exitCode = 1;
+      return;
     }
 
+    console.log('Backup verified.');
+    console.log(`Database: ${result.snapshot.dbName}`);
+    console.log(`Label: ${result.snapshot.label}`);
+    console.log(`Documents: ${result.snapshot.totalDocuments}`);
+    console.log(`Collections: ${result.snapshot.collections.length}`);
+    if ((result.removed || 0) > 0) {
+      console.log(`Removed ${result.removed} copy database(s) beyond the last 7`);
+    }
+
+    const removed = await cleanupExpiredCopies();
+    if (removed > 0 && removed !== result.removed) {
+      console.log(`Removed ${removed} expired copy database(s)`);
+    }
   } catch (error) {
-    console.error('❌ Automated backup error:', error);
-    process.exit(1);
+    console.error('Automated backup error:', error);
+    process.exitCode = 1;
+  } finally {
+    await mongoose.connection.close().catch(() => undefined);
   }
 }
 
-// Run the backup if this script is executed directly
 if (require.main === module) {
   runAutomatedBackup();
 }
