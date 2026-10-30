@@ -186,6 +186,10 @@ const AttendanceRequestSchema: Schema = new Schema(
   }
 );
 
+AttendanceRequestSchema.index({ userId: 1, date: 1 });
+AttendanceRequestSchema.index({ monthYear: 1, status: 1 });
+AttendanceRequestSchema.index({ status: 1, createdAt: -1 });
+
 // Re-register when schema changes (Next.js dev can cache an older model).
 if (mongoose.models.AttendanceRequest) {
   delete mongoose.models.AttendanceRequest;

@@ -30,4 +30,6 @@ const UploadErrorLogSchema: Schema = new Schema({
   timestamps: true
 });
 
+UploadErrorLogSchema.index({ uploadDate: -1 });
+
 export default mongoose.models.UploadErrorLog || mongoose.model<IUploadErrorLog>('UploadErrorLog', UploadErrorLogSchema);

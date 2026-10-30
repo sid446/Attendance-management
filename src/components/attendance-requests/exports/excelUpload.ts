@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx';
 import { apiCredentialsInit } from '@/lib/apiCredentialsInit';
 import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
 import type { PresenceCreditRuleLike } from '@/lib/presenceCredit';
@@ -48,6 +47,7 @@ export async function applyActionsFromExcel({
   } catch {
     presenceRules = [];
   }
+  const XLSX = await import('xlsx');
   const workbook = XLSX.read(buffer, { type: 'array' });
   const sheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];

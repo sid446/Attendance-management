@@ -24,11 +24,19 @@ export async function POST(request: NextRequest) {
     const readDenied = assertCanReadEmployees(effective);
     if (readDenied) return readDenied;
 
-    const users = await User.find({}).lean();
+    const seedProjection = LEGACY_SEED_FIELDS.flatMap((field) => [field, `fieldHistories.${field}`]).join(' ');
+    const users = await User.find({}).select(seedProjection).lean();
     let usersUpdated = 0;
     let segmentsSeeded = 0;
 
-    for (const row of users) {
+    type SeedProbe = Parameters<typeof seedFieldHistoryIfMissing>[0];
+    const needsSeed = users.filter((row) => {
+      const lean = row as unknown as SeedProbe;
+      const probe: SeedProbe = { ...lean, fieldHistories: { ...(lean.fieldHistories || {}) } };
+      return LEGACY_SEED_FIELDS.some((field) => seedFieldHistoryIfMissing(probe, field, LEGACY_BASELINE_EFFECTIVE_FROM));
+    });
+
+    for (const row of needsSeed) {
       const user = await User.findById(row._id);
       if (!user) continue;
 

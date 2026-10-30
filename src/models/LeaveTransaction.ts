@@ -11,6 +11,8 @@ const LeaveTransactionSchema = new mongoose.Schema({
   createdAt: { type: Date, default: () => new Date() }
 });
 
+LeaveTransactionSchema.index({ userId: 1, type: 1 });
+
 export interface ILeaveTransaction extends mongoose.Document {
   userId: mongoose.Types.ObjectId;
   date: string;

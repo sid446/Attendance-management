@@ -1,10 +1,16 @@
 'use client';
 
 import React, { useState } from 'react';
-import DatePicker from 'react-datepicker';
+import dynamic from 'next/dynamic';
 import 'react-datepicker/dist/react-datepicker.css';
 import { X } from 'lucide-react';
 import { calendarDateFromIsoKey, isoDateKey } from '../../utils/summaryDateUtils';
+
+const DatePicker = dynamic(() =>
+  import('react-datepicker').then(
+    (m) => m.default as unknown as React.ComponentType<React.ComponentProps<typeof import('react-datepicker').default>>
+  )
+);
 
 export interface SummaryRangeModalProps {
   isOpen: boolean;

@@ -17,6 +17,9 @@ const LeaveSnapshotSchema = new mongoose.Schema({
   createdAt: { type: Date, default: () => new Date() }
 });
 
+LeaveSnapshotSchema.index({ userId: 1, monthYear: 1 });
+LeaveSnapshotSchema.index({ monthYear: 1 });
+
 export interface ILeaveSnapshot extends mongoose.Document {
   userId: mongoose.Types.ObjectId;
   monthYear: string;

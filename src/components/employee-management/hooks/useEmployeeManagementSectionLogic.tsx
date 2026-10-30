@@ -1,6 +1,5 @@
 import { useState, useEffect, ChangeEvent, useMemo, useCallback, useRef } from 'react';
 import { Edit2, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { ScheduleTime, DailySchedule } from '@/types/ui';
 import { fullEditDefaults, type EmployeeManagementTabId } from '@/lib/hrConsolePermissionUtils';
 import { pickEditableUserPutBody, pickEditableFieldHistories, stripStaleManagedFieldHistories } from '@/lib/hrEmployeeSaveFilter';
@@ -1279,6 +1278,7 @@ export function useEmployeeManagementSectionLogic({
 
     try {
       const data = await file.arrayBuffer();
+      const XLSX = await import('xlsx');
       const workbook = XLSX.read(data, { cellDates: false });
       
       // Select sheet: Prioritize "Master", then any non-"Summary", then first sheet
@@ -1563,6 +1563,7 @@ export function useEmployeeManagementSectionLogic({
 
     try {
       const data = await file.arrayBuffer();
+      const XLSX = await import('xlsx');
       const workbook = XLSX.read(data, { cellDates: false });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]]; // Assume first sheet or user ensures correct sheet
       const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
@@ -1667,6 +1668,7 @@ export function useEmployeeManagementSectionLogic({
 
     try {
       const data = await file.arrayBuffer();
+      const XLSX = await import('xlsx');
       const workbook = XLSX.read(data, { cellDates: false });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
