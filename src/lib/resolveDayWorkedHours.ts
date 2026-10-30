@@ -1,3 +1,4 @@
+import { policyForDate } from '@/lib/attendanceCalcPolicy';
 import { calculateTotalHours } from '@/lib/attendanceHours';
 import { effectiveScheduledMinutesForDay } from '@/lib/calculateDayExcessHour';
 import {
@@ -71,9 +72,22 @@ export function resolveDayWorkedHours(
     scheduledOut?: string;
     /** When false (summary excess/worked), skip value×schedule invention. Default true for daywise. */
     allowValueScheduleFallback?: boolean;
+    /** Attendance date, so a half day uses the schedule rule in force that day. */
+    date?: string;
   }
 ): number {
   if (!rec) return 0;
+
+  const extra = Array.isArray(rec.extraWorkEntries)
+    ? rec.extraWorkEntries.reduce((s, e) => s + (Number(e.hours) || 0), 0)
+    : 0;
+  const { inTime, outTime } = getRecordPunchTimeRange(rec);
+  const fromTimes = calculateTotalHours(inTime, outTime);
+  // Punches are the source of truth. Stored totalHour already includes extra work,
+  // and a second add of the same slots made days like 4:19 + 1:00 show as 6:19.
+  if (fromTimes > 0) {
+    return Number((fromTimes + Math.max(0, extra)).toFixed(2));
+  }
 
   const stored = Number(rec.workingHours ?? rec.workingHour ?? rec.totalHour ?? 0);
   if (Number.isFinite(stored) && stored > 0) {
@@ -81,18 +95,8 @@ export function resolveDayWorkedHours(
   }
 
   const punchOnly = getRecordPunchHours(rec);
-  const extra = Array.isArray(rec.extraWorkEntries)
-    ? rec.extraWorkEntries.reduce((s, e) => s + (Number(e.hours) || 0), 0)
-    : 0;
   if (punchOnly > 0) {
     return Number((punchOnly + Math.max(0, extra)).toFixed(2));
-  }
-
-  // Direct punch duration if getRecordPunchHours still 0 (e.g. totalHour 0, times present)
-  const { inTime, outTime } = getRecordPunchTimeRange(rec);
-  const fromTimes = calculateTotalHours(inTime, outTime);
-  if (fromTimes > 0) {
-    return Number((fromTimes + Math.max(0, extra)).toFixed(2));
   }
 
   if (opts?.allowValueScheduleFallback === false) {
@@ -115,7 +119,12 @@ export function resolveDayWorkedHours(
     return 0;
   }
 
-  const schedMins = effectiveScheduledMinutesForDay(scheduledIn, scheduledOut, rec);
+  const schedMins = effectiveScheduledMinutesForDay(
+    scheduledIn,
+    scheduledOut,
+    rec,
+    opts?.date ? policyForDate(opts.date) : undefined
+  );
   if (schedMins <= 0) return 0;
   return Number(((dayValue * schedMins) / 60).toFixed(2));
 }

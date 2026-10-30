@@ -25,19 +25,18 @@ import {
   assertCanReadEmployees,
   effectiveFromDoc,
 } from '@/lib/hrConsolePermissionUtils';
-import { calculateTotalHours as calculateHours, isLaterThanScheduledIn, isSinglePunch, isValidPunchTime, normalizeTimeToHHmm } from '@/lib/attendanceHours';
+import { calculateTotalHours as calculateHours, isLaterThanScheduledIn, isSinglePunch } from '@/lib/attendanceHours';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { reapplyExtraWorkEntriesToRecord } from '@/lib/extraWorkRequest';
-import {
-  calculateArticleDayExcessMinutes,
-  isArticleEmployee,
-} from '@/lib/isArticleEmployee';
+import { policyForDate } from '@/lib/attendanceCalcPolicy';
+import { usesArticleCalculationRules } from '@/lib/isArticleEmployee';
 import { applyLateCheckinAbsentRule, applyLateCheckinHalfDayRule } from '@/lib/lateCheckinAbsentRule';
 import {
   isHalftimeEmployeeForDate,
   normalizeHalftimeDayRecord,
 } from '@/lib/halftimeAttendance';
 import {
+  calculateDayExcessHour,
   isHalfDayAttendanceRecord,
   shouldAutoMarkAttendanceHalfDayByHours,
 } from '@/lib/calculateDayExcessHour';
@@ -750,50 +749,12 @@ async function recalculateAttendanceFromDate(userId: string, fromDate: Date) {
         dayScheduledHours = calculateHours(scheduledIn, scheduledOut);
       }
 
-      // Excess/short using updated schedule.
-      let dayExcess = 0;
-      if (record.typeOfPresence === 'Holiday') {
-        dayExcess = 0;
-      } else if (!isValidPunchTime(inTime) && !isValidPunchTime(outTime)) {
-        dayExcess = dayScheduledHours > 0 ? -dayScheduledHours : 0;
-      } else if (isSinglePunch(inTime, outTime)) {
-        dayExcess = dayScheduledHours > 0 ? Number((record.totalHour - dayScheduledHours).toFixed(2)) : 0;
-      } else if (
-        isValidPunchTime(inTime) &&
-        isValidPunchTime(outTime) &&
-        scheduledIn &&
-        scheduledOut &&
-        scheduledIn !== '00:00' &&
-        scheduledOut !== '00:00'
-      ) {
-        const [schInH, schInM] = scheduledIn.split(':').map(Number);
-        const [schOutH, schOutM] = scheduledOut.split(':').map(Number);
-        const [actInH, actInM] = inTime.split(':').map(Number);
-        const [actOutH, actOutM] = outTime.split(':').map(Number);
-        const schInMin = schInH * 60 + schInM;
-        const schOutMin = schOutH * 60 + schOutM;
-        const actInMin = actInH * 60 + actInM;
-        const actOutMin = actOutH * 60 + actOutM;
-        const scheduledMinutes = schOutMin - schInMin >= 0 ? schOutMin - schInMin : 24 * 60 + schOutMin - schInMin;
-        const actualMinutes = actOutMin - actInMin >= 0 ? actOutMin - actInMin : 24 * 60 + actOutMin - actInMin;
-        if (actualMinutes < scheduledMinutes) {
-          dayExcess = -(scheduledMinutes - actualMinutes) / 60;
-        } else if (isArticleEmployee(user)) {
-          const excessMinutes = calculateArticleDayExcessMinutes(
-            scheduledIn,
-            scheduledOut,
-            inTime,
-            outTime
-          );
-          dayExcess = excessMinutes > 0 ? excessMinutes / 60 : 0;
-        } else {
-          dayExcess = Number((record.totalHour - dayScheduledHours).toFixed(2));
-        }
-      } else {
-        dayExcess = Number((record.totalHour - dayScheduledHours).toFixed(2));
-      }
-      record.excessHour = dayExcess;
+      const calcPolicy = policyForDate(dateStr);
       reapplyExtraWorkEntriesToRecord(record);
+      record.excessHour = calculateDayExcessHour(user, dateStr, record, scheduledIn, scheduledOut, {
+        policy: calcPolicy,
+        isCompanyHoliday: record.typeOfPresence === 'Holiday',
+      });
 
       const includeInHoursSummary = !shouldExcludeFromHoursSummary(String(record.typeOfPresence || ''), dateStr);
       if (includeInHoursSummary) {
@@ -815,7 +776,7 @@ async function recalculateAttendanceFromDate(userId: string, fromDate: Date) {
         record.halfDay = true;
       } else if ((inTime === '00:00' && outTime === '00:00') || (!inTime && !outTime)) {
         record.halfDay = false;
-      } else if (isSinglePunch(inTime, outTime)) {
+      } else if (isSinglePunch(inTime, outTime) && calcPolicy.singlePunchIsHalfDay) {
         record.halfDay = true;
       } else {
         record.halfDay = shouldAutoMarkAttendanceHalfDayByHours({
@@ -824,8 +785,10 @@ async function recalculateAttendanceFromDate(userId: string, fromDate: Date) {
           scheduledOutTime: scheduledOut,
           scheduleIsHalfDay: !!schedule.isHalfDay,
           employmentType: (user as any).employmentType || 'fulltime',
-          isArticle: isArticleEmployee(user),
+          isArticle: usesArticleCalculationRules(user, calcPolicy),
           inTime,
+          date: dateStr,
+          policy: calcPolicy,
         });
       }
       applyLateCheckinHalfDayRule(record, user, dateStr);

@@ -53,10 +53,9 @@ import {
   isAuthorizedPartnerForRequest,
   resolveViewerUserIdFromPartnerEmail,
 } from '@/lib/teamRequestAuthorization';
-import {
-  calculateArticleDayExcessMinutes,
-  isArticleEmployee,
-} from '@/lib/isArticleEmployee';
+import { excessHoursForGroup, policyForDate } from '@/lib/attendanceCalcPolicy';
+import { usesArticleCalculationRules } from '@/lib/isArticleEmployee';
+import { shouldAutoMarkAttendanceHalfDayByHours } from '@/lib/calculateDayExcessHour';
 import { calculateSummary } from '@/lib/attendanceSummaryCalculation';
 import { applyWfhOspSpentWindow, isWfhOrOspPresence } from '@/lib/deriveRequestInOutFromWorkHours';
 import { applyAttendanceEditSource } from '@/lib/daywiseAttendanceSource';
@@ -497,23 +496,17 @@ export async function POST(request: NextRequest) {
                                                 const actOutMin = actOutH * 60 + actOutM;
                                                 const scheduledMinutes = schOutMin - schInMin >= 0 ? schOutMin - schInMin : (24 * 60 + schOutMin - schInMin);
                                                 const actualMinutes = actOutMin - actInMin >= 0 ? actOutMin - actInMin : (24 * 60 + actOutMin - actInMin);
-                                                if (actualMinutes < scheduledMinutes) {
-                                                        dayExcess = -(scheduledMinutes - actualMinutes) / 60;
-                                                } else if (actualMinutes > scheduledMinutes) {
-                                                        if (isArticleEmployee(userObj)) {
-                                                                const excessMinutes = calculateArticleDayExcessMinutes(
-                                                                        scheduledInTime,
-                                                                        scheduledOutTime,
-                                                                        inTime,
-                                                                        outTime
-                                                                );
-                                                                dayExcess = excessMinutes > 0 ? excessMinutes / 60 : 0;
-                                                        } else {
-                                                                dayExcess = (actualMinutes - scheduledMinutes) / 60;
-                                                        }
-                                                } else {
-                                                        dayExcess = 0;
-                                                }
+                                                const calcPolicy = policyForDate(date);
+                                                dayExcess = excessHoursForGroup(
+                                                        usesArticleCalculationRules(userObj, calcPolicy) ? 'article' : 'staff',
+                                                        calcPolicy,
+                                                        scheduledInTime,
+                                                        scheduledOutTime,
+                                                        inTime,
+                                                        outTime,
+                                                        actualMinutes,
+                                                        scheduledMinutes
+                                                );
                                         }
                                         rec.excessHour = Number(dayExcess.toFixed(2));
                                         
@@ -524,31 +517,32 @@ export async function POST(request: NextRequest) {
                                         
                                         // Check halfDay rules:
                                         // 1. If checkin is 00:00 but checkout is valid - mark as half day
-                                        // 2. For article employees: half-day if arrive after 1 PM
-                                        // 3. For others: half-day if arrive after 1 PM AND less than 6 hours worked
+                                        // 2. Otherwise use the calculation policy in force on this date
                                         const checkinTime = startTime;
                                         const checkoutTime = endTime;
-                                        const isArticleship = isArticleEmployee(userObj);
+                                        const isArticleship = usesArticleCalculationRules(userObj, policyForDate(date));
                                         
                                         if (checkinTime === '00:00' && checkoutTime !== '00:00' && checkoutTime !== '' && rec.totalHour > 0) {
                                           // Missing check-in but has valid checkout
                                           rec.halfDay = true;
                                           rec.value = 0.5;
                                         } else if (checkinTime !== '00:00') {
-                                          const isAfter1PM = checkinTime >= '13:00';
-                                          
-                                          if (isArticleship) {
-                                            // For articleship: half-day if arrive after 1 PM
-                                            if (isAfter1PM) {
-                                              rec.halfDay = true;
-                                              rec.value = 0.5;
-                                            }
-                                          } else {
-                                            // For others: half-day if arrive after 1 PM AND less than 6 hours worked
-                                            if (isAfter1PM && rec.totalHour < 6) {
-                                              rec.halfDay = true;
-                                              rec.value = 0.5;
-                                            }
+                                          const calcPolicy = policyForDate(date);
+                                          if (
+                                            shouldAutoMarkAttendanceHalfDayByHours({
+                                              totalHour: rec.totalHour,
+                                              scheduledInTime,
+                                              scheduledOutTime,
+                                              scheduleIsHalfDay: false,
+                                              employmentType: String((userObj as { employmentType?: string }).employmentType || ''),
+                                              isArticle: isArticleship,
+                                              inTime: checkinTime,
+                                              date,
+                                              policy: calcPolicy,
+                                            })
+                                          ) {
+                                            rec.halfDay = true;
+                                            rec.value = 0.5;
                                           }
                                         }
                                 }

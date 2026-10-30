@@ -2,7 +2,8 @@ import { IUser } from '@/models/User';
 import { calculateTotalHours, isLaterThanScheduledIn, isSinglePunch } from '@/lib/attendanceHours';
 import { getScheduledTimes } from '@/lib/scheduleUtils';
 import { reapplyExtraWorkEntriesToRecord } from '@/lib/extraWorkRequest';
-import { isArticleEmployee } from '@/lib/isArticleEmployee';
+import { policyForDate } from '@/lib/attendanceCalcPolicy';
+import { usesArticleCalculationRules } from '@/lib/isArticleEmployee';
 import {
   calculateDayExcessHour,
   effectiveScheduledMinutesForDay,
@@ -107,7 +108,8 @@ export function calculateSummary(
       const scheduledMinutes = effectiveScheduledMinutesForDay(
         scheduledInTime,
         scheduledOutTime,
-        record
+        record,
+        policyForDate(dateStr)
       );
       dayScheduledHours = Number((scheduledMinutes / 60).toFixed(2));
     }
@@ -140,15 +142,13 @@ export function calculateSummary(
       scheduledInTime,
       scheduledOutTime
     );
-    record.excessHour = isNonWorking
-      ? 0
-      : calculateDayExcessHour(
-          user,
-          dateStr,
-          spentBaseline.record,
-          spentBaseline.scheduledIn,
-          spentBaseline.scheduledOut
-        );
+    record.excessHour = calculateDayExcessHour(
+      user,
+      dateStr,
+      spentBaseline.record,
+      spentBaseline.scheduledIn,
+      spentBaseline.scheduledOut
+    );
     reapplyExtraWorkEntriesToRecord(record);
 
     const includeInHoursSummary = !shouldExcludeFromSummaryHours(
@@ -170,10 +170,11 @@ export function calculateSummary(
     // Explicit Half Day* types stay HD; late-checkin rule may set HD after this.
     let calculatedHalfDay = typeIsExplicitHalfDay;
 
+    const dayPolicy = policyForDate(dateStr);
     if (isHalftime || isNonWorking) {
       calculatedHalfDay = false;
     } else if (!typeIsExplicitHalfDay) {
-      if (isSinglePunch(inTime, outTime)) {
+      if (isSinglePunch(inTime, outTime) && dayPolicy.singlePunchIsHalfDay) {
         calculatedHalfDay = true;
       } else if (
         (inTime === '00:00' && outTime === '00:00') ||
@@ -187,8 +188,9 @@ export function calculateSummary(
           scheduledOutTime,
           scheduleIsHalfDay,
           employmentType,
-          isArticle: isArticleEmployee(user),
+          isArticle: usesArticleCalculationRules(user, dayPolicy),
           inTime,
+          date: dateStr,
         });
       }
     }
@@ -207,7 +209,8 @@ export function calculateSummary(
       const scheduledMinutes = effectiveScheduledMinutesForDay(
         scheduledInTime,
         scheduledOutTime,
-        record
+        record,
+        policyForDate(dateStr)
       );
       dayScheduledHours = Number((scheduledMinutes / 60).toFixed(2));
     }
@@ -226,7 +229,6 @@ export function calculateSummary(
         spentBaselineAfterHalf.scheduledIn,
         spentBaselineAfterHalf.scheduledOut
       );
-      reapplyExtraWorkEntriesToRecord(record);
     }
 
     if (includeInHoursSummary) {

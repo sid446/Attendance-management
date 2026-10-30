@@ -16,6 +16,7 @@ import {
   getRecordPunchTimeRange,
   sumExtraWorkEntryHours,
 } from './extraWorkRequest';
+import { describeAttendanceCalcPolicy, halfDayScheduledShareOf, policyForDate } from './attendanceCalcPolicy';
 import { isArticleEmployee } from './isArticleEmployee';
 import { resolveDayWorkedHours, typeIncludesClientPlace } from './resolveDayWorkedHours';
 import {
@@ -1110,7 +1111,7 @@ export function getScheduledHoursNoLunchForMonth(
     if (spent) {
       let spentDiff = spent.minutes;
       if (isHalfDayAttendanceRecord(rec as { halfDay?: boolean; typeOfPresence?: string })) {
-        spentDiff = Math.round(spentDiff / 2);
+        spentDiff = Math.round(spentDiff * halfDayScheduledShareOf(policyForDate(dateStr)));
       }
       total += spentDiff / 60;
       return;
@@ -1124,7 +1125,7 @@ export function getScheduledHoursNoLunchForMonth(
     if (diff < 0) diff += 24 * 60;
 
     if (isHalfDayAttendanceRecord(rec as { halfDay?: boolean; typeOfPresence?: string })) {
-      diff = Math.round(diff / 2);
+      diff = Math.round(diff * halfDayScheduledShareOf(policyForDate(dateStr)));
     }
 
     total += diff / 60;
@@ -1233,12 +1234,13 @@ export function getArticleExcessBreakdownForPeriod(
 ): { date: string; info: string; subInfo?: string }[] {
   const userId = String(item.userId || '');
   const isArticle = isArticleEmployee(user);
+  const sampleDate = dateList[dateList.length - 1] || '';
+  const ruleLines = describeAttendanceCalcPolicy(policyForDate(sampleDate));
   const breakdown: { date: string; info: string; subInfo?: string }[] = [
     {
       date: isArticle ? 'Article rule' : 'Day excess rule',
-      info: isArticle
-        ? 'Early check-in counts as excess. Late check-out counts only when more than 30 minutes after scheduled out. Short days count as deficit.'
-        : 'Each day: worked hours − scheduled hours (same as Daywise). Leave / absent / Sunday / holiday = 0.',
+      info: isArticle ? ruleLines.extra.slice(0, 3).join(' ') : ruleLines.extra[3],
+      subInfo: 'Each day uses the rules in force on that date.',
     },
   ];
 

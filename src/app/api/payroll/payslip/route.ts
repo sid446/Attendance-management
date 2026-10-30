@@ -15,6 +15,66 @@ import type { IPayrollLine } from '@/models/PayrollMonth';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
+async function payslipLineForEmployee(
+  line: IPayrollLine,
+  userById: Map<string, { esi?: unknown; otherAllowance?: unknown }>
+): Promise<IPayrollLine> {
+  const master = userById.get(String(line.userId));
+  return {
+    ...payrollLinePlain(line),
+    esiNumber: line.esiNumber || String(master?.esi || ''),
+    otherAllowance: line.otherAllowance || parseMoney(master?.otherAllowance),
+  };
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    await dbConnect();
+    const operatorEmail = await getHrOperatorEmailFromRequest(request);
+    if (!operatorEmail) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+    const permDoc = await loadHrConsolePermissionDoc(operatorEmail);
+    const effective = effectiveFromDoc(operatorEmail, permDoc);
+    const denied = assertHrSection(effective, 'salaryPayroll', 'view');
+    if (denied) return denied;
+
+    const params = new URL(request.url).searchParams;
+    const monthYear = String(params.get('monthYear') || '').trim();
+    const employeeId = String(params.get('employeeId') || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(monthYear) || !employeeId) {
+      return NextResponse.json({ success: false, error: 'monthYear and employeeId are required' }, { status: 400 });
+    }
+
+    const doc = await PayrollMonth.findOne({ monthYear });
+    if (!doc) {
+      return NextResponse.json({ success: false, error: 'Generate payroll first' }, { status: 404 });
+    }
+
+    const line = doc.lines.find((l) => String(l.userId) === employeeId);
+    if (!line) {
+      return NextResponse.json({ success: false, error: 'Employee is not in this payroll' }, { status: 404 });
+    }
+
+    const master = await User.findById(employeeId).select('esi otherAllowance').lean();
+    const userById = new Map(master ? [[employeeId, master]] : []);
+    const hydrated = await payslipLineForEmployee(line, userById);
+    const pdf = buildPayslipPdf(hydrated, monthYear, doc.calendar);
+    const fileName = payslipFileName(hydrated, monthYear);
+
+    return new NextResponse(new Uint8Array(pdf), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="${fileName.replace(/"/g, '')}"`,
+      },
+    });
+  } catch (err) {
+    console.error('GET /api/payroll/payslip', err);
+    return NextResponse.json({ success: false, error: 'Failed to download payslip' }, { status: 500 });
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     await dbConnect();
@@ -61,12 +121,7 @@ export async function POST(request: NextRequest) {
         continue;
       }
       try {
-        const master = userById.get(String(line.userId));
-        const hydrated: IPayrollLine = {
-          ...payrollLinePlain(line),
-          esiNumber: line.esiNumber || String(master?.esi || ''),
-          otherAllowance: line.otherAllowance || parseMoney(master?.otherAllowance),
-        };
+        const hydrated = await payslipLineForEmployee(line, userById);
         const pdf = buildPayslipPdf(hydrated, monthYear, doc.calendar);
         const logo = payslipLogoAttachment();
         await transporter.sendMail({

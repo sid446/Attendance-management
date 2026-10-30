@@ -26,29 +26,51 @@ if (!global.mongoose) {
 }
 
 async function dbConnect(): Promise<typeof mongoose> {
-  if (cached.conn) {
-    return cached.conn;
+  if (!cached.conn) {
+    if (!cached.promise) {
+      const opts = {
+        bufferCommands: false,
+        family: 4,
+      };
+
+      cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
+        return mongoose;
+      });
+    }
+
+    try {
+      cached.conn = await cached.promise;
+    } catch (e) {
+      cached.promise = null;
+      throw e;
+    }
   }
 
-  if (!cached.promise) {
-    const opts = {
-      bufferCommands: false,
-      family: 4,
-    };
-
-    cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
-      return mongoose;
-    });
-  }
-
-  try {
-    cached.conn = await cached.promise;
-  } catch (e) {
-    cached.promise = null;
-    throw e;
-  }
-
+  await refreshAttendanceCalcPolicies();
   return cached.conn;
+}
+
+const POLICY_TTL_MS = 5_000;
+let policyLoadedAt = 0;
+let policyLoad: Promise<void> | null = null;
+
+async function refreshAttendanceCalcPolicies(): Promise<void> {
+  const now = Date.now();
+  if (now - policyLoadedAt < POLICY_TTL_MS) return;
+  if (!policyLoad) {
+    policyLoad = import('@/lib/attendanceCalcPolicyDb')
+      .then((mod) => mod.loadAttendanceCalcPolicies())
+      .then(() => {
+        policyLoadedAt = Date.now();
+      })
+      .catch((error) => {
+        console.error('Attendance calc policy load failed:', error);
+      })
+      .finally(() => {
+        policyLoad = null;
+      });
+  }
+  await policyLoad;
 }
 
 export default dbConnect;

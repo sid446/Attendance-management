@@ -162,14 +162,24 @@ export function sumExtraWorkEntryHours(
 }
 
 /**
- * After punch-based recalc overwrites totalHour/excessHour, restore approved extra work.
+ * After punch-based recalc overwrites totalHour, restore approved extra work on the
+ * worked-hours total. Excess already includes those hours via calculateDayExcessHour.
  * Safe to call when extraWorkEntries is empty or missing.
  */
 export function reapplyExtraWorkEntriesToRecord(rec: ExtraWorkRecordTarget): number {
   const extraHours = sumExtraWorkEntryHours(rec.extraWorkEntries);
   if (extraHours <= 0) return 0;
-  rec.totalHour = Number(((Number(rec.totalHour) || 0) + extraHours).toFixed(2));
-  rec.excessHour = Number(((Number(rec.excessHour) || 0) + extraHours).toFixed(2));
+  const { inTime, outTime } = getRecordPunchTimeRange(rec);
+  const punch = calculateTotalHours(inTime, outTime);
+  // Punch days: replace, do not add. totalHour often already contains this extra hour.
+  if (punch > 0) {
+    rec.totalHour = Number((punch + extraHours).toFixed(2));
+    return extraHours;
+  }
+  const current = Number(rec.totalHour) || 0;
+  if (current <= 0) {
+    rec.totalHour = extraHours;
+  }
   return extraHours;
 }
 
@@ -211,19 +221,13 @@ export type ExtraWorkRecordTarget = {
   totalHour?: number;
   excessHour?: number;
   extraWorkEntries?: ExtraWorkEntry[];
+  editedCheckin?: string;
+  checkin?: string;
+  inTime?: string;
+  editedCheckout?: string;
+  checkout?: string;
+  outTime?: string;
 };
-
-export function applyExtraWorkToRecord(
-  rec: ExtraWorkRecordTarget,
-  params: {
-    startTime: string;
-    endTime: string;
-    reason?: string;
-    requestId?: string;
-  }
-): number {
-  return applyExtraWorkSlotsToRecord(rec, [params], params.requestId);
-}
 
 /** True when this request's slots are already stored on the day record. */
 export function extraWorkRequestAppliedToRecord(
@@ -257,7 +261,6 @@ export function applyExtraWorkSlotsToRecord(
   const entries = Array.isArray(rec.extraWorkEntries) ? [...rec.extraWorkEntries] : [];
 
   for (const slot of validation.slots) {
-    rec.totalHour = Number(((Number(rec.totalHour) || 0) + slot.hours).toFixed(2));
     rec.excessHour = Number(((Number(rec.excessHour) || 0) + slot.hours).toFixed(2));
     added += slot.hours;
     entries.push({
@@ -271,6 +274,7 @@ export function applyExtraWorkSlotsToRecord(
   }
 
   rec.extraWorkEntries = entries;
+  reapplyExtraWorkEntriesToRecord(rec);
   return Number(added.toFixed(2));
 }
 
@@ -332,13 +336,12 @@ export function getRecordPunchHours(rec: {
   outTime?: string;
   extraWorkEntries?: Array<{ hours?: number; startTime?: string; endTime?: string }> | null;
 } | null | undefined): number {
-  const total = Number(rec?.totalHour || 0);
-  const extra = sumExtraWorkEntryHours(rec?.extraWorkEntries);
-  const fromTotal = Number(Math.max(0, total - extra).toFixed(2));
-  if (fromTotal > 0) return fromTotal;
-
-  // When totalHour was wiped to 0 but punches exist (common for CP-P), derive from times.
   const { inTime, outTime } = getRecordPunchTimeRange(rec);
   const fromTimes = calculateTotalHours(inTime, outTime);
-  return Number(Math.max(0, fromTimes).toFixed(2));
+  if (fromTimes > 0) return fromTimes;
+
+  // No usable punches: totalHour may already include approved extra work.
+  const total = Number(rec?.totalHour || 0);
+  const extra = sumExtraWorkEntryHours(rec?.extraWorkEntries);
+  return Number(Math.max(0, total - extra).toFixed(2));
 }

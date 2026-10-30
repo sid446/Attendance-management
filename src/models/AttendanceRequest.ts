@@ -35,6 +35,28 @@ export const TYPE_OF_PRESENCE_ENUM = [
 
 export type TypeOfPresence = (typeof TYPE_OF_PRESENCE_ENUM)[number];
 
+/**
+ * Attendance days sometimes store a bare "Present". Requests only accept the
+ * detailed labels, so map that to in-office weekday or weekoff.
+ */
+export function normalizeRequestPresenceStatus(
+  typeOfPresence: unknown,
+  isWeekoff = false
+): TypeOfPresence {
+  const raw = String(typeOfPresence || '').trim();
+  if ((TYPE_OF_PRESENCE_ENUM as readonly string[]).includes(raw)) {
+    return raw as TypeOfPresence;
+  }
+  const lower = raw.toLowerCase();
+  if (lower === 'present' || lower === 'p') {
+    return isWeekoff ? 'Present - in office - weekoff' : 'Present - in office - weekdays';
+  }
+  if (lower === 'sunday' || lower === 'weekoff' || lower === 'week off') {
+    return 'Holiday';
+  }
+  return 'ThumbMachine';
+}
+
 export interface IAttendanceRequest extends Document {
   userId: mongoose.Types.ObjectId;
   userName: string;

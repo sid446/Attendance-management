@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
-import AttendanceRequest from '@/models/AttendanceRequest';
+import AttendanceRequest, { normalizeRequestPresenceStatus } from '@/models/AttendanceRequest';
 import Attendance from '@/models/Attendance';
 import User from '@/models/User';
 import {
@@ -20,6 +20,8 @@ import {
   type ExtraWorkSlotInput,
 } from '@/lib/extraWorkRequest';
 import { resolveRequestRoutingForDate } from '@/lib/attendanceRequestNotifications';
+import { getScheduledTimes } from '@/lib/scheduleUtils';
+import { isSundayDate } from '@/lib/attendanceSummaryMetrics';
 
 export async function POST(request: NextRequest) {
   try {
@@ -167,7 +169,8 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const originalStatus = String(rec.typeOfPresence || 'ThumbMachine');
+    const isWeekoff = isSundayDate(date) || getScheduledTimes(user, date).isHoliday;
+    const originalStatus = normalizeRequestPresenceStatus(rec.typeOfPresence, isWeekoff);
 
     const newRequest = await AttendanceRequest.create({
       userId: user._id,

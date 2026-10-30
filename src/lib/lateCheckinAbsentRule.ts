@@ -1,4 +1,6 @@
+import { policyForDate, type AttendanceCalcPolicy } from '@/lib/attendanceCalcPolicy';
 import { isNonWorkingDayRecord } from '@/lib/calculateDayExcessHour';
+import { usesArticleCalculationRules } from '@/lib/isArticleEmployee';
 import { normalizeTimeToHHmm } from '@/lib/attendanceHours';
 import {
   getEmploymentTypeForDate,
@@ -6,15 +8,8 @@ import {
 } from '@/lib/attendanceSummaryMetrics';
 import type { IUser } from '@/models/User';
 
-/** Check-in from 1:00 PM up to (but not including) 3:00 PM → half day (non-halftime). */
-export const LATE_CHECKIN_HALFDAY_START = '13:00';
-
-/** Check-in at or after this time (HH:MM, 24h) marks the day absent (non-halftime employees). */
-export const LATE_CHECKIN_ABSENT_THRESHOLD = '15:00';
-
 const LATE_CHECKIN_ABSENT_REMARK = 'Marked absent: check-in at or after 3:00 PM';
-export const LATE_CHECKIN_HALFDAY_REMARK =
-  'Marked half day: check-in between 1:00 PM and 2:59 PM';
+const LATE_CHECKIN_HALFDAY_REMARK = 'Marked half day: check-in between 1:00 PM and 2:59 PM';
 
 export type LateCheckinAbsentRecord = {
   checkin?: string;
@@ -62,16 +57,29 @@ function isLateCheckinRuleEligible(
     employmentType?: string;
     typeOfPresence?: string;
     dateStr?: string;
+    policy?: AttendanceCalcPolicy | null;
   }
 ): boolean {
   if (!inTime || inTime === '00:00') return false;
-  if (isHalftimeEmploymentType(options.employmentType)) return false;
+  const rules = latePolicy(options.dateStr, options.policy);
+  if (isHalftimeEmploymentType(options.employmentType) && !rules.lateRulesForHalftime) return false;
 
   const type = String(options.typeOfPresence || '');
   if (options.dateStr && isNonWorkingDayRecord(type, options.dateStr)) return false;
   if (isExemptPresenceType(type)) return false;
 
   return true;
+}
+
+function latePolicy(dateStr?: string, policy?: AttendanceCalcPolicy | null): AttendanceCalcPolicy {
+  return policy ?? policyForDate(dateStr);
+}
+
+function lateWindow(rules: AttendanceCalcPolicy, isArticle?: boolean): { start: string; absent: string } {
+  if (isArticle && rules.separateArticleLateWindow) {
+    return { start: rules.articleLateCheckinHalfDayStart, absent: rules.articleLateCheckinAbsentFrom };
+  }
+  return { start: rules.lateCheckinHalfDayStart, absent: rules.lateCheckinAbsentFrom };
 }
 
 export function shouldMarkHalfDayForLateCheckin(
@@ -81,12 +89,17 @@ export function shouldMarkHalfDayForLateCheckin(
     typeOfPresence?: string;
     dateStr?: string;
     outTime?: string;
+    policy?: AttendanceCalcPolicy | null;
+    isArticle?: boolean;
   }
 ): boolean {
+  const rules = latePolicy(options.dateStr, options.policy);
+  if (!rules.lateHalfDayEnabled) return false;
   if (!isLateCheckinRuleEligible(inTime, options)) return false;
   const out = normalizeTimeToHHmm(options.outTime || '');
   if (out && out !== '00:00' && out === inTime) return false;
-  return inTime >= LATE_CHECKIN_HALFDAY_START && inTime < LATE_CHECKIN_ABSENT_THRESHOLD;
+  const window = lateWindow(rules, options.isArticle);
+  return inTime >= window.start && inTime < window.absent;
 }
 
 export function shouldMarkAbsentForLateCheckin(
@@ -97,10 +110,15 @@ export function shouldMarkAbsentForLateCheckin(
     dateStr?: string;
     /** When in and out are the same punch, this is exit/entry-only — not a late arrival. */
     outTime?: string;
+    policy?: AttendanceCalcPolicy | null;
+    isArticle?: boolean;
   }
 ): boolean {
   if (!inTime || inTime === '00:00') return false;
-  if (inTime < LATE_CHECKIN_ABSENT_THRESHOLD) return false;
+  const rules = latePolicy(options.dateStr, options.policy);
+  if (!rules.lateAbsentEnabled) return false;
+  const window = lateWindow(rules, options.isArticle);
+  if (inTime < window.absent) return false;
   const out = normalizeTimeToHHmm(options.outTime || '');
   if (out && out !== '00:00' && out === inTime) return false;
   return isLateCheckinRuleEligible(inTime, options);
@@ -145,10 +163,12 @@ function normalizeHalfDayPresenceType(
 export function applyLateCheckinHalfDayRule(
   record: LateCheckinAbsentRecord,
   user: IUser | null | undefined,
-  dateStr: string
+  dateStr: string,
+  policy?: AttendanceCalcPolicy | null
 ): boolean {
   const inTime = getEffectiveCheckinTime(record);
   const employmentType = resolveEmploymentType(user, dateStr);
+  const rules = policy ?? policyForDate(dateStr);
 
   if (
     !shouldMarkHalfDayForLateCheckin(inTime, {
@@ -156,6 +176,8 @@ export function applyLateCheckinHalfDayRule(
       typeOfPresence: record.typeOfPresence,
       dateStr,
       outTime: record.editedCheckout ?? record.checkout,
+      policy: rules,
+      isArticle: usesArticleCalculationRules(user, rules),
     })
   ) {
     return false;
@@ -183,10 +205,12 @@ export function applyLateCheckinHalfDayRule(
 export function applyLateCheckinAbsentRule(
   record: LateCheckinAbsentRecord,
   user: IUser | null | undefined,
-  dateStr: string
+  dateStr: string,
+  policy?: AttendanceCalcPolicy | null
 ): boolean {
   const inTime = getEffectiveCheckinTime(record);
   const employmentType = resolveEmploymentType(user, dateStr);
+  const rules = policy ?? policyForDate(dateStr);
 
   if (
     !shouldMarkAbsentForLateCheckin(inTime, {
@@ -194,6 +218,8 @@ export function applyLateCheckinAbsentRule(
       typeOfPresence: record.typeOfPresence,
       dateStr,
       outTime: record.editedCheckout ?? record.checkout,
+      policy: rules,
+      isArticle: usesArticleCalculationRules(user, rules),
     })
   ) {
     return false;

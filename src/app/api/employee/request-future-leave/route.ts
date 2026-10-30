@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Attendance from '@/models/Attendance';
-import AttendanceRequest, { TYPE_OF_PRESENCE_ENUM } from '@/models/AttendanceRequest';
+import AttendanceRequest, { normalizeRequestPresenceStatus } from '@/models/AttendanceRequest';
 import User from '@/models/User';
 import {
   isDateWithinRequestWindow,
@@ -202,13 +202,12 @@ export async function POST(request: NextRequest) {
             }
         }
         
-        let originalStatus = 'Absent';
         const attendanceDoc = await Attendance.findOne({ userId: user._id, monthYear });
         const dayRecord = attendanceDoc?.records?.get?.(dateStr) ?? (attendanceDoc?.records as any)?.[dateStr];
         const recordType = dayRecord?.typeOfPresence ? String(dayRecord.typeOfPresence) : '';
-        if (recordType && (TYPE_OF_PRESENCE_ENUM as readonly string[]).includes(recordType)) {
-          originalStatus = recordType;
-        }
+        const originalStatus = recordType
+          ? normalizeRequestPresenceStatus(recordType, false)
+          : 'Absent';
 
         const newRequest = new AttendanceRequest({
             userId: user._id,
