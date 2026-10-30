@@ -34,11 +34,11 @@ const decisionCache = new Map<string, { ok: boolean; reason: string; expires: nu
 
 let patched = false;
 
-function previewModel(dbName: string, model: mongoose.Model<unknown>) {
+function previewModel(dbName: string, model: mongoose.Model<unknown>): mongoose.Model<unknown> {
   const conn = mongoose.connection.useDb(dbName, { useCache: true });
   const existing = conn.models[model.modelName];
   if (existing) return existing;
-  return conn.model(model.modelName, model.schema, model.collection.collectionName);
+  return conn.model(model.modelName, model.schema, model.collection.collectionName) as unknown as mongoose.Model<unknown>;
 }
 
 async function authorizedPreviewDb(): Promise<string | null> {
