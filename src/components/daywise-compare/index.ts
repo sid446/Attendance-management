@@ -1,0 +1,1 @@
+export { DaywiseCompareSection } from './DaywiseCompareSection';

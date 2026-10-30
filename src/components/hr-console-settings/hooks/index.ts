@@ -1,0 +1,1 @@
+export { useHrConsoleSettingsSectionLogic } from './useHrConsoleSettingsSectionLogic';

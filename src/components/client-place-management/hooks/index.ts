@@ -1,0 +1,1 @@
+export { useClientPlaceManagementLogic } from './useClientPlaceManagementLogic';

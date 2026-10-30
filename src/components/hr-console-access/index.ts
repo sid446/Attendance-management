@@ -1,0 +1,1 @@
+export { HrConsoleAccessSection } from './HrConsoleAccessSection';

@@ -1,0 +1,1 @@
+export { useArticleCreditsManagerLogic } from './useArticleCreditsManagerLogic';

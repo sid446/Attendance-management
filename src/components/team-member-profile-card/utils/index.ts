@@ -1,0 +1,3 @@
+export {
+  initials,
+} from './teamMemberProfileCardUtils';

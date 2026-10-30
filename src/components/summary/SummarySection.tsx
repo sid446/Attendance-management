@@ -2,9 +2,10 @@
 
 import React from 'react';
 import { BarChart3, ChevronDown, ChevronUp, Eye, Maximize2, Minimize2 } from 'lucide-react';
-import { BulkLeaveManager } from '../BulkLeaveManager';
+import { BulkLeaveManager } from '../bulk-leave-manager';
 import { formatHoursMinutes } from '@/lib/attendanceSummaryMetrics';
 import { SUMMARY_TABLE_CHUNK } from './constants';
+import { holidayDateSet, isSummaryOffDay } from './utils/summaryDateUtils';
 import { useSummarySectionLogic } from './hooks/useSummarySectionLogic';
 import {
   SummaryHeader,
@@ -230,35 +231,17 @@ export const SummarySection: React.FC<SummarySectionProps> = (props) => {
                     </td>
                     <td className="px-4 py-2.5 text-left text-sm text-slate-500">{item.team || ''}</td>
                     <td className="px-4 py-2.5 text-left text-sm text-slate-500">{item.designation || ''}</td>
-                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-500">{Object.keys(item.recordDetails || {}).length}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-500">{s.periodDates.length}</td>
                     <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-500">
-                        {(() => {
-                          // Count s.holidays: Sundays + dates in holiday database
-                          const records = item.recordDetails || {};
-                          const holidayDates = new Set(s.holidays.map(h => h.date));
-                          let holidayCount = 0;
-                          Object.keys(records).forEach((dateStr) => {
-                            const d = new Date(dateStr);
-                            if (d.getDay() === 0) {
-                              // Sunday
-                              holidayCount++;
-                            } else if (holidayDates.has(dateStr)) {
-                              // Holiday from database
-                              holidayCount++;
-                            }
-                          });
-                          return holidayCount;
-                        })()}
+                        {s.periodDates.filter((dateStr) => isSummaryOffDay(dateStr, holidayDateSet(s.holidays))).length}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono text-sm tabular-nums text-slate-500 cursor-pointer hover:bg-sky-100/55" onClick={(e) => s.openDetail(e, 'WorkingDays', item)}>
                         {(() => {
-                          // Count working days: exclude s.holidays (from DB), Sundays, and weekoff types
                           const records = item.recordDetails || {};
-                          const holidayDates = new Set(s.holidays.map(h => h.date));
+                          const holidayDates = holidayDateSet(s.holidays);
                           const workingDays = Object.entries(records).filter(([dateStr, rec]: [string, any]) => {
-                            const d = new Date(dateStr);
-                            if (d.getDay() === 0) return false; // Exclude Sundays
-                            if (holidayDates.has(dateStr)) return false; // Exclude s.holidays from DB
+                            if (!s.periodDates.includes(dateStr)) return false;
+                            if (isSummaryOffDay(dateStr, holidayDates)) return false;
                             if (typeof rec.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff')) return false;
                             return true;
                           }).length;

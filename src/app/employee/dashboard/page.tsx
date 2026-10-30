@@ -2,26 +2,26 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isHolidayDate } from '@/lib/holidaysClient';
 import { useRouter } from 'next/navigation';
-import { EmployeeMonthView } from '@/components/EmployeeMonthView';
+import { EmployeeMonthView } from '@/components/employee-month-view';
 import { AttendanceRecord, AttendanceSummaryView, User } from '@/types/ui';
 import type { EmployeeAttendanceRequest } from '@/types/employeeAttendanceRequest';
 import { employeeCredentialsInit } from '@/lib/employeeCredentialsInit';
-import { TeamMemberProfileCard } from '@/components/TeamMemberProfileCard';
-import { LocationAttendanceSection } from '@/components/LocationAttendanceSection';
-import { EmployeeDashboardOverview } from '@/components/EmployeeDashboardOverview';
-import { EmployeeSummaryMonthPicker } from '@/components/EmployeeSummaryMonthPicker';
-import { TeamAttendanceSkeleton } from '@/components/TeamAttendanceSkeleton';
-import { TeamFineSection } from '@/components/TeamFineSection';
-import { EmployeeFineSection } from '@/components/EmployeeFineSection';
+import { TeamMemberProfileCard } from '@/components/team-member-profile-card';
+import { LocationAttendanceSection } from '@/components/location-attendance';
+import { EmployeeDashboardOverview } from '@/components/employee-dashboard-overview';
+import { EmployeeSummaryMonthPicker } from '@/components/employee-summary-month-picker';
+import { TeamAttendanceSkeleton } from '@/components/team-attendance-skeleton';
+import { TeamFineSection } from '@/components/team-fine';
+import { EmployeeFineSection } from '@/components/employee-fine';
 import {
   PartnerTeamOverview,
   type PartnerTeamRow,
-} from '@/components/PartnerTeamOverview';
-import { ManageAttendanceApproverSection } from '@/components/ManageAttendanceApproverSection';
-import { ManageExcessHourAllowanceSection } from '@/components/ManageExcessHourAllowanceSection';
-import { TeamDailyUpdatesSection } from '@/components/TeamDailyUpdatesSection';
-import { TeamAttendanceRequestsSection } from '@/components/TeamAttendanceRequestsSection';
-import { SummarySection } from '@/components/SummarySection';
+} from '@/components/partner-team-overview';
+import { ManageAttendanceApproverSection } from '@/components/manage-attendance-approver';
+import { ManageExcessHourAllowanceSection } from '@/components/manage-excess-hour-allowance';
+import { TeamDailyUpdatesSection } from '@/components/team-daily-updates';
+import { TeamAttendanceRequestsSection } from '@/components/team-attendance-requests';
+import { SummarySection } from '@/components/summary';
 import {
   computeSummaryAlignedMetrics,
   getDailyWorkedHoursSeries,

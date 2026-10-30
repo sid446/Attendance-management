@@ -1,0 +1,1 @@
+export { useHrConsoleAccessSectionLogic } from './useHrConsoleAccessSectionLogic';

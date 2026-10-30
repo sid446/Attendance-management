@@ -17,7 +17,7 @@ import {
   sumExtraWorkEntryHours,
 } from '@/lib/extraWorkRequest';
 import { getDesignationForDate } from '@/lib/userFieldHistory';
-import { sortRecordDetailsEntries } from '../utils/summaryDateUtils';
+import { holidayDateSet, isSummaryOffDay, sortRecordDetailsEntries, summaryPeriodDates } from '../utils/summaryDateUtils';
 import type { SummaryExportContext } from './exportTypes';
 import { decimalHoursToExcelDuration, EXCEL_DURATION_NUM_FMT } from './exportExcelDuration';
 import { downloadWorkbook } from './downloadWorkbook';
@@ -196,25 +196,31 @@ export async function exportSummaryAttendance(ctx: SummaryExportContext): Promis
         designation: designationAtPeriod || '-',
         joiningDate: formatExportDate(user?.joiningDate),
         dateOfLeave: formatExportDate(user?.inactiveAsOf),
-        totalDays: periodDateList.length,
+        totalDays: summaryPeriodDates({
+          filterType,
+          selectedYear,
+          selectedMonth,
+          currentWeekStart,
+          rangeStart,
+          rangeEnd,
+        }).length,
         holidays: (() => {
-          const holidayDatesSet = new Set(holidays.map(h => h.date));
-          let holidayCount = 0;
-          periodDateList.forEach((dateStr) => {
-            const d = new Date(dateStr);
-            if (d.getDay() === 0) holidayCount++;
-            else if (holidayDatesSet.has(dateStr)) holidayCount++;
-          });
-          return holidayCount;
+          const offDays = holidayDateSet(holidays);
+          return summaryPeriodDates({
+            filterType,
+            selectedYear,
+            selectedMonth,
+            currentWeekStart,
+            rangeStart,
+            rangeEnd,
+          }).filter((dateStr) => isSummaryOffDay(dateStr, offDays)).length;
         })(),
         workingDays: (() => {
           const records = item.recordDetails || {};
-          const holidayDatesSet = new Set(holidays.map(h => h.date));
+          const offDays = holidayDateSet(holidays);
           return periodDateList.filter((dateStr) => {
             const rec = records[dateStr] as { typeOfPresence?: string } | undefined;
-            const d = new Date(dateStr);
-            if (d.getDay() === 0) return false;
-            if (holidayDatesSet.has(dateStr)) return false;
+            if (isSummaryOffDay(dateStr, offDays)) return false;
             if (typeof rec?.typeOfPresence === 'string' && rec.typeOfPresence.toLowerCase().includes('weekoff')) return false;
             return true;
           }).length;

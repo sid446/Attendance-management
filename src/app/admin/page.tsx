@@ -10,32 +10,32 @@ import {
   getWorkedHoursMatchingScheduledDays,
 } from '@/lib/attendanceSummaryMetrics';
 import { isDateOnOrAfterInactive } from '@/lib/attendanceInactiveFilter';
-import { LoginView } from '@/components/LoginView';
-import { Sidebar } from '@/components/Sidebar';
-import { ArticleCreditsManager } from '@/components/ArticleCreditsManager';
-import { UploadSection } from '@/components/UploadSection';
-import { SummarySection } from '@/components/SummarySection';
-import { EmployeeMonthView } from '@/components/EmployeeMonthView';
+import { LoginView } from '@/components/login-view';
+import { Sidebar } from '@/components/sidebar';
+import { ArticleCreditsManager } from '@/components/article-credits-manager';
+import { UploadSection } from '@/components/upload';
+import { SummarySection } from '@/components/summary';
+import { EmployeeMonthView } from '@/components/employee-month-view';
 import {
   attendanceRecordReflectsApprovedRequest,
   buildDisplayRecordFromApprovedRequest,
   shouldOverlayApprovedRequestOnAttendance,
 } from '@/lib/attendanceRequestDayDisplay';
-import { EmployeeManagementSection } from '@/components/EmployeeManagementSection';
-import { EmployeeMasterUploadSection } from '@/components/EmployeeMasterUploadSection';
-import { TeamAttendanceAccessSection } from '@/components/TeamAttendanceAccessSection';
-import { AttendanceRequestsSection } from '@/components/AttendanceRequestsSection';
-import { HolidayManagement } from '@/components/HolidayManagement';
-import { BackupManagementSection } from '@/components/BackupManagementSection';
-import { LeaveManagementSection } from '@/components/LeaveManagementSection';
-import { FineManagementSection } from '@/components/FineManagementSection';
-import { SalarySection } from '@/components/SalarySection';
-import { InvalidAttendanceSection } from '@/components/InvalidAttendanceSection';
-import { EmployeeMisExceptionsSection } from '@/components/EmployeeMisExceptionsSection';
-import { DaywiseCompareSection } from '@/components/DaywiseCompareSection';
-import { ClientPlaceManagement } from '@/components/ClientPlaceManagement';
-import { HrConsoleAccessSection } from '@/components/HrConsoleAccessSection';
-import { HrConsoleSettingsSection } from '@/components/HrConsoleSettingsSection';
+import { EmployeeManagementSection } from '@/components/employee-management';
+import { EmployeeMasterUploadSection } from '@/components/employee-master-upload';
+import { TeamAttendanceAccessSection } from '@/components/team-attendance-access';
+import { AttendanceRequestsSection } from '@/components/attendance-requests';
+import { HolidayManagement } from '@/components/holiday-management';
+import { BackupManagementSection } from '@/components/backup-management';
+import { LeaveManagementSection } from '@/components/leave-management';
+import { FineManagementSection } from '@/components/fine-management';
+import { SalarySection } from '@/components/salary';
+import { InvalidAttendanceSection } from '@/components/invalid-attendance';
+import { EmployeeMisExceptionsSection } from '@/components/employee-mis-exceptions';
+import { DaywiseCompareSection } from '@/components/daywise-compare';
+import { ClientPlaceManagement } from '@/components/client-place-management';
+import { HrConsoleAccessSection } from '@/components/hr-console-access';
+import { HrConsoleSettingsSection } from '@/components/hr-console-settings';
 import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
 import { BACKUP_PREVIEW_HEADER, PREVIEW_DB_NAME } from '@/lib/backupPreviewHeader';
 import { HR_OTP_TTL_MS } from '@/lib/hrOtpConstants';

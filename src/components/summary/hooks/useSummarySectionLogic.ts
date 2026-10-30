@@ -34,7 +34,7 @@ import {
   getWorkingUnderPartnerForSummary,
 } from '@/lib/userFieldHistory';
 import { SUMMARY_TABLE_CHUNK } from '../constants';
-import { formatIsoKeyAsDdMmYyyy, sortRecordDetailsEntries } from '../utils/summaryDateUtils';
+import { formatIsoKeyAsDdMmYyyy, sortRecordDetailsEntries, summaryPeriodDates } from '../utils/summaryDateUtils';
 import {
   exportDetailedAttendance,
   exportSummaryAttendance,
@@ -42,6 +42,7 @@ import {
 } from '../exports';
 import type { SummaryExportContext } from '../exports/exportTypes';
 import type { EnrichedSummary, SummarySectionProps } from '../types';
+import { loadAttendanceCalcPoliciesForClient } from '@/lib/attendanceCalcPolicy';
 import {
   applyExcessHourAllowance,
   lookupExcessAllowance,
@@ -70,6 +71,17 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
   } = props;
 
   const currentDate = new Date();
+  const [calcPolicyTick, setCalcPolicyTick] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadAttendanceCalcPoliciesForClient().finally(() => {
+      if (!cancelled) setCalcPolicyTick((tick) => tick + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Create a persistent cache for getScheduledTimes bound to the current allUsers
   const scheduleCacheRef = useRef<Map<string, ReturnType<typeof getScheduledTimes>>>(new Map());
@@ -1106,40 +1118,15 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
            searchTerm !== '';
   };
 
-  const getExcessDateListForCurrentPeriod = () => {
-    const dateList: string[] = [];
-
-    if (filterType === 'week' && currentWeekStart) {
-      const weekStartDate = new Date(currentWeekStart);
-      for (let i = 0; i < 7; i++) {
-        const d = new Date(weekStartDate);
-        d.setDate(weekStartDate.getDate() + i);
-        if (d.getMonth() === (selectedMonth - 1) && d.getFullYear() === selectedYear) {
-          dateList.push(d.toISOString().split('T')[0]);
-        }
-      }
-      return dateList;
-    }
-
-    if (filterType === 'range' && rangeStart && rangeEnd) {
-      const start = new Date(rangeStart);
-      const end = new Date(rangeEnd);
-      const d = new Date(start);
-      while (d <= end) {
-        dateList.push(d.toISOString().split('T')[0]);
-        d.setDate(d.getDate() + 1);
-      }
-      return dateList;
-    }
-
-    // Month view: only selected month dates.
-    const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
-    for (let day = 1; day <= daysInMonth; day++) {
-      dateList.push(`${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
-    }
-
-    return dateList;
-  };
+  const getExcessDateListForCurrentPeriod = () =>
+    summaryPeriodDates({
+      filterType,
+      selectedYear,
+      selectedMonth,
+      currentWeekStart,
+      rangeStart,
+      rangeEnd,
+    });
 
   const getScheduledResultForItem = (item: AttendanceSummaryView) => {
     const user = allUsers?.find(u => u._id === item.userId || u.odId === item.userId);
@@ -1648,7 +1635,7 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
       ...item,
       rank: index + 1
     }));
-  }, [summaries, searchTerm, selectedYear, selectedMonth, teamFilter, designationFilter, lateFilter, presentFilter, absentFilter, leaveFilter, halfDayFilter, workHoursFilter, excessFilter, sortField, sortDirection, holidays, allUsers, filterType, currentWeekStart, rangeStart, rangeEnd, resolveWorkPartnerForItem, resolveDesignationForItem, excessAllowanceMap, excessDisplayMap, excessDayAllowanceMap]);
+  }, [summaries, searchTerm, selectedYear, selectedMonth, teamFilter, designationFilter, lateFilter, presentFilter, absentFilter, leaveFilter, halfDayFilter, workHoursFilter, excessFilter, sortField, sortDirection, holidays, allUsers, filterType, currentWeekStart, rangeStart, rangeEnd, resolveWorkPartnerForItem, resolveDesignationForItem, excessAllowanceMap, excessDisplayMap, excessDayAllowanceMap, calcPolicyTick]);
 
   /** Render the table in chunks; stats and exports still use full `filteredSummaries`. */
   const [tableVisibleCount, setTableVisibleCount] = useState(SUMMARY_TABLE_CHUNK);
@@ -1836,6 +1823,8 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
     onFilterChange(currentMonthYear);
   };
 
+  const periodDates = getExcessDateListForCurrentPeriod();
+
   const currentPeriodLabel = filterType === 'month' ? new Date(selectedYear, selectedMonth - 1).toLocaleString('default', { month: 'long', year: 'numeric' }) : 
     filterType === 'week' ? (() => {
       // Clamp weekStart and weekEnd to selected month boundaries
@@ -1875,7 +1864,7 @@ export function useSummarySectionLogic(props: SummarySectionProps) {
     absentFilter, setAbsentFilter, leaveFilter, setLeaveFilter,
     halfDayFilter, setHalfDayFilter, workHoursFilter, setWorkHoursFilter,
     excessFilter, setExcessFilter, clearAllFilters,
-    currentPeriodLabel, onEmployeeClick, onEmployeeDetailClick,
+    currentPeriodLabel, periodDates, onEmployeeClick, onEmployeeDetailClick,
     handleSelectEmployee,
 
   };

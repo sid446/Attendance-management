@@ -43,6 +43,81 @@ export function sortRecordDetailsEntries<T>(
   });
 }
 
+/** `YYYY-MM-DD` from a date-only string or a local calendar Date. */
+export function isoDateKey(value: string | Date | null | undefined): string {
+  if (value == null) return '';
+  if (typeof value === 'string') {
+    const match = value.trim().match(/^(\d{4}-\d{2}-\d{2})/);
+    if (match) return match[1];
+  }
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+export function enumerateIsoDates(startIso: string, endIso: string): string[] {
+  const startKey = isoDateKey(startIso);
+  const endKey = isoDateKey(endIso);
+  if (!startKey || !endKey || startKey > endKey) return [];
+  const dates: string[] = [];
+  const cursor = calendarDateFromIsoKey(startKey);
+  const end = calendarDateFromIsoKey(endKey);
+  while (cursor <= end) {
+    dates.push(isoDateKey(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return dates;
+}
+
+export function summaryPeriodDates(input: {
+  filterType: 'month' | 'range' | 'week';
+  selectedYear: number;
+  selectedMonth: number;
+  currentWeekStart?: string;
+  rangeStart?: string;
+  rangeEnd?: string;
+}): string[] {
+  if (input.filterType === 'range' && input.rangeStart && input.rangeEnd) {
+    return enumerateIsoDates(input.rangeStart, input.rangeEnd);
+  }
+  if (input.filterType === 'week' && input.currentWeekStart) {
+    const weekStartDate = calendarDateFromIsoKey(isoDateKey(input.currentWeekStart));
+    const dates: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const day = new Date(weekStartDate);
+      day.setDate(weekStartDate.getDate() + i);
+      if (day.getMonth() === input.selectedMonth - 1 && day.getFullYear() === input.selectedYear) {
+        dates.push(isoDateKey(day));
+      }
+    }
+    return dates;
+  }
+  const daysInMonth = new Date(input.selectedYear, input.selectedMonth, 0).getDate();
+  const month = String(input.selectedMonth).padStart(2, '0');
+  return Array.from({ length: daysInMonth }, (_, index) => {
+    return `${input.selectedYear}-${month}-${String(index + 1).padStart(2, '0')}`;
+  });
+}
+
+/** Sunday or a company holiday. Worked days stay in this count. */
+export function isSummaryOffDay(dateStr: string, holidayDates: Set<string>): boolean {
+  const key = isoDateKey(dateStr);
+  if (!key) return false;
+  if (holidayDates.has(key)) return true;
+  return calendarDateFromIsoKey(key).getDay() === 0;
+}
+
+export function holidayDateSet(holidays: { date: string }[] | undefined): Set<string> {
+  const keys = new Set<string>();
+  for (const holiday of holidays || []) {
+    const key = isoDateKey(holiday.date);
+    if (key) keys.add(key);
+  }
+  return keys;
+}
+
 /** Calendar day from attendance key `YYYY-MM-DD` without UTC drift. */
 export function calendarDateFromIsoKey(iso: string): Date {
   const parts = String(iso || '')

@@ -27,10 +27,6 @@ This system allows you to define and manage different attendance machine formats
 }
 ```
 
-### Via Database Seeding
-
-Add new formats to the `scripts/seed-machine-formats.ts` file and run the seeder.
-
 ## Processing Logic
 
 When a new machine format is added, you may need to:
@@ -56,6 +52,5 @@ const processNewMachineFile = async (): Promise<void> => {
 
 - `src/models/MachineFormat.ts` - Database model
 - `src/app/api/machine-formats/route.ts` - API endpoints
-- `scripts/seed-machine-formats.ts` - Database seeding script
-- `src/components/UploadSection.tsx` - UI component (loads formats dynamically)
+- `src/components/upload/UploadSection.tsx` - UI component (loads formats dynamically)
 - `src/app/page.tsx` - Main processing logic

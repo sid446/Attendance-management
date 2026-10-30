@@ -48,6 +48,10 @@ import {
 } from '@/lib/locationPunchAttendance';
 import { isClientPlaceWeekoffType, resolveDayWorkedHours, typeIncludesClientPlace } from '@/lib/resolveDayWorkedHours';
 import {
+  loadAttendanceCalcPoliciesForClient,
+  policyForDate,
+} from '@/lib/attendanceCalcPolicy';
+import {
   effectiveWfhAttendanceValue,
   formatPresenceCredit,
   resolvePresenceCredit,
@@ -84,6 +88,11 @@ export async function buildDaywiseWorkbook(
     if (summariesToExport.length === 0) return null;
 
     let presenceRules: PresenceCreditRuleLike[] = [];
+    try {
+      await loadAttendanceCalcPoliciesForClient();
+    } catch {
+      // Daywise keeps the original calculation numbers when the policy cannot be loaded.
+    }
     try {
       const rulesRes = await fetch('/api/hr-console-settings/presence-credit', hrCredentialsInit());
       const rulesJson = await rulesRes.json();
@@ -238,15 +247,6 @@ export async function buildDaywiseWorkbook(
       if (!s || String(s).trim() === '') return '';
       const n = Number(s);
       return Number.isFinite(n) ? round2(n) : s;
-    };
-
-    const formatSecondsToHMS = (seconds: number): string => {
-      const sign = seconds < 0 ? '-' : '';
-      const abs = Math.abs(seconds);
-      const h = Math.floor(abs / 3600);
-      const m = Math.floor((abs % 3600) / 60);
-      const s = abs % 60;
-      return `${sign}${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     };
 
     const daywiseBorderThin = {
@@ -457,46 +457,6 @@ export async function buildDaywiseWorkbook(
       };
     };
 
-    /** Scheduled in/out for absent deficit when day is excluded from Sched. total. */
-    const getDaywiseScheduleTimesForAbsentDeficit = (
-      user: User | undefined,
-      date: string,
-      record: any,
-      presentAbsent: string,
-      isHolidayDate: boolean
-    ) => {
-      if (!user || presentAbsent !== 'Absent') {
-        return { scheduledInTime: '', scheduledOutTime: '' };
-      }
-
-      const d = calendarDateFromIsoKey(date);
-      if (d.getDay() === 0 || isHolidayDate) {
-        return { scheduledInTime: '', scheduledOutTime: '' };
-      }
-
-      const type = String(record?.typeOfPresence || '').trim();
-      const typeLower = type.toLowerCase();
-      if (type === 'Holiday' || type === 'Sunday' || type === 'Weekoff' || typeLower.includes('weekoff')) {
-        return { scheduledInTime: '', scheduledOutTime: '' };
-      }
-
-      const schedule = getScheduledTimes(user, date);
-      if (
-        schedule.isHoliday ||
-        !schedule.inTime ||
-        !schedule.outTime ||
-        schedule.inTime === '00:00' ||
-        schedule.outTime === '00:00'
-      ) {
-        return { scheduledInTime: '', scheduledOutTime: '' };
-      }
-
-      return {
-        scheduledInTime: schedule.inTime,
-        scheduledOutTime: schedule.outTime,
-      };
-    };
-
     const buildDaywisePeriodDateList = (): string[] => {
       if (!daywiseIsoRange) return [];
       const dates: string[] = [];
@@ -697,6 +657,7 @@ export async function buildDaywiseWorkbook(
           date,
           record
         );
+        const monthExtraHrs = sumExtraWorkEntryHours(record.extraWorkEntries);
         if (isWfhOrOspPresence(record?.typeOfPresence || record?.status)) {
           const [inH, inM] = String(spentForMonth.scheduledInTime || '').split(':').map(Number);
           const [outH, outM] = String(spentForMonth.scheduledOutTime || '').split(':').map(Number);
@@ -705,12 +666,13 @@ export async function buildDaywiseWorkbook(
             if (diff < 0) diff += 24 * 60;
             if (diff > 0) workingHrsMonth += diff / 60;
           }
+          workingHrsMonth += Math.max(0, monthExtraHrs);
         } else if (actualIn && actualOut && actualIn !== '00:00' && actualOut !== '00:00') {
           const [inH, inM] = actualIn.split(':').map(Number);
           const [outH, outM] = actualOut.split(':').map(Number);
           let diff = (outH * 60 + outM) - (inH * 60 + inM);
           if (diff < 0) diff += 24 * 60;
-          workingHrsMonth += diff / 60;
+          workingHrsMonth += diff / 60 + Math.max(0, monthExtraHrs);
         } else {
           const sched = getDaywiseScheduledFieldsForDay(
             daywiseUser as User | undefined,
@@ -771,6 +733,7 @@ export async function buildDaywiseWorkbook(
         let workingHrs = resolveDayWorkedHours(record, {
           scheduledIn: scheduledInTime,
           scheduledOut: scheduledOutTime,
+          date,
         });
         if (
           isWfhOrOspPresence(record?.typeOfPresence || record?.status) &&
@@ -875,7 +838,8 @@ export async function buildDaywiseWorkbook(
           const halfMins = effectiveScheduledMinutesForDay(
             scheduledInTime,
             scheduledOutTime,
-            { ...record, halfDay: true }
+            { ...record, halfDay: true },
+            policyForDate(date)
           );
           dayScheduledTimeLabel = `${Math.floor(halfMins / 60)}:${String(halfMins % 60).padStart(2, '0')}`;
         }
@@ -914,8 +878,11 @@ export async function buildDaywiseWorkbook(
 
         // --- Excess/Short: same calculateDayExcessHour as Summary (article 30m rule / staff work−sched) ---
         let daySeconds = 0;
-        if (workedOnHolidayOrSunday || presentAbsent === 'On leave' || presentAbsent === 'NA') {
+        if (presentAbsent === 'On leave' || presentAbsent === 'NA') {
           daySeconds = 0;
+        } else if (workedOnHolidayOrSunday) {
+          // Punch excess stays 0. Approved extra hours still count.
+          daySeconds = Math.max(0, extraWorkHrs) * 3600;
         } else if (daywiseUser) {
           const excessRecord = useHalfSchedule ? { ...record, halfDay: true } : record;
           const spentBaseline = withWfhOspSchedule(
@@ -936,12 +903,12 @@ export async function buildDaywiseWorkbook(
           daySeconds = rawDayHours * 3600;
         }
         const rawDayHours =
-          presentAbsent === 'On leave' || presentAbsent === 'NA' || workedOnHolidayOrSunday
+          presentAbsent === 'On leave' || presentAbsent === 'NA'
             ? 0
             : daySeconds / 3600;
         // Same day-allowance path as Summary.
         const adjustedDayHours =
-          presentAbsent === 'NA' || workedOnHolidayOrSunday
+          presentAbsent === 'NA'
             ? 0
             : applyDayAllowanceToRawExcess(
                 rawDayHours,

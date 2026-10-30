@@ -1,0 +1,489 @@
+"use client";
+
+import { Mail, Hash, Briefcase, Users, Inbox, Loader2, X } from "lucide-react";
+import { formatHoursMinutes, SUMMARY_METRIC_DAY_LABELS } from "@/lib/attendanceSummaryMetrics";
+import { EmployeeDashboardCharts } from "@/components/employee-dashboard-charts";
+import { EmployeeSummaryMonthPicker } from "@/components/employee-summary-month-picker";
+import { EmployeeFineSummaryCard } from "@/components/employee-fine";
+import { isExtraWorkRequest } from "@/lib/extraWorkRequest";
+import type { EmployeeDashboardOverviewProps } from './types';
+import { initials, formatRequestDate, pendingStatusLabel } from './utils';
+import { useEmployeeDashboardOverviewLogic } from './hooks';
+
+export type { EmployeeDashboardOverviewProps } from './types';
+
+export function EmployeeDashboardOverview({
+  user,
+  monthYear,
+  onMonthYearChange,
+  alignedMetrics,
+  summary,
+  holidays = [],
+  chartDailySeries = [],
+  requestsPending,
+  pendingRequests = [],
+  teamMembers = [],
+  teamMembersLoading = false,
+  isLoadingMetrics,
+  onSelectTeamMember,
+  onOpenFines,
+}: EmployeeDashboardOverviewProps) {
+  const {
+    periodLabel,
+    activeMetric,
+    setActiveMetric,
+    showPendingRequests,
+    setShowPendingRequests,
+    joiningLabel,
+    m,
+    sortedTeamMembers,
+    metricDays,
+    cell,
+  } = useEmployeeDashboardOverviewLogic({
+    user,
+    monthYear,
+    alignedMetrics,
+    summary,
+    holidays,
+    teamMembers,
+  });
+
+  return (
+    <div className="space-y-4">
+      <EmployeeSummaryMonthPicker
+        monthYear={monthYear}
+        onMonthYearChange={onMonthYearChange}
+        disabled={isLoadingMetrics}
+      />
+
+      <div className="grid gap-4 lg:grid-cols-12 lg:items-stretch lg:gap-6">
+      <div className="flex min-h-0 lg:col-span-4">
+        <div
+          className={`h-full min-h-0 w-full rounded-xl border border-border bg-surface p-5 shadow-[inset_0_0_0_1px_rgba(147,197,253,0.18)] ${
+            sortedTeamMembers.length > 0
+              ? "flex flex-col lg:grid lg:grid-rows-[auto_auto_minmax(min-content,1fr)]"
+              : "flex flex-col"
+          }`}
+        >
+          <div className="flex items-start gap-4">
+            <div
+              className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-background text-lg font-semibold tracking-tight text-foreground ring-1 ring-border"
+              aria-hidden
+            >
+              {initials(user.name)}
+            </div>
+            <div className="min-w-0 flex-1">
+              <h2 className="truncate text-lg font-semibold text-foreground">
+                {user.name}
+              </h2>
+              {periodLabel && (
+                <p className="mt-0.5 text-xs font-medium text-muted-foreground">{periodLabel}</p>
+              )}
+              {user.designation && (
+                <p className="mt-0.5 flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <Briefcase className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                  <span className="truncate">{user.designation}</span>
+                </p>
+              )}
+              {user.team && (
+                <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Users className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                  <span className="truncate">{user.team}</span>
+                </p>
+              )}
+            </div>
+          </div>
+
+          <dl className="mt-5 space-y-2.5 border-t border-border pt-5 text-sm">
+            <div className="flex items-center justify-between gap-2">
+              <dt className="flex items-center gap-2 text-muted-foreground">
+                <Mail className="h-3.5 w-3.5" />
+                Email
+              </dt>
+              <dd className="truncate text-right text-foreground" title={user.email}>
+                {user.email}
+              </dd>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <dt className="flex items-center gap-2 text-muted-foreground">
+                <Hash className="h-3.5 w-3.5" />
+                Code
+              </dt>
+              <dd className="font-mono text-xs text-foreground">
+                {user.employeeCode?.trim() || user.odId || "—"}
+              </dd>
+            </div>
+            {joiningLabel && (
+              <div className="flex items-center justify-between gap-2">
+                <dt className="text-muted-foreground">Joined</dt>
+                <dd className="text-foreground">{joiningLabel}</dd>
+              </div>
+            )}
+          </dl>
+
+          {sortedTeamMembers.length > 0 ? (
+            <div className="mt-5 flex min-h-0 flex-col overflow-hidden border-t border-border pt-4 lg:min-h-0">
+              <p className="mb-2 flex shrink-0 items-center gap-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <Users className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                Team
+                <span className="font-normal normal-case text-muted-foreground">
+                  ({sortedTeamMembers.length})
+                </span>
+              </p>
+              {onSelectTeamMember && (
+                <p className="mb-2 text-[10px] text-muted-foreground">Tap a member to view their calendar.</p>
+              )}
+              {teamMembersLoading ? (
+                <div className="flex items-center gap-2 py-3 text-xs text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  Loading team…
+                </div>
+              ) : (
+                <div className="mt-2 min-h-0 flex-1 overflow-auto rounded-lg border border-border">
+                  {/* Same fields on all breakpoints (mobile previously omitted email). */}
+                  <ul className="divide-y divide-border/80 lg:hidden">
+                    {sortedTeamMembers.map((member) => {
+                      const employeeId =
+                        member.employeeCode?.trim() || member.odId?.trim() || "—";
+                      return (
+                        <li key={member._id}>
+                          <button
+                            type="button"
+                            onClick={() => onSelectTeamMember?.(member._id)}
+                            className="flex w-full flex-col gap-0.5 px-3 py-2.5 text-left transition hover:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-400/40"
+                          >
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                                {employeeId}
+                              </span>
+                              <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                                {member.name}
+                              </span>
+                            </div>
+                            <span
+                              className="truncate text-[11px] text-muted-foreground"
+                              title={member.email}
+                            >
+                              {member.email || "—"}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <table className="hidden w-full min-w-0 text-left text-[11px] lg:table">
+                    <thead className="sticky top-0 z-[1] bg-surface text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      <tr className="border-b border-border">
+                        <th className="px-2 py-1.5 font-medium">ID</th>
+                        <th className="px-2 py-1.5 font-medium">Name</th>
+                        <th className="px-2 py-1.5 font-medium">Email</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/80">
+                      {sortedTeamMembers.map((member) => {
+                        const employeeId =
+                          member.employeeCode?.trim() || member.odId?.trim() || "—";
+                        return (
+                          <tr
+                            key={member._id}
+                            className={`bg-background/50 ${onSelectTeamMember ? "cursor-pointer hover:bg-background focus-within:bg-background" : "hover:bg-background"}`}
+                            onClick={() => onSelectTeamMember?.(member._id)}
+                            onKeyDown={(e) => {
+                              if (!onSelectTeamMember) return;
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                onSelectTeamMember(member._id);
+                              }
+                            }}
+                            tabIndex={onSelectTeamMember ? 0 : undefined}
+                            role={onSelectTeamMember ? "button" : undefined}
+                          >
+                            <td className="whitespace-nowrap px-2 py-1.5 font-mono text-muted-foreground">
+                              {employeeId}
+                            </td>
+                            <td className="max-w-[7rem] truncate px-2 py-1.5 font-medium text-foreground" title={member.name}>
+                              {member.name}
+                            </td>
+                            <td
+                              className="max-w-[8rem] truncate px-2 py-1.5 text-muted-foreground"
+                              title={member.email}
+                            >
+                              {member.email || "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ) : null}
+
+        </div>
+      </div>
+
+      <div className="lg:col-span-8">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-base font-semibold tracking-tight text-foreground sm:text-lg">
+              Attendance summary
+              {periodLabel ? (
+                <span className="font-normal text-muted-foreground"> · {periodLabel}</span>
+              ) : null}
+            </h3>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Same rules as the admin <span className="text-muted-foreground">Attendance Summary</span>.
+              Tap any card to see the dates behind it.
+            </p>
+          </div>
+          {isLoadingMetrics && (
+            <span className="text-xs text-muted-foreground">Updating…</span>
+          )}
+        </div>
+
+        {isLoadingMetrics && !m ? (
+          <div className="flex items-center justify-center gap-2 rounded-lg border border-border py-12 text-sm text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
+            Loading summary…
+          </div>
+        ) : !m ? (
+          <div className="space-y-3">
+            <p className="rounded-lg border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
+              No attendance data for this month yet.
+            </p>
+            {onOpenFines && (
+              <EmployeeFineSummaryCard monthYear={monthYear} onViewDetails={onOpenFines} />
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+            {cell("total-days", "Total days", String(m.totalDaysInMonth), "Calendar days this month")}
+            {cell("holidays", "Holidays", String(m.holidaysInRecords), "Week off (Sun) + company holidays")}
+            {cell(
+              "scheduled-working-days",
+              "Scheduled working days",
+              String(m.scheduledWorkingDaysInMonth),
+              "Whole month, excl. sun / holiday / week-off"
+            )}
+            {cell(
+              "working-days",
+              "Working days till yesterday",
+              String(m.workingDaysInRecords),
+              "Uploaded so far this month"
+            )}
+            {cell("present", "Present", String(m.totalPresent))}
+            {cell("half-days", "Half days", String(m.totalHalfDay))}
+            {cell(
+              "absent-leave",
+              "Absent / leave",
+              String(m.absentOrLeaveDays),
+              `Absent ${m.totalAbsent} · Leave ${m.leaveFullDaysConsumed}`
+            )}
+            {cell("late", "Late", String(m.calcLate))}
+            {cell(
+              "worked-on-holiday",
+              "Worked on holiday",
+              String(m.workedOnHolidayDays),
+              "Sunday / holiday / week off"
+            )}
+            {cell(null, "Scheduled", formatHoursMinutes(m.calcScheduledHours), "Expected hours (eligible days)")}
+            {cell(null, "Work hours", formatHoursMinutes(m.totalHour), "Sum on scheduled days only (same as admin Summary)")}
+            {cell(
+              null,
+              "Excess / short",
+              `${m.calcExcessDeficit > 0 ? "+" : m.calcExcessDeficit < 0 ? "-" : ""}${formatHoursMinutes(Math.abs(m.calcExcessDeficit))}`,
+              "Worked - scheduled"
+            )}
+            {requestsPending > 0 ? (
+              <button
+                type="button"
+                onClick={() => setShowPendingRequests(true)}
+                className="col-span-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-left transition hover:border-amber-300/60 hover:bg-amber-50/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/40 sm:col-span-3 lg:col-span-4"
+                aria-label={`${requestsPending} requests pending. Show details.`}
+              >
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Requests pending
+                </p>
+                <p className="mt-0.5 flex items-center gap-2 font-mono text-sm font-semibold text-foreground">
+                  <Inbox className="h-4 w-4 text-amber-600" aria-hidden />
+                  {String(requestsPending)}
+                </p>
+                <p className="mt-1 text-[10px] font-medium text-amber-800">Tap for details</p>
+              </button>
+            ) : (
+              <div className="col-span-2 rounded-lg border border-border bg-background px-3 py-2.5 sm:col-span-3 lg:col-span-4">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Requests pending
+                </p>
+                <p className="mt-0.5 flex items-center gap-2 font-mono text-sm font-semibold text-foreground">
+                  <Inbox className="h-4 w-4 text-muted-foreground" aria-hidden />
+                  0
+                </p>
+              </div>
+            )}
+            {onOpenFines && (
+              <div className="col-span-2 sm:col-span-3 lg:col-span-4">
+                <EmployeeFineSummaryCard monthYear={monthYear} onViewDetails={onOpenFines} />
+              </div>
+            )}
+            <div className="col-span-2 sm:col-span-3 lg:col-span-4">
+              <EmployeeDashboardCharts metrics={m} dailySeries={chartDailySeries} />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+
+      {showPendingRequests && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-3 sm:items-center sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="pending-requests-title"
+          onClick={() => setShowPendingRequests(false)}
+        >
+          <div
+            className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
+              <div>
+                <h4 id="pending-requests-title" className="text-base font-semibold text-foreground">
+                  Pending requests
+                </h4>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {periodLabel} · {pendingRequests.length} request
+                  {pendingRequests.length === 1 ? "" : "s"} awaiting approval
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPendingRequests(false)}
+                className="rounded-full p-1.5 text-muted-foreground hover:bg-background hover:text-foreground"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto px-2 py-2">
+              <ul className="space-y-2">
+                {[...pendingRequests]
+                  .sort((a, b) => a.date.localeCompare(b.date))
+                  .map((req) => (
+                    <li
+                      key={req._id}
+                      className="rounded-lg border border-border bg-background px-3 py-3"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">
+                            {formatRequestDate(req.date)}
+                          </p>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900">
+                          {pendingStatusLabel(req.status)}
+                        </span>
+                      </div>
+                      <dl className="mt-2 space-y-1 text-xs">
+                        <div className="flex gap-2">
+                          <dt className="shrink-0 text-muted-foreground">Type</dt>
+                          <dd className="font-medium text-foreground">
+                            {isExtraWorkRequest(req) ? (
+                              <span className="text-orange-800">Extra work hours</span>
+                            ) : (
+                              req.requestedStatus
+                            )}
+                          </dd>
+                        </div>
+                        {req.originalStatus ? (
+                          <div className="flex gap-2">
+                            <dt className="shrink-0 text-muted-foreground">Current</dt>
+                            <dd className="text-foreground">{req.originalStatus}</dd>
+                          </div>
+                        ) : null}
+                        {req.startTime && req.endTime ? (
+                          <div className="flex gap-2">
+                            <dt className="shrink-0 text-muted-foreground">Time</dt>
+                            <dd className="font-mono text-foreground">
+                              {req.startTime} – {req.endTime}
+                            </dd>
+                          </div>
+                        ) : null}
+                        {req.reason?.trim() ? (
+                          <div>
+                            <dt className="text-muted-foreground">Reason</dt>
+                            <dd className="mt-0.5 text-foreground">{req.reason.trim()}</dd>
+                          </div>
+                        ) : null}
+                      </dl>
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeMetric && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-3 sm:items-center sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="metric-days-title"
+          onClick={() => setActiveMetric(null)}
+        >
+          <div
+            className="flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
+              <div>
+                <h4 id="metric-days-title" className="text-base font-semibold text-foreground">
+                  {SUMMARY_METRIC_DAY_LABELS[activeMetric]}
+                </h4>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {periodLabel} · {metricDays.length} day{metricDays.length === 1 ? "" : "s"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveMetric(null)}
+                className="rounded-full p-1.5 text-muted-foreground hover:bg-background hover:text-foreground"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto px-2 py-2">
+              {metricDays.length === 0 ? (
+                <p className="px-2 py-8 text-center text-sm text-muted-foreground">
+                  No days in this category for {periodLabel || "this month"}.
+                </p>
+              ) : (
+                <ul className="space-y-1">
+                  {metricDays.map((row) => (
+                    <li
+                      key={row.date}
+                      className="flex items-start justify-between gap-3 rounded-lg px-3 py-2.5 hover:bg-background/80"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{row.dateLabel}</p>
+                        <p className="font-mono text-[10px] text-muted-foreground">{row.date}</p>
+                      </div>
+                      {row.detail ? (
+                        <p className="max-w-[55%] text-right text-xs text-muted-foreground">
+                          {row.detail}
+                        </p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

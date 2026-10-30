@@ -1,0 +1,1 @@
+export { useScheduleTemplateModalLogic } from './useScheduleTemplateModalLogic';

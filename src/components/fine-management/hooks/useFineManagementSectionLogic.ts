@@ -1,0 +1,959 @@
+'use client';
+
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { getWorkingUnderPartnerForDate, lastDayOfMonthYear } from '@/lib/userFieldHistory';
+import { hrCredentialsInit } from '@/lib/hrAuthHeaders';
+import { confirmMajorAction } from '@/lib/confirmMajorAction';
+import type { Fine, FineRecord, FineManagementProps } from '../types';
+
+export function useFineManagementSectionLogic({ selectedMonth = new Date().getMonth() + 1, selectedYear = new Date().getFullYear() }: FineManagementProps) {
+  const [fines, setFines] = useState<Fine[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [calculating, setCalculating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [showManualFineForm, setShowManualFineForm] = useState(false);
+  const [manualFineEmployeeId, setManualFineEmployeeId] = useState('');
+  const [manualFineEmployeeQuery, setManualFineEmployeeQuery] = useState('');
+  const [showEmployeeSuggestions, setShowEmployeeSuggestions] = useState(false);
+  const [directoryEmployees, setDirectoryEmployees] = useState<
+    { _id: string; name: string; odId: string }[]
+  >([]);
+  const employeePickerRef = useRef<HTMLDivElement>(null);
+  const [manualFineReason, setManualFineReason] = useState('');
+  const [manualFineAmount, setManualFineAmount] = useState('');
+  const [manualFineRemark, setManualFineRemark] = useState('');
+  const [imposingFine, setImposingFine] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<'all' | 'Staff' | 'Article'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'paid' | 'waived'>('all');
+  const [teamFilter, setTeamFilter] = useState('all');
+  const [month, setMonth] = useState(selectedMonth);
+  const [year, setYear] = useState(selectedYear);
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
+  const [emailBusy, setEmailBusy] = useState(false);
+  const [emailingUserId, setEmailingUserId] = useState<string | null>(null);
+  const [emailNotice, setEmailNotice] = useState<string | null>(null);
+
+  const monthYear = `${year}-${String(month).padStart(2, '0')}`;
+
+  // Fetch fines
+  const fetchFines = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/fines?monthYear=${monthYear}`);
+      const data = await response.json();
+      if (data.success) {
+        setFines(data.fines);
+      } else {
+        setError(data.error || 'Failed to fetch fines');
+      }
+    } catch (err) {
+      setError('Failed to fetch fines');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Calculate fines for the month
+  const calculateFines = async () => {
+    setCalculating(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/fines', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ monthYear }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setFines(data.fines);
+      } else {
+        setError(data.error || 'Failed to calculate fines');
+      }
+    } catch (err) {
+      setError('Failed to calculate fines');
+    } finally {
+      setCalculating(false);
+    }
+  };
+
+  // Update fine status
+  const updateFineStatus = async (fineId: string, recordDate: string, status: 'paid' | 'waived') => {
+    try {
+      const response = await fetch('/api/fines', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fineId, recordDate, status }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setFines(prev => prev.map(f => f._id === fineId ? data.fine : f));
+      }
+    } catch (err) {
+      console.error('Failed to update fine status:', err);
+    }
+  };
+
+  const employeeOptionLabel = (employee: { name?: string; odId?: string }) => {
+    const name = employee.name?.trim() || 'Unknown';
+    return employee.odId ? `${name} (${employee.odId})` : name;
+  };
+
+  const finesEmployeeOptions = useMemo(() => {
+    const map = new Map<string, { _id: string; name: string; odId: string }>();
+    for (const fine of fines) {
+      const id = String(fine.userId?._id || '');
+      if (!id || map.has(id)) continue;
+      map.set(id, {
+        _id: id,
+        name: fine.userId?.name || 'Unknown',
+        odId: fine.userId?.odId || '',
+      });
+    }
+    return [...map.values()];
+  }, [fines]);
+
+  const manualFineEmployeeOptions = useMemo(() => {
+    const source = directoryEmployees.length > 0 ? directoryEmployees : finesEmployeeOptions;
+    return [...source].sort((a, b) => a.name.localeCompare(b.name));
+  }, [directoryEmployees, finesEmployeeOptions]);
+
+  const manualFineEmployeeMatches = useMemo(() => {
+    const q = manualFineEmployeeQuery.trim().toLowerCase();
+    if (!q) return manualFineEmployeeOptions.slice(0, 30);
+    return manualFineEmployeeOptions
+      .filter(
+        (employee) =>
+          employee.name.toLowerCase().includes(q) ||
+          employee.odId.toLowerCase().includes(q)
+      )
+      .slice(0, 30);
+  }, [manualFineEmployeeOptions, manualFineEmployeeQuery]);
+
+  const resolveManualFineEmployeeId = () => {
+    if (manualFineEmployeeId) return manualFineEmployeeId;
+    const q = manualFineEmployeeQuery.trim().toLowerCase();
+    if (!q) return '';
+    const exact = manualFineEmployeeOptions.filter(
+      (employee) =>
+        employee.name.toLowerCase() === q ||
+        employee.odId.toLowerCase() === q ||
+        employeeOptionLabel(employee).toLowerCase() === q
+    );
+    return exact.length === 1 ? exact[0]._id : '';
+  };
+
+  const selectManualFineEmployee = (employee: { _id: string; name: string; odId: string }) => {
+    setManualFineEmployeeId(employee._id);
+    setManualFineEmployeeQuery(employeeOptionLabel(employee));
+    setShowEmployeeSuggestions(false);
+  };
+
+  // Impose manual fine
+  const imposeManualFine = async () => {
+    const employeeId = resolveManualFineEmployeeId();
+    if (!employeeId || !manualFineReason || !manualFineAmount) {
+      setError(!employeeId ? 'Please select an employee from the list' : 'Please fill all required fields');
+      return;
+    }
+    setImposingFine(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/fines/manual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employeeId,
+          reason: manualFineReason,
+          amount: parseFloat(manualFineAmount),
+          remark: manualFineRemark,
+          monthYear,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        // Check if fine already exists for this employee and month
+        const existingFineIndex = fines.findIndex(f => f.userId._id === employeeId && f.monthYear === monthYear);
+        if (existingFineIndex >= 0) {
+          // Update existing fine
+          setFines(prev => prev.map((f, i) => i === existingFineIndex ? data.fine : f));
+        } else {
+          // Add new fine
+          setFines(prev => [...prev, data.fine]);
+        }
+        setManualFineEmployeeId('');
+        setManualFineEmployeeQuery('');
+        setManualFineReason('');
+        setManualFineAmount('');
+        setManualFineRemark('');
+        setShowManualFineForm(false);
+      } else {
+        setError(data.error || 'Failed to impose fine');
+      }
+    } catch (err) {
+      setError('Failed to impose fine');
+    } finally {
+      setImposingFine(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchFines();
+    setSelectedUserIds(new Set());
+    setEmailNotice(null);
+  }, [monthYear]);
+
+  useEffect(() => {
+    if (!showManualFineForm) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/users?listOnly=1', hrCredentialsInit());
+        const json = await res.json();
+        if (cancelled || !json.success || !Array.isArray(json.data)) return;
+        setDirectoryEmployees(
+          json.data
+            .filter((user: { _id?: string }) => user?._id)
+            .map((user: { _id: string; name?: string; odId?: string; employeeCode?: string }) => ({
+              _id: String(user._id),
+              name: user.name || 'Unknown',
+              odId: user.odId || user.employeeCode || '',
+            }))
+        );
+      } catch {
+        // Fall back to employees already present in this month's fine list.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showManualFineForm]);
+
+  useEffect(() => {
+    const onPointerDown = (event: MouseEvent) => {
+      if (!employeePickerRef.current?.contains(event.target as Node)) {
+        setShowEmployeeSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, []);
+
+  // Toggle row expansion
+  const toggleRow = (fineId: string) => {
+    setExpandedRows(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(fineId)) {
+        newSet.delete(fineId);
+      } else {
+        newSet.add(fineId);
+      }
+      return newSet;
+    });
+  };
+
+  const getFineUserId = (fine: Fine): string => String(fine.userId?._id || '');
+
+  const toggleSelectUser = (userId: string) => {
+    if (!userId) return;
+    setSelectedUserIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  };
+
+  // Filter fines
+  const filteredFines = useMemo(() => {
+    return fines.filter(fine => {
+      // Search filter
+      if (searchTerm) {
+        const search = searchTerm.toLowerCase();
+        const matchName = fine.userId?.name?.toLowerCase().includes(search);
+        const matchId = fine.userId?.odId?.toLowerCase().includes(search);
+        if (!matchName && !matchId) return false;
+      }
+      // Category filter
+      if (categoryFilter !== 'all' && fine.category !== categoryFilter) return false;
+      // Team filter
+      if (teamFilter !== 'all') {
+        const teamVal = fine.userId
+          ? getWorkingUnderPartnerForDate(
+              fine.userId,
+              lastDayOfMonthYear(fine.monthYear || monthYear)
+            )
+          : '';
+        if (teamVal !== teamFilter) return false;
+      }
+      // Status filter - check if any record matches
+      if (statusFilter !== 'all') {
+        const hasMatchingStatus = fine.fineRecords.some(r => r.status === statusFilter);
+        if (!hasMatchingStatus) return false;
+      }
+      return true;
+    });
+  }, [fines, searchTerm, categoryFilter, statusFilter, teamFilter, monthYear]);
+
+  const filteredUserIds = useMemo(
+    () => filteredFines.map(getFineUserId).filter(Boolean),
+    [filteredFines]
+  );
+
+  const allFilteredSelected =
+    filteredUserIds.length > 0 && filteredUserIds.every((id) => selectedUserIds.has(id));
+
+  const toggleSelectAllFiltered = () => {
+    setSelectedUserIds((prev) => {
+      if (allFilteredSelected) {
+        const next = new Set(prev);
+        for (const id of filteredUserIds) next.delete(id);
+        return next;
+      }
+      const next = new Set(prev);
+      for (const id of filteredUserIds) next.add(id);
+      return next;
+    });
+  };
+
+  const emailFineNotices = async (employeeIds: string[], label: string) => {
+    const ids = [...new Set(employeeIds.filter(Boolean))];
+    if (ids.length === 0) return;
+
+    if (ids.length > 1) {
+      if (
+        !confirmMajorAction(`Email pending fine notices (${label})`, [
+          `${ids.length} employee(s) will be emailed.`,
+          'Only pending fines/warnings are included.',
+          'Employees without an Asija email or with no pending items will be skipped.',
+        ])
+      ) {
+        return;
+      }
+    }
+
+    setEmailBusy(true);
+    setEmailingUserId(ids.length === 1 ? ids[0] : null);
+    setError(null);
+    setEmailNotice(null);
+    try {
+      const response = await fetch(
+        '/api/fines/notify',
+        hrCredentialsInit({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ employeeIds: ids, monthYear }),
+        })
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || `Failed to send fine notices (${response.status})`);
+      }
+      const sent = Number(data.sentCount || 0);
+      const skipped = Number(data.skippedCount || 0);
+      const errList: string[] = Array.isArray(data.errors) ? data.errors : [];
+      let notice = `Sent ${sent} fine notice${sent === 1 ? '' : 's'}. Skipped ${skipped}.`;
+      if (errList.length > 0) {
+        notice += ` ${errList.slice(0, 3).join(' · ')}${errList.length > 3 ? '…' : ''}`;
+      }
+      setEmailNotice(notice);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send fine notices');
+    } finally {
+      setEmailBusy(false);
+      setEmailingUserId(null);
+    }
+  };
+
+  // Calculate totals
+  const totals = useMemo(() => {
+    return filteredFines.reduce((acc, fine) => ({
+      totalFines: acc.totalFines + fine.totalFine,
+      totalWarnings: acc.totalWarnings + fine.totalWarnings,
+      employeesWithFines: acc.employeesWithFines + (fine.totalFine > 0 ? 1 : 0),
+      employeesWithWarnings: acc.employeesWithWarnings + (fine.totalWarnings > 0 ? 1 : 0),
+    }), { totalFines: 0, totalWarnings: 0, employeesWithFines: 0, employeesWithWarnings: 0 });
+  }, [filteredFines]);
+
+  // Export to Excel with professional styling
+  const exportToExcel = async () => {
+    if (filteredFines.length === 0) return;
+
+    // Import ExcelJS dynamically
+    const ExcelJS = (await import('exceljs')).default;
+
+    // Create workbook
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Fine Records');
+
+    // Define columns with widths
+    worksheet.columns = [
+      { key: 'sr', header: 'SR', width: 12 },
+      { key: 'date', header: 'Date', width: 12 },
+      { key: 'employeeName', header: 'Employee Name', width: 25 },
+      { key: 'employeeId', header: 'Employee ID', width: 15 },
+      { key: 'category', header: 'Category', width: 12 },
+      { key: 'vertical', header: 'Vertical', width: 20 },
+      { key: 'penaltyImposedBy', header: 'Penalty Imposed By', width: 20 },
+      { key: 'fineAmount', header: 'Fine Amount (₹)', width: 15 },
+      { key: 'reason', header: 'Reason', width: 20 },
+      { key: 'remark', header: 'Remark', width: 25 },
+      { key: 'paymentDate', header: 'Payment Date', width: 14 },
+      { key: 'paymentMode', header: 'Payment Mode', width: 14 },
+      { key: 'status', header: 'Status', width: 12 },
+    ];
+
+    // Add data rows
+    filteredFines.forEach(fine => {
+      fine.fineRecords.forEach(record => {
+        worksheet.addRow({
+          sr: record.serialNo || '',
+          date: record.date,
+          employeeName: fine.userId?.name || '',
+          employeeId: fine.userId?.odId || '',
+          category: fine.category,
+          vertical:
+            record.vertical ||
+            (fine.userId
+              ? getWorkingUnderPartnerForDate(fine.userId, record.date)
+              : ''),
+          penaltyImposedBy: record.penaltyImposedBy || '',
+          fineAmount: record.isWarning ? 'Warning' : record.fineAmount,
+          reason: record.reason || '',
+          remark: record.remark || '',
+          paymentDate: record.paymentDate || '',
+          paymentMode: record.paymentMode || '',
+          status: record.status.charAt(0).toUpperCase() + record.status.slice(1),
+        });
+      });
+    });
+
+    // Style the header row
+    const headerRow = worksheet.getRow(1);
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF1E40AF' } // Blue header
+      };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FF000000' } },
+        bottom: { style: 'thin', color: { argb: 'FF000000' } },
+        left: { style: 'thin', color: { argb: 'FF000000' } },
+        right: { style: 'thin', color: { argb: 'FF000000' } }
+      };
+    });
+    headerRow.height = 24;
+
+    // Style data rows
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return; // Skip header row
+
+      const isEvenRow = rowNumber % 2 === 0;
+      row.eachCell((cell, colNumber) => {
+        cell.font = { size: 10 };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: isEvenRow ? 'FFF1F5F9' : 'FFFFFFFF' }
+        };
+        cell.alignment = {
+          vertical: 'middle',
+          horizontal: colNumber === 3 ? 'left' : 'center' // Left align employee name
+        };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+        };
+
+        // Special styling for status column
+        if (colNumber === 13) {
+          const status = cell.value?.toString().toLowerCase();
+          if (status === 'paid') {
+            cell.font = { size: 10, color: { argb: 'FF16A34A' }, bold: true };
+          } else if (status === 'waived') {
+            cell.font = { size: 10, color: { argb: 'FF2563EB' }, bold: true };
+          } else if (status === 'pending') {
+            cell.font = { size: 10, color: { argb: 'FFDC2626' }, bold: true };
+          }
+        }
+
+        // Special styling for fine amount (warning vs fine)
+        if (colNumber === 8) {
+          const value = cell.value?.toString();
+          if (value === 'Warning') {
+            cell.font = { size: 10, color: { argb: 'FFD97706' }, bold: true };
+          } else {
+            cell.font = { size: 10, bold: true };
+          }
+        }
+      });
+    });
+
+    // Add summary row at the bottom
+    const totalFine = filteredFines.reduce((sum, f) => sum + f.totalFine, 0);
+    const totalWarnings = filteredFines.reduce((sum, f) => sum + f.totalWarnings, 0);
+    const summaryRow = worksheet.addRow({
+      sr: '',
+      date: '',
+      employeeName: 'TOTAL',
+      employeeId: '',
+      category: '',
+      vertical: '',
+      penaltyImposedBy: '',
+      fineAmount: `₹${totalFine}`,
+      reason: `${totalWarnings} Warnings`,
+      remark: '',
+      paymentDate: '',
+      paymentMode: '',
+      status: '',
+    });
+
+    summaryRow.eachCell((cell, colNumber) => {
+      cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF475569' } // Slate header
+      };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.border = {
+        top: { style: 'medium', color: { argb: 'FF000000' } },
+        bottom: { style: 'medium', color: { argb: 'FF000000' } },
+        left: { style: 'thin', color: { argb: 'FF000000' } },
+        right: { style: 'thin', color: { argb: 'FF000000' } }
+      };
+      if (colNumber === 3) {
+        cell.alignment = { vertical: 'middle', horizontal: 'left' };
+      }
+    });
+    summaryRow.height = 24;
+
+    // Generate filename
+    const fileName = `Fine_Records_${year}_${String(month).padStart(2, '0')}.xlsx`;
+
+    // Save file
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  };
+
+  // Generate PDF Penalty Slip for a fine record
+  const generatePenaltySlip = async (fine: Fine, record: FineRecord) => {
+    // Import jsPDF dynamically
+    const { jsPDF } = await import('jspdf');
+    
+    const doc = new jsPDF({
+      orientation: 'landscape',
+      unit: 'mm',
+      format: [150, 100] // Rectangular slip 150mm x 100mm
+    });
+
+    const pageWidth = 150;
+    const margin = 10;
+    const contentWidth = pageWidth - 2 * margin;
+    
+    // Format dates
+    const fineDate = new Date(record.date);
+    const formattedDate = `${String(fineDate.getDate()).padStart(2, '0')}/${String(fineDate.getMonth() + 1).padStart(2, '0')}/${fineDate.getFullYear()}`;
+    const paymentDateFormatted = record.paymentDate 
+      ? (() => {
+          const pd = new Date(record.paymentDate);
+          return `${String(pd.getDate()).padStart(2, '0')}/${String(pd.getMonth() + 1).padStart(2, '0')}/${pd.getFullYear()}`;
+        })()
+      : '--/--/----';
+
+    // Draw border
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.5);
+    doc.rect(5, 5, 140, 90);
+
+    // Header - Penalty Slip
+    doc.setFillColor(220, 38, 38); // Red background
+    doc.rect(5, 5, 140, 12, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('PENALTY SLIP', pageWidth / 2, 13, { align: 'center' });
+
+    // Employee Name
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Employee: ${fine.userId?.name || 'N/A'}`, margin, 24);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text(`ID: ${fine.userId?.odId || 'N/A'}`, pageWidth - margin - 30, 24);
+
+    // Table settings
+    const tableTop = 30;
+    const rowHeight = 10;
+    const col1Width = 35;
+    const col2Width = 35;
+    const col3Width = 35;
+    const col4Width = 35;
+
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.3);
+
+    // Row 1: SR | Value | Date | DD/MM/YYYY
+    const row1Y = tableTop;
+    doc.rect(margin, row1Y, col1Width, rowHeight);
+    doc.rect(margin + col1Width, row1Y, col2Width, rowHeight);
+    doc.rect(margin + col1Width + col2Width, row1Y, col3Width, rowHeight);
+    doc.rect(margin + col1Width + col2Width + col3Width, row1Y, col4Width, rowHeight);
+    
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.text('SR', margin + 2, row1Y + 6);
+    doc.setFont('helvetica', 'normal');
+    doc.text(record.serialNo || '-', margin + col1Width + 2, row1Y + 6);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Date', margin + col1Width + col2Width + 2, row1Y + 6);
+    doc.setFont('helvetica', 'normal');
+    doc.text(formattedDate, margin + col1Width + col2Width + col3Width + 2, row1Y + 6);
+
+    // Row 2: Penalty Amount | Value | Payment Date | DD/MM/YYYY
+    const row2Y = tableTop + rowHeight;
+    doc.rect(margin, row2Y, col1Width, rowHeight);
+    doc.rect(margin + col1Width, row2Y, col2Width, rowHeight);
+    doc.rect(margin + col1Width + col2Width, row2Y, col3Width, rowHeight);
+    doc.rect(margin + col1Width + col2Width + col3Width, row2Y, col4Width, rowHeight);
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text('Penalty Amt', margin + 2, row2Y + 6);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(220, 38, 38);
+    doc.text(`Rs. ${record.fineAmount}`, margin + col1Width + 2, row2Y + 6);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Payment Date', margin + col1Width + col2Width + 2, row2Y + 6);
+    doc.setFont('helvetica', 'normal');
+    doc.text(paymentDateFormatted, margin + col1Width + col2Width + col3Width + 2, row2Y + 6);
+
+    // Row 3: Payment Mode | Value | Penalty Imposed By | Name
+    const row3Y = tableTop + rowHeight * 2;
+    doc.rect(margin, row3Y, col1Width, rowHeight);
+    doc.rect(margin + col1Width, row3Y, col2Width, rowHeight);
+    doc.rect(margin + col1Width + col2Width, row3Y, col3Width, rowHeight);
+    doc.rect(margin + col1Width + col2Width + col3Width, row3Y, col4Width, rowHeight);
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text('Payment Mode', margin + 2, row3Y + 6);
+    doc.setFont('helvetica', 'normal');
+    const paymentModeDisplay = record.paymentMode ? record.paymentMode.replace('_', ' ').toUpperCase() : '-';
+    doc.text(paymentModeDisplay, margin + col1Width + 2, row3Y + 6);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Imposed By', margin + col1Width + col2Width + 2, row3Y + 6);
+    doc.setFont('helvetica', 'normal');
+    doc.text(record.penaltyImposedBy || '-', margin + col1Width + col2Width + col3Width + 2, row3Y + 6);
+
+    // Row 4: Reason (full width)
+    const row4Y = tableTop + rowHeight * 3;
+    doc.rect(margin, row4Y, col1Width, rowHeight);
+    doc.rect(margin + col1Width, row4Y, col2Width + col3Width + col4Width, rowHeight);
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text('Reason', margin + 2, row4Y + 6);
+    doc.setFont('helvetica', 'normal');
+    const reasonText = record.reason || '-';
+    // Truncate reason text to fit within available space (approximately 80 characters for the combined columns)
+    doc.text(reasonText.substring(0, 80), margin + col1Width + 2, row4Y + 6);
+
+    // Row 5: Remark (full width)
+    const row5Y = tableTop + rowHeight * 4;
+    doc.rect(margin, row5Y, col1Width, rowHeight);
+    doc.rect(margin + col1Width, row5Y, col2Width + col3Width + col4Width, rowHeight);
+    
+    doc.setFont('helvetica', 'bold');
+    doc.text('Remark', margin + 2, row5Y + 6);
+    doc.setFont('helvetica', 'normal');
+    const remarkText = record.remark || '-';
+    doc.text(remarkText.substring(0, 50), margin + col1Width + 2, row5Y + 6);
+
+    // Footer
+    doc.setFontSize(8);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Generated on: ${new Date().toLocaleDateString('en-IN')}`, margin, 88);
+    doc.text(`Category: ${fine.category}`, pageWidth - margin - 25, 88);
+
+    // Save PDF
+    const fileName = `Penalty_Slip_${record.serialNo?.replace('/', '_') || 'slip'}_${record.date}.pdf`;
+    doc.save(fileName);
+  };
+
+  // Generate consolidated penalty slip for an employee with all fines in one slip
+  const generateAllPenaltySlips = async (fine: Fine) => {
+    const fineRecords = fine.fineRecords.filter(r => !r.isWarning);
+    if (fineRecords.length === 0) return;
+
+    // Import jsPDF dynamically
+    const { jsPDF } = await import('jspdf');
+    
+    // Page and table layout
+    const pageWidth = 180;
+    const margin = 10;
+    const contentWidth = pageWidth - 2 * margin;
+    const rowHeight = 8;
+    const tableHeaderHeight = 36;
+    const footerHeight = 15;
+    const rowsPerPage = Math.floor((100 - tableHeaderHeight - footerHeight) / rowHeight); // ~6 rows per page
+    let doc = new jsPDF({
+      orientation: 'landscape',
+      unit: 'mm',
+      format: [180, 100]
+    });
+
+    let totalAmount = 0;
+    let rowIndex = 0;
+    let page = 0;
+    while (rowIndex < fineRecords.length) {
+      page++;
+      // Draw border
+      doc.setDrawColor(0);
+      doc.setLineWidth(0.5);
+      doc.rect(5, 5, 170, 90);
+
+      let tableTop = 36;
+      // Only show header and employee details on first page
+      if (page === 1) {
+        // Header - Penalty Slip
+        doc.setFillColor(220, 38, 38);
+        doc.rect(5, 5, 170, 12, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text('CONSOLIDATED PENALTY SLIP', pageWidth / 2, 13, { align: 'center' });
+
+        // Employee Details Row
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Employee: ${fine.userId?.name || 'N/A'}`, margin, 24);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`ID: ${fine.userId?.odId || 'N/A'}`, margin + 60, 24);
+        // Second line for Month and Category
+        doc.text(`Month: ${fine.monthYear}`, margin, 30);
+        doc.text(`Category: ${fine.category}`, margin + 60, 30);
+        tableTop = 36;
+      } else {
+        // On overflow pages, start table at top
+        tableTop = 12;
+      }
+
+      // Table Header
+      const col1Width = 15;  // S.No
+      const col2Width = 25;  // SR Code
+      const col3Width = 25;  // Date
+      const col4Width = 40;  // Reason
+      const col5Width = 25;  // Amount
+      const col6Width = 30;  // Status
+
+      doc.setDrawColor(0);
+      doc.setLineWidth(0.3);
+      // Header row background
+      doc.setFillColor(100, 100, 100);
+      doc.rect(margin, tableTop, contentWidth, rowHeight, 'F');
+      // Header row cells
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      let xPos = margin;
+      doc.rect(xPos, tableTop, col1Width, rowHeight);
+      doc.text('S.No', xPos + 2, tableTop + 5.5);
+      xPos += col1Width;
+      doc.rect(xPos, tableTop, col2Width, rowHeight);
+      doc.text('SR Code', xPos + 2, tableTop + 5.5);
+      xPos += col2Width;
+      doc.rect(xPos, tableTop, col3Width, rowHeight);
+      doc.text('Date', xPos + 2, tableTop + 5.5);
+      xPos += col3Width;
+      doc.rect(xPos, tableTop, col4Width, rowHeight);
+      doc.text('Reason', xPos + 2, tableTop + 5.5);
+      xPos += col4Width;
+      doc.rect(xPos, tableTop, col5Width, rowHeight);
+      doc.text('Amount', xPos + 2, tableTop + 5.5);
+      xPos += col5Width;
+      doc.rect(xPos, tableTop, col6Width, rowHeight);
+      doc.text('Status', xPos + 2, tableTop + 5.5);
+
+      // Data rows for this page
+      doc.setTextColor(0, 0, 0);
+      doc.setFont('helvetica', 'normal');
+      let rowsOnThisPage = 0;
+      for (; rowIndex < fineRecords.length && rowsOnThisPage < rowsPerPage; rowIndex++, rowsOnThisPage++) {
+        const record = fineRecords[rowIndex];
+        const rowY = tableTop + rowHeight * (rowsOnThisPage + 1);
+        const isEven = rowIndex % 2 === 0;
+        // Alternate row background
+        if (isEven) {
+          doc.setFillColor(245, 245, 245);
+          doc.rect(margin, rowY, contentWidth, rowHeight, 'F');
+        }
+        xPos = margin;
+        // S.No
+        doc.rect(xPos, rowY, col1Width, rowHeight);
+        doc.text(String(rowIndex + 1), xPos + 5, rowY + 5.5);
+        xPos += col1Width;
+        // SR Code
+        doc.rect(xPos, rowY, col2Width, rowHeight);
+        doc.text(record.serialNo || '-', xPos + 2, rowY + 5.5);
+        xPos += col2Width;
+        // Date
+        const fineDate = new Date(record.date);
+        const formattedDate = `${String(fineDate.getDate()).padStart(2, '0')}/${String(fineDate.getMonth() + 1).padStart(2, '0')}/${fineDate.getFullYear()}`;
+        doc.rect(xPos, rowY, col3Width, rowHeight);
+        doc.text(formattedDate, xPos + 2, rowY + 5.5);
+        xPos += col3Width;
+        // Reason - handle manual fines differently
+        doc.rect(xPos, rowY, col4Width, rowHeight);
+        let reasonText = '';
+        if (record.penaltyImposedBy === 'Manual') {
+          // For manual fines, just show the reason as entered
+          reasonText = record.reason || record.remark || '-';
+        } else {
+          // For automatic fines, show late day and in-time
+          let reasonParts = [];
+          if (record.consecutiveDay) {
+            reasonParts.push(`Day ${record.consecutiveDay} Late`);
+          }
+          if (record.reason) {
+            // Extract just the check-in time from the reason
+            const inTimeMatch = record.reason.match(/In Time-([^(\s]+)/);
+            if (inTimeMatch) {
+              reasonParts.push(`In: ${inTimeMatch[1]}`);
+            }
+          }
+          reasonText = reasonParts.join(' ');
+          if (!reasonText && record.remark) {
+            reasonText = record.remark;
+          } else if (!reasonText) {
+            reasonText = '-';
+          }
+        }
+        // Truncate to fit in 40mm column (approximately 25-30 characters)
+        doc.text(reasonText.substring(0, 25), xPos + 2, rowY + 5.5);
+        xPos += col4Width;
+        // Amount
+        doc.rect(xPos, rowY, col5Width, rowHeight);
+        doc.setTextColor(220, 38, 38);
+        doc.text(`Rs. ${record.fineAmount}`, xPos + 2, rowY + 5.5);
+        doc.setTextColor(0, 0, 0);
+        totalAmount += record.fineAmount;
+        xPos += col5Width;
+        // Status
+        doc.rect(xPos, rowY, col6Width, rowHeight);
+        const statusText = record.status.charAt(0).toUpperCase() + record.status.slice(1);
+        doc.text(statusText, xPos + 2, rowY + 5.5);
+      }
+
+      // If last page, add total and footer
+      if (rowIndex === fineRecords.length) {
+        const totalRowY = tableTop + rowHeight * (rowsOnThisPage + 1);
+        doc.setFillColor(220, 38, 38);
+        doc.rect(margin, totalRowY, contentWidth, rowHeight, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.rect(margin, totalRowY, col1Width + col2Width + col3Width + col4Width, rowHeight);
+        doc.text('TOTAL PENALTY AMOUNT', margin + 2, totalRowY + 5.5);
+        doc.rect(margin + col1Width + col2Width + col3Width + col4Width, totalRowY, col5Width + col6Width, rowHeight);
+        doc.setFontSize(10);
+        doc.text(`Rs. ${totalAmount}`, margin + col1Width + col2Width + col3Width + col4Width + 2, totalRowY + 5.5);
+        // Footer
+        doc.setFontSize(8);
+        doc.setTextColor(100, 100, 100);
+        doc.text(`Generated on: ${new Date().toLocaleDateString('en-IN')}`, margin, 100 - 7);
+        doc.text(`Total Fines: ${fineRecords.length}`, pageWidth - margin - 25, 100 - 7);
+      }
+      // Add new page if more rows remain
+      if (rowIndex < fineRecords.length) {
+        doc.addPage([180, 100], 'landscape');
+      }
+    }
+
+    // Save PDF
+    const fileName = `Penalty_Slip_${fine.userId?.name?.replace(/\s+/g, '_') || 'employee'}_${fine.monthYear}.pdf`;
+    doc.save(fileName);
+  };
+
+  const selectCls =
+    'rounded-lg border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
+  const inputCls =
+    'w-full rounded-lg border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20';
+  const thBase = 'px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600';
+
+  return {
+    fines,
+    loading,
+    calculating,
+    error,
+    expandedRows,
+    showManualFineForm,
+    setShowManualFineForm,
+    manualFineEmployeeId,
+    setManualFineEmployeeId,
+    manualFineEmployeeQuery,
+    setManualFineEmployeeQuery,
+    showEmployeeSuggestions,
+    setShowEmployeeSuggestions,
+    employeePickerRef,
+    manualFineReason,
+    setManualFineReason,
+    manualFineAmount,
+    setManualFineAmount,
+    manualFineRemark,
+    setManualFineRemark,
+    imposingFine,
+    searchTerm,
+    setSearchTerm,
+    categoryFilter,
+    setCategoryFilter,
+    statusFilter,
+    setStatusFilter,
+    teamFilter,
+    setTeamFilter,
+    month,
+    setMonth,
+    year,
+    setYear,
+    selectedUserIds,
+    emailBusy,
+    emailingUserId,
+    emailNotice,
+    monthYear,
+    calculateFines,
+    updateFineStatus,
+    manualFineEmployeeMatches,
+    selectManualFineEmployee,
+    imposeManualFine,
+    toggleRow,
+    getFineUserId,
+    toggleSelectUser,
+    filteredFines,
+    filteredUserIds,
+    allFilteredSelected,
+    toggleSelectAllFiltered,
+    emailFineNotices,
+    totals,
+    exportToExcel,
+    generatePenaltySlip,
+    generateAllPenaltySlips,
+    selectCls,
+    inputCls,
+    thBase,
+  } as const;
+}

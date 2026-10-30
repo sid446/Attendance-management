@@ -1,0 +1,656 @@
+import React from 'react';
+import { Upload, AlertCircle, ChevronDown, ChevronUp, FileSpreadsheet, ChevronRight, Download, History, Clock, Users } from 'lucide-react';
+import type { UploadSectionProps } from './types';
+import { useUploadSectionLogic } from './hooks';
+
+export const UploadSection: React.FC<UploadSectionProps> = ({
+  file = null,
+  files = [],
+  onFileChange,
+  onFilesChange,
+  onProcessFile,
+  onProcessMultiple,
+  processing,
+  error,
+  saveMessage,
+  uploadErrors = [],
+  machineFormat = 'machine2',
+  onMachineFormatChange,
+  fixedFile = null,
+  fixedFiles = [],
+  onFixedFileChange,
+  onFixedFilesChange,
+  onProcessFixedFile,
+  onProcessMultipleFixed
+}) => {
+  const {
+    selectedFiles,
+    showFormatPreview,
+    setShowFormatPreview,
+    showMachineDropdown,
+    setShowMachineDropdown,
+    loadingFormats,
+    showAddForm,
+    setShowAddForm,
+    newMachine,
+    setNewMachine,
+    addingMachine,
+    addError,
+    setAddError,
+    selectedFixedFiles,
+    showLogs,
+    setShowLogs,
+    logs,
+    loadingLogs,
+    showPendingReview,
+    setShowPendingReview,
+    pendingReviewRows,
+    loadingPendingReview,
+    assigningPendingId,
+    selectedCandidateByPending,
+    setSelectedCandidateByPending,
+    assignPendingMatch,
+    groupedCurrentErrors,
+    exportCurrentErrors,
+    exportHistoricalLog,
+    exportAllHistoricalLogs,
+    runProcessMachineFiles,
+    runProcessFixedFiles,
+    currentFormat,
+    handleFileInputChange,
+    handleFixedFileInputChange,
+    handleAddMachine,
+    expectedColumns,
+    renderDropdownContent,
+  } = useUploadSectionLogic({
+    file,
+    files,
+    onFileChange,
+    onFilesChange,
+    onProcessFile,
+    onProcessMultiple,
+    uploadErrors,
+    machineFormat,
+    onMachineFormatChange,
+    fixedFile,
+    fixedFiles,
+    onFixedFileChange,
+    onFixedFilesChange,
+    onProcessFixedFile,
+    onProcessMultipleFixed,
+  });
+
+  return (
+    <section className="rounded-md border border-blue-200/65 bg-panel p-5 shadow-sm sm:p-6">
+      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">Upload attendance Excel</h1>
+          <p className="mt-1 max-w-2xl text-sm text-slate-600">
+            Map punch exports to employees, preview rows, then save. Pick the format that matches your device export
+            before choosing files.
+          </p>
+          <ol className="mt-3 flex list-none flex-wrap gap-2 text-xs text-slate-700">
+            {['Machine format', 'Excel file(s)', 'Process'].map((t, i) => (
+              <li
+                key={t}
+                className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1"
+              >
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+                  {i + 1}
+                </span>
+                {t}
+              </li>
+            ))}
+          </ol>
+        </div>
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end lg:w-auto lg:max-w-xl lg:justify-end">
+          {/* Machine Format Selector */}
+          <div className="relative machine-dropdown min-w-[12rem] flex-1">
+            <label className="mb-1 block text-xs font-medium text-slate-600">Machine type</label>
+            <button
+              type="button"
+              onClick={() => setShowMachineDropdown(!showMachineDropdown)}
+              className="flex min-h-[2.5rem] w-full items-center justify-between rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-left text-sm text-slate-800 transition-colors hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/25"
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <FileSpreadsheet className="h-4 w-4 shrink-0 text-blue-600" aria-hidden />
+                <span className="truncate">
+                  {loadingFormats ? 'Loading…' : currentFormat?.name || 'Select machine'}
+                </span>
+              </div>
+              <ChevronDown className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${showMachineDropdown ? 'rotate-180' : ''}`} aria-hidden />
+            </button>
+
+            {showMachineDropdown && (
+              <div className="absolute top-full z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-md border border-blue-200/65 bg-panel shadow-lg">
+                {renderDropdownContent()}
+              </div>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowAddForm(!showAddForm)}
+            className="inline-flex shrink-0 items-center gap-2 rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-blue-200 hover:bg-blue-50 hover:text-blue-900"
+          >
+            <ChevronRight className={`h-4 w-4 transition-transform ${showAddForm ? 'rotate-90' : ''}`} aria-hidden />
+            Add machine format
+          </button>
+
+          <p className="text-xs text-slate-500 sm:self-center">
+            Files: <span className="font-medium text-slate-700">.xlsx, .xls</span>
+          </p>
+        </div>
+      </div>
+
+      {/* Add New Machine Form */}
+      {showAddForm && (
+        <div className="add-machine-form mb-6 rounded-md border border-slate-200 bg-slate-50/80 p-4">
+          <h3 className="mb-3 text-sm font-semibold text-slate-900">Add new machine format</h3>
+          <form onSubmit={handleAddMachine} className="space-y-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600">Machine ID *</label>
+                <input
+                  type="text"
+                  value={newMachine.machineId}
+                  onChange={(e) => setNewMachine(prev => ({ ...prev, machineId: e.target.value }))}
+                  className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  placeholder="e.g., machine3"
+                  required
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600">Display name *</label>
+                <input
+                  type="text"
+                  value={newMachine.name}
+                  onChange={(e) => setNewMachine(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  placeholder="e.g., BioMax Pro"
+                  required
+                />
+              </div>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">Description *</label>
+              <input
+                type="text"
+                value={newMachine.description}
+                onChange={(e) => setNewMachine(prev => ({ ...prev, description: e.target.value }))}
+                className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                placeholder="e.g., Advanced biometric attendance system"
+                required
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">Excel headers * (comma-separated)</label>
+              <input
+                type="text"
+                value={newMachine.headers}
+                onChange={(e) => setNewMachine(prev => ({ ...prev, headers: e.target.value }))}
+                className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                placeholder="e.g., ID, Name, Date, Check In, Check Out"
+                required
+              />
+              <p className="mt-1 text-xs text-slate-500">Use the exact column titles from row 1 of your export, separated by commas.</p>
+            </div>
+            {addError && (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{addError}</div>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="submit"
+                disabled={addingMachine}
+                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {addingMachine ? 'Adding…' : 'Add machine'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddForm(false);
+                  setNewMachine({
+                    machineId: '',
+                    name: '',
+                    description: '',
+                    headers: ''
+                  });
+                  setAddError(null);
+                }}
+                className="rounded-md border border-blue-200/65 bg-panel px-4 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      <div className="mb-6">
+        <label className="mb-2 block text-xs font-medium text-slate-600">Machine export file(s)</label>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
+          <label className="flex flex-1 cursor-pointer items-center justify-between gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50/80 px-4 py-3 transition-colors hover:border-blue-300 hover:bg-blue-50/50">
+            <div className="flex min-w-0 items-center gap-2">
+              <Upload className="h-4 w-4 shrink-0 text-blue-600" aria-hidden />
+              <span className="truncate text-xs text-slate-600">
+                {selectedFiles.length > 0 ? (
+                  selectedFiles.length === 1 ? selectedFiles[0].name : `${selectedFiles.length} files selected`
+                ) : (
+                  'Click to choose Excel file(s)'
+                )}
+              </span>
+            </div>
+            <span className="shrink-0 text-[11px] font-medium text-slate-500">Browse</span>
+            <input type="file" accept=".xlsx,.xls" multiple onChange={handleFileInputChange} className="hidden" />
+          </label>
+          <button
+            type="button"
+            onClick={runProcessMachineFiles}
+            disabled={selectedFiles.length === 0 || processing}
+            className="inline-flex shrink-0 items-center justify-center rounded-md bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-[10rem]"
+          >
+            {processing ? 'Processing…' : selectedFiles.length > 1 ? 'Process all files' : 'Process file'}
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-6 rounded-md border border-slate-200 bg-slate-50/60 p-4">
+        <div className="mb-3">
+          <h3 className="text-sm font-semibold text-slate-900">Fixed attendance sheet (optional)</h3>
+          <p className="mt-1 text-xs text-slate-600">
+            Required headers: Date, Employee Name, Present / Absent, and Actual InTime/OutTime (or Data as per Thumb in/out).
+          </p>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Date format: DD-MM-YYYY (example: 02-01-2026). Presence codes supported: Present, WO-Present, HD, OS-P,
+            WO-HD, WFH, WO-WFH, Sun, A, Weekoff, OHD-P, OHD. Check-in 1:00–2:59 PM is half day; 3:00 PM or later is absent (half-time employees exempt).
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
+          <label className="flex flex-1 cursor-pointer items-center justify-between gap-2 rounded-lg border border-dashed border-slate-300 bg-panel px-4 py-3 transition-colors hover:border-blue-300 hover:bg-blue-50/40">
+            <div className="flex min-w-0 items-center gap-2">
+              <Upload className="h-4 w-4 shrink-0 text-slate-500" aria-hidden />
+              <span className="truncate text-xs text-slate-600">
+                {selectedFixedFiles.length > 0 ? (
+                  selectedFixedFiles.length === 1 ? selectedFixedFiles[0].name : `${selectedFixedFiles.length} files selected`
+                ) : (
+                  'Choose fixed attendance Excel(s)'
+                )}
+              </span>
+            </div>
+            <span className="shrink-0 text-[11px] font-medium text-slate-500">Browse</span>
+            <input type="file" accept=".xlsx,.xls" multiple onChange={handleFixedFileInputChange} className="hidden" />
+          </label>
+          <button
+            type="button"
+            onClick={runProcessFixedFiles}
+            disabled={selectedFixedFiles.length === 0 || processing}
+            className="inline-flex shrink-0 items-center justify-center rounded-md border border-blue-200/65 bg-panel px-4 py-2.5 text-xs font-semibold text-slate-800 transition-colors hover:border-blue-200 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-[10rem]"
+          >
+            {processing ? 'Processing…' : selectedFixedFiles.length > 1 ? 'Process all fixed' : 'Process fixed sheet'}
+          </button>
+        </div>
+      </div>
+
+      {(selectedFiles.length > 1 || selectedFixedFiles.length > 1) && (
+        <div className="mb-4 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+          <div className="mb-1 font-medium text-slate-800">Selected files</div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {selectedFiles.length > 1 && (
+              <div>
+                <div className="mb-1 text-[10px] uppercase tracking-wider text-slate-500">Machine exports</div>
+                <ul className="max-h-28 list-inside list-disc overflow-y-auto text-slate-600">
+                  {selectedFiles.map((f, i) => (
+                    <li key={i} className="truncate">
+                      {f.name}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {selectedFixedFiles.length > 1 && (
+              <div>
+                <div className="mb-1 text-[10px] uppercase tracking-wider text-slate-500">Fixed sheets</div>
+                <ul className="max-h-28 list-inside list-disc overflow-y-auto text-slate-600">
+                  {selectedFixedFiles.map((f, i) => (
+                    <li key={i} className="truncate">
+                      {f.name}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Excel Format Preview */}
+      <div className="mb-6">
+        <button
+          type="button"
+          onClick={() => setShowFormatPreview(!showFormatPreview)}
+          className="flex items-center gap-2 text-sm font-medium text-slate-700 transition-colors hover:text-blue-700"
+        >
+          <FileSpreadsheet className="h-4 w-4 text-blue-600" aria-hidden />
+          <span>Expected Excel layout</span>
+          {showFormatPreview ? <ChevronUp className="h-4 w-4" aria-hidden /> : <ChevronDown className="h-4 w-4" aria-hidden />}
+        </button>
+
+        {showFormatPreview && (
+          <div className="mt-3 overflow-hidden rounded-md border border-slate-200">
+            <div className="border-b border-slate-200 bg-slate-50 px-4 py-2">
+              <h3 className="text-sm font-semibold text-slate-900">Expected column headers</h3>
+              <p className="mt-1 text-xs text-slate-600">
+                Your file should include these columns (header row is detected automatically).
+              </p>
+            </div>
+            <div className="max-h-80 overflow-y-auto bg-panel p-4">
+              {machineFormat === 'machine2' ? (
+                /* Special format preview for Machine 2 complex format */
+                <div className="space-y-3">
+                  <div className="mb-2 text-xs font-medium text-slate-600">Example file structure</div>
+                  <div className="space-y-1 font-mono text-[11px]">
+                    <div className="rounded bg-slate-100 px-2 py-1 text-slate-600">Row 1: Date wise Daily Attendance Report (Detailed) For Period : ...</div>
+                    <div className="rounded bg-slate-100 px-2 py-1 text-slate-600">Row 2: Company Name : [Company]</div>
+                    <div className="flex gap-4 rounded border-l-2 border-blue-500 bg-blue-50 px-2 py-1 text-slate-800">
+                      <span className="text-slate-500">Col A:</span> Date :
+                      <span className="text-slate-500">Col B:</span> 30-12-2025
+                    </div>
+                    <div className="flex gap-4 rounded bg-slate-100 px-2 py-1 text-slate-800">
+                      <span className="text-slate-500">Col A:</span> Emp Name
+                      <span className="text-slate-500">Col B:</span> In Time
+                      <span className="text-slate-500">Col C:</span> Out Time
+                    </div>
+                    <div className="rounded bg-panel px-2 py-1 text-slate-600 ring-1 ring-slate-200">John Doe | 01-01-1900 09:00:00 | 01-01-1900 18:00:00</div>
+                    <div className="rounded bg-panel px-2 py-1 text-slate-600 ring-1 ring-slate-200">Jane Smith | 01-01-1900 09:30:00 | 01-01-1900 17:30:00</div>
+                    <div className="mt-2 flex gap-4 rounded border-l-2 border-blue-500 bg-blue-50 px-2 py-1 text-slate-800">
+                      <span className="text-slate-500">Col A:</span> Date :
+                      <span className="text-slate-500">Col B:</span> 31-12-2025
+                    </div>
+                    <div className="rounded bg-slate-100 px-2 py-1 text-slate-600">... attendance data continues ...</div>
+                  </div>
+                  <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-950">
+                    <strong>Time format:</strong> Times appear as &quot;01-01-1900 HH:MM:SS&quot; — only the time portion is extracted.
+                  </div>
+                </div>
+              ) : machineFormat === 'machine3' ? (
+                /* Special format preview for Machine 3 - Asija format */
+                <div className="space-y-3">
+                  <div className="mb-2 text-xs font-medium text-slate-600">Example file structure</div>
+                  <div className="space-y-1 font-mono text-[11px]">
+                    <div className="rounded bg-slate-100 px-2 py-1 text-slate-600">Row 1: Date wise Daily Attendance Report (Detailed) For Period : ...</div>
+                    <div className="rounded bg-slate-100 px-2 py-1 text-slate-600">Row 2: Company Name : Asija and Associates LLP</div>
+                    <div className="rounded bg-slate-100 px-2 py-1 text-slate-600">Row 3: Location : Delhi</div>
+                    <div className="flex gap-4 rounded border-l-2 border-blue-500 bg-blue-50 px-2 py-1 text-slate-800">
+                      <span className="text-slate-500">Col A:</span> Date :
+                      <span className="text-slate-500">Col B:</span> 30-12-2025
+                    </div>
+                    <div className="flex gap-4 rounded bg-slate-100 px-2 py-1 text-slate-800">
+                      <span className="text-slate-500">Col A:</span> Emp Name
+                      <span className="text-slate-500">Col B:</span> In Time
+                      <span className="text-slate-500">Col C:</span> Out Time
+                    </div>
+                    <div className="rounded bg-panel px-2 py-1 text-slate-600 ring-1 ring-slate-200">John Doe | 30-12-2025 08:42:00 | 30-12-2025 18:00:00</div>
+                    <div className="rounded bg-panel px-2 py-1 text-slate-600 ring-1 ring-slate-200">Jane Smith | 30-12-2025 09:30:00 | 30-12-2025 17:30:00</div>
+                    <div className="mt-2 flex gap-4 rounded border-l-2 border-blue-500 bg-blue-50 px-2 py-1 text-slate-800">
+                      <span className="text-slate-500">Col A:</span> Date :
+                      <span className="text-slate-500">Col B:</span> 31-12-2025
+                    </div>
+                    <div className="rounded bg-slate-100 px-2 py-1 text-slate-600">... attendance data continues ...</div>
+                  </div>
+                  <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-950">
+                    <strong>Time format:</strong> Times appear as &quot;DD-MM-YYYY HH:MM:SS&quot; — only the time portion is extracted.
+                  </div>
+                </div>
+              ) : (
+                /* Standard column-based format preview */
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-3">
+                  {expectedColumns.map((column, index) => (
+                    <div
+                      key={index}
+                      className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800"
+                    >
+                      {column}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs text-slate-600">
+                  <strong className="text-slate-800">Note:</strong>{' '}
+                  {currentFormat?.description || 'Please select a machine format to see specific requirements.'}
+                  {currentFormat && ' The system will match employees by name.'}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {error && (
+        <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">{error}</div>
+      )}
+
+      {saveMessage && (
+        <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{saveMessage}</div>
+      )}
+
+      <div className="mt-6 rounded-lg border border-indigo-200 bg-indigo-50/80 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-indigo-950">Pending names (HR)</h3>
+            <p className="mt-1 text-xs text-indigo-900/90">
+              Machine names that did not match anyone were stored by month. Pick the correct employee and apply — suggestions are ranked by similarity, not guaranteed.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowPendingReview(!showPendingReview)}
+            className="inline-flex shrink-0 items-center gap-2 rounded-md border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-900 hover:bg-indigo-50"
+          >
+            <Users className="h-4 w-4" />
+            {showPendingReview ? 'Hide queue' : 'Review & match'}
+          </button>
+        </div>
+
+        {showPendingReview && (
+          <div className="mt-4 rounded-md border border-indigo-200 bg-white">
+            {loadingPendingReview ? (
+              <div className="flex items-center justify-center gap-2 p-8 text-sm text-slate-600">
+                <span className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-200 border-t-indigo-600" />
+                Loading pending queue…
+              </div>
+            ) : pendingReviewRows.length === 0 ? (
+              <p className="p-6 text-center text-sm text-slate-600">No pending attendance buckets. Unknown names from uploads appear here.</p>
+            ) : (
+              <div className="max-h-[min(28rem,70vh)] overflow-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="sticky top-0 bg-slate-50 font-medium text-slate-700">
+                    <tr>
+                      <th className="px-3 py-2">Name from file</th>
+                      <th className="px-3 py-2">Month</th>
+                      <th className="px-3 py-2 text-center">Days</th>
+                      <th className="px-3 py-2">Match to employee</th>
+                      <th className="px-3 py-2 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {pendingReviewRows.map((row) => (
+                      <tr key={row._id} className="hover:bg-slate-50/80">
+                        <td className="px-3 py-2 font-medium text-slate-900">{row.uploadName}</td>
+                        <td className="px-3 py-2 text-slate-700">{row.monthYear}</td>
+                        <td className="px-3 py-2 text-center tabular-nums">{row.dayCount}</td>
+                        <td className="px-3 py-2">
+                          <select
+                            className="max-w-[min(100%,280px)] rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-900"
+                            value={selectedCandidateByPending[row._id] ?? ''}
+                            onChange={(e) =>
+                              setSelectedCandidateByPending((prev) => ({
+                                ...prev,
+                                [row._id]: e.target.value,
+                              }))
+                            }
+                          >
+                            <option value="">Select employee…</option>
+                            {row.candidates.map((c) => (
+                              <option key={c.userId} value={c.userId}>
+                                {c.name}
+                                {c.employeeCode ? ` (${c.employeeCode})` : ''}
+                                {c.odId ? ` · ${c.odId}` : ''} — {(c.score * 100).toFixed(0)}%
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <button
+                            type="button"
+                            disabled={!selectedCandidateByPending[row._id] || assigningPendingId === row._id}
+                            onClick={() => assignPendingMatch(row._id)}
+                            className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {assigningPendingId === row._id ? 'Applying…' : 'Apply match'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-6 border-t border-slate-200 pt-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h3 className="text-lg font-semibold text-slate-800">Upload History & Logs</h3>
+          <div className="flex flex-wrap items-center gap-2">
+            {showLogs && logs.length > 0 && (
+              <button
+                type="button"
+                onClick={() => void exportAllHistoricalLogs()}
+                className="inline-flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-800 hover:bg-red-100 transition-colors"
+                title="Download every past upload error log in one Excel file"
+              >
+                <Download className="h-4 w-4" />
+                Download all errors
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowLogs(!showLogs)}
+              className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              <History className="h-4 w-4" />
+              {showLogs ? 'Hide Logs' : 'View Past Logs'}
+            </button>
+          </div>
+        </div>
+
+        {uploadErrors.length > 0 && !showLogs && (
+          <div className="mt-4 overflow-hidden rounded-lg border border-red-200 shadow-sm">
+            <div className="flex items-center justify-between border-b border-red-200 bg-red-50 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 text-red-600" aria-hidden />
+                <span className="font-semibold text-red-900">Current Upload Errors ({uploadErrors.length} total)</span>
+              </div>
+              <button
+                type="button"
+                onClick={exportCurrentErrors}
+                className="inline-flex items-center gap-1.5 rounded-md bg-white px-2.5 py-1.5 text-xs font-medium text-red-700 shadow-sm ring-1 ring-inset ring-red-300 hover:bg-red-50"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export to Excel
+              </button>
+            </div>
+            <div className="max-h-64 overflow-y-auto bg-white p-0">
+              <table className="w-full text-left text-sm whitespace-nowrap">
+                <thead className="bg-slate-50 font-medium text-slate-600 sticky top-0 border-b border-slate-200 shadow-sm z-10">
+                  <tr>
+                    <th className="px-4 py-2">Error Message</th>
+                    <th className="px-4 py-2 text-center">Occurrences</th>
+                    <th className="px-4 py-2">Sample Identifiers (Max 5)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-800">
+                  {groupedCurrentErrors.map((err, i) => (
+                    <tr key={i} className="hover:bg-slate-50">
+                      <td className="px-4 py-2.5 text-red-700 max-w-xs truncate" title={err.message}>{err.message}</td>
+                      <td className="px-4 py-2.5 text-center font-semibold text-slate-700">{err.count}</td>
+                      <td className="px-4 py-2.5 font-mono text-xs text-slate-500 max-w-sm truncate" title={err.sampleRows.join(', ')}>
+                        {err.sampleRows.join(', ')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {showLogs && (
+          <div className="mt-4 space-y-4">
+            {loadingLogs ? (
+              <div className="flex justify-center p-8 text-slate-500">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600"></div>
+                <span className="ml-3 text-sm">Loading logs...</span>
+              </div>
+            ) : logs.length === 0 ? (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
+                No error logs found in the system.
+              </div>
+            ) : (
+              logs.map((log) => (
+                <div key={log._id} className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
+                    <div>
+                      <h4 className="font-medium text-slate-800 flex items-center gap-2">
+                        <FileSpreadsheet className="h-4 w-4 text-slate-500" />
+                        {log.fileName}
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
+                        <Clock className="h-3 w-3" />
+                        {new Date(log.uploadDate).toLocaleString('en-GB')}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => exportHistoricalLog(log)}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-inset ring-slate-300 hover:bg-slate-50 transition-colors"
+                    >
+                      <Download className="h-4 w-4 text-slate-500" />
+                      Export Excel
+                    </button>
+                  </div>
+                  <div className="max-h-60 overflow-y-auto">
+                    <table className="w-full text-left text-sm whitespace-nowrap">
+                      <thead className="bg-slate-50/50 font-medium text-slate-600 sticky top-0 border-b border-slate-200 shadow-sm">
+                        <tr>
+                          <th className="px-4 py-2">Error Message</th>
+                          <th className="px-4 py-2 text-center">Occurrences</th>
+                          <th className="px-4 py-2">Sample Identifiers</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-slate-800">
+                        {log.errorDetails.map((err: any, i: number) => (
+                          <tr key={i} className="hover:bg-slate-50">
+                            <td className="px-4 py-2 text-red-600 max-w-xs truncate" title={err.message}>{err.message}</td>
+                            <td className="px-4 py-2 text-center font-medium text-slate-700">{err.count}</td>
+                            <td className="px-4 py-2 font-mono text-xs text-slate-500 max-w-sm truncate" title={err.sampleRows.join(', ')}>
+                              {err.sampleRows.join(', ')}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+};

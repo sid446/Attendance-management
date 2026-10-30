@@ -1,0 +1,1 @@
+export { useLocationAttendanceSectionLogic } from './useLocationAttendanceSectionLogic';

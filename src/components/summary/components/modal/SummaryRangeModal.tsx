@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { X } from 'lucide-react';
+import { calendarDateFromIsoKey, isoDateKey } from '../../utils/summaryDateUtils';
 
 export interface SummaryRangeModalProps {
   isOpen: boolean;
@@ -61,8 +62,8 @@ export const SummaryRangeModal: React.FC<SummaryRangeModalProps> = ({
               <h4 className="text-xs font-medium uppercase tracking-wide text-slate-500">Start and end</h4>
               <div>
                 <DatePicker
-                  selected={new Date(customStartDate)}
-                  onChange={(date: Date | null) => date && setCustomStartDate(date.toISOString().split('T')[0])}
+                  selected={customStartDate ? calendarDateFromIsoKey(customStartDate) : null}
+                  onChange={(date: Date | null) => date && setCustomStartDate(isoDateKey(date))}
                   className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                   dateFormat="yyyy-MM-dd"
                 />
@@ -70,8 +71,8 @@ export const SummaryRangeModal: React.FC<SummaryRangeModalProps> = ({
               <div className="text-center text-xs text-slate-500">to</div>
               <div>
                 <DatePicker
-                  selected={new Date(customEndDate)}
-                  onChange={(date: Date | null) => date && setCustomEndDate(date.toISOString().split('T')[0])}
+                  selected={customEndDate ? calendarDateFromIsoKey(customEndDate) : null}
+                  onChange={(date: Date | null) => date && setCustomEndDate(isoDateKey(date))}
                   className="w-full rounded-md border border-blue-200/65 bg-panel px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                   dateFormat="yyyy-MM-dd"
                 />

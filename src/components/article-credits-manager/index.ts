@@ -1,0 +1,1 @@
+export { ArticleCreditsManager } from './ArticleCreditsManager';
